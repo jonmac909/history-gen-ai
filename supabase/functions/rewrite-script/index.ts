@@ -162,13 +162,14 @@ Continue now:`
               let pingCount = 0;
               const keepaliveInterval = setInterval(() => {
                 pingCount++;
-                // Send simulated progress during API call
+                // Send simulated progress during API call with estimated words
                 const simulatedProgress = Math.min(startProgress + pingCount, 95);
+                const estimatedWords = Math.round((simulatedProgress / 100) * targetWords);
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                   type: 'progress', 
                   progress: simulatedProgress,
-                  wordCount: currentWordCount,
-                  message: `Generating content...`
+                  wordCount: estimatedWords,
+                  message: `Writing... ~${estimatedWords}/${targetWords} words`
                 })}\n\n`));
               }, 5000); // Ping every 5 seconds
               
