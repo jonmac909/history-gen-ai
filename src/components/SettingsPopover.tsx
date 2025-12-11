@@ -19,7 +19,6 @@ export interface GenerationSettings {
   scriptTemplate: string;
   voice: string;
   imageCount: number;
-  aspectRatio: string;
   quality: string;
 }
 
@@ -30,15 +29,10 @@ interface SettingsPopoverProps {
   cartesiaVoices: CartesiaVoice[];
 }
 
-const aspectRatios = [
-  { value: "1:1", label: "1:1 (Square)" },
-  { value: "16:9", label: "16:9 (Landscape)" },
-  { value: "9:16", label: "9:16 (Portrait)" },
-  { value: "4:3", label: "4:3" },
-  { value: "3:4", label: "3:4" },
-  { value: "2:3", label: "2:3" },
-  { value: "3:2", label: "3:2" },
-  { value: "21:9", label: "21:9 (Ultrawide)" },
+const scriptTemplateOptions = [
+  { value: "template-a", label: "Script Template A" },
+  { value: "template-b", label: "Script Template B" },
+  { value: "template-c", label: "Script Template C" },
 ];
 
 const qualityOptions = [
@@ -61,8 +55,6 @@ export function SettingsPopover({
     onSettingsChange({ ...settings, [key]: value });
   };
 
-  const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
-
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -80,12 +72,13 @@ export function SettingsPopover({
       </PopoverTrigger>
       <PopoverContent 
         className="w-80 p-6" 
-        align="end"
+        align="center"
+        side="bottom"
         sideOffset={8}
       >
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center gap-2 text-primary">
+          <div className="flex items-center justify-center gap-2 text-primary">
             <Settings className="w-4 h-4" />
             <span className="text-sm font-semibold tracking-wide uppercase">
               Generation Settings
@@ -105,24 +98,13 @@ export function SettingsPopover({
                 <SelectValue placeholder="Select a template" />
               </SelectTrigger>
               <SelectContent>
-                {scriptTemplates.length > 0 ? (
-                  scriptTemplates.map((template) => (
-                    <SelectItem key={template.id} value={template.id}>
-                      {template.name || `Template ${template.id}`}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="none" disabled>
-                    No templates configured
+                {scriptTemplateOptions.map((template) => (
+                  <SelectItem key={template.value} value={template.value}>
+                    {template.label}
                   </SelectItem>
-                )}
+                ))}
               </SelectContent>
             </Select>
-            {currentTemplate?.description && (
-              <p className="text-xs text-muted-foreground text-center">
-                {currentTemplate.description}
-              </p>
-            )}
           </div>
 
           {/* Voice */}
@@ -163,27 +145,6 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Aspect Ratio */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Aspect Ratio
-            </label>
-            <Select
-              value={settings.aspectRatio}
-              onValueChange={(value) => updateSetting("aspectRatio", value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {aspectRatios.map((ratio) => (
-                  <SelectItem key={ratio.value} value={ratio.value}>
-                    {ratio.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           {/* Quality */}
           <div className="space-y-2">
