@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic } from "lucide-react";
+import { useState, useRef } from "react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -7,6 +7,7 @@ import { SettingsPopover, type GenerationSettings } from "@/components/SettingsP
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
 import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/components/ConfigModal";
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
+import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { 
   getYouTubeTranscript, 
   rewriteScript, 
@@ -17,7 +18,7 @@ import {
 import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "results";
+type ViewState = "create" | "processing" | "review" | "results";
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -41,6 +42,11 @@ const Index = () => {
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
+  
+  // Script review state
+  const [pendingScript, setPendingScript] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [videoTitle, setVideoTitle] = useState("History Documentary");
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -113,26 +119,19 @@ const Index = () => {
     }
 
     setSourceUrl(inputValue);
-    const projectId = crypto.randomUUID();
+    const newProjectId = crypto.randomUUID();
+    setProjectId(newProjectId);
 
-    // Initialize processing steps
+    // Initialize processing steps - Phase 1 (transcript + script)
     const steps: GenerationStep[] = [
       { id: "transcript", label: "Fetching YouTube Transcript", status: "pending" },
-      { id: "script", label: "Rewriting Script (Claude)", status: "pending" },
-      { id: "audio", label: "Generating Audio (Cartesia)", status: "pending" },
-      { id: "captions", label: "Generating SRT Captions", status: "pending" },
+      { id: "script", label: "Rewriting Script", status: "pending" },
     ];
 
     setProcessingSteps(steps);
     setViewState("processing");
     setGeneratedAssets([]);
     setAudioUrl(undefined);
-
-    let transcript = "";
-    let videoTitle = "History Documentary";
-    let script = "";
-    let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
-    let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
 
     try {
       // Step 1: Fetch transcript
@@ -143,27 +142,95 @@ const Index = () => {
         throw new Error(transcriptResult.message || transcriptResult.error || "Failed to fetch transcript");
       }
       
-      transcript = transcriptResult.transcript;
-      videoTitle = transcriptResult.title || videoTitle;
+      const transcript = transcriptResult.transcript;
+      setVideoTitle(transcriptResult.title || "History Documentary");
       updateStep("transcript", "completed");
 
-      // Step 2: Rewrite script
-      updateStep("script", "active");
-      const scriptResult = await rewriteScript(transcript, currentTemplate.template, videoTitle);
+      // Step 2: Rewrite script with progress simulation
+      updateStep("script", "active", "0%");
+      
+      // Simulate progress while waiting for API
+      const progressInterval = setInterval(() => {
+        setProcessingSteps(prev => {
+          const scriptStep = prev.find(s => s.id === "script");
+          if (scriptStep?.status === "active") {
+            const currentProgress = parseInt(scriptStep.sublabel || "0") || 0;
+            if (currentProgress < 90) {
+              return prev.map(step => 
+                step.id === "script" 
+                  ? { ...step, sublabel: `${Math.min(currentProgress + Math.random() * 15, 90).toFixed(0)}%` }
+                  : step
+              );
+            }
+          }
+          return prev;
+        });
+      }, 2000);
+
+      const scriptResult = await rewriteScript(transcript, currentTemplate.template, transcriptResult.title || "History Documentary");
+      
+      clearInterval(progressInterval);
       
       if (!scriptResult.success || !scriptResult.script) {
         throw new Error(scriptResult.error || "Failed to rewrite script");
       }
       
-      script = scriptResult.script;
-      updateStep("script", "completed");
+      updateStep("script", "completed", "100%");
+      
+      // Store script for review
+      setPendingScript(scriptResult.script);
+      
+      // Short delay before showing review modal
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Switch to review state
+      setViewState("review");
 
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast({
+        title: "Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred during generation.",
+        variant: "destructive",
+      });
+      setViewState("create");
+    }
+  };
+
+  const handleScriptConfirm = async (confirmedScript: string) => {
+    const selectedVoice = cartesiaVoices.find(v => v.id === settings.voice);
+    if (!selectedVoice) return;
+
+    // Initialize processing steps - Phase 2 (images, audio, captions)
+    const steps: GenerationStep[] = [
+      { id: "images", label: "Generating Images", status: "pending" },
+      { id: "audio", label: "Generating Audio", status: "pending" },
+      { id: "captions", label: "Generating SRT Captions", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
+    let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
+
+    try {
       // Save script to storage
-      const scriptUrl = await saveScriptToStorage(script, projectId);
+      const scriptUrl = await saveScriptToStorage(confirmedScript, projectId);
 
-      // Step 3: Generate audio
+      // Step 1: Generate images (placeholder for now)
+      updateStep("images", "active", "0%");
+      
+      // Simulate image generation progress
+      for (let i = 0; i <= 100; i += 20) {
+        updateStep("images", "active", `${i}%`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      updateStep("images", "completed", "100%");
+
+      // Step 2: Generate audio
       updateStep("audio", "active");
-      const audioRes = await generateAudio(script, selectedVoice.voiceId, projectId);
+      const audioRes = await generateAudio(confirmedScript, selectedVoice.voiceId, projectId);
       
       if (!audioRes.success) {
         throw new Error(audioRes.error || "Failed to generate audio");
@@ -172,9 +239,9 @@ const Index = () => {
       audioResult = audioRes;
       updateStep("audio", "completed");
 
-      // Step 4: Generate captions
+      // Step 3: Generate captions
       updateStep("captions", "active");
-      const captionsRes = await generateCaptions(script, audioRes.duration || 0, projectId);
+      const captionsRes = await generateCaptions(confirmedScript, audioRes.duration || 0, projectId);
       
       if (!captionsRes.success) {
         throw new Error(captionsRes.error || "Failed to generate captions");
@@ -187,16 +254,16 @@ const Index = () => {
       const assets: GeneratedAsset[] = [
         {
           id: "script",
-          name: "Rewritten Script (Claude)",
+          name: "Rewritten Script",
           type: "Markdown",
-          size: `${Math.round(script.length / 1024)} KB`,
+          size: `${Math.round(confirmedScript.length / 1024)} KB`,
           icon: <FileText className="w-5 h-5 text-muted-foreground" />,
           url: scriptUrl || undefined,
-          content: script,
+          content: confirmedScript,
         },
         {
           id: "audio",
-          name: "Voiceover Audio (Cartesia)",
+          name: "Voiceover Audio",
           type: "MP3",
           size: audioResult.size ? `${(audioResult.size / (1024 * 1024)).toFixed(1)} MB` : "Unknown",
           icon: <Mic className="w-5 h-5 text-muted-foreground" />,
@@ -236,12 +303,22 @@ const Index = () => {
     }
   };
 
+  const handleScriptCancel = () => {
+    setPendingScript("");
+    setViewState("create");
+    toast({
+      title: "Generation Cancelled",
+      description: "Script generation was cancelled.",
+    });
+  };
+
   const handleNewProject = () => {
     setViewState("create");
     setInputValue("");
     setSourceUrl("");
     setGeneratedAssets([]);
     setAudioUrl(undefined);
+    setPendingScript("");
   };
 
   return (
@@ -323,7 +400,7 @@ const Index = () => {
               
               <Button
                 onClick={handleGenerate}
-                disabled={viewState === "processing"}
+                disabled={viewState === "processing" || viewState === "review"}
                 className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
               >
                 <Sparkles className="w-4 h-4 mr-2" />
@@ -340,6 +417,14 @@ const Index = () => {
         isOpen={viewState === "processing"} 
         onClose={() => {}} 
         steps={processingSteps}
+      />
+
+      {/* Script Review Modal */}
+      <ScriptReviewModal
+        isOpen={viewState === "review"}
+        script={pendingScript}
+        onConfirm={handleScriptConfirm}
+        onCancel={handleScriptCancel}
       />
     </div>
   );
