@@ -9,82 +9,6 @@ const corsHeaders = {
 // We need to chain calls to reach higher word counts
 const MAX_TOKENS_PER_CALL = 16000;
 
-async function generateScriptChunkStreaming(
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  messages: { role: string; content: string }[],
-  onProgress: (wordCount: number, text: string) => void
-): Promise<{ text: string; stopReason: string }> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: MAX_TOKENS_PER_CALL,
-      system: systemPrompt,
-      messages,
-      stream: true,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
-  }
-
-  let fullText = '';
-  let stopReason = 'end_turn';
-  let lastProgressUpdate = 0;
-  
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
-  
-  const decoder = new TextDecoder();
-  
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
-    
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
-        
-        try {
-          const parsed = JSON.parse(data);
-          
-          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-            fullText += parsed.delta.text;
-            
-            // Update progress every ~100 words
-            const currentWords = fullText.split(/\s+/).filter(w => w.length > 0).length;
-            if (currentWords - lastProgressUpdate >= 100) {
-              onProgress(currentWords, fullText);
-              lastProgressUpdate = currentWords;
-            }
-          }
-          
-          if (parsed.type === 'message_delta' && parsed.delta?.stop_reason) {
-            stopReason = parsed.delta.stop_reason;
-          }
-        } catch {
-          // Skip non-JSON lines
-        }
-      }
-    }
-  }
-
-  return { text: fullText, stopReason };
-}
-
 async function generateScriptChunk(
   apiKey: string,
   model: string,
@@ -117,6 +41,7 @@ async function generateScriptChunk(
     stopReason: data.stop_reason || 'end_turn',
   };
 }
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -224,30 +149,20 @@ Continue now:`
                 ];
               }
 
-              const baseWordCount = currentWordCount;
-              let lastSentProgress = -5;
+              // Send progress update at start of each iteration
+              const startProgress = Math.min(Math.round((currentWordCount / targetWords) * 100), 95);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                progress: startProgress,
+                wordCount: currentWordCount,
+                message: `Writing... ${currentWordCount}/${targetWords} words`
+              })}\n\n`));
               
-              const result = await generateScriptChunkStreaming(
+              const result = await generateScriptChunk(
                 ANTHROPIC_API_KEY,
                 selectedModel,
                 systemPrompt,
-                messages,
-                (chunkWords, _chunkText) => {
-                  // Calculate total progress across all iterations
-                  const totalWords = baseWordCount + chunkWords;
-                  const progress = Math.min(Math.round((totalWords / targetWords) * 100), 95);
-                  
-                  // Send update every 5%
-                  if (progress >= lastSentProgress + 5) {
-                    lastSentProgress = progress;
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                      type: 'progress', 
-                      progress,
-                      wordCount: totalWords,
-                      message: `Writing... ${totalWords}/${targetWords} words`
-                    })}\n\n`));
-                  }
-                }
+                messages
               );
 
               if (iteration === 1) {
