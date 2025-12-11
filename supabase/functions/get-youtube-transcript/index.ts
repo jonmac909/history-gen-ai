@@ -18,6 +18,129 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
+async function fetchTranscriptFromPage(videoId: string): Promise<{ transcript: string; title: string; language: string } | null> {
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  
+  const response = await fetch(watchUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
+  });
+  
+  if (!response.ok) {
+    console.error('Failed to fetch YouTube page:', response.status);
+    return null;
+  }
+  
+  const html = await response.text();
+  
+  // Extract title
+  const titleMatch = html.match(/<title>([^<]*)<\/title>/);
+  const title = titleMatch ? titleMatch[1].replace(' - YouTube', '').trim() : 'Unknown Title';
+  
+  // Try to find ytInitialPlayerResponse
+  const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/s);
+  
+  if (!playerResponseMatch) {
+    console.log('Could not find ytInitialPlayerResponse');
+    return null;
+  }
+  
+  let playerResponse;
+  try {
+    playerResponse = JSON.parse(playerResponseMatch[1]);
+  } catch (e) {
+    console.error('Failed to parse player response:', e);
+    return null;
+  }
+  
+  // Get caption tracks
+  const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  
+  if (!captionTracks || captionTracks.length === 0) {
+    console.log('No caption tracks found in player response');
+    return null;
+  }
+  
+  console.log('Found', captionTracks.length, 'caption tracks');
+  
+  // Find English captions (prefer manual over auto-generated)
+  let captionTrack = captionTracks.find((t: any) => 
+    t.languageCode === 'en' && t.kind !== 'asr'
+  );
+  if (!captionTrack) {
+    captionTrack = captionTracks.find((t: any) => t.languageCode === 'en');
+  }
+  if (!captionTrack) {
+    captionTrack = captionTracks[0]; // Fallback to first available
+  }
+  
+  if (!captionTrack?.baseUrl) {
+    console.log('No baseUrl in caption track');
+    return null;
+  }
+  
+  console.log('Using caption track:', captionTrack.languageCode, captionTrack.kind || 'manual');
+  
+  // Fetch the captions XML
+  const captionsResponse = await fetch(captionTrack.baseUrl);
+  if (!captionsResponse.ok) {
+    console.error('Failed to fetch captions:', captionsResponse.status);
+    return null;
+  }
+  
+  const captionsXml = await captionsResponse.text();
+  
+  // Parse XML to extract text
+  const textMatches = captionsXml.matchAll(/<text[^>]*>([^<]*)<\/text>/g);
+  const transcriptParts: string[] = [];
+  
+  for (const match of textMatches) {
+    let text = match[1];
+    // Decode HTML entities
+    text = text.replace(/&amp;/g, '&')
+               .replace(/&lt;/g, '<')
+               .replace(/&gt;/g, '>')
+               .replace(/&quot;/g, '"')
+               .replace(/&#39;/g, "'")
+               .replace(/&apos;/g, "'")
+               .replace(/&#x27;/g, "'")
+               .replace(/\n/g, ' ')
+               .trim();
+    if (text) {
+      transcriptParts.push(text);
+    }
+  }
+  
+  const transcript = transcriptParts.join(' ').trim();
+  
+  if (!transcript) {
+    console.log('Parsed transcript is empty');
+    return null;
+  }
+  
+  return {
+    transcript,
+    title,
+    language: captionTrack.languageCode
+  };
+}
+
+async function getVideoTitle(videoId: string): Promise<string> {
+  try {
+    const infoUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const response = await fetch(infoUrl);
+    if (response.ok) {
+      const data = await response.json();
+      return data.title || 'Unknown Title';
+    }
+  } catch (e) {
+    console.error('Failed to fetch video title:', e);
+  }
+  return 'Unknown Title';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -28,7 +151,7 @@ serve(async (req) => {
     
     if (!url) {
       return new Response(
-        JSON.stringify({ error: 'URL is required' }),
+        JSON.stringify({ success: false, error: 'URL is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -36,111 +159,41 @@ serve(async (req) => {
     const videoId = extractVideoId(url);
     if (!videoId) {
       return new Response(
-        JSON.stringify({ error: 'Invalid YouTube URL' }),
+        JSON.stringify({ success: false, error: 'Invalid YouTube URL' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('Fetching transcript for video:', videoId);
 
-    // Try to get transcript using YouTube's timedtext API
-    const transcriptUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const pageResponse = await fetch(transcriptUrl);
-    const pageHtml = await pageResponse.text();
-
-    // Extract captions track URL from the page
-    const captionTrackMatch = pageHtml.match(/"captionTracks":\s*\[(.*?)\]/);
+    // Try to fetch transcript from page
+    const result = await fetchTranscriptFromPage(videoId);
     
-    if (!captionTrackMatch) {
-      // Fallback: Try to get video info for title at least
-      const videoInfoUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-      const infoResponse = await fetch(videoInfoUrl);
-      
-      if (infoResponse.ok) {
-        const videoInfo = await infoResponse.json();
-        return new Response(
-          JSON.stringify({ 
-            success: true,
-            videoId,
-            title: videoInfo.title,
-            transcript: null,
-            message: 'No captions available for this video. Please provide a script manually or try a different video.'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+    if (result && result.transcript) {
+      console.log('Successfully fetched transcript, length:', result.transcript.length);
       
       return new Response(
-        JSON.stringify({ error: 'Could not fetch video information' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          success: true,
+          videoId,
+          title: result.title,
+          transcript: result.transcript,
+          language: result.language
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    // Parse caption tracks
-    const captionTracksJson = `[${captionTrackMatch[1]}]`;
-    let captionTracks;
-    try {
-      captionTracks = JSON.parse(captionTracksJson);
-    } catch {
-      return new Response(
-        JSON.stringify({ error: 'Failed to parse caption tracks' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Find English captions (prefer manual over auto-generated)
-    let captionTrack = captionTracks.find((t: any) => 
-      t.languageCode === 'en' && !t.kind?.includes('asr')
-    );
-    if (!captionTrack) {
-      captionTrack = captionTracks.find((t: any) => t.languageCode === 'en');
-    }
-    if (!captionTrack) {
-      captionTrack = captionTracks[0]; // Fallback to first available
-    }
-
-    if (!captionTrack?.baseUrl) {
-      return new Response(
-        JSON.stringify({ error: 'No caption track found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Fetch the actual captions
-    const captionsResponse = await fetch(captionTrack.baseUrl);
-    const captionsXml = await captionsResponse.text();
-
-    // Parse XML to extract text
-    const textMatches = captionsXml.matchAll(/<text[^>]*>([^<]*)<\/text>/g);
-    const transcriptParts: string[] = [];
     
-    for (const match of textMatches) {
-      let text = match[1];
-      // Decode HTML entities
-      text = text.replace(/&amp;/g, '&')
-                 .replace(/&lt;/g, '<')
-                 .replace(/&gt;/g, '>')
-                 .replace(/&quot;/g, '"')
-                 .replace(/&#39;/g, "'")
-                 .replace(/\n/g, ' ');
-      transcriptParts.push(text);
-    }
-
-    const transcript = transcriptParts.join(' ').trim();
-
-    // Get video title
-    const titleMatch = pageHtml.match(/<title>([^<]*)<\/title>/);
-    const title = titleMatch ? titleMatch[1].replace(' - YouTube', '').trim() : 'Unknown Title';
-
-    console.log('Successfully fetched transcript, length:', transcript.length);
-
+    // Fallback: return error with video title
+    const title = await getVideoTitle(videoId);
+    
     return new Response(
       JSON.stringify({ 
-        success: true,
+        success: false,
         videoId,
         title,
-        transcript,
-        language: captionTrack.languageCode
+        transcript: null,
+        error: 'No captions available for this video. Please try a different video with captions enabled.'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -148,7 +201,10 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error fetching transcript:', error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Failed to fetch transcript' }),
+      JSON.stringify({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch transcript' 
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
