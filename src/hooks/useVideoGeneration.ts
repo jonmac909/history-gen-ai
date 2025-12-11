@@ -9,10 +9,16 @@ interface ImageTiming {
   duration: number;
 }
 
+interface VideoClip {
+  index: number;
+  videoUrl: string;
+  videoBlob: Blob;
+  duration: number;
+}
+
 interface VideoGenerationResult {
   success: boolean;
-  videoUrl?: string;
-  videoBlob?: Blob;
+  clips?: VideoClip[];
   error?: string;
 }
 
@@ -35,12 +41,7 @@ export function useVideoGeneration() {
       console.log('[FFmpeg]', message);
     });
 
-    ffmpeg.on('progress', ({ progress: p }) => {
-      // Map FFmpeg progress (0-1) to 40-90% of our total progress
-      setProgress(40 + Math.round(p * 50));
-    });
-
-    setStatus('Downloading FFmpeg core...');
+    setStatus('Downloading FFmpeg...');
     setProgress(5);
     
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
@@ -52,17 +53,17 @@ export function useVideoGeneration() {
       const coreURL = URL.createObjectURL(coreBlob);
       setProgress(10);
       
-      setStatus('Downloading FFmpeg WASM (this may take a moment)...');
+      setStatus('Downloading FFmpeg WASM...');
       console.log('[FFmpeg] Fetching WASM...');
       const wasmResponse = await fetch(`${baseURL}/ffmpeg-core.wasm`);
       const wasmBlob = new Blob([await wasmResponse.arrayBuffer()], { type: 'application/wasm' });
       const wasmURL = URL.createObjectURL(wasmBlob);
-      setProgress(25);
+      setProgress(20);
       
       setStatus('Initializing FFmpeg...');
-      console.log('[FFmpeg] Loading with blob URLs...');
+      console.log('[FFmpeg] Loading...');
       await ffmpeg.load({ coreURL, wasmURL });
-      setProgress(30);
+      setProgress(25);
       
       console.log('[FFmpeg] Loaded successfully!');
     } catch (e) {
@@ -136,7 +137,7 @@ export function useVideoGeneration() {
   const generateVideo = useCallback(async (
     imageUrls: string[],
     srtContent: string,
-    audioUrl?: string
+    _audioUrl?: string // Not used for individual clips
   ): Promise<VideoGenerationResult> => {
     if (imageUrls.length === 0) {
       return { success: false, error: 'No images provided' };
@@ -152,85 +153,59 @@ export function useVideoGeneration() {
       const timings = calculateImageTimings(imageUrls, srtContent);
       console.log('Image timings:', timings);
 
-      // Download and write images to FFmpeg filesystem
-      setStatus('Downloading images...');
-      for (let i = 0; i < imageUrls.length; i++) {
-        setProgress(Math.round((i / imageUrls.length) * 30));
-        const imageData = await fetchFile(imageUrls[i]);
+      const clips: VideoClip[] = [];
+      const totalImages = imageUrls.length;
+
+      for (let i = 0; i < totalImages; i++) {
+        const timing = timings[i];
+        const progressBase = 25 + (i / totalImages) * 70;
+        
+        setStatus(`Processing clip ${i + 1} of ${totalImages}...`);
+        setProgress(Math.round(progressBase));
+
+        // Download image
+        console.log(`[FFmpeg] Downloading image ${i + 1}...`);
+        const imageData = await fetchFile(timing.imageUrl);
         await ffmpeg.writeFile(`image${i}.png`, imageData);
-      }
 
-      // Download audio if provided
-      let hasAudio = false;
-      if (audioUrl) {
-        setStatus('Downloading audio...');
-        try {
-          const audioData = await fetchFile(audioUrl);
-          await ffmpeg.writeFile('audio.mp3', audioData);
-          hasAudio = true;
-        } catch (e) {
-          console.warn('Failed to download audio:', e);
-        }
-      }
+        // Generate video clip for this image
+        const duration = Math.max(timing.duration, 1); // At least 1 second
+        console.log(`[FFmpeg] Creating clip ${i + 1} with duration ${duration.toFixed(2)}s...`);
 
-      // Create concat file for images with durations
-      setStatus('Preparing video...');
-      let concatContent = '';
-      for (let i = 0; i < timings.length; i++) {
-        concatContent += `file 'image${i}.png'\n`;
-        concatContent += `duration ${timings[i].duration.toFixed(3)}\n`;
-      }
-      // Add last image again (required by FFmpeg concat)
-      concatContent += `file 'image${timings.length - 1}.png'\n`;
-      
-      await ffmpeg.writeFile('concat.txt', concatContent);
+        await ffmpeg.exec([
+          '-loop', '1',
+          '-i', `image${i}.png`,
+          '-c:v', 'libx264',
+          '-t', duration.toFixed(3),
+          '-pix_fmt', 'yuv420p',
+          '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
+          '-r', '30',
+          '-preset', 'ultrafast',
+          `clip${i}.mp4`
+        ]);
 
-      // Generate video
-      setStatus('Generating video...');
-      setProgress(40);
+        // Read output
+        const data = await ffmpeg.readFile(`clip${i}.mp4`);
+        const videoBlob = new Blob([new Uint8Array(data as Uint8Array)], { type: 'video/mp4' });
+        const videoUrl = URL.createObjectURL(videoBlob);
 
-      const ffmpegArgs = [
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', 'concat.txt',
-      ];
+        clips.push({
+          index: i,
+          videoUrl,
+          videoBlob,
+          duration,
+        });
 
-      if (hasAudio) {
-        ffmpegArgs.push('-i', 'audio.mp3');
-        ffmpegArgs.push('-c:a', 'aac');
-        ffmpegArgs.push('-shortest');
-      }
-
-      ffmpegArgs.push(
-        '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-r', '30',
-        '-preset', 'ultrafast',
-        'output.mp4'
-      );
-
-      await ffmpeg.exec(ffmpegArgs);
-
-      // Read output
-      setStatus('Finalizing...');
-      const data = await ffmpeg.readFile('output.mp4');
-      const videoBlob = new Blob([new Uint8Array(data as Uint8Array)], { type: 'video/mp4' });
-      const videoUrl = URL.createObjectURL(videoBlob);
-
-      // Cleanup
-      for (let i = 0; i < imageUrls.length; i++) {
+        // Cleanup this image
         try { await ffmpeg.deleteFile(`image${i}.png`); } catch {}
+        try { await ffmpeg.deleteFile(`clip${i}.mp4`); } catch {}
       }
-      try { await ffmpeg.deleteFile('concat.txt'); } catch {}
-      try { await ffmpeg.deleteFile('audio.mp3'); } catch {}
-      try { await ffmpeg.deleteFile('output.mp4'); } catch {}
 
       setProgress(100);
       setStatus('Complete!');
       setIsGenerating(false);
 
-      return { success: true, videoUrl, videoBlob };
+      return { success: true, clips };
     } catch (error) {
       console.error('Video generation error:', error);
       setIsGenerating(false);

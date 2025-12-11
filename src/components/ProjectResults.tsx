@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Mic, Download, RefreshCw, Layers, ExternalLink, Image, Video, Loader2 } from "lucide-react";
+import { Download, RefreshCw, Layers, ExternalLink, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
@@ -13,6 +13,13 @@ export interface GeneratedAsset {
   icon: React.ReactNode;
   url?: string;
   content?: string;
+}
+
+interface VideoClip {
+  index: number;
+  videoUrl: string;
+  videoBlob: Blob;
+  duration: number;
 }
 
 interface ProjectResultsProps {
@@ -56,7 +63,7 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
 };
 
 export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtContent }: ProjectResultsProps) {
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoClips, setVideoClips] = useState<VideoClip[]>([]);
   const { generateVideo, isGenerating, progress, status } = useVideoGeneration();
 
   // Extract image URLs from assets
@@ -84,17 +91,17 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
     }
 
     toast({
-      title: "Generating Video",
-      description: "This may take 30-60 seconds...",
+      title: "Generating Video Clips",
+      description: `Creating ${imageUrls.length} video clips...`,
     });
 
     const result = await generateVideo(imageUrls, srtContent, audioUrl);
 
-    if (result.success && result.videoUrl) {
-      setVideoUrl(result.videoUrl);
+    if (result.success && result.clips) {
+      setVideoClips(result.clips);
       toast({
-        title: "Video Ready!",
-        description: "Your MP4 video has been generated.",
+        title: "Video Clips Ready!",
+        description: `Generated ${result.clips.length} MP4 clips.`,
       });
     } else {
       toast({
@@ -105,17 +112,22 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
     }
   };
 
-  const handleDownloadVideo = () => {
-    if (!videoUrl) return;
+  const handleDownloadClip = (clip: VideoClip) => {
     const link = document.createElement('a');
-    link.href = videoUrl;
-    link.download = 'generated_video.mp4';
+    link.href = clip.videoUrl;
+    link.download = `clip_${clip.index + 1}.mp4`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDownloadAllClips = () => {
+    videoClips.forEach((clip, i) => {
+      setTimeout(() => handleDownloadClip(clip), i * 500);
+    });
     toast({
-      title: "Download Complete",
-      description: "Video downloaded successfully.",
+      title: "Downloading All Clips",
+      description: `Downloading ${videoClips.length} video clips...`,
     });
   };
 
@@ -175,12 +187,12 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Audio Preview - Clean player only */}
+        {/* Preview Area */}
         <div className="space-y-4">
           <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-            {videoUrl ? (
+            {videoClips.length > 0 ? (
               <video controls className="w-full h-full">
-                <source src={videoUrl} type="video/mp4" />
+                <source src={videoClips[0].videoUrl} type="video/mp4" />
                 Your browser does not support the video element.
               </video>
             ) : audioUrl ? (
@@ -200,12 +212,12 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Video className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">MP4 Video</h3>
+                <h3 className="font-semibold text-foreground">MP4 Video Clips</h3>
               </div>
-              {videoUrl ? (
-                <Button onClick={handleDownloadVideo} className="gap-2">
+              {videoClips.length > 0 ? (
+                <Button onClick={handleDownloadAllClips} className="gap-2">
                   <Download className="w-4 h-4" />
-                  Download MP4
+                  Download All ({videoClips.length})
                 </Button>
               ) : (
                 <Button 
@@ -221,7 +233,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
                   ) : (
                     <>
                       <Video className="w-4 h-4" />
-                      Generate Video
+                      Generate Clips
                     </>
                   )}
                 </Button>
@@ -238,9 +250,25 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
               </div>
             )}
 
-            {!videoUrl && !isGenerating && (
+            {/* Video Clips List */}
+            {videoClips.length > 0 && (
+              <div className="space-y-2">
+                {videoClips.map((clip) => (
+                  <div key={clip.index} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg">
+                    <span className="text-sm text-foreground">
+                      Clip {clip.index + 1} ({clip.duration.toFixed(1)}s)
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => handleDownloadClip(clip)}>
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {videoClips.length === 0 && !isGenerating && (
               <p className="text-sm text-muted-foreground">
-                Generate an MP4 slideshow video from your images with caption-based timing.
+                Generate individual MP4 clips for each image with proper timing.
               </p>
             )}
           </div>
