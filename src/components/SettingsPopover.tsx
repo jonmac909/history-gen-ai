@@ -88,7 +88,7 @@ export function SettingsPopover({
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Choose Your Script
+              Select Your Script
             </label>
             <Select
               value={settings.scriptTemplate}
@@ -110,7 +110,7 @@ export function SettingsPopover({
           {/* Voice */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Choose Your Voice
+              Select Your Voice
             </label>
             <Select
               value={settings.voice}
@@ -138,7 +138,7 @@ export function SettingsPopover({
           {/* Image Model - Fixed to Seedream 4.5 */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Image Model
+              Select Your Model
             </label>
             <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
               Seedream 4.5
@@ -149,7 +149,7 @@ export function SettingsPopover({
           {/* Quality */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Image Quality
+              Select Your Quality
             </label>
             <Select
               value={settings.quality}
@@ -171,7 +171,7 @@ export function SettingsPopover({
           {/* Image Count */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Image Count
+              Select Your Count
             </label>
             <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-2">
               <span className="text-sm text-muted-foreground">Images</span>
