@@ -47,8 +47,6 @@ async function generateChunkAudio(
   contextId: string,
   isFirstChunk: boolean
 ): Promise<Uint8Array> {
-  console.log(`Generating audio for chunk (${chunk.split(/\s+/).length} words), isFirst: ${isFirstChunk}`);
-  
   const response = await fetch('https://api.cartesia.ai/tts/sse', {
     method: 'POST',
     headers: {
@@ -99,24 +97,26 @@ async function generateChunkAudio(
     // Process complete SSE events
     const events = buffer.split('\n\n');
     buffer = events.pop() || '';
-    
+
     for (const event of events) {
       if (!event.trim()) continue;
       
       const lines = event.split('\n');
+      let eventType = '';
       let eventData = '';
-      
+
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7);
+        } else if (line.startsWith('data: ')) {
           eventData = line.slice(6);
         }
       }
-      
-      if (eventData) {
+
+      if (eventType === 'chunk' && eventData) {
         try {
           const parsed = JSON.parse(eventData);
-          
-          if (parsed.type === 'chunk' && parsed.data) {
+          if (parsed.data) {
             // Decode base64 audio data
             const binaryString = atob(parsed.data);
             const bytes = new Uint8Array(binaryString.length);
@@ -124,16 +124,9 @@ async function generateChunkAudio(
               bytes[i] = binaryString.charCodeAt(i);
             }
             audioChunks.push(bytes);
-          } else if (parsed.type === 'done') {
-            console.log('Chunk generation complete');
-          } else if (parsed.error) {
-            throw new Error(parsed.error);
           }
         } catch (e) {
           // Skip invalid JSON
-          if (eventData !== '[DONE]') {
-            console.warn('Failed to parse SSE event:', eventData.substring(0, 100));
-          }
         }
       }
     }
@@ -148,33 +141,47 @@ async function generateChunkAudio(
     offset += chunk.length;
   }
 
-  console.log(`Chunk audio generated: ${combined.length} bytes`);
   return combined;
 }
 
-// Create WAV header for PCM data
+// Create WAV header for raw PCM data
 function createWavHeader(dataLength: number, sampleRate: number = 44100, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
   
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  
   // RIFF header
-  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint8(0, 0x52); // R
+  view.setUint8(1, 0x49); // I
+  view.setUint8(2, 0x46); // F
+  view.setUint8(3, 0x46); // F
   view.setUint32(4, 36 + dataLength, true); // File size - 8
-  view.setUint32(8, 0x57415645, false); // "WAVE"
+  view.setUint8(8, 0x57);  // W
+  view.setUint8(9, 0x41);  // A
+  view.setUint8(10, 0x56); // V
+  view.setUint8(11, 0x45); // E
   
   // fmt chunk
-  view.setUint32(12, 0x666d7420, false); // "fmt "
-  view.setUint32(16, 16, true); // Chunk size
-  view.setUint16(20, 1, true); // Audio format (PCM)
-  view.setUint16(22, channels, true); // Channels
-  view.setUint32(24, sampleRate, true); // Sample rate
-  view.setUint32(28, sampleRate * channels * bitsPerSample / 8, true); // Byte rate
-  view.setUint16(32, channels * bitsPerSample / 8, true); // Block align
-  view.setUint16(34, bitsPerSample, true); // Bits per sample
+  view.setUint8(12, 0x66); // f
+  view.setUint8(13, 0x6D); // m
+  view.setUint8(14, 0x74); // t
+  view.setUint8(15, 0x20); // (space)
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true);  // AudioFormat (1 = PCM)
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
   
   // data chunk
-  view.setUint32(36, 0x64617461, false); // "data"
-  view.setUint32(40, dataLength, true); // Data size
+  view.setUint8(36, 0x64); // d
+  view.setUint8(37, 0x61); // a
+  view.setUint8(38, 0x74); // t
+  view.setUint8(39, 0x61); // a
+  view.setUint32(40, dataLength, true);
   
   return new Uint8Array(header);
 }
@@ -185,7 +192,7 @@ serve(async (req) => {
   }
 
   try {
-    const { script, voiceId, projectId } = await req.json();
+    const { script, voiceId, projectId, stream } = await req.json();
     
     if (!script) {
       return new Response(
@@ -230,8 +237,116 @@ serve(async (req) => {
 
     // Generate unique context ID for this generation
     const contextId = `gen-${projectId || crypto.randomUUID()}`;
-    
-    // Generate audio for each chunk
+
+    if (stream) {
+      // Streaming mode - return progress updates
+      const encoder = new TextEncoder();
+      const responseStream = new ReadableStream({
+        async start(controller) {
+          try {
+            const audioChunks: Uint8Array[] = [];
+            
+            for (let i = 0; i < chunks.length; i++) {
+              const progress = Math.round(((i) / chunks.length) * 100);
+              console.log(`Processing chunk ${i + 1}/${chunks.length} (${progress}%)...`);
+              
+              // Send progress update
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                progress, 
+                currentChunk: i + 1, 
+                totalChunks: chunks.length 
+              })}\n\n`));
+              
+              const chunkAudio = await generateChunkAudio(
+                chunks[i], 
+                voiceId, 
+                CARTESIA_API_KEY,
+                contextId,
+                i === 0
+              );
+              audioChunks.push(chunkAudio);
+            }
+
+            // Combine all audio chunks
+            const totalPcmLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const combinedPcm = new Uint8Array(totalPcmLength);
+            let offset = 0;
+            for (const chunk of audioChunks) {
+              combinedPcm.set(chunk, offset);
+              offset += chunk.length;
+            }
+
+            console.log(`Combined PCM audio: ${combinedPcm.length} bytes`);
+
+            // Create WAV file with header
+            const wavHeader = createWavHeader(combinedPcm.length);
+            const wavFile = new Uint8Array(wavHeader.length + combinedPcm.length);
+            wavFile.set(wavHeader, 0);
+            wavFile.set(combinedPcm, wavHeader.length);
+
+            console.log(`Final WAV file: ${wavFile.length} bytes`);
+
+            // Upload to Supabase Storage
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            const supabase = createClient(supabaseUrl, supabaseKey);
+
+            const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('generated-assets')
+              .upload(fileName, wavFile, {
+                contentType: 'audio/wav',
+                upsert: true,
+              });
+
+            if (uploadError) {
+              console.error('Upload error:', uploadError);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                error: 'Failed to upload audio file' 
+              })}\n\n`));
+              controller.close();
+              return;
+            }
+
+            const { data: urlData } = supabase.storage
+              .from('generated-assets')
+              .getPublicUrl(fileName);
+
+            console.log('Audio uploaded successfully:', urlData.publicUrl);
+
+            // Calculate approximate duration
+            const durationSeconds = Math.round(combinedPcm.length / (44100 * 2));
+
+            // Send complete message
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'complete', 
+              audioUrl: urlData.publicUrl,
+              duration: durationSeconds,
+              size: wavFile.length,
+              totalChunks: chunks.length
+            })}\n\n`));
+
+          } catch (error) {
+            console.error('Streaming error:', error);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'error', 
+              error: error instanceof Error ? error.message : 'Audio generation failed' 
+            })}\n\n`));
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return new Response(responseStream, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+      });
+    }
+
+    // Non-streaming mode (original behavior)
     const audioChunks: Uint8Array[] = [];
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1}/${chunks.length}...`);

@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { transcript, template, title, model, stream } = await req.json();
+    const { transcript, template, title, model, stream, wordCount } = await req.json();
     
     if (!transcript) {
       return new Response(
@@ -38,15 +38,14 @@ Your task is to transform the provided transcript into a compelling, well-struct
 Guidelines:
 - Maintain historical accuracy
 - Use engaging, narrative language
-- Structure with clear scene breaks marked as [SCENE 1], [SCENE 2], etc.
-- Each scene should be 30-60 seconds when spoken
-- Add visual cues in brackets like [Show map of ancient Rome]
+- Write ONLY pure prose narration - no headers, no scene markers, no formatting
+- The output should be word-for-word narration that can be read aloud directly
 - Make it dramatic and captivating while staying educational
 - The tone should be authoritative yet accessible`;
 
-    // Estimate target word count based on transcript length
-    const transcriptWords = transcript.split(/\s+/).length;
-    const targetWords = Math.max(5000, Math.min(transcriptWords * 0.8, 20000));
+    // Use provided word count or estimate based on transcript
+    const targetWords = wordCount || 15000;
+    console.log(`Target word count: ${targetWords}`);
 
     if (stream) {
       // Streaming mode
@@ -72,7 +71,12 @@ Title: ${title || 'Historical Documentary'}
 Original Transcript:
 ${transcript}
 
-Create a compelling script with clear scene breaks, visual cues, and engaging narration. Target approximately ${targetWords} words.`
+CRITICAL REQUIREMENTS:
+1. Write EXACTLY ${targetWords} words (this is very important - the script must be approximately ${targetWords} words long)
+2. Output ONLY pure prose narration - NO headers, NO section markers, NO formatting markup, NO act labels
+3. The script should be continuous flowing text that can be read aloud word-for-word
+4. Do not include any scene markers like [SCENE 1] or visual cues in brackets
+5. Create compelling, engaging narration suitable for a 2-3 hour documentary`
             }
           ],
         }),
@@ -219,7 +223,11 @@ Title: ${title || 'Historical Documentary'}
 Original Transcript:
 ${transcript}
 
-Create a compelling script with clear scene breaks, visual cues, and engaging narration.`
+CRITICAL REQUIREMENTS:
+1. Write EXACTLY ${targetWords} words (this is very important)
+2. Output ONLY pure prose narration - NO headers, NO section markers, NO formatting markup
+3. The script should be continuous flowing text that can be read aloud word-for-word
+4. Create compelling, engaging narration suitable for a 2-3 hour documentary`
             }
           ],
         }),

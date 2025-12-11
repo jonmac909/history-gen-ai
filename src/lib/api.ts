@@ -34,6 +34,12 @@ export interface CaptionsResult {
   error?: string;
 }
 
+export interface ImageGenerationResult {
+  success: boolean;
+  images?: string[];
+  error?: string;
+}
+
 export interface GeneratedAssets {
   projectId: string;
   script: string;
@@ -74,6 +80,7 @@ export async function rewriteScriptStreaming(
   template: string, 
   title: string,
   aiModel: string,
+  wordCount: number,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -86,7 +93,7 @@ export async function rewriteScriptStreaming(
       'Authorization': `Bearer ${supabaseKey}`,
       'apikey': supabaseKey,
     },
-    body: JSON.stringify({ transcript, template, title, model: aiModel, stream: true })
+    body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true })
   });
 
   if (!response.ok) {
@@ -169,6 +176,109 @@ export async function generateAudio(script: string, voiceId: string, projectId: 
 
   if (error) {
     console.error('Audio error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
+export async function generateAudioStreaming(
+  script: string, 
+  voiceId: string, 
+  projectId: string,
+  onProgress: (progress: number, currentChunk: number, totalChunks: number) => void
+): Promise<AudioResult> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-audio`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseKey}`,
+      'apikey': supabaseKey,
+    },
+    body: JSON.stringify({ script, voiceId, projectId, stream: true })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Audio streaming error:', response.status, errorText);
+    return { success: false, error: `Failed to generate audio: ${response.status}` };
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return { success: false, error: 'No response body' };
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: AudioResult = { success: false, error: 'No response received' };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Process complete SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+        
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+            
+            if (parsed.type === 'progress') {
+              onProgress(parsed.progress, parsed.currentChunk, parsed.totalChunks);
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: true,
+                audioUrl: parsed.audioUrl,
+                duration: parsed.duration,
+                size: parsed.size
+              };
+              onProgress(100, parsed.totalChunks, parsed.totalChunks);
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'Audio generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+  } catch (streamError) {
+    console.error('Stream reading error:', streamError);
+    return { 
+      success: false, 
+      error: streamError instanceof Error ? streamError.message : 'Stream reading failed' 
+    };
+  }
+
+  return result;
+}
+
+export async function generateImages(
+  prompts: string[], 
+  quality: string, 
+  aspectRatio: string = "16:9"
+): Promise<ImageGenerationResult> {
+  const { data, error } = await supabase.functions.invoke('generate-images', {
+    body: { prompts, quality, aspectRatio }
+  });
+
+  if (error) {
+    console.error('Image generation error:', error);
     return { success: false, error: error.message };
   }
 

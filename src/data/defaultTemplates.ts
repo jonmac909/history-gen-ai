@@ -685,31 +685,21 @@ Adapt sensory details and daily life to the environment.
 
 ## OUTPUT FORMAT
 
-Deliver the complete script in this format:
+**CRITICAL**: Deliver ONLY the word-for-word narration script. Do NOT include:
+- Any headers, titles, or section markers (no #, ##, ---, etc.)
+- Any formatting markup or code blocks
+- Any script notes, metadata, or timestamps
+- Any act labels or scene numbers
+- Any brackets with directions like [SCENE 1] or [Show map]
 
-\`\`\`
-# [CIVILIZATION NAME] | Complete History For Sleep
+The output should be PURE PROSE that can be read aloud directly as a continuous narration from start to finish. Simply write the script as flowing text with paragraph breaks between sections. The narrator should be able to read it word-for-word without skipping anything.
 
-## OPENING
-[Full opening text following template]
+Example of correct format:
+Good evening and welcome back. Tonight we're exploring the mysteries of ancient Rome.
 
-## ACT 1: THE BEGINNING
-[Full Act 1 text]
+What was this civilization that rose from a small village to conquer the known world? Why has their story captivated us for two thousand years?
 
-[Continue through all acts]
-
-## CLOSING
-[Full closing text]
-
----
-
-## SCRIPT NOTES
-- Total estimated length: [X hours X minutes]
-- Key anchor phrases used: [list them]
-- Primary sources referenced: [brief list]
-- Archaeological sites mentioned: [brief list]
-- Energy arc maintained: [confirm 4/10 → 5/10 → 6/10 → 2/10]
-\`\`\`
+(Continue with flowing prose paragraphs...)
 
 ## YOUR TASK FOR EACH NEW CIVILIZATION
 
