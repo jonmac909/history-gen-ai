@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { fetchFile } from '@ffmpeg/util';
 
 interface ImageTiming {
   imageUrl: string;
@@ -36,27 +36,38 @@ export function useVideoGeneration() {
     });
 
     ffmpeg.on('progress', ({ progress: p }) => {
-      setProgress(Math.round(p * 100));
+      // Map FFmpeg progress (0-1) to 40-90% of our total progress
+      setProgress(40 + Math.round(p * 50));
     });
 
-    setStatus('Loading FFmpeg...');
+    setStatus('Downloading FFmpeg core...');
     setProgress(5);
     
-    // Use single-threaded version directly - more compatible across browsers
-    // Multi-threaded requires SharedArrayBuffer which needs specific CORS headers
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
     
     try {
-      const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+      console.log('[FFmpeg] Fetching core JS...');
+      const coreResponse = await fetch(`${baseURL}/ffmpeg-core.js`);
+      const coreBlob = new Blob([await coreResponse.text()], { type: 'text/javascript' });
+      const coreURL = URL.createObjectURL(coreBlob);
       setProgress(10);
-      const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
-      setProgress(15);
       
+      setStatus('Downloading FFmpeg WASM (this may take a moment)...');
+      console.log('[FFmpeg] Fetching WASM...');
+      const wasmResponse = await fetch(`${baseURL}/ffmpeg-core.wasm`);
+      const wasmBlob = new Blob([await wasmResponse.arrayBuffer()], { type: 'application/wasm' });
+      const wasmURL = URL.createObjectURL(wasmBlob);
+      setProgress(25);
+      
+      setStatus('Initializing FFmpeg...');
+      console.log('[FFmpeg] Loading with blob URLs...');
       await ffmpeg.load({ coreURL, wasmURL });
-      setProgress(20);
+      setProgress(30);
+      
+      console.log('[FFmpeg] Loaded successfully!');
     } catch (e) {
       console.error('FFmpeg load failed:', e);
-      throw new Error('Failed to load FFmpeg. Please try again.');
+      throw new Error('Failed to load FFmpeg: ' + (e instanceof Error ? e.message : 'Unknown error'));
     }
 
     loadedRef.current = true;
