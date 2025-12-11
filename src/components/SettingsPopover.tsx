@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Settings, Minus, Plus } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -58,8 +60,8 @@ export function SettingsPopover({
   };
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
@@ -71,22 +73,18 @@ export function SettingsPopover({
         >
           <Settings className="w-5 h-5" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent 
-        className="w-80 p-6" 
-        align="center"
-        side="bottom"
-        sideOffset={8}
-      >
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-center gap-2 text-primary">
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-center gap-2 text-primary">
             <Settings className="w-4 h-4" />
             <span className="text-sm font-semibold tracking-wide uppercase">
               Generation Settings
             </span>
-          </div>
+          </DialogTitle>
+        </DialogHeader>
 
+        <div className="space-y-6 py-4">
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -172,7 +170,6 @@ export function SettingsPopover({
             </div>
           </div>
 
-
           {/* Quality */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -224,7 +221,7 @@ export function SettingsPopover({
             </div>
           </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }
