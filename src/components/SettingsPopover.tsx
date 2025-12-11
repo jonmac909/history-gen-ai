@@ -88,7 +88,7 @@ export function SettingsPopover({
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Script Template
+              Choose Your Script
             </label>
             <Select
               value={settings.scriptTemplate}
@@ -110,7 +110,7 @@ export function SettingsPopover({
           {/* Voice */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Voice
+              Choose Your Voice
             </label>
             <Select
               value={settings.voice}
