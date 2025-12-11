@@ -52,41 +52,18 @@ async function createImageTask(apiKey: string, prompt: string, quality: string, 
 async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 150): Promise<string[]> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      // Use POST with taskId in body as per Kie API documentation
-      const response = await fetch(`${KIE_API_URL}/queryTask`, {
-        method: 'POST',
+      // Use the correct endpoint: /api/v1/jobs/recordInfo with taskId as query param
+      const response = await fetch(`${KIE_API_URL}/recordInfo?taskId=${taskId}`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ taskId }),
       });
 
       const responseText = await response.text();
       
       if (!response.ok) {
         console.error(`Poll error ${response.status}: ${responseText}`);
-        // If we get 404, try with GET as fallback
-        if (response.status === 404) {
-          const getResponse = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-            },
-          });
-          if (getResponse.ok) {
-            const getData = await getResponse.json();
-            if (getData.code === 200 && getData.data?.state === 'success') {
-              try {
-                const resultJson = JSON.parse(getData.data.resultJson);
-                return resultJson.resultUrls || [];
-              } catch (e) {
-                console.error('Failed to parse resultJson:', getData.data.resultJson);
-                return [];
-              }
-            }
-          }
-        }
         await new Promise(resolve => setTimeout(resolve, 2000));
         continue;
       }
