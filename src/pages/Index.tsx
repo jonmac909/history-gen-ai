@@ -14,16 +14,10 @@ import {
   generateCaptions,
   saveScriptToStorage 
 } from "@/lib/api";
+import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "results";
-
-// Default script templates
-const defaultTemplates: ScriptTemplate[] = [
-  { id: "template-a", template: "" },
-  { id: "template-b", template: "" },
-  { id: "template-c", template: "" },
-];
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
