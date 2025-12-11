@@ -1,7 +1,6 @@
-import { FileText, Mic, Subtitles, Download, Play, RefreshCw, Layers, ExternalLink } from "lucide-react";
+import { FileText, Mic, Download, RefreshCw, Layers, ExternalLink, Image, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-import { downloadFile, downloadText } from "@/lib/api";
 
 export interface GeneratedAsset {
   id: string;
@@ -20,34 +19,76 @@ interface ProjectResultsProps {
   audioUrl?: string;
 }
 
+// Download file from URL
+const downloadFromUrl = async (url: string, filename: string) => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw error;
+  }
+};
+
+// Download text content as file
+const downloadTextContent = (content: string, filename: string, mimeType: string = 'text/plain') => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
 export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl }: ProjectResultsProps) {
-  const handleDownload = (asset: GeneratedAsset) => {
-    if (asset.url) {
-      downloadFile(asset.url, `${asset.id}.${asset.type.toLowerCase()}`);
+  const handleDownload = async (asset: GeneratedAsset) => {
+    try {
+      if (asset.content) {
+        // If we have content, download it directly as text
+        const extension = asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
+        const mimeType = asset.type === 'Markdown' ? 'text/markdown' : 
+                         asset.type === 'SRT' ? 'text/plain' : 'text/plain';
+        downloadTextContent(asset.content, `${asset.name.replace(/\s+/g, '_')}.${extension}`, mimeType);
+        toast({
+          title: "Download Complete",
+          description: `${asset.name} downloaded successfully.`,
+        });
+      } else if (asset.url) {
+        // Download from URL
+        toast({
+          title: "Downloading...",
+          description: `Downloading ${asset.name}...`,
+        });
+        const extension = asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
+        await downloadFromUrl(asset.url, `${asset.name.replace(/\s+/g, '_')}.${extension}`);
+        toast({
+          title: "Download Complete",
+          description: `${asset.name} downloaded successfully.`,
+        });
+      } else {
+        toast({
+          title: "Download Unavailable",
+          description: "This asset is not available for download yet.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
       toast({
-        title: "Download Started",
-        description: `Downloading ${asset.name}...`,
-      });
-    } else if (asset.content) {
-      const extension = asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
-      downloadText(asset.content, `${asset.id}.${extension}`, 
-        asset.type === 'Markdown' ? 'text/markdown' : 'text/plain');
-      toast({
-        title: "Download Started",
-        description: `Downloading ${asset.name}...`,
-      });
-    } else {
-      toast({
-        title: "Download Unavailable",
-        description: "This asset is not available for download yet.",
+        title: "Download Failed",
+        description: "Failed to download the file. Please try again.",
         variant: "destructive",
       });
-    }
-  };
-
-  const handlePlayAudio = () => {
-    if (audioUrl) {
-      window.open(audioUrl, '_blank');
     }
   };
 
@@ -67,36 +108,19 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl }: Pr
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Video/Audio Preview */}
+        {/* Audio Preview - Clean player only */}
         <div className="space-y-4">
-          <div className="relative bg-black rounded-xl overflow-hidden aspect-video">
-            {/* Audio player placeholder with play button */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-              {audioUrl ? (
-                <>
-                  <button 
-                    onClick={handlePlayAudio}
-                    className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors"
-                  >
-                    <Play className="w-8 h-8 text-white ml-1" fill="white" />
-                  </button>
-                  <audio controls className="w-full max-w-md px-4">
-                    <source src={audioUrl} type="audio/mpeg" />
-                    Your browser does not support the audio element.
-                  </audio>
-                </>
-              ) : (
-                <div className="text-white/60 text-center">
-                  <Play className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No audio preview available</p>
-                </div>
-              )}
-            </div>
-            
-            {/* Source URL bar */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80">
-              <p className="text-white text-sm truncate">{sourceUrl}</p>
-            </div>
+          <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+            {audioUrl ? (
+              <audio controls className="w-full max-w-md px-8">
+                <source src={audioUrl} type="audio/mpeg" />
+                Your browser does not support the audio element.
+              </audio>
+            ) : (
+              <div className="text-white/60 text-center">
+                <p>No audio preview available</p>
+              </div>
+            )}
           </div>
         </div>
 
