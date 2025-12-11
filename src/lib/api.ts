@@ -381,6 +381,40 @@ export async function generateCaptions(script: string, audioDuration: number, pr
   return data;
 }
 
+export interface VideoResult {
+  success: boolean;
+  error?: string;
+  edlUrl?: string;
+  edlContent?: string;
+  csvUrl?: string;
+  csvContent?: string;
+  totalDuration?: number;
+  totalDurationFormatted?: string;
+  segments?: {
+    imageUrl: string;
+    index: number;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    startTimeFormatted: string;
+    endTimeFormatted: string;
+    durationFormatted: string;
+  }[];
+}
+
+export async function generateVideoTimeline(imageUrls: string[], srtContent: string, projectId: string): Promise<VideoResult> {
+  const { data, error } = await supabase.functions.invoke('generate-video', {
+    body: { imageUrls, srtContent, projectId }
+  });
+
+  if (error) {
+    console.error('Video timeline error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
 export async function saveScriptToStorage(script: string, projectId: string): Promise<string | null> {
   const fileName = `${projectId}/script.md`;
   
