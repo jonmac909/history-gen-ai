@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, X, Edit3 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, X, Edit3, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,11 +27,30 @@ export function ScriptReviewModal({
   const [editedScript, setEditedScript] = useState(script);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Update editedScript when script prop changes
+  useEffect(() => {
+    if (script) {
+      setEditedScript(script);
+    }
+  }, [script]);
+
   const wordCount = editedScript.split(/\s+/).filter(Boolean).length;
 
   const handleConfirm = () => {
     onConfirm(editedScript);
   };
+
+  // Show loading if script is empty
+  if (isOpen && !script) {
+    return (
+      <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-muted-foreground mt-4">Loading script...</p>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>

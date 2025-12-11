@@ -146,36 +146,16 @@ const Index = () => {
       setVideoTitle(transcriptResult.title || "History Documentary");
       updateStep("transcript", "completed");
 
-      // Step 2: Rewrite script with progress simulation
-      updateStep("script", "active", "0%");
-      
-      // Simulate progress while waiting for API
-      const progressInterval = setInterval(() => {
-        setProcessingSteps(prev => {
-          const scriptStep = prev.find(s => s.id === "script");
-          if (scriptStep?.status === "active") {
-            const currentProgress = parseInt(scriptStep.sublabel || "0") || 0;
-            if (currentProgress < 90) {
-              return prev.map(step => 
-                step.id === "script" 
-                  ? { ...step, sublabel: `${Math.min(currentProgress + Math.random() * 15, 90).toFixed(0)}%` }
-                  : step
-              );
-            }
-          }
-          return prev;
-        });
-      }, 2000);
+      // Step 2: Rewrite script (no fake progress - just show as active)
+      updateStep("script", "active", "Processing with Claude Opus...");
 
       const scriptResult = await rewriteScript(transcript, currentTemplate.template, transcriptResult.title || "History Documentary");
-      
-      clearInterval(progressInterval);
       
       if (!scriptResult.success || !scriptResult.script) {
         throw new Error(scriptResult.error || "Failed to rewrite script");
       }
       
-      updateStep("script", "completed", "100%");
+      updateStep("script", "completed");
       
       // Store script for review
       setPendingScript(scriptResult.script);
