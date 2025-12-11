@@ -40,23 +40,23 @@ export function useVideoGeneration() {
     });
 
     setStatus('Loading FFmpeg...');
+    setProgress(5);
     
-    // Load FFmpeg WASM from CDN - use esm version for better browser compatibility
-    const baseURL = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm';
+    // Use single-threaded version directly - more compatible across browsers
+    // Multi-threaded requires SharedArrayBuffer which needs specific CORS headers
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    
     try {
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
-      });
+      const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+      setProgress(10);
+      const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+      setProgress(15);
+      
+      await ffmpeg.load({ coreURL, wasmURL });
+      setProgress(20);
     } catch (e) {
-      console.warn('Multi-threaded FFmpeg failed, trying single-threaded...', e);
-      // Fallback to single-threaded version
-      const stBaseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${stBaseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${stBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
+      console.error('FFmpeg load failed:', e);
+      throw new Error('Failed to load FFmpeg. Please try again.');
     }
 
     loadedRef.current = true;
