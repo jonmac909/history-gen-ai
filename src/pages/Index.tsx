@@ -11,7 +11,8 @@ import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { 
   getYouTubeTranscript, 
   rewriteScriptStreaming, 
-  generateAudio, 
+  generateAudioStreaming,
+  generateImages,
   generateCaptions,
   saveScriptToStorage 
 } from "@/lib/api";
@@ -19,6 +20,25 @@ import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review" | "results";
+
+// Generate image prompts from script content
+function generateImagePrompts(script: string, imageCount: number, stylePrompt: string): string[] {
+  // Split script into roughly equal sections
+  const paragraphs = script.split(/\n\n+/).filter(p => p.trim().length > 50);
+  const sectionSize = Math.ceil(paragraphs.length / imageCount);
+  
+  const prompts: string[] = [];
+  for (let i = 0; i < imageCount && i * sectionSize < paragraphs.length; i++) {
+    const startIdx = i * sectionSize;
+    const section = paragraphs.slice(startIdx, startIdx + sectionSize).join(' ');
+    
+    // Extract key themes/subjects from the section (first 200 chars as context)
+    const context = section.substring(0, 200).replace(/\n/g, ' ');
+    prompts.push(`${stylePrompt}. Scene: ${context}`);
+  }
+  
+  return prompts;
+}
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -155,6 +175,7 @@ const Index = () => {
         currentTemplate.template, 
         transcriptResult.title || "History Documentary",
         settings.aiModel,
+        settings.wordCount,
         (progress, wordCount) => {
           updateStep("script", "active", `${progress}% (${wordCount.toLocaleString()} words)`);
         }
@@ -207,26 +228,38 @@ const Index = () => {
       // Save script to storage
       const scriptUrl = await saveScriptToStorage(confirmedScript, projectId);
 
-      // Step 1: Generate images (placeholder for now)
+      // Step 1: Generate images
       updateStep("images", "active", "0%");
       
-      // Simulate image generation progress
-      for (let i = 0; i <= 100; i += 20) {
-        updateStep("images", "active", `${i}%`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Generate image prompts based on script sections
+      const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
+      console.log(`Generating ${imagePrompts.length} images...`);
+      
+      const imageResult = await generateImages(imagePrompts, settings.quality);
+      
+      if (!imageResult.success) {
+        console.error('Image generation failed:', imageResult.error);
+        // Continue anyway, images are not critical
       }
       updateStep("images", "completed", "100%");
 
-      // Step 2: Generate audio
-      updateStep("audio", "active");
-      const audioRes = await generateAudio(confirmedScript, selectedVoice.voiceId, projectId);
+      // Step 2: Generate audio with streaming progress
+      updateStep("audio", "active", "0%");
+      const audioRes = await generateAudioStreaming(
+        confirmedScript, 
+        selectedVoice.voiceId, 
+        projectId,
+        (progress, currentChunk, totalChunks) => {
+          updateStep("audio", "active", `${progress}% (chunk ${currentChunk}/${totalChunks})`);
+        }
+      );
       
       if (!audioRes.success) {
         throw new Error(audioRes.error || "Failed to generate audio");
       }
       
       audioResult = audioRes;
-      updateStep("audio", "completed");
+      updateStep("audio", "completed", "100%");
 
       // Step 3: Generate captions
       updateStep("captions", "active");
