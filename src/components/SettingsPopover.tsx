@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, ChevronDown, Minus, Plus } from "lucide-react";
+import { Settings, Minus, Plus } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -13,40 +13,45 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import type { ScriptTemplate, CartesiaVoice } from "@/components/ApiKeysModal";
 
 export interface GenerationSettings {
   scriptTemplate: string;
   voice: string;
-  imageModel: string;
   imageCount: number;
+  aspectRatio: string;
+  quality: string;
 }
 
 interface SettingsPopoverProps {
   settings: GenerationSettings;
   onSettingsChange: (settings: GenerationSettings) => void;
+  scriptTemplates: ScriptTemplate[];
+  cartesiaVoices: CartesiaVoice[];
 }
 
-const scriptTemplates = [
-  { value: "dramatic", label: "Template A: Dramatic Storytelling", description: "Focus on narrative arc and suspense" },
-  { value: "educational", label: "Template B: Educational", description: "Focus on facts and learning" },
-  { value: "documentary", label: "Template C: Documentary", description: "Neutral, informative tone" },
+const aspectRatios = [
+  { value: "1:1", label: "1:1 (Square)" },
+  { value: "16:9", label: "16:9 (Landscape)" },
+  { value: "9:16", label: "9:16 (Portrait)" },
+  { value: "4:3", label: "4:3" },
+  { value: "3:4", label: "3:4" },
+  { value: "2:3", label: "2:3" },
+  { value: "3:2", label: "3:2" },
+  { value: "21:9", label: "21:9 (Ultrawide)" },
 ];
 
-const voices = [
-  { value: "british-male", label: "British Historian (Male)" },
-  { value: "british-female", label: "British Historian (Female)" },
-  { value: "american-male", label: "American Narrator (Male)" },
-  { value: "american-female", label: "American Narrator (Female)" },
+const qualityOptions = [
+  { value: "basic", label: "Basic (2K)" },
+  { value: "high", label: "High (4K)" },
 ];
 
-const imageModels = [
-  { value: "historical-v2", label: "Historical Realism v2" },
-  { value: "historical-v1", label: "Historical Realism v1" },
-  { value: "artistic", label: "Artistic Interpretation" },
-  { value: "cinematic", label: "Cinematic Style" },
-];
-
-export function SettingsPopover({ settings, onSettingsChange }: SettingsPopoverProps) {
+export function SettingsPopover({ 
+  settings, 
+  onSettingsChange, 
+  scriptTemplates,
+  cartesiaVoices,
+}: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const updateSetting = <K extends keyof GenerationSettings>(
@@ -56,7 +61,7 @@ export function SettingsPopover({ settings, onSettingsChange }: SettingsPopoverP
     onSettingsChange({ ...settings, [key]: value });
   };
 
-  const currentTemplate = scriptTemplates.find(t => t.value === settings.scriptTemplate);
+  const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -97,17 +102,23 @@ export function SettingsPopover({ settings, onSettingsChange }: SettingsPopoverP
               onValueChange={(value) => updateSetting("scriptTemplate", value)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue placeholder="Select a template" />
               </SelectTrigger>
               <SelectContent>
-                {scriptTemplates.map((template) => (
-                  <SelectItem key={template.value} value={template.value}>
-                    {template.label}
+                {scriptTemplates.length > 0 ? (
+                  scriptTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name || `Template ${template.id}`}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>
+                    No templates configured
                   </SelectItem>
-                ))}
+                )}
               </SelectContent>
             </Select>
-            {currentTemplate && (
+            {currentTemplate?.description && (
               <p className="text-xs text-muted-foreground text-center">
                 {currentTemplate.description}
               </p>
@@ -124,34 +135,72 @@ export function SettingsPopover({ settings, onSettingsChange }: SettingsPopoverP
               onValueChange={(value) => updateSetting("voice", value)}
             >
               <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a voice" />
+              </SelectTrigger>
+              <SelectContent>
+                {cartesiaVoices.length > 0 ? (
+                  cartesiaVoices.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.voiceId}>
+                      {voice.name || voice.voiceId}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>
+                    No voices configured
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Image Model - Fixed to Seedream 4.5 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Image Model (Kie.ai)
+            </label>
+            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
+              Seedream 4.5
+            </div>
+          </div>
+
+          {/* Aspect Ratio */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Aspect Ratio
+            </label>
+            <Select
+              value={settings.aspectRatio}
+              onValueChange={(value) => updateSetting("aspectRatio", value)}
+            >
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {voices.map((voice) => (
-                  <SelectItem key={voice.value} value={voice.value}>
-                    {voice.label}
+                {aspectRatios.map((ratio) => (
+                  <SelectItem key={ratio.value} value={ratio.value}>
+                    {ratio.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Image Model */}
+          {/* Quality */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Image Model (kie.ai)
+              Image Quality
             </label>
             <Select
-              value={settings.imageModel}
-              onValueChange={(value) => updateSetting("imageModel", value)}
+              value={settings.quality}
+              onValueChange={(value) => updateSetting("quality", value)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {imageModels.map((model) => (
-                  <SelectItem key={model.value} value={model.value}>
-                    {model.label}
+                {qualityOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -164,7 +213,7 @@ export function SettingsPopover({ settings, onSettingsChange }: SettingsPopoverP
               Image Count
             </label>
             <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-2">
-              <span className="text-sm text-muted-foreground">Image Count</span>
+              <span className="text-sm text-muted-foreground">Images</span>
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
