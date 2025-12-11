@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Youtube, FileText, Sparkles, Scroll } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,21 +6,29 @@ import { toast } from "@/hooks/use-toast";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
 import { StatusIndicator } from "@/components/StatusIndicator";
-import { ApiKeysModal, type ApiKeys } from "@/components/ApiKeysModal";
+import { ApiKeysModal, type ApiKeys, type ScriptTemplate, type CartesiaVoice } from "@/components/ApiKeysModal";
 import { ProjectResults } from "@/components/ProjectResults";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "results";
+
+// Default script templates
+const defaultTemplates: ScriptTemplate[] = [
+  { id: "template-a", name: "", description: "", template: "" },
+  { id: "template-b", name: "", description: "", template: "" },
+  { id: "template-c", name: "", description: "", template: "" },
+];
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [viewState, setViewState] = useState<ViewState>("create");
   const [settings, setSettings] = useState<GenerationSettings>({
-    scriptTemplate: "dramatic",
-    voice: "british-male",
-    imageModel: "historical-v2",
+    scriptTemplate: "template-a",
+    voice: "",
     imageCount: 10,
+    aspectRatio: "16:9",
+    quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
@@ -29,6 +37,8 @@ const Index = () => {
     cartesia: "",
     kie: "",
   });
+  const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
+  const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
 
   // Check if API keys are configured
@@ -46,10 +56,14 @@ const Index = () => {
 
   const handleSaveApiKeys = (keys: ApiKeys) => {
     setApiKeys(keys);
-    toast({
-      title: "API Keys Saved",
-      description: "Your API keys have been configured.",
-    });
+  };
+
+  const handleSaveTemplates = (templates: ScriptTemplate[]) => {
+    setScriptTemplates(templates);
+  };
+
+  const handleSaveVoices = (voices: CartesiaVoice[]) => {
+    setCartesiaVoices(voices);
   };
 
   const handleGenerate = async () => {
@@ -76,6 +90,26 @@ const Index = () => {
       }
     }
 
+    // Check for required configuration
+    const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
+    if (!currentTemplate?.template) {
+      toast({
+        title: "Template Required",
+        description: "Please configure a script template in Settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!settings.voice || cartesiaVoices.length === 0) {
+      toast({
+        title: "Voice Required",
+        description: "Please add and select a Cartesia voice in Settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSourceUrl(inputValue);
 
     // Initialize processing steps
@@ -85,9 +119,7 @@ const Index = () => {
       { 
         id: "images", 
         label: "Generating Images (Kie.ai)", 
-        sublabel: `Creating ${settings.imageCount} images using ${
-          settings.imageModel === "historical-v2" ? "Historical Realism v2" : settings.imageModel
-        }...`,
+        sublabel: `Creating ${settings.imageCount} images using Seedream 4.5...`,
         status: "pending" 
       },
       { id: "video", label: "Assembling Scene Videos", status: "pending" },
@@ -139,7 +171,14 @@ const Index = () => {
             </span>
           </div>
           
-          <ApiKeysModal apiKeys={apiKeys} onSave={handleSaveApiKeys} />
+          <ApiKeysModal 
+            apiKeys={apiKeys} 
+            onSaveApiKeys={handleSaveApiKeys}
+            scriptTemplates={scriptTemplates}
+            onSaveTemplates={handleSaveTemplates}
+            cartesiaVoices={cartesiaVoices}
+            onSaveVoices={handleSaveVoices}
+          />
         </div>
       </header>
 
@@ -183,7 +222,12 @@ const Index = () => {
                 className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
               />
               
-              <SettingsPopover settings={settings} onSettingsChange={setSettings} />
+              <SettingsPopover 
+                settings={settings} 
+                onSettingsChange={setSettings}
+                scriptTemplates={scriptTemplates}
+                cartesiaVoices={cartesiaVoices}
+              />
               
               <Button
                 onClick={handleGenerate}
