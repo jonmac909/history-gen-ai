@@ -47,7 +47,7 @@ async function generateChunkAudioBytes(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model_id: 'sonic-2024-10-01',
+      model_id: 'sonic-3',
       transcript: chunk,
       voice: {
         mode: 'id',
