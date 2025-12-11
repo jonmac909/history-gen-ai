@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Key, Eye, EyeOff, FileText, Plus, Trash2, Image } from "lucide-react";
+import { Settings, FileText, Plus, Trash2, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,13 +12,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-export interface ApiKeys {
-  google: string;
-  claude: string;
-  cartesia: string;
-  kie: string;
-}
 
 export interface ScriptTemplate {
   id: string;
@@ -33,9 +26,7 @@ export interface CartesiaVoice {
   voiceId: string;
 }
 
-interface ApiKeysModalProps {
-  apiKeys: ApiKeys;
-  onSaveApiKeys: (keys: ApiKeys) => void;
+interface ConfigModalProps {
   scriptTemplates: ScriptTemplate[];
   onSaveTemplates: (templates: ScriptTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
@@ -44,42 +35,24 @@ interface ApiKeysModalProps {
   onSaveImageStylePrompt: (prompt: string) => void;
 }
 
-export function ApiKeysModal({ 
-  apiKeys, 
-  onSaveApiKeys,
+export function ConfigModal({ 
   scriptTemplates,
   onSaveTemplates,
   cartesiaVoices,
   onSaveVoices,
   imageStylePrompt,
   onSaveImageStylePrompt,
-}: ApiKeysModalProps) {
+}: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [keys, setKeys] = useState<ApiKeys>(apiKeys);
   const [templates, setTemplates] = useState<ScriptTemplate[]>(scriptTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
   const [stylePrompt, setStylePrompt] = useState(imageStylePrompt);
-  const [showKeys, setShowKeys] = useState({
-    google: false,
-    claude: false,
-    cartesia: false,
-    kie: false,
-  });
 
   const handleSave = () => {
-    onSaveApiKeys(keys);
     onSaveTemplates(templates);
     onSaveVoices(voices);
     onSaveImageStylePrompt(stylePrompt);
     setIsOpen(false);
-  };
-
-  const updateKey = (key: keyof ApiKeys, value: string) => {
-    setKeys(prev => ({ ...prev, [key]: value }));
-  };
-
-  const toggleShowKey = (key: keyof typeof showKeys) => {
-    setShowKeys(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const updateTemplate = (id: string, field: keyof ScriptTemplate, value: string) => {
@@ -107,66 +80,28 @@ export function ApiKeysModal({
     setVoices(prev => prev.filter(v => v.id !== id));
   };
 
-  const keyFields: { id: keyof ApiKeys; label: string }[] = [
-    { id: "google", label: "Google API Key" },
-    { id: "claude", label: "Claude API Key" },
-    { id: "cartesia", label: "Cartesia API Key" },
-    { id: "kie", label: "Kie.ai API Key" },
-  ];
-
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
-          <Key className="w-4 h-4" />
+          <Settings className="w-4 h-4" />
           <span className="hidden sm:inline">Settings</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Key className="w-5 h-5 text-primary" />
+            <Settings className="w-5 h-5 text-primary" />
             Configuration
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="api-keys" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="api-keys">API Keys</TabsTrigger>
+        <Tabs defaultValue="templates" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="templates">Script Templates</TabsTrigger>
             <TabsTrigger value="voices">Cartesia Voices</TabsTrigger>
             <TabsTrigger value="image-style">Image Style</TabsTrigger>
           </TabsList>
-
-          {/* API Keys Tab */}
-          <TabsContent value="api-keys" className="space-y-4 py-4">
-            {keyFields.map((field) => (
-              <div key={field.id} className="space-y-2">
-                <Label htmlFor={field.id}>{field.label}</Label>
-                <div className="relative">
-                  <Input
-                    id={field.id}
-                    type={showKeys[field.id] ? "text" : "password"}
-                    value={keys[field.id]}
-                    onChange={(e) => updateKey(field.id, e.target.value)}
-                    placeholder={`Enter your ${field.label}...`}
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey(field.id)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showKeys[field.id] ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </TabsContent>
 
           {/* Script Templates Tab */}
           <TabsContent value="templates" className="space-y-6 py-4">

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import type { ScriptTemplate, CartesiaVoice } from "@/components/ApiKeysModal";
+import type { ScriptTemplate, CartesiaVoice } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   scriptTemplate: string;
