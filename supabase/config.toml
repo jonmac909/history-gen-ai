@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.generate-captions]
 verify_jwt = false
+
+[functions.generate-images]
+verify_jwt = false
