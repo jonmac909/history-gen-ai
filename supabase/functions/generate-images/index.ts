@@ -11,6 +11,7 @@ interface GenerateImagesRequest {
   prompts: string[];
   quality: string;
   aspectRatio?: string;
+  stream?: boolean;
 }
 
 async function createImageTask(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
@@ -48,9 +49,7 @@ async function createImageTask(apiKey: string, prompt: string, quality: string, 
   return data.data.taskId;
 }
 
-async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120): Promise<string[]> {
-  console.log(`Polling for task result: ${taskId}`);
-  
+async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 120): Promise<string[]> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
@@ -61,12 +60,10 @@ async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120)
         },
       });
 
-      // Log full response for debugging
       const responseText = await response.text();
       
       if (!response.ok) {
         console.error(`Poll error ${response.status}: ${responseText}`);
-        // On 404, the task may not exist yet - wait and retry
         await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
@@ -80,8 +77,6 @@ async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120)
         continue;
       }
 
-      console.log(`Poll attempt ${attempt + 1}, code: ${data.code}, state:`, data.data?.state);
-
       if (data.code === 200 && data.data?.state === 'success') {
         try {
           const resultJson = JSON.parse(data.data.resultJson);
@@ -92,11 +87,8 @@ async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120)
         }
       } else if (data.data?.state === 'fail') {
         throw new Error(data.data.failMsg || 'Image generation failed');
-      } else if (data.code !== 200) {
-        console.log(`Non-200 code: ${data.code}, message: ${data.message}`);
       }
 
-      // Wait 3 seconds before next poll (increased from 2s)
       await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (fetchError) {
       console.error('Fetch error during poll:', fetchError);
@@ -104,7 +96,7 @@ async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120)
     }
   }
 
-  throw new Error('Image generation timed out after max attempts');
+  throw new Error('Image generation timed out');
 }
 
 serve(async (req) => {
@@ -118,36 +110,113 @@ serve(async (req) => {
       throw new Error('KIE_API_KEY not configured');
     }
 
-    const { prompts, quality, aspectRatio = "16:9" }: GenerateImagesRequest = await req.json();
+    const { prompts, quality, aspectRatio = "16:9", stream = false }: GenerateImagesRequest = await req.json();
 
     if (!prompts || prompts.length === 0) {
       throw new Error('No prompts provided');
     }
 
-    console.log(`Generating ${prompts.length} images with quality: ${quality}`);
+    console.log(`Generating ${prompts.length} images with quality: ${quality}, stream: ${stream}`);
 
-    // Create tasks for all prompts
-    const taskIds = await Promise.all(
-      prompts.map(prompt => createImageTask(apiKey, prompt, quality, aspectRatio))
-    );
+    if (stream) {
+      // Streaming mode - report progress as each image completes
+      const encoder = new TextEncoder();
+      
+      const responseStream = new ReadableStream({
+        async start(controller) {
+          const allImages: string[] = [];
+          let completed = 0;
+          const total = prompts.length;
+          
+          // Send initial progress
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            type: 'progress', 
+            completed: 0, 
+            total,
+            message: `Starting ${total} images...`
+          })}\n\n`));
 
-    // Poll for all results
-    const imageResults = await Promise.all(
-      taskIds.map(taskId => pollTaskResult(apiKey, taskId))
-    );
+          // Process images one by one for progress updates
+          for (let i = 0; i < prompts.length; i++) {
+            try {
+              const prompt = prompts[i];
+              console.log(`Processing image ${i + 1}/${total}`);
+              
+              // Create task
+              const taskId = await createImageTask(apiKey, prompt, quality, aspectRatio);
+              
+              // Poll for this single task
+              const urls = await pollSingleTask(apiKey, taskId);
+              allImages.push(...urls);
+              
+              completed++;
+              console.log(`Image ${completed}/${total} completed`);
+              
+              // Send progress update
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                completed,
+                total,
+                urls,
+                message: `${completed}/${total} images done`
+              })}\n\n`));
+              
+            } catch (imgError) {
+              console.error(`Error generating image ${i + 1}:`, imgError);
+              completed++;
+              // Continue with next image even if one fails
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                completed,
+                total,
+                error: imgError instanceof Error ? imgError.message : 'Failed',
+                message: `${completed}/${total} (1 failed)`
+              })}\n\n`));
+            }
+          }
 
-    // Flatten results (each task may return multiple URLs)
-    const imageUrls = imageResults.flat();
+          // Send completion
+          console.log(`All images complete. Total: ${allImages.length}`);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            type: 'complete',
+            success: true,
+            images: allImages,
+            total: allImages.length
+          })}\n\n`));
+          
+          controller.close();
+        }
+      });
 
-    console.log(`Generated ${imageUrls.length} images successfully`);
+      return new Response(responseStream, {
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache'
+        }
+      });
+    } else {
+      // Non-streaming mode - original parallel behavior
+      const taskIds = await Promise.all(
+        prompts.map(prompt => createImageTask(apiKey, prompt, quality, aspectRatio))
+      );
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        images: imageUrls 
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+      const imageResults = await Promise.all(
+        taskIds.map(taskId => pollSingleTask(apiKey, taskId))
+      );
+
+      const imageUrls = imageResults.flat();
+
+      console.log(`Generated ${imageUrls.length} images successfully`);
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          images: imageUrls 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
   } catch (error: unknown) {
     console.error('Error in generate-images:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

@@ -12,7 +12,7 @@ import {
   getYouTubeTranscript, 
   rewriteScriptStreaming, 
   generateAudioStreaming,
-  generateImages,
+  generateImagesStreaming,
   generateCaptions,
   saveScriptToStorage 
 } from "@/lib/api";
@@ -21,20 +21,39 @@ import { defaultTemplates } from "@/data/defaultTemplates";
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review" | "results";
 
-// Generate image prompts from script content
+// Generate image prompts evenly spaced throughout the script
 function generateImagePrompts(script: string, imageCount: number, stylePrompt: string): string[] {
-  // Split script into roughly equal sections
-  const paragraphs = script.split(/\n\n+/).filter(p => p.trim().length > 50);
-  const sectionSize = Math.ceil(paragraphs.length / imageCount);
+  // Split script into sentences for more precise spacing
+  const sentences = script.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 20);
   
-  const prompts: string[] = [];
-  for (let i = 0; i < imageCount && i * sectionSize < paragraphs.length; i++) {
-    const startIdx = i * sectionSize;
-    const section = paragraphs.slice(startIdx, startIdx + sectionSize).join(' ');
+  if (sentences.length === 0) {
+    // Fallback to paragraphs
+    const paragraphs = script.split(/\n\n+/).filter(p => p.trim().length > 50);
+    const sectionSize = Math.max(1, Math.ceil(paragraphs.length / imageCount));
     
-    // Extract key themes/subjects from the section (first 200 chars as context)
-    const context = section.substring(0, 200).replace(/\n/g, ' ');
-    prompts.push(`${stylePrompt}. Scene: ${context}`);
+    const prompts: string[] = [];
+    for (let i = 0; i < imageCount && i * sectionSize < paragraphs.length; i++) {
+      const startIdx = i * sectionSize;
+      const section = paragraphs.slice(startIdx, startIdx + sectionSize).join(' ');
+      const context = section.substring(0, 300).replace(/\n/g, ' ');
+      prompts.push(`${stylePrompt}. Scene depicting: ${context}`);
+    }
+    return prompts;
+  }
+  
+  // Calculate even spacing through the script
+  const spacing = sentences.length / imageCount;
+  const prompts: string[] = [];
+  
+  for (let i = 0; i < imageCount; i++) {
+    // Pick sentence at evenly spaced interval
+    const sentenceIndex = Math.floor(i * spacing);
+    const contextStart = Math.max(0, sentenceIndex - 1);
+    const contextEnd = Math.min(sentences.length, sentenceIndex + 2);
+    
+    // Get 2-3 surrounding sentences for context
+    const context = sentences.slice(contextStart, contextEnd).join(' ').substring(0, 300);
+    prompts.push(`${stylePrompt}. Scene depicting: ${context}`);
   }
   
   return prompts;
@@ -228,15 +247,22 @@ const Index = () => {
       // Save script to storage
       const scriptUrl = await saveScriptToStorage(confirmedScript, projectId);
 
-      // Step 1: Generate images
-      updateStep("images", "active", "Starting...");
+      // Step 1: Generate images with streaming progress
+      updateStep("images", "active", "0/" + settings.imageCount);
       
-      // Generate image prompts based on script sections
+      // Generate image prompts evenly spaced throughout the script
       const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
-      console.log(`Generating ${imagePrompts.length} images...`);
+      console.log(`Generating ${imagePrompts.length} images evenly spaced through script...`);
       
       try {
-        const imageResult = await generateImages(imagePrompts, settings.quality);
+        const imageResult = await generateImagesStreaming(
+          imagePrompts, 
+          settings.quality,
+          "16:9",
+          (completed, total, message) => {
+            updateStep("images", "active", `${completed}/${total}`);
+          }
+        );
         
         if (!imageResult.success) {
           console.error('Image generation failed:', imageResult.error);
