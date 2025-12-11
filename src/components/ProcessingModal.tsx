@@ -48,21 +48,28 @@ export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps
               ) : (
                 <Circle className="w-6 h-6 text-muted-foreground/40 shrink-0 mt-0.5" strokeWidth={1.5} />
               )}
-              <div>
-                <p className={`font-medium ${
-                  step.status === "active" 
-                    ? "text-primary" 
-                    : step.status === "completed" 
-                      ? "text-foreground" 
-                      : "text-muted-foreground"
-                }`}>
-                  {step.label}
-                </p>
-                {step.sublabel && step.status === "active" && (
-                  <p className="text-sm text-muted-foreground">
-                    {step.sublabel}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <p className={`font-medium ${
+                    step.status === "active" 
+                      ? "text-primary" 
+                      : step.status === "completed" 
+                        ? "text-foreground" 
+                        : "text-muted-foreground"
+                  }`}>
+                    {step.label}
                   </p>
-                )}
+                  {step.sublabel && step.status === "active" && (
+                    <span className="text-sm font-medium text-primary">
+                      {step.sublabel}
+                    </span>
+                  )}
+                  {step.sublabel && step.status === "completed" && step.sublabel.includes("%") && (
+                    <span className="text-sm font-medium text-green-500">
+                      ✓
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
