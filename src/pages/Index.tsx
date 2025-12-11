@@ -20,9 +20,9 @@ type ViewState = "create" | "processing" | "results";
 
 // Default script templates
 const defaultTemplates: ScriptTemplate[] = [
-  { id: "template-a", name: "", description: "", template: "" },
-  { id: "template-b", name: "", description: "", template: "" },
-  { id: "template-c", name: "", description: "", template: "" },
+  { id: "template-a", template: "" },
+  { id: "template-b", template: "" },
+  { id: "template-c", template: "" },
 ];
 
 const Index = () => {

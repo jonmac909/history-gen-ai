@@ -15,8 +15,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export interface ScriptTemplate {
   id: string;
-  name: string;
-  description: string;
   template: string;
 }
 
@@ -116,24 +114,6 @@ export function ConfigModal({
                   <span className="font-medium">Template {String.fromCharCode(65 + index)}</span>
                 </div>
                 
-                <div className="space-y-2">
-                  <Label>Template Name</Label>
-                  <Input
-                    value={template.name}
-                    onChange={(e) => updateTemplate(template.id, "name", e.target.value)}
-                    placeholder="e.g., Dramatic Storytelling"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Input
-                    value={template.description}
-                    onChange={(e) => updateTemplate(template.id, "description", e.target.value)}
-                    placeholder="e.g., Focus on narrative arc and suspense"
-                  />
-                </div>
-
                 <div className="space-y-2">
                   <Label>Template Content</Label>
                   <Textarea
