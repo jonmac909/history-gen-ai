@@ -151,6 +151,14 @@ Create a compelling script with clear scene breaks, visual cues, and engaging na
                         wordCount: finalWordCount,
                         progress: 100
                       })}\n\n`));
+                    } else if (parsed.type === 'error' || parsed.error) {
+                      // Handle API errors
+                      const errorMessage = parsed.error?.message || parsed.message || 'AI generation failed';
+                      console.error('Claude streaming error:', errorMessage);
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                        type: 'error', 
+                        error: errorMessage
+                      })}\n\n`));
                     }
                   } catch (e) {
                     // Skip invalid JSON
@@ -158,6 +166,25 @@ Create a compelling script with clear scene breaks, visual cues, and engaging na
                 }
               }
             }
+            
+            // If stream ended without a complete message but we have content, send it
+            if (fullScript.length > 0 && tokenCount > 0) {
+              const finalWordCount = fullScript.split(/\s+/).length;
+              console.log('Stream ended, sending accumulated script. Words:', finalWordCount);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'complete', 
+                success: true,
+                script: fullScript,
+                wordCount: finalWordCount,
+                progress: 100
+              })}\n\n`));
+            }
+          } catch (streamError) {
+            console.error('Stream processing error:', streamError);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'error', 
+              error: streamError instanceof Error ? streamError.message : 'Stream processing failed'
+            })}\n\n`));
           } finally {
             controller.close();
           }
