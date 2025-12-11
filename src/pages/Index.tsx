@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
-import { StatusIndicator } from "@/components/StatusIndicator";
 import { ApiKeysModal, type ApiKeys, type ScriptTemplate, type CartesiaVoice } from "@/components/ApiKeysModal";
 import { ProjectResults } from "@/components/ProjectResults";
 
@@ -27,7 +26,6 @@ const Index = () => {
     scriptTemplate: "template-a",
     voice: "",
     imageCount: 10,
-    aspectRatio: "16:9",
     quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
@@ -41,13 +39,6 @@ const Index = () => {
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
 
-  // Check if API keys are configured
-  const apiStatus = {
-    google: apiKeys.google.length > 0,
-    claude: apiKeys.claude.length > 0,
-    cartesia: apiKeys.cartesia.length > 0,
-    kie: apiKeys.kie.length > 0,
-  };
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -239,13 +230,6 @@ const Index = () => {
               </Button>
             </div>
 
-            {/* Status Indicators */}
-            <div className="flex items-center justify-center gap-6 flex-wrap">
-              <StatusIndicator name="Google Ready" isReady={apiStatus.google} />
-              <StatusIndicator name="Claude Ready" isReady={apiStatus.claude} />
-              <StatusIndicator name="Cartesia Ready" isReady={apiStatus.cartesia} />
-              <StatusIndicator name="Kie Ready" isReady={apiStatus.kie} />
-            </div>
           </div>
         </main>
       )}
