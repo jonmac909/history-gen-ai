@@ -60,8 +60,8 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        youtube: "hsl(var(--youtube-red))",
         "green-status": "hsl(var(--green-status))",
+        "red-status": "hsl(var(--red-status))",
       },
       borderRadius: {
         lg: "var(--radius)",
