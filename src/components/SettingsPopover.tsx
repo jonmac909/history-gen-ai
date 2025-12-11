@@ -129,10 +129,7 @@ export function SettingsPopover({
               <SelectContent>
                 {aiModelOptions.map((model) => (
                   <SelectItem key={model.value} value={model.value}>
-                    <div className="flex flex-col">
-                      <span>{model.label}</span>
-                      <span className="text-xs text-muted-foreground">{model.description}</span>
-                    </div>
+                    {model.label}
                   </SelectItem>
                 ))}
               </SelectContent>
