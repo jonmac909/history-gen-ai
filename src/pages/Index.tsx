@@ -28,6 +28,7 @@ const Index = () => {
     voice: "voice-slow",
     speed: 1,
     imageCount: 10,
+    wordCount: 15000,
     quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);

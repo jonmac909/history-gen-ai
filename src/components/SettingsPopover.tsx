@@ -23,6 +23,7 @@ export interface GenerationSettings {
   voice: string;
   speed: number;
   imageCount: number;
+  wordCount: number;
   quality: string;
 }
 
@@ -217,6 +218,31 @@ export function SettingsPopover({
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Word Count */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Select Your Word Count:
+            </label>
+            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Words</span>
+                <span className="text-sm font-medium">{settings.wordCount.toLocaleString()}</span>
+              </div>
+              <Slider
+                value={[settings.wordCount]}
+                onValueChange={(value) => updateSetting("wordCount", value[0])}
+                min={1000}
+                max={30000}
+                step={1000}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>1,000</span>
+                <span>30,000</span>
               </div>
             </div>
           </div>
