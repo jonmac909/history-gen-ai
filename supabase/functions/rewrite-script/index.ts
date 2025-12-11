@@ -28,7 +28,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Rewriting script with Claude...');
+    console.log('Rewriting script with Claude Opus 4.5...');
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration. 
 Your task is to transform the provided transcript into a compelling, well-structured script suitable for a history video.
@@ -50,8 +50,8 @@ Guidelines:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
+        model: 'claude-opus-4-1-20250805',
+        max_tokens: 16384,
         system: systemPrompt,
         messages: [
           {
