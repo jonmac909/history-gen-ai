@@ -69,6 +69,78 @@ export async function rewriteScript(transcript: string, template: string, title:
   return data;
 }
 
+export async function rewriteScriptStreaming(
+  transcript: string, 
+  template: string, 
+  title: string,
+  onProgress: (progress: number, wordCount: number) => void
+): Promise<ScriptResult> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  
+  const response = await fetch(`${supabaseUrl}/functions/v1/rewrite-script`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseKey}`,
+      'apikey': supabaseKey,
+    },
+    body: JSON.stringify({ transcript, template, title, stream: true })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Script streaming error:', response.status, errorText);
+    return { success: false, error: `Failed to rewrite script: ${response.status}` };
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return { success: false, error: 'No response body' };
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: ScriptResult = { success: false };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    
+    // Process complete SSE events
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      if (!event.trim()) continue;
+      
+      const dataMatch = event.match(/^data: (.+)$/m);
+      if (dataMatch) {
+        try {
+          const parsed = JSON.parse(dataMatch[1]);
+          
+          if (parsed.type === 'progress') {
+            onProgress(parsed.progress, parsed.wordCount);
+          } else if (parsed.type === 'complete') {
+            result = {
+              success: parsed.success,
+              script: parsed.script,
+              wordCount: parsed.wordCount
+            };
+            onProgress(100, parsed.wordCount);
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 export async function generateAudio(script: string, voiceId: string, projectId: string): Promise<AudioResult> {
   const { data, error } = await supabase.functions.invoke('generate-audio', {
     body: { script, voiceId, projectId }
