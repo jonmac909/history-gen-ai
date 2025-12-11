@@ -10,7 +10,7 @@ import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { 
   getYouTubeTranscript, 
-  rewriteScript, 
+  rewriteScriptStreaming, 
   generateAudio, 
   generateCaptions,
   saveScriptToStorage 
@@ -146,10 +146,17 @@ const Index = () => {
       setVideoTitle(transcriptResult.title || "History Documentary");
       updateStep("transcript", "completed");
 
-      // Step 2: Rewrite script (no fake progress - just show as active)
-      updateStep("script", "active", "Processing with Claude Opus...");
+      // Step 2: Rewrite script with streaming progress
+      updateStep("script", "active", "0%");
 
-      const scriptResult = await rewriteScript(transcript, currentTemplate.template, transcriptResult.title || "History Documentary");
+      const scriptResult = await rewriteScriptStreaming(
+        transcript, 
+        currentTemplate.template, 
+        transcriptResult.title || "History Documentary",
+        (progress, wordCount) => {
+          updateStep("script", "active", `${progress}% (${wordCount.toLocaleString()} words)`);
+        }
+      );
       
       if (!scriptResult.success || !scriptResult.script) {
         throw new Error(scriptResult.error || "Failed to rewrite script");
