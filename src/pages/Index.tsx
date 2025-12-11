@@ -229,19 +229,34 @@ const Index = () => {
       const scriptUrl = await saveScriptToStorage(confirmedScript, projectId);
 
       // Step 1: Generate images
-      updateStep("images", "active", "0%");
+      updateStep("images", "active", "Starting...");
       
       // Generate image prompts based on script sections
       const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
       console.log(`Generating ${imagePrompts.length} images...`);
       
-      const imageResult = await generateImages(imagePrompts, settings.quality);
-      
-      if (!imageResult.success) {
-        console.error('Image generation failed:', imageResult.error);
-        // Continue anyway, images are not critical
+      try {
+        const imageResult = await generateImages(imagePrompts, settings.quality);
+        
+        if (!imageResult.success) {
+          console.error('Image generation failed:', imageResult.error);
+          toast({
+            title: "Image Generation Issue",
+            description: imageResult.error || "Some images may not have generated",
+            variant: "destructive",
+          });
+        } else {
+          console.log(`Generated ${imageResult.images?.length || 0} images`);
+        }
+      } catch (imgError) {
+        console.error('Image generation error:', imgError);
+        toast({
+          title: "Image Generation Failed",
+          description: imgError instanceof Error ? imgError.message : "Failed to generate images",
+          variant: "destructive",
+        });
       }
-      updateStep("images", "completed", "100%");
+      updateStep("images", "completed", "Done");
 
       // Step 2: Generate audio with streaming progress
       updateStep("audio", "active", "0%");
