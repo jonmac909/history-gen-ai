@@ -68,22 +68,35 @@ Guidelines:
           messages: [
             {
               role: 'user',
-              content: `Transform this transcript into a professional history documentary narration script.
+              content: `I need you to write a ${targetWords}-word documentary narration script based on this transcript. The final word count MUST be at least ${targetWords} words - this is critical for video timing.
 
 Title: ${title || 'Historical Documentary'}
 
 TRANSCRIPT:
 ${transcript}
 
-MANDATORY REQUIREMENTS - YOU MUST FOLLOW THESE EXACTLY:
+REQUIREMENTS:
+1. LENGTH: Write EXACTLY ${targetWords} words or more. This is for a video that requires this specific length. If the source material is shorter, you MUST expand extensively with:
+   - Rich historical background and context for every event
+   - Detailed descriptions of settings, people, and atmosphere
+   - Multiple perspectives and viewpoints on events
+   - Cause and effect analysis
+   - Comparisons to other historical events
+   - The lasting impact and legacy of events
 
-**WORD COUNT: Write AT LEAST ${targetWords} words. This is NON-NEGOTIABLE. Count your words and ensure you reach ${targetWords}. If the original content is shorter, expand each section with more historical context, dramatic detail, and narrative depth. DO NOT stop writing until you have reached ${targetWords} words.**
+2. FORMAT: Pure prose narration ONLY. No headers, no scene markers, no formatting. Just flowing text.
 
-**FORMAT: Output ONLY pure prose narration text. NO headers, NO section markers, NO "Act" labels, NO "[SCENE]" markers, NO stage directions, NO formatting of any kind. Just continuous flowing text that can be read aloud directly.**
+3. STYLE: Dramatic documentary narration. Vivid, emotional, educational.
 
-**STYLE: Write as if you are the narrator speaking directly. Make it dramatic, captivating, and educational. Use vivid descriptions and emotional storytelling.**
-
-Begin the narration now and continue until you reach ${targetWords} words:`
+Write the complete ${targetWords}+ word narration now. Do not stop until you've written at least ${targetWords} words:`
+            },
+            {
+              role: 'assistant',
+              content: `I'll write a comprehensive ${targetWords}-word documentary narration, expanding extensively on the historical context and details.\n\n`
+            },
+            {
+              role: 'user', 
+              content: `Continue writing. Remember: you must reach ${targetWords} words total. Keep going with more historical detail, context, and narrative depth.`
             }
           ],
         }),

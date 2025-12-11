@@ -49,22 +49,45 @@ async function createImageTask(apiKey: string, prompt: string, quality: string, 
   return data.data.taskId;
 }
 
-async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 120): Promise<string[]> {
+async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 150): Promise<string[]> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const response = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
-        method: 'GET',
+      // Use POST with taskId in body as per Kie API documentation
+      const response = await fetch(`${KIE_API_URL}/queryTask`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ taskId }),
       });
 
       const responseText = await response.text();
       
       if (!response.ok) {
         console.error(`Poll error ${response.status}: ${responseText}`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // If we get 404, try with GET as fallback
+        if (response.status === 404) {
+          const getResponse = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+            },
+          });
+          if (getResponse.ok) {
+            const getData = await getResponse.json();
+            if (getData.code === 200 && getData.data?.state === 'success') {
+              try {
+                const resultJson = JSON.parse(getData.data.resultJson);
+                return resultJson.resultUrls || [];
+              } catch (e) {
+                console.error('Failed to parse resultJson:', getData.data.resultJson);
+                return [];
+              }
+            }
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
         continue;
       }
 
@@ -73,9 +96,11 @@ async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 120)
         data = JSON.parse(responseText);
       } catch (e) {
         console.error('Failed to parse response:', responseText);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         continue;
       }
+
+      console.log(`Poll attempt ${attempt + 1}: state = ${data.data?.state}`);
 
       if (data.code === 200 && data.data?.state === 'success') {
         try {
@@ -89,14 +114,15 @@ async function pollSingleTask(apiKey: string, taskId: string, maxAttempts = 120)
         throw new Error(data.data.failMsg || 'Image generation failed');
       }
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Still processing, wait and retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (fetchError) {
       console.error('Fetch error during poll:', fetchError);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 
-  throw new Error('Image generation timed out');
+  throw new Error('Image generation timed out after 5 minutes');
 }
 
 serve(async (req) => {
