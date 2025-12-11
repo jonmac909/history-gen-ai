@@ -47,8 +47,9 @@ Guidelines:
     const targetWords = wordCount || 15000;
     console.log(`Target word count: ${targetWords}`);
     
-    // Calculate max_tokens needed (roughly 1.5 tokens per word + buffer)
-    const maxTokens = Math.min(Math.max(Math.ceil(targetWords * 1.5) + 2000, 20000), 64000);
+    // Calculate max_tokens needed (roughly 1.5 tokens per word for English + large buffer)
+    // We need substantial buffer because Claude tends to stop early
+    const maxTokens = Math.min(Math.ceil(targetWords * 2) + 5000, 128000);
     console.log(`Using max_tokens: ${maxTokens}`);
 
     if (stream) {
@@ -68,35 +69,29 @@ Guidelines:
           messages: [
             {
               role: 'user',
-              content: `I need you to write a ${targetWords}-word documentary narration script based on this transcript. The final word count MUST be at least ${targetWords} words - this is critical for video timing.
+              content: `You are writing a documentary narration script. This MUST be EXACTLY ${targetWords} words long. This is for a ${Math.round(targetWords / 150)}-minute video and the timing is critical.
 
-Title: ${title || 'Historical Documentary'}
-
-TRANSCRIPT:
+TRANSCRIPT SOURCE:
 ${transcript}
 
-REQUIREMENTS:
-1. LENGTH: Write EXACTLY ${targetWords} words or more. This is for a video that requires this specific length. If the source material is shorter, you MUST expand extensively with:
-   - Rich historical background and context for every event
-   - Detailed descriptions of settings, people, and atmosphere
-   - Multiple perspectives and viewpoints on events
-   - Cause and effect analysis
-   - Comparisons to other historical events
-   - The lasting impact and legacy of events
+YOUR TASK: Write a ${targetWords}-WORD documentary narration. Not 5000 words. Not 8000 words. EXACTLY ${targetWords} WORDS.
 
-2. FORMAT: Pure prose narration ONLY. No headers, no scene markers, no formatting. Just flowing text.
+To achieve ${targetWords} words, you must:
+- Write AT LEAST ${Math.ceil(targetWords / 300)} substantial paragraphs
+- Each paragraph should be 200-400 words
+- Expand EVERY event with extensive historical context
+- Describe settings in vivid, cinematic detail
+- Include background on all people mentioned
+- Explain causes, effects, and lasting impacts
+- Add comparative historical analysis
+- Include emotional and human elements
+- Describe the broader historical significance
 
-3. STYLE: Dramatic documentary narration. Vivid, emotional, educational.
+FORMAT: Pure flowing prose only. No headers, no markers, no formatting.
 
-Write the complete ${targetWords}+ word narration now. Do not stop until you've written at least ${targetWords} words:`
-            },
-            {
-              role: 'assistant',
-              content: `I'll write a comprehensive ${targetWords}-word documentary narration, expanding extensively on the historical context and details.\n\n`
-            },
-            {
-              role: 'user', 
-              content: `Continue writing. Remember: you must reach ${targetWords} words total. Keep going with more historical detail, context, and narrative depth.`
+TITLE: ${title || 'Historical Documentary'}
+
+BEGIN YOUR ${targetWords}-WORD NARRATION NOW. DO NOT STOP UNTIL YOU REACH ${targetWords} WORDS:`
             }
           ],
         }),
