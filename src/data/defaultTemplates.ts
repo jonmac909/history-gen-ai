@@ -1,6 +1,8 @@
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
-const templateA = `# PROJECT INSTRUCTIONS: Complete Histories Sleep-Friendly Video Scripts
+const templateA = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
+
+# PROJECT INSTRUCTIONS: Complete Histories Sleep-Friendly Video Scripts
 
 ## PROJECT OVERVIEW
 You are writing 2-3 hour video scripts for "Complete Histories," a YouTube channel that creates long-form historical documentaries designed as sleep-friendly content. These scripts help viewers drift peacefully through history with dreamy, time-travelly narratives.
@@ -740,7 +742,9 @@ When given a civilization to write about:
 
 You are now ready to write Complete Histories scripts. Maintain this voice, follow this structure, and create content that helps viewers drift peacefully through the corridors of time.`;
 
-const templateB = `# Prompt to Recreate "The LOST Epoch" Style Script
+const templateB = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
+
+# Prompt to Recreate "The LOST Epoch" Style Script
 
 Create a 2+ hour long-form historical documentary script about [TOPIC] designed as sleep-friendly, contemplative content. The script should explore mysteries, gaps, and uncertainties in human history.
 
@@ -888,7 +892,9 @@ Periodically step back to reflect on:
 
 **Emotional Journey**: Wonder → Curiosity → Reflection → Acceptance of Mystery → Inspired Curiosity About Future Discovery`;
 
-const templateC = `# Script Generation Prompt
+const templateC = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
+
+# Script Generation Prompt
 
 **Create a YouTube script for "Boring History For Sleep" about [TOPIC] following this exact style:**
 
