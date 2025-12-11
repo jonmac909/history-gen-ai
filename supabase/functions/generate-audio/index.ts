@@ -56,6 +56,7 @@ async function generateChunkAudioBytes(
       output_format: {
         container: 'mp3',
         bit_rate: 128000,
+        sample_rate: 44100,
       },
     }),
   });
