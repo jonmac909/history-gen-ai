@@ -1,6 +1,9 @@
-import { FileText, Mic, Download, RefreshCw, Layers, ExternalLink, Image, Video } from "lucide-react";
+import { useState } from "react";
+import { FileText, Mic, Download, RefreshCw, Layers, ExternalLink, Image, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
+import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 
 export interface GeneratedAsset {
   id: string;
@@ -17,6 +20,7 @@ interface ProjectResultsProps {
   onNewProject: () => void;
   assets: GeneratedAsset[];
   audioUrl?: string;
+  srtContent?: string;
 }
 
 // Download file from URL
@@ -51,7 +55,70 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
   window.URL.revokeObjectURL(url);
 };
 
-export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl }: ProjectResultsProps) {
+export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtContent }: ProjectResultsProps) {
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const { generateVideo, isGenerating, progress, status } = useVideoGeneration();
+
+  // Extract image URLs from assets
+  const imageUrls = assets
+    .filter(a => a.id.startsWith('image-') && a.url)
+    .map(a => a.url!);
+
+  const handleGenerateVideo = async () => {
+    if (imageUrls.length === 0) {
+      toast({
+        title: "No Images",
+        description: "No images available to generate video.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!srtContent) {
+      toast({
+        title: "No Captions",
+        description: "SRT captions are required to generate video with proper timing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Generating Video",
+      description: "This may take 30-60 seconds...",
+    });
+
+    const result = await generateVideo(imageUrls, srtContent, audioUrl);
+
+    if (result.success && result.videoUrl) {
+      setVideoUrl(result.videoUrl);
+      toast({
+        title: "Video Ready!",
+        description: "Your MP4 video has been generated.",
+      });
+    } else {
+      toast({
+        title: "Video Generation Failed",
+        description: result.error || "Failed to generate video",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadVideo = () => {
+    if (!videoUrl) return;
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = 'generated_video.mp4';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({
+      title: "Download Complete",
+      description: "Video downloaded successfully.",
+    });
+  };
+
   const handleDownload = async (asset: GeneratedAsset) => {
     try {
       if (asset.content) {
@@ -111,15 +178,70 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl }: Pr
         {/* Audio Preview - Clean player only */}
         <div className="space-y-4">
           <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-            {audioUrl ? (
+            {videoUrl ? (
+              <video controls className="w-full h-full">
+                <source src={videoUrl} type="video/mp4" />
+                Your browser does not support the video element.
+              </video>
+            ) : audioUrl ? (
               <audio controls className="w-full max-w-md px-8">
                 <source src={audioUrl} type="audio/mpeg" />
                 Your browser does not support the audio element.
               </audio>
             ) : (
               <div className="text-white/60 text-center">
-                <p>No audio preview available</p>
+                <p>No preview available</p>
               </div>
+            )}
+          </div>
+
+          {/* Video Generation Section */}
+          <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Video className="w-5 h-5 text-primary" />
+                <h3 className="font-semibold text-foreground">MP4 Video</h3>
+              </div>
+              {videoUrl ? (
+                <Button onClick={handleDownloadVideo} className="gap-2">
+                  <Download className="w-4 h-4" />
+                  Download MP4
+                </Button>
+              ) : (
+                <Button 
+                  onClick={handleGenerateVideo} 
+                  disabled={isGenerating || imageUrls.length === 0}
+                  className="gap-2"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-4 h-4" />
+                      Generate Video
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {isGenerating && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>{status}</span>
+                  <span>{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
+            )}
+
+            {!videoUrl && !isGenerating && (
+              <p className="text-sm text-muted-foreground">
+                Generate an MP4 slideshow video from your images with caption-based timing.
+              </p>
             )}
           </div>
         </div>

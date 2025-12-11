@@ -14,7 +14,6 @@ import {
   generateAudioStreaming,
   generateImagesStreaming,
   generateCaptions,
-  generateVideoTimeline,
   saveScriptToStorage 
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
@@ -83,6 +82,7 @@ const Index = () => {
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
+  const [srtContent, setSrtContent] = useState<string | undefined>();
   
   // Script review state
   const [pendingScript, setPendingScript] = useState("");
@@ -173,6 +173,7 @@ const Index = () => {
     setViewState("processing");
     setGeneratedAssets([]);
     setAudioUrl(undefined);
+    setSrtContent(undefined);
 
     try {
       // Step 1: Fetch transcript
@@ -231,12 +232,11 @@ const Index = () => {
     const selectedVoice = cartesiaVoices.find(v => v.id === settings.voice);
     if (!selectedVoice) return;
 
-    // Initialize processing steps - Phase 2 (images, audio, captions, video)
+    // Initialize processing steps - Phase 2 (images, audio, captions)
     const steps: GenerationStep[] = [
       { id: "images", label: "Generating Images", status: "pending" },
       { id: "audio", label: "Generating Audio", status: "pending" },
       { id: "captions", label: "Generating SRT Captions", status: "pending" },
-      { id: "video", label: "Generating Video Timeline", status: "pending" },
     ];
 
     setProcessingSteps(steps);
@@ -245,7 +245,6 @@ const Index = () => {
     let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
     let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
     let generatedImages: string[] = [];
-    let videoResult: { edlUrl?: string; edlContent?: string; csvUrl?: string; csvContent?: string } = {};
 
     try {
       // Save script to storage
@@ -318,31 +317,6 @@ const Index = () => {
       captionsResult = captionsRes;
       updateStep("captions", "completed");
 
-      // Step 4: Generate video timeline (EDL/CSV for video editors)
-      updateStep("video", "active");
-      
-      if (generatedImages.length > 0 && captionsResult.srtContent) {
-        try {
-          const videoRes = await generateVideoTimeline(generatedImages, captionsResult.srtContent, projectId);
-          
-          if (!videoRes.success) {
-            console.error('Video timeline generation failed:', videoRes.error);
-          } else {
-            videoResult = {
-              edlUrl: videoRes.edlUrl,
-              edlContent: videoRes.edlContent,
-              csvUrl: videoRes.csvUrl,
-              csvContent: videoRes.csvContent
-            };
-            console.log('Video timeline generated successfully');
-          }
-        } catch (videoError) {
-          console.error('Video timeline error:', videoError);
-        }
-      }
-      
-      updateStep("video", "completed");
-
       // Prepare assets
       const assets: GeneratedAsset[] = [
         {
@@ -373,32 +347,6 @@ const Index = () => {
         },
       ];
 
-      // Add video timeline asset (EDL for video editors)
-      if (videoResult.edlContent) {
-        assets.push({
-          id: "video-timeline",
-          name: "Video Timeline (EDL)",
-          type: "EDL",
-          size: `${Math.round((videoResult.edlContent?.length || 0) / 1024)} KB`,
-          icon: <Video className="w-5 h-5 text-muted-foreground" />,
-          url: videoResult.edlUrl,
-          content: videoResult.edlContent,
-        });
-      }
-
-      // Add CSV timeline asset
-      if (videoResult.csvContent) {
-        assets.push({
-          id: "video-csv",
-          name: "Image Timings (CSV)",
-          type: "CSV",
-          size: `${Math.round((videoResult.csvContent?.length || 0) / 1024)} KB`,
-          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
-          url: videoResult.csvUrl,
-          content: videoResult.csvContent,
-        });
-      }
-
       // Add generated images as individual downloadable assets
       generatedImages.forEach((imageUrl, index) => {
         assets.push({
@@ -413,6 +361,7 @@ const Index = () => {
 
       setGeneratedAssets(assets);
       setAudioUrl(audioResult.audioUrl);
+      setSrtContent(captionsResult.srtContent);
 
       // Short delay before showing results
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -449,6 +398,7 @@ const Index = () => {
     setSourceUrl("");
     setGeneratedAssets([]);
     setAudioUrl(undefined);
+    setSrtContent(undefined);
     setPendingScript("");
   };
 
@@ -484,6 +434,7 @@ const Index = () => {
           onNewProject={handleNewProject}
           assets={generatedAssets}
           audioUrl={audioUrl}
+          srtContent={srtContent}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
