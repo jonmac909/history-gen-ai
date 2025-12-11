@@ -73,6 +73,7 @@ export async function rewriteScriptStreaming(
   transcript: string, 
   template: string, 
   title: string,
+  aiModel: string,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -85,7 +86,7 @@ export async function rewriteScriptStreaming(
       'Authorization': `Bearer ${supabaseKey}`,
       'apikey': supabaseKey,
     },
-    body: JSON.stringify({ transcript, template, title, stream: true })
+    body: JSON.stringify({ transcript, template, title, model: aiModel, stream: true })
   });
 
   if (!response.ok) {

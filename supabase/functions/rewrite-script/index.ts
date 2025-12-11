@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { transcript, template, title, stream } = await req.json();
+    const { transcript, template, title, model, stream } = await req.json();
     
     if (!transcript) {
       return new Response(
@@ -28,7 +28,9 @@ serve(async (req) => {
       );
     }
 
-    console.log('Rewriting script with Claude Opus 4.1...');
+    // Use provided model or default to Sonnet 4.5
+    const selectedModel = model || 'claude-sonnet-4-5-20250929';
+    console.log(`Rewriting script with ${selectedModel}...`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration. 
 Your task is to transform the provided transcript into a compelling, well-structured script suitable for a history video.
@@ -56,7 +58,7 @@ Guidelines:
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-1-20250805',
+          model: selectedModel,
           max_tokens: 16384,
           stream: true,
           system: systemPrompt,
@@ -204,7 +206,7 @@ Create a compelling script with clear scene breaks, visual cues, and engaging na
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-1-20250805',
+          model: selectedModel,
           max_tokens: 16384,
           system: systemPrompt,
           messages: [

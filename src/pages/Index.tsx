@@ -26,6 +26,7 @@ const Index = () => {
   const [viewState, setViewState] = useState<ViewState>("create");
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
+    aiModel: "claude-sonnet-4-5-20250929",
     voice: "voice-slow",
     speed: 1,
     imageCount: 10,
@@ -153,6 +154,7 @@ const Index = () => {
         transcript, 
         currentTemplate.template, 
         transcriptResult.title || "History Documentary",
+        settings.aiModel,
         (progress, wordCount) => {
           updateStep("script", "active", `${progress}% (${wordCount.toLocaleString()} words)`);
         }
