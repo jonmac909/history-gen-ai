@@ -158,12 +158,31 @@ Continue now:`
                 message: `Writing... ${currentWordCount}/${targetWords} words`
               })}\n\n`));
               
-              const result = await generateScriptChunk(
-                ANTHROPIC_API_KEY,
-                selectedModel,
-                systemPrompt,
-                messages
-              );
+              // Start keepalive pings while waiting for Claude
+              let pingCount = 0;
+              const keepaliveInterval = setInterval(() => {
+                pingCount++;
+                // Send simulated progress during API call
+                const simulatedProgress = Math.min(startProgress + pingCount, 95);
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'progress', 
+                  progress: simulatedProgress,
+                  wordCount: currentWordCount,
+                  message: `Generating content...`
+                })}\n\n`));
+              }, 5000); // Ping every 5 seconds
+              
+              let result;
+              try {
+                result = await generateScriptChunk(
+                  ANTHROPIC_API_KEY,
+                  selectedModel,
+                  systemPrompt,
+                  messages
+                );
+              } finally {
+                clearInterval(keepaliveInterval);
+              }
 
               if (iteration === 1) {
                 fullScript = result.text;
