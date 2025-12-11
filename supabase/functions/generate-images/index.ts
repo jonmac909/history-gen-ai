@@ -48,38 +48,63 @@ async function createImageTask(apiKey: string, prompt: string, quality: string, 
   return data.data.taskId;
 }
 
-async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 60): Promise<string[]> {
+async function pollTaskResult(apiKey: string, taskId: string, maxAttempts = 120): Promise<string[]> {
   console.log(`Polling for task result: ${taskId}`);
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const response = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-      },
-    });
+    try {
+      const response = await fetch(`${KIE_API_URL}/queryTask?taskId=${taskId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!response.ok) {
-      console.error('Poll error:', response.status);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      continue;
+      // Log full response for debugging
+      const responseText = await response.text();
+      
+      if (!response.ok) {
+        console.error(`Poll error ${response.status}: ${responseText}`);
+        // On 404, the task may not exist yet - wait and retry
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error('Failed to parse response:', responseText);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+
+      console.log(`Poll attempt ${attempt + 1}, code: ${data.code}, state:`, data.data?.state);
+
+      if (data.code === 200 && data.data?.state === 'success') {
+        try {
+          const resultJson = JSON.parse(data.data.resultJson);
+          return resultJson.resultUrls || [];
+        } catch (e) {
+          console.error('Failed to parse resultJson:', data.data.resultJson);
+          return [];
+        }
+      } else if (data.data?.state === 'fail') {
+        throw new Error(data.data.failMsg || 'Image generation failed');
+      } else if (data.code !== 200) {
+        console.log(`Non-200 code: ${data.code}, message: ${data.message}`);
+      }
+
+      // Wait 3 seconds before next poll (increased from 2s)
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    } catch (fetchError) {
+      console.error('Fetch error during poll:', fetchError);
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
-
-    const data = await response.json();
-    console.log(`Poll attempt ${attempt + 1}, state:`, data.data?.state);
-
-    if (data.data?.state === 'success') {
-      const resultJson = JSON.parse(data.data.resultJson);
-      return resultJson.resultUrls || [];
-    } else if (data.data?.state === 'fail') {
-      throw new Error(data.data.failMsg || 'Image generation failed');
-    }
-
-    // Wait 2 seconds before next poll
-    await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
-  throw new Error('Image generation timed out');
+  throw new Error('Image generation timed out after max attempts');
 }
 
 serve(async (req) => {

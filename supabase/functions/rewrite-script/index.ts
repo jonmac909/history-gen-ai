@@ -46,6 +46,10 @@ Guidelines:
     // Use provided word count or estimate based on transcript
     const targetWords = wordCount || 15000;
     console.log(`Target word count: ${targetWords}`);
+    
+    // Calculate max_tokens needed (roughly 1.5 tokens per word + buffer)
+    const maxTokens = Math.min(Math.max(Math.ceil(targetWords * 1.5) + 2000, 20000), 64000);
+    console.log(`Using max_tokens: ${maxTokens}`);
 
     if (stream) {
       // Streaming mode
@@ -58,25 +62,28 @@ Guidelines:
         },
         body: JSON.stringify({
           model: selectedModel,
-          max_tokens: 16384,
+          max_tokens: maxTokens,
           stream: true,
           system: systemPrompt,
           messages: [
             {
               role: 'user',
-              content: `Please rewrite the following transcript into a professional history documentary script.
+              content: `Transform this transcript into a professional history documentary narration script.
 
 Title: ${title || 'Historical Documentary'}
 
-Original Transcript:
+TRANSCRIPT:
 ${transcript}
 
-CRITICAL REQUIREMENTS:
-1. Write EXACTLY ${targetWords} words (this is very important - the script must be approximately ${targetWords} words long)
-2. Output ONLY pure prose narration - NO headers, NO section markers, NO formatting markup, NO act labels
-3. The script should be continuous flowing text that can be read aloud word-for-word
-4. Do not include any scene markers like [SCENE 1] or visual cues in brackets
-5. Create compelling, engaging narration suitable for a 2-3 hour documentary`
+MANDATORY REQUIREMENTS - YOU MUST FOLLOW THESE EXACTLY:
+
+**WORD COUNT: Write AT LEAST ${targetWords} words. This is NON-NEGOTIABLE. Count your words and ensure you reach ${targetWords}. If the original content is shorter, expand each section with more historical context, dramatic detail, and narrative depth. DO NOT stop writing until you have reached ${targetWords} words.**
+
+**FORMAT: Output ONLY pure prose narration text. NO headers, NO section markers, NO "Act" labels, NO "[SCENE]" markers, NO stage directions, NO formatting of any kind. Just continuous flowing text that can be read aloud directly.**
+
+**STYLE: Write as if you are the narrator speaking directly. Make it dramatic, captivating, and educational. Use vivid descriptions and emotional storytelling.**
+
+Begin the narration now and continue until you reach ${targetWords} words:`
             }
           ],
         }),
@@ -211,23 +218,23 @@ CRITICAL REQUIREMENTS:
         },
         body: JSON.stringify({
           model: selectedModel,
-          max_tokens: 16384,
+          max_tokens: maxTokens,
           system: systemPrompt,
           messages: [
             {
               role: 'user',
-              content: `Please rewrite the following transcript into a professional history documentary script.
+              content: `Transform this transcript into a professional history documentary narration script.
 
 Title: ${title || 'Historical Documentary'}
 
-Original Transcript:
+TRANSCRIPT:
 ${transcript}
 
-CRITICAL REQUIREMENTS:
-1. Write EXACTLY ${targetWords} words (this is very important)
-2. Output ONLY pure prose narration - NO headers, NO section markers, NO formatting markup
-3. The script should be continuous flowing text that can be read aloud word-for-word
-4. Create compelling, engaging narration suitable for a 2-3 hour documentary`
+MANDATORY REQUIREMENTS:
+**WORD COUNT: Write AT LEAST ${targetWords} words. This is NON-NEGOTIABLE.**
+**FORMAT: Output ONLY pure prose narration text. NO headers, NO section markers, NO formatting.**
+
+Begin the narration now:`
             }
           ],
         }),
