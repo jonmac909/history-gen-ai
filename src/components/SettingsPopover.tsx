@@ -30,9 +30,9 @@ interface SettingsPopoverProps {
 }
 
 const scriptTemplateOptions = [
-  { value: "template-a", label: "Script Template A" },
-  { value: "template-b", label: "Script Template B" },
-  { value: "template-c", label: "Script Template C" },
+  { value: "template-a", label: "Template A" },
+  { value: "template-b", label: "Template B" },
+  { value: "template-c", label: "Template C" },
 ];
 
 const qualityOptions = [
