@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -242,6 +242,7 @@ const Index = () => {
 
     let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
     let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
+    let generatedImages: string[] = [];
 
     try {
       // Save script to storage
@@ -273,6 +274,7 @@ const Index = () => {
           });
         } else {
           console.log(`Generated ${imageResult.images?.length || 0} images`);
+          generatedImages = imageResult.images || [];
         }
       } catch (imgError) {
         console.error('Image generation error:', imgError);
@@ -342,6 +344,18 @@ const Index = () => {
           content: captionsResult.srtContent,
         },
       ];
+
+      // Add generated images as individual downloadable assets
+      generatedImages.forEach((imageUrl, index) => {
+        assets.push({
+          id: `image-${index + 1}`,
+          name: `Image ${index + 1}`,
+          type: "PNG",
+          size: "~1 MB",
+          icon: <Image className="w-5 h-5 text-muted-foreground" />,
+          url: imageUrl,
+        });
+      });
 
       setGeneratedAssets(assets);
       setAudioUrl(audioResult.audioUrl);
