@@ -5,6 +5,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Claude Sonnet 4.5 has a max output of ~16k tokens per call
+// We need to chain calls to reach higher word counts
+const MAX_TOKENS_PER_CALL = 16000;
+
+async function generateScriptChunk(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  messages: { role: string; content: string }[]
+): Promise<{ text: string; stopReason: string }> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: MAX_TOKENS_PER_CALL,
+      system: systemPrompt,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return {
+    text: data.content[0]?.text || '',
+    stopReason: data.stop_reason || 'end_turn',
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -28,183 +65,142 @@ serve(async (req) => {
       );
     }
 
-    // Use provided model or default to Sonnet 4.5
     const selectedModel = model || 'claude-sonnet-4-5-20250929';
     console.log(`Rewriting script with ${selectedModel}...`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration. 
-Your task is to transform the provided transcript into a compelling, well-structured script suitable for a history video.
+Your task is to transform content into compelling, well-structured scripts suitable for history videos.
 
-Guidelines:
-- Maintain historical accuracy
-- Use engaging, narrative language
+CRITICAL RULES:
 - Write ONLY pure prose narration - no headers, no scene markers, no formatting
 - The output should be word-for-word narration that can be read aloud directly
-- Make it dramatic and captivating while staying educational
-- The tone should be authoritative yet accessible`;
+- Make it dramatic, captivating, and educational
+- Use vivid descriptions and emotional storytelling
+- When continuing a script, seamlessly continue from where you left off`;
 
-    // Use provided word count or estimate based on transcript
     const targetWords = wordCount || 15000;
     console.log(`Target word count: ${targetWords}`);
-    
-    // Calculate max_tokens needed (roughly 1.5 tokens per word for English + large buffer)
-    // We need substantial buffer because Claude tends to stop early
-    const maxTokens = Math.min(Math.ceil(targetWords * 2) + 5000, 128000);
-    console.log(`Using max_tokens: ${maxTokens}`);
 
     if (stream) {
-      // Streaming mode
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          max_tokens: maxTokens,
-          stream: true,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `You are writing a documentary narration script. This MUST be EXACTLY ${targetWords} words long. This is for a ${Math.round(targetWords / 150)}-minute video and the timing is critical.
+      // Streaming mode with continuation loop
+      const encoder = new TextEncoder();
+      
+      const responseStream = new ReadableStream({
+        async start(controller) {
+          try {
+            let fullScript = '';
+            let currentWordCount = 0;
+            let iteration = 0;
+            const maxIterations = 10; // Safety limit
+            
+            while (currentWordCount < targetWords && iteration < maxIterations) {
+              iteration++;
+              const wordsRemaining = targetWords - currentWordCount;
+              console.log(`Iteration ${iteration}: Have ${currentWordCount} words, need ${wordsRemaining} more`);
+              
+              // Send progress update
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                progress: Math.min(Math.round((currentWordCount / targetWords) * 100), 95),
+                wordCount: currentWordCount,
+                message: `Writing... ${currentWordCount}/${targetWords} words`
+              })}\n\n`));
 
-TRANSCRIPT SOURCE:
+              let messages: { role: string; content: string }[];
+              
+              if (iteration === 1) {
+                // First iteration: start fresh
+                messages = [
+                  {
+                    role: 'user',
+                    content: `Write a ${targetWords}-word documentary narration based on this transcript. This is for a ${Math.round(targetWords / 150)}-minute video.
+
+TRANSCRIPT:
 ${transcript}
-
-YOUR TASK: Write a ${targetWords}-WORD documentary narration. Not 5000 words. Not 8000 words. EXACTLY ${targetWords} WORDS.
-
-To achieve ${targetWords} words, you must:
-- Write AT LEAST ${Math.ceil(targetWords / 300)} substantial paragraphs
-- Each paragraph should be 200-400 words
-- Expand EVERY event with extensive historical context
-- Describe settings in vivid, cinematic detail
-- Include background on all people mentioned
-- Explain causes, effects, and lasting impacts
-- Add comparative historical analysis
-- Include emotional and human elements
-- Describe the broader historical significance
-
-FORMAT: Pure flowing prose only. No headers, no markers, no formatting.
 
 TITLE: ${title || 'Historical Documentary'}
 
-BEGIN YOUR ${targetWords}-WORD NARRATION NOW. DO NOT STOP UNTIL YOU REACH ${targetWords} WORDS:`
-            }
-          ],
-        }),
-      });
+REQUIREMENTS:
+- Write ${targetWords} words of pure prose narration
+- No headers, no formatting, no scene markers
+- Dramatic, cinematic, educational style
+- Expand with rich historical context and vivid descriptions
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Claude API error:', response.status, errorText);
-        return new Response(
-          JSON.stringify({ error: `Claude API error: ${response.status}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+Begin the ${targetWords}-word narration now:`
+                  }
+                ];
+              } else {
+                // Continuation: ask to continue from where we left off
+                messages = [
+                  {
+                    role: 'user',
+                    content: `Write a ${targetWords}-word documentary narration based on this transcript.
 
-      // Stream the response back with progress updates
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body?.getReader();
-          if (!reader) {
-            controller.close();
-            return;
-          }
+TRANSCRIPT:
+${transcript}
 
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let fullScript = '';
-          let tokenCount = 0;
+TITLE: ${title || 'Historical Documentary'}`
+                  },
+                  {
+                    role: 'assistant',
+                    content: fullScript
+                  },
+                  {
+                    role: 'user',
+                    content: `You've written ${currentWordCount} words so far. Continue writing ${wordsRemaining} more words to reach the ${targetWords} word target. 
 
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
+CONTINUE SEAMLESSLY from where you left off. Do not repeat anything. Do not add headers or formatting. Just continue the narration with more content, more historical detail, more dramatic storytelling.
 
-              buffer += decoder.decode(value, { stream: true });
+Continue now:`
+                  }
+                ];
+              }
+
+              const result = await generateScriptChunk(
+                ANTHROPIC_API_KEY,
+                selectedModel,
+                systemPrompt,
+                messages
+              );
+
+              if (iteration === 1) {
+                fullScript = result.text;
+              } else {
+                // Append the continuation
+                fullScript += '\n\n' + result.text;
+              }
               
-              // Process complete SSE events
-              const events = buffer.split('\n\n');
-              buffer = events.pop() || '';
-
-              for (const event of events) {
-                if (!event.trim()) continue;
-
-                const lines = event.split('\n');
-                let eventType = '';
-                let eventData = '';
-
-                for (const line of lines) {
-                  if (line.startsWith('event: ')) {
-                    eventType = line.slice(7);
-                  } else if (line.startsWith('data: ')) {
-                    eventData = line.slice(6);
-                  }
-                }
-
-                if (eventData) {
-                  try {
-                    const parsed = JSON.parse(eventData);
-                    
-                    if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                      fullScript += parsed.delta.text;
-                      tokenCount++;
-                      
-                      // Send progress update every 50 tokens
-                      if (tokenCount % 50 === 0) {
-                        const wordCount = fullScript.split(/\s+/).length;
-                        const progress = Math.min(Math.round((wordCount / targetWords) * 100), 99);
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', progress, wordCount })}\n\n`));
-                      }
-                    } else if (parsed.type === 'message_stop') {
-                      // Send final result
-                      const finalWordCount = fullScript.split(/\s+/).length;
-                      console.log('Script rewritten successfully, length:', fullScript.length, 'words:', finalWordCount);
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                        type: 'complete', 
-                        success: true,
-                        script: fullScript,
-                        wordCount: finalWordCount,
-                        progress: 100
-                      })}\n\n`));
-                    } else if (parsed.type === 'error' || parsed.error) {
-                      // Handle API errors
-                      const errorMessage = parsed.error?.message || parsed.message || 'AI generation failed';
-                      console.error('Claude streaming error:', errorMessage);
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                        type: 'error', 
-                        error: errorMessage
-                      })}\n\n`));
-                    }
-                  } catch (e) {
-                    // Skip invalid JSON
-                  }
-                }
+              currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
+              console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason})`);
+              
+              // If the model stopped naturally and we're close enough, break
+              if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.9) {
+                console.log('Model finished naturally and we have enough words');
+                break;
+              }
+              
+              // If we got very little new content, break to avoid infinite loop
+              if (iteration > 1 && result.text.split(/\s+/).length < 100) {
+                console.log('Got too little new content, stopping');
+                break;
               }
             }
+
+            console.log(`Script complete: ${currentWordCount} words after ${iteration} iterations`);
             
-            // If stream ended without a complete message but we have content, send it
-            if (fullScript.length > 0 && tokenCount > 0) {
-              const finalWordCount = fullScript.split(/\s+/).length;
-              console.log('Stream ended, sending accumulated script. Words:', finalWordCount);
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'complete', 
-                success: true,
-                script: fullScript,
-                wordCount: finalWordCount,
-                progress: 100
-              })}\n\n`));
-            }
-          } catch (streamError) {
-            console.error('Stream processing error:', streamError);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'complete', 
+              success: true,
+              script: fullScript,
+              wordCount: currentWordCount,
+              progress: 100
+            })}\n\n`));
+            
+          } catch (error) {
+            console.error('Script generation error:', error);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'error', 
-              error: streamError instanceof Error ? streamError.message : 'Stream processing failed'
+              error: error instanceof Error ? error.message : 'Generation failed'
             })}\n\n`));
           } finally {
             controller.close();
@@ -212,61 +208,88 @@ BEGIN YOUR ${targetWords}-WORD NARRATION NOW. DO NOT STOP UNTIL YOU REACH ${targ
         }
       });
 
-      return new Response(stream, {
+      return new Response(responseStream, {
         headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
       });
     } else {
-      // Non-streaming mode (original behavior)
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          max_tokens: maxTokens,
-          system: systemPrompt,
-          messages: [
+      // Non-streaming mode with continuation loop
+      let fullScript = '';
+      let currentWordCount = 0;
+      let iteration = 0;
+      const maxIterations = 10;
+      
+      while (currentWordCount < targetWords && iteration < maxIterations) {
+        iteration++;
+        const wordsRemaining = targetWords - currentWordCount;
+        console.log(`Iteration ${iteration}: Have ${currentWordCount} words, need ${wordsRemaining} more`);
+
+        let messages: { role: string; content: string }[];
+        
+        if (iteration === 1) {
+          messages = [
             {
               role: 'user',
-              content: `Transform this transcript into a professional history documentary narration script.
-
-Title: ${title || 'Historical Documentary'}
+              content: `Write a ${targetWords}-word documentary narration based on this transcript.
 
 TRANSCRIPT:
 ${transcript}
 
-MANDATORY REQUIREMENTS:
-**WORD COUNT: Write AT LEAST ${targetWords} words. This is NON-NEGOTIABLE.**
-**FORMAT: Output ONLY pure prose narration text. NO headers, NO section markers, NO formatting.**
+TITLE: ${title || 'Historical Documentary'}
 
-Begin the narration now:`
+Write ${targetWords} words of pure prose narration. Begin now:`
             }
-          ],
-        }),
-      });
+          ];
+        } else {
+          messages = [
+            {
+              role: 'user',
+              content: `Write a ${targetWords}-word documentary narration based on this transcript.
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Claude API error:', response.status, errorText);
-        return new Response(
-          JSON.stringify({ error: `Claude API error: ${response.status}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+TRANSCRIPT:
+${transcript}`
+            },
+            {
+              role: 'assistant',
+              content: fullScript
+            },
+            {
+              role: 'user',
+              content: `Continue writing ${wordsRemaining} more words. Continue seamlessly:`
+            }
+          ];
+        }
+
+        const result = await generateScriptChunk(
+          ANTHROPIC_API_KEY,
+          selectedModel,
+          systemPrompt,
+          messages
         );
+
+        if (iteration === 1) {
+          fullScript = result.text;
+        } else {
+          fullScript += '\n\n' + result.text;
+        }
+        
+        currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
+        
+        if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.9) {
+          break;
+        }
+        
+        if (iteration > 1 && result.text.split(/\s+/).length < 100) {
+          break;
+        }
       }
 
-      const data = await response.json();
-      const script = data.content[0].text;
-
-      console.log('Script rewritten successfully, length:', script.length);
+      console.log(`Script complete: ${currentWordCount} words`);
 
       return new Response(
         JSON.stringify({ 
           success: true,
-          script,
-          wordCount: script.split(/\s+/).length
+          script: fullScript,
+          wordCount: currentWordCount
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
