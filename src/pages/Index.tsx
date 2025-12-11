@@ -1,12 +1,19 @@
 import { useState } from "react";
-import { Youtube, FileText, Sparkles, Scroll } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
 import { ApiKeysModal, type ApiKeys, type ScriptTemplate, type CartesiaVoice } from "@/components/ApiKeysModal";
-import { ProjectResults } from "@/components/ProjectResults";
+import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
+import { 
+  getYouTubeTranscript, 
+  rewriteScript, 
+  generateAudio, 
+  generateCaptions,
+  saveScriptToStorage 
+} from "@/lib/api";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "results";
@@ -39,7 +46,8 @@ const Index = () => {
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
   const [imageStylePrompt, setImageStylePrompt] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-
+  const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
+  const [audioUrl, setAudioUrl] = useState<string | undefined>();
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -60,6 +68,14 @@ const Index = () => {
 
   const handleSaveImageStylePrompt = (prompt: string) => {
     setImageStylePrompt(prompt);
+  };
+
+  const updateStep = (stepId: string, status: "pending" | "active" | "completed", sublabel?: string) => {
+    setProcessingSteps(prev => prev.map(step => 
+      step.id === stepId 
+        ? { ...step, status, sublabel: sublabel || step.sublabel }
+        : step
+    ));
   };
 
   const handleGenerate = async () => {
@@ -97,7 +113,8 @@ const Index = () => {
       return;
     }
 
-    if (!settings.voice || cartesiaVoices.length === 0) {
+    const selectedVoice = cartesiaVoices.find(v => v.id === settings.voice);
+    if (!selectedVoice) {
       toast({
         title: "Voice Required",
         description: "Please add and select a Cartesia voice in Settings.",
@@ -107,50 +124,135 @@ const Index = () => {
     }
 
     setSourceUrl(inputValue);
+    const projectId = crypto.randomUUID();
 
     // Initialize processing steps
     const steps: GenerationStep[] = [
+      { id: "transcript", label: "Fetching YouTube Transcript", status: "pending" },
       { id: "script", label: "Rewriting Script (Claude)", status: "pending" },
       { id: "audio", label: "Generating Audio (Cartesia)", status: "pending" },
-      { 
-        id: "images", 
-        label: "Generating Images (Kie.ai)", 
-        sublabel: `Creating ${settings.imageCount} images using Seedream 4.5...`,
-        status: "pending" 
-      },
-      { id: "video", label: "Assembling Scene Videos", status: "pending" },
       { id: "captions", label: "Generating SRT Captions", status: "pending" },
     ];
 
     setProcessingSteps(steps);
     setViewState("processing");
+    setGeneratedAssets([]);
+    setAudioUrl(undefined);
 
-    // Simulate processing each step
-    for (let i = 0; i < steps.length; i++) {
-      setProcessingSteps(prev => prev.map((step, idx) => ({
-        ...step,
-        status: idx === i ? "active" : idx < i ? "completed" : "pending"
-      })));
+    let transcript = "";
+    let videoTitle = "History Documentary";
+    let script = "";
+    let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
+    let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
+
+    try {
+      // Step 1: Fetch transcript
+      updateStep("transcript", "active");
+      const transcriptResult = await getYouTubeTranscript(inputValue);
       
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+      if (!transcriptResult.success || !transcriptResult.transcript) {
+        throw new Error(transcriptResult.message || transcriptResult.error || "Failed to fetch transcript");
+      }
+      
+      transcript = transcriptResult.transcript;
+      videoTitle = transcriptResult.title || videoTitle;
+      updateStep("transcript", "completed");
 
-    // Mark all as completed
-    setProcessingSteps(prev => prev.map(step => ({ ...step, status: "completed" as const })));
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    setViewState("results");
-    toast({
-      title: "Generation Complete!",
-      description: "Your history video assets are ready.",
-    });
+      // Step 2: Rewrite script
+      updateStep("script", "active");
+      const scriptResult = await rewriteScript(transcript, currentTemplate.template, videoTitle);
+      
+      if (!scriptResult.success || !scriptResult.script) {
+        throw new Error(scriptResult.error || "Failed to rewrite script");
+      }
+      
+      script = scriptResult.script;
+      updateStep("script", "completed");
+
+      // Save script to storage
+      const scriptUrl = await saveScriptToStorage(script, projectId);
+
+      // Step 3: Generate audio
+      updateStep("audio", "active");
+      const audioRes = await generateAudio(script, selectedVoice.voiceId, projectId);
+      
+      if (!audioRes.success) {
+        throw new Error(audioRes.error || "Failed to generate audio");
+      }
+      
+      audioResult = audioRes;
+      updateStep("audio", "completed");
+
+      // Step 4: Generate captions
+      updateStep("captions", "active");
+      const captionsRes = await generateCaptions(script, audioRes.duration || 0, projectId);
+      
+      if (!captionsRes.success) {
+        throw new Error(captionsRes.error || "Failed to generate captions");
+      }
+      
+      captionsResult = captionsRes;
+      updateStep("captions", "completed");
+
+      // Prepare assets
+      const assets: GeneratedAsset[] = [
+        {
+          id: "script",
+          name: "Rewritten Script (Claude)",
+          type: "Markdown",
+          size: `${Math.round(script.length / 1024)} KB`,
+          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+          url: scriptUrl || undefined,
+          content: script,
+        },
+        {
+          id: "audio",
+          name: "Voiceover Audio (Cartesia)",
+          type: "MP3",
+          size: audioResult.size ? `${(audioResult.size / (1024 * 1024)).toFixed(1)} MB` : "Unknown",
+          icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+          url: audioResult.audioUrl,
+        },
+        {
+          id: "captions",
+          name: "Captions",
+          type: "SRT",
+          size: captionsResult.srtContent ? `${Math.round(captionsResult.srtContent.length / 1024)} KB` : "Unknown",
+          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+          url: captionsResult.captionsUrl,
+          content: captionsResult.srtContent,
+        },
+      ];
+
+      setGeneratedAssets(assets);
+      setAudioUrl(audioResult.audioUrl);
+
+      // Short delay before showing results
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setViewState("results");
+      toast({
+        title: "Generation Complete!",
+        description: "Your history video assets are ready.",
+      });
+
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast({
+        title: "Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred during generation.",
+        variant: "destructive",
+      });
+      setViewState("create");
+    }
   };
 
   const handleNewProject = () => {
     setViewState("create");
     setInputValue("");
     setSourceUrl("");
+    setGeneratedAssets([]);
+    setAudioUrl(undefined);
   };
 
   return (
@@ -182,7 +284,12 @@ const Index = () => {
 
       {/* Main Content */}
       {viewState === "results" ? (
-        <ProjectResults sourceUrl={sourceUrl} onNewProject={handleNewProject} />
+        <ProjectResults 
+          sourceUrl={sourceUrl} 
+          onNewProject={handleNewProject}
+          assets={generatedAssets}
+          audioUrl={audioUrl}
+        />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
           <div className="w-full max-w-3xl mx-auto text-center space-y-8">
