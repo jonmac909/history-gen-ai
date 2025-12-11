@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Key, Eye, EyeOff, FileText, Plus, Trash2 } from "lucide-react";
+import { Key, Eye, EyeOff, FileText, Plus, Trash2, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,8 @@ interface ApiKeysModalProps {
   onSaveTemplates: (templates: ScriptTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
   onSaveVoices: (voices: CartesiaVoice[]) => void;
+  imageStylePrompt: string;
+  onSaveImageStylePrompt: (prompt: string) => void;
 }
 
 export function ApiKeysModal({ 
@@ -49,11 +51,14 @@ export function ApiKeysModal({
   onSaveTemplates,
   cartesiaVoices,
   onSaveVoices,
+  imageStylePrompt,
+  onSaveImageStylePrompt,
 }: ApiKeysModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [keys, setKeys] = useState<ApiKeys>(apiKeys);
   const [templates, setTemplates] = useState<ScriptTemplate[]>(scriptTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
+  const [stylePrompt, setStylePrompt] = useState(imageStylePrompt);
   const [showKeys, setShowKeys] = useState({
     google: false,
     claude: false,
@@ -65,6 +70,7 @@ export function ApiKeysModal({
     onSaveApiKeys(keys);
     onSaveTemplates(templates);
     onSaveVoices(voices);
+    onSaveImageStylePrompt(stylePrompt);
     setIsOpen(false);
   };
 
@@ -125,10 +131,11 @@ export function ApiKeysModal({
         </DialogHeader>
 
         <Tabs defaultValue="api-keys" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="templates">Script Templates</TabsTrigger>
             <TabsTrigger value="voices">Cartesia Voices</TabsTrigger>
+            <TabsTrigger value="image-style">Image Style</TabsTrigger>
           </TabsList>
 
           {/* API Keys Tab */}
@@ -255,6 +262,23 @@ export function ApiKeysModal({
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* Image Style Tab */}
+          <TabsContent value="image-style" className="space-y-4 py-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Image className="w-4 h-4 text-primary" />
+              <span className="font-medium">Image Style Prompt</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Define the visual style for generated images. This prompt will be used to guide the image generation.
+            </p>
+            <Textarea
+              value={stylePrompt}
+              onChange={(e) => setStylePrompt(e.target.value)}
+              placeholder="e.g., Cinematic, dramatic lighting, 4K quality, photorealistic..."
+              className="min-h-[200px]"
+            />
           </TabsContent>
         </Tabs>
 

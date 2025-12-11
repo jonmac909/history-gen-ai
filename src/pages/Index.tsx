@@ -37,6 +37,7 @@ const Index = () => {
   });
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
+  const [imageStylePrompt, setImageStylePrompt] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
 
 
@@ -55,6 +56,10 @@ const Index = () => {
 
   const handleSaveVoices = (voices: CartesiaVoice[]) => {
     setCartesiaVoices(voices);
+  };
+
+  const handleSaveImageStylePrompt = (prompt: string) => {
+    setImageStylePrompt(prompt);
   };
 
   const handleGenerate = async () => {
@@ -169,6 +174,8 @@ const Index = () => {
             onSaveTemplates={handleSaveTemplates}
             cartesiaVoices={cartesiaVoices}
             onSaveVoices={handleSaveVoices}
+            imageStylePrompt={imageStylePrompt}
+            onSaveImageStylePrompt={handleSaveImageStylePrompt}
           />
         </div>
       </header>
