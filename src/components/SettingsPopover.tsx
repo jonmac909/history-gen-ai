@@ -20,12 +20,18 @@ import type { ScriptTemplate, CartesiaVoice } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   scriptTemplate: string;
+  aiModel: string;
   voice: string;
   speed: number;
   imageCount: number;
   wordCount: number;
   quality: string;
 }
+
+const aiModelOptions = [
+  { value: "claude-opus-4-5-20251101", label: "Claude Opus 4.5", description: "Powerful model for complex challenges" },
+  { value: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", description: "Smart, efficient for everyday use" },
+];
 
 interface SettingsPopoverProps {
   settings: GenerationSettings;
@@ -108,6 +114,31 @@ export function SettingsPopover({
             </Select>
           </div>
 
+          {/* AI Model */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Select Your Model:
+            </label>
+            <Select
+              value={settings.aiModel}
+              onValueChange={(value) => updateSetting("aiModel", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {aiModelOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    <div className="flex flex-col">
+                      <span>{model.label}</span>
+                      <span className="text-xs text-muted-foreground">{model.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Voice */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -164,7 +195,7 @@ export function SettingsPopover({
           {/* Image Model - Fixed to Seedream 4.5 */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Select Your Model:
+              Select Your Image Model:
             </label>
             <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
               Seedream 4.5
