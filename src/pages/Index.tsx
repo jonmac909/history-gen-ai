@@ -32,6 +32,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
     voice: "voice-slow",
+    speed: 1,
     imageCount: 10,
     quality: "basic",
   });

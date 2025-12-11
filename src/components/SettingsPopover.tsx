@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Settings, Minus, Plus } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import {
   Popover,
   PopoverContent,
@@ -18,6 +19,7 @@ import type { ScriptTemplate, CartesiaVoice } from "@/components/ConfigModal";
 export interface GenerationSettings {
   scriptTemplate: string;
   voice: string;
+  speed: number;
   imageCount: number;
   quality: string;
 }
@@ -122,7 +124,7 @@ export function SettingsPopover({
               <SelectContent>
                 {cartesiaVoices.length > 0 ? (
                   cartesiaVoices.map((voice) => (
-                    <SelectItem key={voice.id} value={voice.voiceId}>
+                    <SelectItem key={voice.id} value={voice.id}>
                       {voice.name || voice.voiceId}
                     </SelectItem>
                   ))
@@ -133,6 +135,31 @@ export function SettingsPopover({
                 )}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Speed */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Select Your Speed:
+            </label>
+            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Speed</span>
+                <span className="text-sm font-medium">{settings.speed.toFixed(1)}x</span>
+              </div>
+              <Slider
+                value={[settings.speed]}
+                onValueChange={(value) => updateSetting("speed", value[0])}
+                min={0.6}
+                max={1}
+                step={0.1}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>0.6x</span>
+                <span>1x</span>
+              </div>
+            </div>
           </div>
 
           {/* Image Model - Fixed to Seedream 4.5 */}
