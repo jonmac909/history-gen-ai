@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
-import { ApiKeysModal, type ApiKeys, type ScriptTemplate, type CartesiaVoice } from "@/components/ApiKeysModal";
+import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/components/ConfigModal";
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
 import { 
   getYouTubeTranscript, 
@@ -31,20 +31,17 @@ const Index = () => {
   const [viewState, setViewState] = useState<ViewState>("create");
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
-    voice: "",
+    voice: "voice-slow",
     imageCount: 10,
     quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
-  const [apiKeys, setApiKeys] = useState<ApiKeys>({
-    google: "",
-    claude: "",
-    cartesia: "",
-    kie: "",
-  });
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
-  const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
-  const [imageStylePrompt, setImageStylePrompt] = useState("");
+  const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([
+    { id: "voice-slow", name: "Slow", voiceId: "46ff9204-c326-44e3-82ae-c1eaa07ba71c" },
+    { id: "voice-sleepy", name: "Sleepy", voiceId: "2f196c8c-9afa-4d7d-9287-151e05592bbf" },
+  ]);
+  const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
@@ -52,10 +49,6 @@ const Index = () => {
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
     setInputValue("");
-  };
-
-  const handleSaveApiKeys = (keys: ApiKeys) => {
-    setApiKeys(keys);
   };
 
   const handleSaveTemplates = (templates: ScriptTemplate[]) => {
@@ -269,9 +262,7 @@ const Index = () => {
             </span>
           </div>
           
-          <ApiKeysModal 
-            apiKeys={apiKeys} 
-            onSaveApiKeys={handleSaveApiKeys}
+          <ConfigModal 
             scriptTemplates={scriptTemplates}
             onSaveTemplates={handleSaveTemplates}
             cartesiaVoices={cartesiaVoices}
