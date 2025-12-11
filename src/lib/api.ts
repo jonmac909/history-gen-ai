@@ -101,41 +101,61 @@ export async function rewriteScriptStreaming(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let result: ScriptResult = { success: false };
+  let result: ScriptResult = { success: false, error: 'No response received from AI' };
+  let lastWordCount = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    
-    // Process complete SSE events
-    const events = buffer.split('\n\n');
-    buffer = events.pop() || '';
-
-    for (const event of events) {
-      if (!event.trim()) continue;
+      buffer += decoder.decode(value, { stream: true });
       
-      const dataMatch = event.match(/^data: (.+)$/m);
-      if (dataMatch) {
-        try {
-          const parsed = JSON.parse(dataMatch[1]);
-          
-          if (parsed.type === 'progress') {
-            onProgress(parsed.progress, parsed.wordCount);
-          } else if (parsed.type === 'complete') {
-            result = {
-              success: parsed.success,
-              script: parsed.script,
-              wordCount: parsed.wordCount
-            };
-            onProgress(100, parsed.wordCount);
+      // Process complete SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+        
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+            
+            if (parsed.type === 'progress') {
+              lastWordCount = parsed.wordCount;
+              onProgress(parsed.progress, parsed.wordCount);
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: parsed.success,
+                script: parsed.script,
+                wordCount: parsed.wordCount
+              };
+              onProgress(100, parsed.wordCount);
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || parsed.message || 'AI generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
           }
-        } catch (e) {
-          // Skip invalid JSON
         }
       }
     }
+  } catch (streamError) {
+    console.error('Stream reading error:', streamError);
+    return { 
+      success: false, 
+      error: streamError instanceof Error ? streamError.message : 'Stream reading failed' 
+    };
+  }
+
+  // If we got progress but no complete event, something went wrong
+  if (!result.success && lastWordCount > 0) {
+    result.error = 'Script generation was interrupted. Please try again.';
   }
 
   return result;
