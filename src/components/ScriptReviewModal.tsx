@@ -5,6 +5,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,11 @@ export function ScriptReviewModal({
   if (isOpen && !script) {
     return (
       <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
-        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col items-center justify-center">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col items-center justify-center" aria-describedby="loading-description">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Loading Script</DialogTitle>
+            <DialogDescription id="loading-description">Please wait while the script loads.</DialogDescription>
+          </DialogHeader>
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
           <p className="text-muted-foreground mt-4">Loading script...</p>
         </DialogContent>
@@ -62,9 +67,9 @@ export function ScriptReviewModal({
               {wordCount.toLocaleString()} words
             </span>
           </DialogTitle>
-          <p className="text-muted-foreground">
+          <DialogDescription>
             Review and edit the generated script before creating audio.
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 py-4">
