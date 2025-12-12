@@ -33,12 +33,32 @@ function splitScriptIntoChunks(script: string, maxChunkWords: number = 800): str
   return chunks;
 }
 
-// Generate audio using bytes endpoint (faster than SSE)
+// Generate audio using bytes endpoint with context for voice consistency
 async function generateChunkAudioBytes(
   chunk: string, 
   voiceId: string, 
-  apiKey: string
+  apiKey: string,
+  previousText?: string
 ): Promise<Uint8Array> {
+  const body: Record<string, unknown> = {
+    model_id: 'sonic-3',
+    transcript: chunk,
+    voice: {
+      mode: 'id',
+      id: voiceId,
+    },
+    output_format: {
+      container: 'mp3',
+      bit_rate: 128000,
+      sample_rate: 44100,
+    },
+  };
+
+  // Add context from previous chunk to maintain voice consistency
+  if (previousText) {
+    body.context = { previous_text: previousText.slice(-500) }; // Last 500 chars for context
+  }
+
   const response = await fetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',
     headers: {
@@ -46,19 +66,7 @@ async function generateChunkAudioBytes(
       'X-API-Key': apiKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model_id: 'sonic-3',
-      transcript: chunk,
-      voice: {
-        mode: 'id',
-        id: voiceId,
-      },
-      output_format: {
-        container: 'mp3',
-        bit_rate: 128000,
-        sample_rate: 44100,
-      },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -130,64 +138,41 @@ serve(async (req) => {
     console.log(`Split into ${chunks.length} chunks`);
 
     if (stream) {
-      // Streaming mode - process chunks in PARALLEL batches for speed
+      // Streaming mode - process chunks SEQUENTIALLY for voice consistency
       const encoder = new TextEncoder();
-      const BATCH_SIZE = 4; // Process 4 chunks at a time
       
       const responseStream = new ReadableStream({
         async start(controller) {
           try {
-            const audioChunks: (Uint8Array | null)[] = new Array(chunks.length).fill(null);
-            let completedChunks = 0;
+            const audioChunks: Uint8Array[] = [];
+            let previousText = "";
             
-            // Process in parallel batches
-            for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
-              const batchEnd = Math.min(batchStart + BATCH_SIZE, chunks.length);
-              const batchIndices = [];
-              
-              for (let i = batchStart; i < batchEnd; i++) {
-                batchIndices.push(i);
-              }
-              
-              console.log(`Processing batch: chunks ${batchStart + 1}-${batchEnd} of ${chunks.length}`);
+            for (let i = 0; i < chunks.length; i++) {
+              console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
               
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                 type: 'progress', 
-                progress: Math.round((batchStart / chunks.length) * 100), 
-                currentChunk: batchStart + 1, 
+                progress: Math.round((i / chunks.length) * 90), 
+                currentChunk: i + 1, 
                 totalChunks: chunks.length,
-                message: `Generating audio (batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)})...`
+                message: `Generating audio segment ${i + 1}/${chunks.length}...`
               })}\n\n`));
               
-              // Process batch in parallel
-              const batchPromises = batchIndices.map(async (i) => {
-                const chunkAudio = await generateChunkAudioBytes(
-                  chunks[i], 
-                  voiceId, 
-                  CARTESIA_API_KEY
-                );
-                audioChunks[i] = chunkAudio;
-                completedChunks++;
-                return { index: i, size: chunkAudio.length };
-              });
+              const chunkAudio = await generateChunkAudioBytes(
+                chunks[i], 
+                voiceId, 
+                CARTESIA_API_KEY,
+                previousText || undefined
+              );
+              audioChunks.push(chunkAudio);
+              previousText = chunks[i]; // Use this chunk as context for next
               
-              const results = await Promise.all(batchPromises);
-              console.log(`Batch complete: ${results.map(r => `chunk ${r.index + 1} (${r.size} bytes)`).join(', ')}`);
-              
-              // Send progress after batch
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'progress', 
-                progress: Math.round((completedChunks / chunks.length) * 100), 
-                currentChunk: completedChunks, 
-                totalChunks: chunks.length,
-                message: `Generated ${completedChunks}/${chunks.length} audio segments`
-              })}\n\n`));
+              console.log(`Chunk ${i + 1} complete: ${chunkAudio.length} bytes`);
             }
 
-            // Combine MP3 chunks (filter nulls just in case)
-            const validChunks = audioChunks.filter((c): c is Uint8Array => c !== null);
-            const combinedMp3 = concatenateMp3Chunks(validChunks);
-            console.log(`Combined MP3: ${combinedMp3.length} bytes from ${validChunks.length} chunks`);
+            // Combine MP3 chunks
+            const combinedMp3 = concatenateMp3Chunks(audioChunks);
+            console.log(`Combined MP3: ${combinedMp3.length} bytes from ${audioChunks.length} chunks`);
 
             // Upload to storage
             const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -257,16 +242,19 @@ serve(async (req) => {
       });
     }
 
-    // Non-streaming mode
+    // Non-streaming mode - process sequentially for voice consistency
     const audioChunks: Uint8Array[] = [];
+    let previousText = "";
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
       const chunkAudio = await generateChunkAudioBytes(
         chunks[i], 
         voiceId, 
-        CARTESIA_API_KEY
+        CARTESIA_API_KEY,
+        previousText || undefined
       );
       audioChunks.push(chunkAudio);
+      previousText = chunks[i];
     }
 
     const combinedMp3 = concatenateMp3Chunks(audioChunks);
