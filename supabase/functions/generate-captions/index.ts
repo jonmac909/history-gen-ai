@@ -77,7 +77,7 @@ serve(async (req) => {
     formData.append('file', audioBlob, 'audio.mp3');
     formData.append('model', 'whisper-1');
     formData.append('response_format', 'verbose_json');
-    formData.append('timestamp_granularities[]', 'word');
+    formData.append('timestamp_granularities[]', 'segment');
 
     console.log('Sending to Whisper API for transcription...');
     
