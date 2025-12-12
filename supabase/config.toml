@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.generate-images]
 verify_jwt = false
+
+[functions.get-elevenlabs-voices]
+verify_jwt = false

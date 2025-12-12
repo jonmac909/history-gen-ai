@@ -1,7 +1,6 @@
-import { useState, useRef } from "react";
-import { Settings, FileText, Plus, Trash2, Image, Upload, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings, FileText, Image, Loader2, RefreshCw, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -14,6 +13,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export interface ScriptTemplate {
   id: string;
@@ -23,9 +24,20 @@ export interface ScriptTemplate {
 export interface CartesiaVoice {
   id: string;
   name: string;
-  voiceId: string; // For standard: en-US-Chirp3-HD-{VoiceName}, for custom: "custom"
-  referenceAudioUrl?: string; // URL to reference audio for voice cloning
+  voiceId: string;
+  referenceAudioUrl?: string;
   isCustom?: boolean;
+  category?: string;
+  previewUrl?: string;
+}
+
+interface ElevenLabsVoice {
+  voice_id: string;
+  name: string;
+  category: string;
+  description?: string;
+  preview_url?: string;
+  labels?: Record<string, string>;
 }
 
 interface ConfigModalProps {
@@ -35,6 +47,8 @@ interface ConfigModalProps {
   onSaveVoices: (voices: CartesiaVoice[]) => void;
   imageStylePrompt: string;
   onSaveImageStylePrompt: (prompt: string) => void;
+  selectedVoiceId?: string;
+  onSelectVoice?: (voiceId: string) => void;
 }
 
 export function ConfigModal({ 
@@ -44,18 +58,50 @@ export function ConfigModal({
   onSaveVoices,
   imageStylePrompt,
   onSaveImageStylePrompt,
+  selectedVoiceId,
+  onSelectVoice,
 }: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [templates, setTemplates] = useState<ScriptTemplate[]>(scriptTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
   const [stylePrompt, setStylePrompt] = useState(imageStylePrompt);
-  const [uploadingVoiceId, setUploadingVoiceId] = useState<string | null>(null);
-  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [playingPreview, setPlayingPreview] = useState<string | null>(null);
+  const [localSelectedVoiceId, setLocalSelectedVoiceId] = useState(selectedVoiceId || '3GntEbfzhYH3X9VCuIHy');
+
+  const fetchElevenLabsVoices = async () => {
+    setLoadingVoices(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-elevenlabs-voices');
+      
+      if (error) throw error;
+      
+      if (data.voices) {
+        setElevenLabsVoices(data.voices);
+        toast({ title: "Voices loaded", description: `Found ${data.voices.length} voices` });
+      }
+    } catch (error) {
+      console.error('Error fetching voices:', error);
+      toast({ title: "Error", description: "Failed to fetch ElevenLabs voices", variant: "destructive" });
+    } finally {
+      setLoadingVoices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && elevenLabsVoices.length === 0) {
+      fetchElevenLabsVoices();
+    }
+  }, [isOpen]);
 
   const handleSave = () => {
     onSaveTemplates(templates);
     onSaveVoices(voices);
     onSaveImageStylePrompt(stylePrompt);
+    if (onSelectVoice) {
+      onSelectVoice(localSelectedVoiceId);
+    }
     setIsOpen(false);
   };
 
@@ -65,52 +111,32 @@ export function ConfigModal({
     ));
   };
 
-  const addVoice = () => {
-    const newVoice: CartesiaVoice = {
-      id: `voice-${Date.now()}`,
-      name: "",
-      voiceId: "",
-    };
-    setVoices(prev => [...prev, newVoice]);
-  };
-
-  const updateVoice = (id: string, field: keyof CartesiaVoice, value: string | boolean | undefined) => {
-    setVoices(prev => prev.map(v => 
-      v.id === id ? { ...v, [field]: value } : v
-    ));
-  };
-
-  const removeVoice = (id: string) => {
-    setVoices(prev => prev.filter(v => v.id !== id));
-  };
-
-  const handleVoiceFileUpload = async (voiceId: string, file: File) => {
-    if (!file.type.includes('audio')) {
-      toast({ title: "Invalid file type", description: "Please upload a WAV or MP3 file", variant: "destructive" });
+  const playPreview = async (previewUrl: string, voiceId: string) => {
+    if (playingPreview === voiceId) {
+      setPlayingPreview(null);
       return;
     }
-
-    setUploadingVoiceId(voiceId);
+    
+    setPlayingPreview(voiceId);
     try {
-      const fileName = `voices/${voiceId}-${Date.now()}.wav`;
-      const { data, error } = await supabase.storage
-        .from('generated-assets')
-        .upload(fileName, file, { upsert: true });
-
-      if (error) throw error;
-
-      const { data: urlData } = supabase.storage
-        .from('generated-assets')
-        .getPublicUrl(fileName);
-
-      updateVoice(voiceId, "referenceAudioUrl", urlData.publicUrl);
-      updateVoice(voiceId, "isCustom", true);
-      toast({ title: "Voice uploaded", description: "Reference audio uploaded successfully" });
+      const audio = new Audio(previewUrl);
+      audio.onended = () => setPlayingPreview(null);
+      audio.onerror = () => {
+        setPlayingPreview(null);
+        toast({ title: "Preview failed", description: "Could not play voice preview", variant: "destructive" });
+      };
+      await audio.play();
     } catch (error) {
-      console.error('Upload error:', error);
-      toast({ title: "Upload failed", description: "Failed to upload voice file", variant: "destructive" });
-    } finally {
-      setUploadingVoiceId(null);
+      setPlayingPreview(null);
+    }
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'cloned': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      case 'generated': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'professional': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -130,7 +156,7 @@ export function ConfigModal({
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="templates" className="w-full">
+        <Tabs defaultValue="voices" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="templates">Script Templates</TabsTrigger>
             <TabsTrigger value="voices">Voices</TabsTrigger>
@@ -165,96 +191,98 @@ export function ConfigModal({
 
           {/* Voices Tab */}
           <TabsContent value="voices" className="space-y-4 py-4">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Add standard Chirp 3 HD voices or custom cloned voices with reference audio.
-              </p>
-              <div className="p-3 bg-secondary/50 rounded-lg text-xs text-muted-foreground">
-                <strong>Standard voices:</strong> en-US-Chirp3-HD-Puck, Fenrir, Charon, Kore, Aoede, Leda, Orus, Schedar, Zephyr<br/>
-                <strong>Custom voice:</strong> Leave Voice ID empty and provide a reference audio URL
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Select a voice from your ElevenLabs account for audio generation.
+                </p>
               </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={fetchElevenLabsVoices}
+                disabled={loadingVoices}
+                className="gap-2"
+              >
+                {loadingVoices ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Refresh
+              </Button>
             </div>
-            
-            <Button variant="outline" size="sm" onClick={addVoice} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Add Voice
-            </Button>
 
-            {voices.length === 0 ? (
+            {loadingVoices ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : elevenLabsVoices.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No voices added yet. Click "Add Voice" to get started.
+                <p>No voices found. Click Refresh to load your ElevenLabs voices.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {voices.map((voice) => (
-                  <div key={voice.id} className="flex items-start gap-3 p-4 border border-border rounded-lg">
-                    <div className="flex-1 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Voice Name</Label>
-                          <Input
-                            value={voice.name}
-                            onChange={(e) => updateVoice(voice.id, "name", e.target.value)}
-                            placeholder="e.g., Sleepy Narrator"
-                          />
+              <div className="grid gap-2 max-h-[400px] overflow-y-auto pr-2">
+                {elevenLabsVoices.map((voice) => (
+                  <div 
+                    key={voice.voice_id}
+                    onClick={() => setLocalSelectedVoiceId(voice.voice_id)}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all",
+                      localSelectedVoiceId === voice.voice_id
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50 hover:bg-muted/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-3 h-3 rounded-full border-2",
+                        localSelectedVoiceId === voice.voice_id
+                          ? "bg-primary border-primary"
+                          : "border-muted-foreground"
+                      )} />
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          {voice.name}
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5", getCategoryColor(voice.category))}>
+                            {voice.category}
+                          </Badge>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Voice ID (leave empty for custom)</Label>
-                          <Input
-                            value={voice.voiceId}
-                            onChange={(e) => updateVoice(voice.id, "voiceId", e.target.value)}
-                            placeholder="en-US-Chirp3-HD-Puck"
-                          />
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {voice.voice_id}
                         </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Reference Audio (for voice cloning)</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            value={voice.referenceAudioUrl || ""}
-                            onChange={(e) => updateVoice(voice.id, "referenceAudioUrl", e.target.value)}
-                            placeholder="Upload or paste URL"
-                            className="flex-1"
-                          />
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            ref={(el) => (fileInputRefs.current[voice.id] = el)}
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleVoiceFileUpload(voice.id, file);
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            disabled={uploadingVoiceId === voice.id}
-                            onClick={() => fileInputRefs.current[voice.id]?.click()}
-                          >
-                            {uploadingVoiceId === voice.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Upload className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Upload a WAV file (10-30 seconds) or paste a URL for voice cloning
-                        </p>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeVoice(voice.id)}
-                      className="text-muted-foreground hover:text-destructive shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    
+                    {voice.preview_url && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playPreview(voice.preview_url!, voice.voice_id);
+                        }}
+                        className="shrink-0"
+                      >
+                        <Volume2 className={cn(
+                          "w-4 h-4",
+                          playingPreview === voice.voice_id && "text-primary animate-pulse"
+                        )} />
+                      </Button>
+                    )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {localSelectedVoiceId && (
+              <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Selected voice: </span>
+                  <span className="font-medium">
+                    {elevenLabsVoices.find(v => v.voice_id === localSelectedVoiceId)?.name || localSelectedVoiceId}
+                  </span>
+                </p>
               </div>
             )}
           </TabsContent>
