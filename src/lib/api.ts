@@ -235,7 +235,7 @@ export async function generateAudioStreaming(
   script: string, 
   voiceId: string, 
   projectId: string,
-  onProgress: (progress: number, currentChunk: number, totalChunks: number) => void,
+  onProgress: (progress: number) => void,
   referenceAudioUrl?: string
 ): Promise<AudioResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -292,7 +292,7 @@ export async function generateAudioStreaming(
             const parsed = JSON.parse(dataMatch[1]);
             
             if (parsed.type === 'progress') {
-              onProgress(parsed.progress, parsed.currentChunk, parsed.totalChunks);
+              onProgress(parsed.progress);
             } else if (parsed.type === 'complete') {
               result = {
                 success: true,
@@ -300,7 +300,7 @@ export async function generateAudioStreaming(
                 duration: parsed.duration,
                 size: parsed.size
               };
-              onProgress(100, parsed.totalChunks, parsed.totalChunks);
+              onProgress(100);
             } else if (parsed.type === 'error' || parsed.error) {
               result = {
                 success: false,
