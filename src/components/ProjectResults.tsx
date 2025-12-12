@@ -119,7 +119,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
       setVideoClips(result.clips);
       toast({
         title: "Video Clips Ready!",
-        description: `Generated ${result.clips.length} MP4 clips.`,
+        description: `Generated ${result.clips.length} video clips.`,
       });
     } else {
       toast({
@@ -133,7 +133,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
   const handleDownloadClip = (clip: VideoClip) => {
     const link = document.createElement('a');
     link.href = clip.videoUrl;
-    link.download = `clip_${clip.index + 1}.mp4`;
+    link.download = `clip_${clip.index + 1}.webm`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -228,9 +228,9 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
           {/* Video Generation Section */}
           <div className="bg-card rounded-xl border border-border p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
                 <Video className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">MP4 Video Clips</h3>
+                <h3 className="font-semibold text-foreground">Video Clips</h3>
               </div>
               {videoClips.length > 0 && (
                 <Button onClick={handleDownloadAllClips} className="gap-2">
