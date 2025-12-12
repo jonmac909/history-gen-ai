@@ -6,6 +6,36 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Create WAV header for PCM data
+function createWavHeader(dataLength: number, sampleRate: number = 44100, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  
+  // RIFF header
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, 36 + dataLength, true); // File size - 8
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  
+  // fmt chunk
+  view.setUint32(12, 0x666D7420, false); // "fmt "
+  view.setUint32(16, 16, true); // Chunk size
+  view.setUint16(20, 1, true); // Audio format (PCM)
+  view.setUint16(22, channels, true); // Channels
+  view.setUint32(24, sampleRate, true); // Sample rate
+  view.setUint32(28, byteRate, true); // Byte rate
+  view.setUint16(32, blockAlign, true); // Block align
+  view.setUint16(34, bitsPerSample, true); // Bits per sample
+  
+  // data chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, dataLength, true); // Data size
+  
+  return new Uint8Array(header);
+}
+
 // Generate audio for full script via WebSocket for seamless voice continuity
 async function generateAudioWebSocket(
   script: string,
@@ -33,8 +63,8 @@ async function generateAudioWebSocket(
           id: voiceId,
         },
         output_format: {
-          container: 'mp3',
-          bit_rate: 128000,
+          container: 'raw',
+          encoding: 'pcm_s16le',
           sample_rate: 44100,
         },
         continue: false,
@@ -59,15 +89,22 @@ async function generateAudioWebSocket(
           console.log(`WebSocket complete, received ${audioChunks.length} chunks`);
           ws.close();
           
-          // Combine all chunks
+          // Combine all PCM chunks
           const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-          const combined = new Uint8Array(totalLength);
+          const pcmData = new Uint8Array(totalLength);
           let offset = 0;
           for (const chunk of audioChunks) {
-            combined.set(chunk, offset);
+            pcmData.set(chunk, offset);
             offset += chunk.length;
           }
-          resolve(combined);
+          
+          // Wrap in WAV header
+          const wavHeader = createWavHeader(totalLength);
+          const wavData = new Uint8Array(wavHeader.length + pcmData.length);
+          wavData.set(wavHeader, 0);
+          wavData.set(pcmData, wavHeader.length);
+          
+          resolve(wavData);
         } else if (data.error) {
           console.error('WebSocket error:', data.error);
           reject(new Error(data.error));
@@ -168,12 +205,12 @@ serve(async (req) => {
             const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
             const supabase = createClient(supabaseUrl, supabaseKey);
 
-            const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+            const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
             
             const { error: uploadError } = await supabase.storage
               .from('generated-assets')
               .upload(fileName, audioData, {
-                contentType: 'audio/mpeg',
+                contentType: 'audio/wav',
                 upsert: true,
               });
 
@@ -193,8 +230,8 @@ serve(async (req) => {
 
             console.log('Audio uploaded:', urlData.publicUrl);
 
-            // Calculate duration (128kbps = 16000 bytes/sec)
-            const durationSeconds = Math.round(audioData.length / 16000);
+            // Calculate duration (44100 Hz, 16-bit mono = 88200 bytes/sec, minus 44 byte header)
+            const durationSeconds = Math.round((audioData.length - 44) / 88200);
             console.log(`Audio duration: ${durationSeconds}s`);
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -230,12 +267,12 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
     
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
       .upload(fileName, audioData, {
-        contentType: 'audio/mpeg',
+        contentType: 'audio/wav',
         upsert: true,
       });
 
@@ -251,7 +288,8 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    const durationSeconds = Math.round(audioData.length / 16000);
+    // Calculate duration (44100 Hz, 16-bit mono = 88200 bytes/sec, minus 44 byte header)
+    const durationSeconds = Math.round((audioData.length - 44) / 88200);
     console.log(`Audio duration: ${durationSeconds}s`);
 
     return new Response(
