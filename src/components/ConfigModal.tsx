@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Settings, FileText, Plus, Trash2, Image } from "lucide-react";
+import { useState, useRef } from "react";
+import { Settings, FileText, Plus, Trash2, Image, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 export interface ScriptTemplate {
   id: string;
@@ -47,6 +49,8 @@ export function ConfigModal({
   const [templates, setTemplates] = useState<ScriptTemplate[]>(scriptTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
   const [stylePrompt, setStylePrompt] = useState(imageStylePrompt);
+  const [uploadingVoiceId, setUploadingVoiceId] = useState<string | null>(null);
+  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   const handleSave = () => {
     onSaveTemplates(templates);
@@ -78,6 +82,36 @@ export function ConfigModal({
 
   const removeVoice = (id: string) => {
     setVoices(prev => prev.filter(v => v.id !== id));
+  };
+
+  const handleVoiceFileUpload = async (voiceId: string, file: File) => {
+    if (!file.type.includes('audio')) {
+      toast({ title: "Invalid file type", description: "Please upload a WAV or MP3 file", variant: "destructive" });
+      return;
+    }
+
+    setUploadingVoiceId(voiceId);
+    try {
+      const fileName = `voices/${voiceId}-${Date.now()}.wav`;
+      const { data, error } = await supabase.storage
+        .from('generated-assets')
+        .upload(fileName, file, { upsert: true });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('generated-assets')
+        .getPublicUrl(fileName);
+
+      updateVoice(voiceId, "referenceAudioUrl", urlData.publicUrl);
+      updateVoice(voiceId, "isCustom", true);
+      toast({ title: "Voice uploaded", description: "Reference audio uploaded successfully" });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({ title: "Upload failed", description: "Failed to upload voice file", variant: "destructive" });
+    } finally {
+      setUploadingVoiceId(null);
+    }
   };
 
   return (
@@ -174,14 +208,40 @@ export function ConfigModal({
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Reference Audio URL (for voice cloning)</Label>
-                        <Input
-                          value={voice.referenceAudioUrl || ""}
-                          onChange={(e) => updateVoice(voice.id, "referenceAudioUrl", e.target.value)}
-                          placeholder="https://your-domain.com/voices/sample.wav"
-                        />
+                        <Label className="text-xs">Reference Audio (for voice cloning)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={voice.referenceAudioUrl || ""}
+                            onChange={(e) => updateVoice(voice.id, "referenceAudioUrl", e.target.value)}
+                            placeholder="Upload or paste URL"
+                            className="flex-1"
+                          />
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            ref={(el) => (fileInputRefs.current[voice.id] = el)}
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleVoiceFileUpload(voice.id, file);
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={uploadingVoiceId === voice.id}
+                            onClick={() => fileInputRefs.current[voice.id]?.click()}
+                          >
+                            {uploadingVoiceId === voice.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
                         <p className="text-[10px] text-muted-foreground">
-                          Provide a URL to a WAV file (10-30 seconds) for voice cloning
+                          Upload a WAV file (10-30 seconds) or paste a URL for voice cloning
                         </p>
                       </div>
                     </div>
