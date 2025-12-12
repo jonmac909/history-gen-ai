@@ -66,7 +66,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
-    voice: "voice-slow",
+    voice: "voice-puck",
     speed: 1,
     imageCount: 10,
     wordCount: 15000,
@@ -75,8 +75,10 @@ const Index = () => {
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([
-    { id: "voice-slow", name: "Slow", voiceId: "46ff9204-c326-44e3-82ae-c1eaa07ba71c" },
-    { id: "voice-sleepy", name: "Sleepy", voiceId: "2f196c8c-9afa-4d7d-9287-151e05592bbf" },
+    { id: "voice-puck", name: "Puck (Clear Narrator)", voiceId: "en-US-Chirp3-HD-Puck" },
+    { id: "voice-fenrir", name: "Fenrir (Deep)", voiceId: "en-US-Chirp3-HD-Fenrir" },
+    { id: "voice-charon", name: "Charon (Warm)", voiceId: "en-US-Chirp3-HD-Charon" },
+    { id: "voice-kore", name: "Kore (Soft)", voiceId: "en-US-Chirp3-HD-Kore" },
   ]);
   const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -153,7 +155,7 @@ const Index = () => {
     if (!selectedVoice) {
       toast({
         title: "Voice Required",
-        description: "Please add and select a Cartesia voice in Settings.",
+        description: "Please add and select a voice in Settings.",
         variant: "destructive",
       });
       return;

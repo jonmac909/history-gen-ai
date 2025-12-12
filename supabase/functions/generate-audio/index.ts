@@ -6,8 +6,157 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Get OAuth2 access token from service account
+async function getAccessToken(serviceAccount: any): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + 3600; // 1 hour expiry
+  
+  // Create JWT header and payload
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: exp,
+  };
+  
+  // Base64url encode
+  const base64url = (data: object | Uint8Array) => {
+    const str = typeof data === 'object' && !(data instanceof Uint8Array) 
+      ? JSON.stringify(data) 
+      : new TextDecoder().decode(data as Uint8Array);
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  
+  const headerB64 = base64url(header);
+  const payloadB64 = base64url(payload);
+  const unsignedJwt = `${headerB64}.${payloadB64}`;
+  
+  // Import private key and sign
+  const privateKeyPem = serviceAccount.private_key;
+  const pemContents = privateKeyPem
+    .replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s/g, '');
+  
+  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(unsignedJwt)
+  );
+  
+  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  
+  const signedJwt = `${unsignedJwt}.${signatureB64}`;
+  
+  // Exchange JWT for access token
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: signedJwt,
+    }),
+  });
+  
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    throw new Error(`Failed to get access token: ${error}`);
+  }
+  
+  const tokenData = await tokenResponse.json();
+  return tokenData.access_token;
+}
+
+// Split script into chunks for API limits (max ~5000 bytes per request)
+function splitScript(script: string, maxChars: number = 4000): string[] {
+  const sentences = script.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let currentChunk = '';
+  
+  for (const sentence of sentences) {
+    if ((currentChunk + ' ' + sentence).length > maxChars && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk = currentChunk ? currentChunk + ' ' + sentence : sentence;
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
+
+// Generate audio using Google Cloud TTS with Chirp 3
+async function generateWithGoogleTTS(
+  text: string,
+  accessToken: string,
+  voiceName: string = 'en-US-Chirp3-HD-Puck'
+): Promise<Uint8Array> {
+  // Extract language code from voice name (e.g., en-US-Chirp3-HD-Puck -> en-US)
+  const languageCode = voiceName.split('-').slice(0, 2).join('-');
+  
+  const requestBody = {
+    input: { text },
+    voice: {
+      languageCode,
+      name: voiceName,
+    },
+    audioConfig: {
+      audioEncoding: 'LINEAR16',
+      sampleRateHertz: 24000,
+    },
+  };
+  
+  console.log(`Calling Google TTS with voice: ${voiceName}`);
+  
+  const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Google TTS error:', error);
+    throw new Error(`Google TTS failed: ${error}`);
+  }
+  
+  const data = await response.json();
+  
+  // Decode base64 audio content
+  const audioContent = data.audioContent;
+  const binaryString = atob(audioContent);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  
+  return bytes;
+}
+
 // Create WAV header for PCM data
-function createWavHeader(dataLength: number, sampleRate: number = 44100, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
+function createWavHeader(dataLength: number, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
   
@@ -36,103 +185,15 @@ function createWavHeader(dataLength: number, sampleRate: number = 44100, channel
   return new Uint8Array(header);
 }
 
-// Generate audio for full script via WebSocket for seamless voice continuity
-async function generateAudioWebSocket(
-  script: string,
-  voiceId: string,
-  apiKey: string
-): Promise<Uint8Array> {
-  // Use WebSocket API for seamless audio with continuations
-  // Note: API key is passed as query parameter for WebSocket auth
-  const ws = new WebSocket(`wss://api.cartesia.ai/tts/websocket?cartesia_version=2025-04-16&api_key=${apiKey}`);
-  
-  return new Promise((resolve, reject) => {
-    const audioChunks: Uint8Array[] = [];
-    let contextId = crypto.randomUUID();
-    
-    ws.onopen = () => {
-      console.log('WebSocket connected, sending transcript...');
-      
-      // Send the full transcript in a single context for seamless audio
-      const message = {
-        context_id: contextId,
-        model_id: 'sonic-3',
-        transcript: script,
-        voice: {
-          mode: 'id',
-          id: voiceId,
-        },
-        output_format: {
-          container: 'raw',
-          encoding: 'pcm_s16le',
-          sample_rate: 44100,
-        },
-        continue: false,
-      };
-      
-      ws.send(JSON.stringify(message));
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'chunk' && data.data) {
-          // Decode base64 audio chunk
-          const binaryString = atob(data.data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          audioChunks.push(bytes);
-        } else if (data.type === 'done') {
-          console.log(`WebSocket complete, received ${audioChunks.length} chunks`);
-          ws.close();
-          
-          // Combine all PCM chunks
-          const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-          const pcmData = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of audioChunks) {
-            pcmData.set(chunk, offset);
-            offset += chunk.length;
-          }
-          
-          // Wrap in WAV header
-          const wavHeader = createWavHeader(totalLength);
-          const wavData = new Uint8Array(wavHeader.length + pcmData.length);
-          wavData.set(wavHeader, 0);
-          wavData.set(pcmData, wavHeader.length);
-          
-          resolve(wavData);
-        } else if (data.error) {
-          console.error('WebSocket error:', data.error);
-          reject(new Error(data.error));
-        }
-      } catch (e) {
-        // Ignore parse errors for non-JSON messages
-      }
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      reject(new Error('WebSocket connection failed'));
-    };
-    
-    ws.onclose = (event) => {
-      if (!event.wasClean && audioChunks.length === 0) {
-        reject(new Error(`WebSocket closed unexpectedly: ${event.code}`));
-      }
-    };
-    
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-        reject(new Error('WebSocket timeout'));
-      }
-    }, 300000);
-  });
+// Strip WAV header from audio data (returns just PCM)
+function stripWavHeader(audioData: Uint8Array): Uint8Array {
+  // Check if it has a WAV header (starts with RIFF)
+  if (audioData.length > 44 && 
+      audioData[0] === 0x52 && audioData[1] === 0x49 && 
+      audioData[2] === 0x46 && audioData[3] === 0x46) {
+    return audioData.slice(44);
+  }
+  return audioData;
 }
 
 serve(async (req) => {
@@ -150,17 +211,21 @@ serve(async (req) => {
       );
     }
 
-    if (!voiceId) {
+    // Get service account credentials
+    const serviceAccountKey = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY');
+    if (!serviceAccountKey) {
       return new Response(
-        JSON.stringify({ error: 'Voice ID is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Google Service Account not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const CARTESIA_API_KEY = Deno.env.get('CARTESIA_API_KEY');
-    if (!CARTESIA_API_KEY) {
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(serviceAccountKey);
+    } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Cartesia API key not configured' }),
+        JSON.stringify({ error: 'Invalid service account key format' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -175,7 +240,20 @@ serve(async (req) => {
       .trim();
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    console.log(`Generating audio for ${wordCount} words via WebSocket...`);
+    console.log(`Generating audio for ${wordCount} words with Google Chirp 3...`);
+
+    // Get access token
+    console.log('Getting Google OAuth2 access token...');
+    const accessToken = await getAccessToken(serviceAccount);
+    console.log('Access token obtained');
+
+    // Use Chirp 3 HD voices - default to Puck (clear narrator voice)
+    // Available voices: Aoede, Charon, Fenrir, Kore, Leda, Orus, Puck, Schedar, Zephyr
+    const voiceName = voiceId || 'en-US-Chirp3-HD-Puck';
+    
+    // Split script into chunks for API limits
+    const chunks = splitScript(cleanScript);
+    console.log(`Split into ${chunks.length} chunks for processing`);
 
     if (stream) {
       // Streaming mode with progress updates
@@ -184,23 +262,50 @@ serve(async (req) => {
       const responseStream = new ReadableStream({
         async start(controller) {
           try {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'progress', 
-              progress: 10, 
-              currentChunk: 1,
-              totalChunks: 1,
-              message: 'Connecting to Cartesia...'
-            })}\n\n`));
+            const allAudioData: Uint8Array[] = [];
             
-            // Generate audio via WebSocket for seamless voice
-            const audioData = await generateAudioWebSocket(cleanScript, voiceId, CARTESIA_API_KEY);
-            console.log(`Generated ${audioData.length} bytes of seamless audio`);
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              const progress = Math.round(10 + (i / chunks.length) * 75);
+              
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'progress', 
+                progress,
+                currentChunk: i + 1,
+                totalChunks: chunks.length,
+                message: `Generating audio chunk ${i + 1}/${chunks.length}...`
+              })}\n\n`));
+              
+              const audioData = await generateWithGoogleTTS(chunk, accessToken, voiceName);
+              // Strip WAV header from chunks (we'll add one combined header later)
+              const pcmData = stripWavHeader(audioData);
+              allAudioData.push(pcmData);
+              
+              console.log(`Chunk ${i + 1}/${chunks.length} generated: ${pcmData.length} bytes`);
+            }
+            
+            // Combine all audio chunks
+            const totalPcmLength = allAudioData.reduce((sum, d) => sum + d.length, 0);
+            const combinedPcm = new Uint8Array(totalPcmLength);
+            let offset = 0;
+            for (const pcm of allAudioData) {
+              combinedPcm.set(pcm, offset);
+              offset += pcm.length;
+            }
+            
+            // Add WAV header
+            const wavHeader = createWavHeader(totalPcmLength, 24000);
+            const finalAudio = new Uint8Array(wavHeader.length + combinedPcm.length);
+            finalAudio.set(wavHeader, 0);
+            finalAudio.set(combinedPcm, wavHeader.length);
+            
+            console.log(`Combined audio: ${finalAudio.length} bytes`);
             
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'progress', 
               progress: 90, 
-              currentChunk: 1,
-              totalChunks: 1,
+              currentChunk: chunks.length,
+              totalChunks: chunks.length,
               message: 'Uploading audio file...'
             })}\n\n`));
 
@@ -213,7 +318,7 @@ serve(async (req) => {
             
             const { error: uploadError } = await supabase.storage
               .from('generated-assets')
-              .upload(fileName, audioData, {
+              .upload(fileName, finalAudio, {
                 contentType: 'audio/wav',
                 upsert: true,
               });
@@ -234,16 +339,16 @@ serve(async (req) => {
 
             console.log('Audio uploaded:', urlData.publicUrl);
 
-            // Calculate duration (44100 Hz, 16-bit mono = 88200 bytes/sec, minus 44 byte header)
-            const durationSeconds = Math.round((audioData.length - 44) / 88200);
+            // Calculate duration (24000 Hz, 16-bit mono = 48000 bytes/sec)
+            const durationSeconds = Math.round(totalPcmLength / 48000);
             console.log(`Audio duration: ${durationSeconds}s`);
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
               audioUrl: urlData.publicUrl,
               duration: durationSeconds,
-              size: audioData.length,
-              totalChunks: 1
+              size: finalAudio.length,
+              totalChunks: chunks.length
             })}\n\n`));
 
           } catch (error) {
@@ -264,8 +369,32 @@ serve(async (req) => {
     }
 
     // Non-streaming mode
-    const audioData = await generateAudioWebSocket(cleanScript, voiceId, CARTESIA_API_KEY);
-    console.log(`Generated ${audioData.length} bytes of seamless audio`);
+    const allAudioData: Uint8Array[] = [];
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const audioData = await generateWithGoogleTTS(chunk, accessToken, voiceName);
+      const pcmData = stripWavHeader(audioData);
+      allAudioData.push(pcmData);
+      console.log(`Chunk ${i + 1}/${chunks.length} generated: ${pcmData.length} bytes`);
+    }
+    
+    // Combine all audio chunks
+    const totalPcmLength = allAudioData.reduce((sum, d) => sum + d.length, 0);
+    const combinedPcm = new Uint8Array(totalPcmLength);
+    let offset = 0;
+    for (const pcm of allAudioData) {
+      combinedPcm.set(pcm, offset);
+      offset += pcm.length;
+    }
+    
+    // Add WAV header
+    const wavHeader = createWavHeader(totalPcmLength, 24000);
+    const finalAudio = new Uint8Array(wavHeader.length + combinedPcm.length);
+    finalAudio.set(wavHeader, 0);
+    finalAudio.set(combinedPcm, wavHeader.length);
+    
+    console.log(`Combined audio: ${finalAudio.length} bytes`);
 
     // Upload
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -276,7 +405,7 @@ serve(async (req) => {
     
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(fileName, audioData, {
+      .upload(fileName, finalAudio, {
         contentType: 'audio/wav',
         upsert: true,
       });
@@ -293,8 +422,8 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    // Calculate duration (44100 Hz, 16-bit mono = 88200 bytes/sec, minus 44 byte header)
-    const durationSeconds = Math.round((audioData.length - 44) / 88200);
+    // Calculate duration (24000 Hz, 16-bit mono = 48000 bytes/sec)
+    const durationSeconds = Math.round(totalPcmLength / 48000);
     console.log(`Audio duration: ${durationSeconds}s`);
 
     return new Response(
@@ -302,7 +431,7 @@ serve(async (req) => {
         success: true,
         audioUrl: urlData.publicUrl,
         duration: durationSeconds,
-        size: audioData.length,
+        size: finalAudio.length,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
