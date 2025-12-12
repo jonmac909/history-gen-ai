@@ -294,6 +294,9 @@ serve(async (req) => {
       );
     }
 
+    // Get voice cloning key from environment
+    const storedVoiceCloningKey = Deno.env.get('GOOGLE_VOICE_CLONING_KEY');
+
     let serviceAccount;
     try {
       serviceAccount = JSON.parse(serviceAccountKey);
@@ -316,7 +319,9 @@ serve(async (req) => {
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     
     // Determine if using custom voice cloning
-    const useCustomVoice = referenceAudioUrl && voiceCloningKey;
+    // Use provided key or fall back to stored environment key
+    const effectiveVoiceCloningKey = voiceCloningKey || storedVoiceCloningKey;
+    const useCustomVoice = referenceAudioUrl && effectiveVoiceCloningKey;
     console.log(`Generating audio for ${wordCount} words with ${useCustomVoice ? 'custom cloned voice' : 'standard Chirp 3 HD voice'}...`);
 
     // Get access token
@@ -340,8 +345,8 @@ serve(async (req) => {
 
     // Generator function for audio chunks
     const generateChunk = async (text: string): Promise<Uint8Array> => {
-      if (useCustomVoice && referenceAudioBase64) {
-        return generateWithCustomVoice(text, accessToken, referenceAudioBase64, voiceCloningKey);
+      if (useCustomVoice && referenceAudioBase64 && effectiveVoiceCloningKey) {
+        return generateWithCustomVoice(text, accessToken, referenceAudioBase64, effectiveVoiceCloningKey);
       } else {
         return generateWithStandardVoice(text, accessToken, voiceName);
       }

@@ -235,7 +235,8 @@ export async function generateAudioStreaming(
   script: string, 
   voiceId: string, 
   projectId: string,
-  onProgress: (progress: number, currentChunk: number, totalChunks: number) => void
+  onProgress: (progress: number, currentChunk: number, totalChunks: number) => void,
+  referenceAudioUrl?: string
 ): Promise<AudioResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -247,7 +248,13 @@ export async function generateAudioStreaming(
       'Authorization': `Bearer ${supabaseKey}`,
       'apikey': supabaseKey,
     },
-    body: JSON.stringify({ script, voiceId, projectId, stream: true })
+    body: JSON.stringify({ 
+      script, 
+      voiceId, 
+      projectId, 
+      stream: true,
+      referenceAudioUrl 
+    })
   });
 
   if (!response.ok) {
