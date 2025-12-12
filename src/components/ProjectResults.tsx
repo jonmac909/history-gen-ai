@@ -133,7 +133,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
   const handleDownloadClip = (clip: VideoClip) => {
     const link = document.createElement('a');
     link.href = clip.videoUrl;
-    link.download = `clip_${clip.index + 1}.webm`;
+    link.download = `clip_${clip.index + 1}.mp4`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

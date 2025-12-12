@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 
 interface ImageTiming {
   imageUrl: string;
@@ -22,6 +24,29 @@ export function useVideoGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
+  const ffmpegRef = useRef<FFmpeg | null>(null);
+  const loadedRef = useRef(false);
+
+  const loadFFmpeg = useCallback(async () => {
+    if (loadedRef.current && ffmpegRef.current) {
+      return ffmpegRef.current;
+    }
+
+    const ffmpeg = new FFmpeg();
+    ffmpegRef.current = ffmpeg;
+
+    ffmpeg.on('progress', ({ progress: p }) => {
+      // This is per-file progress, we'll handle overall progress separately
+    });
+
+    await ffmpeg.load({
+      coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
+      wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+    });
+
+    loadedRef.current = true;
+    return ffmpeg;
+  }, []);
 
   // Parse SRT content to get total duration
   const parseSRT = useCallback((srtContent: string): { startTime: number; endTime: number }[] => {
@@ -78,89 +103,48 @@ export function useVideoGeneration() {
     }));
   }, [parseSRT]);
 
-  // Create video from single image using Canvas + MediaRecorder (fast mode)
+  // Create video from single image using FFmpeg (correct duration)
   const createVideoFromImage = useCallback(async (
+    ffmpeg: FFmpeg,
     imageUrl: string,
     duration: number,
-    onProgress?: (p: number) => void
+    index: number
   ): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      
-      img.onload = () => {
-        // Create canvas at 1920x1080
-        const canvas = document.createElement('canvas');
-        canvas.width = 1920;
-        canvas.height = 1080;
-        const ctx = canvas.getContext('2d')!;
+    // Fetch the image
+    const imageData = await fetchFile(imageUrl);
+    const inputName = `input_${index}.png`;
+    const outputName = `output_${index}.mp4`;
 
-        // Calculate scaling to fit image
-        const scale = Math.min(1920 / img.width, 1080 / img.height);
-        const x = (1920 - img.width * scale) / 2;
-        const y = (1080 - img.height * scale) / 2;
+    // Write input image to FFmpeg filesystem
+    await ffmpeg.writeFile(inputName, imageData);
 
-        // Draw black background and centered image
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, 1920, 1080);
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+    // Create video with exact duration using loop and duration flags
+    // -loop 1: loop the input image
+    // -t: duration in seconds
+    // -r 30: 30fps output
+    // -pix_fmt yuv420p: compatible pixel format
+    // -vf scale: ensure even dimensions for h264
+    await ffmpeg.exec([
+      '-loop', '1',
+      '-i', inputName,
+      '-c:v', 'libx264',
+      '-t', duration.toFixed(2),
+      '-pix_fmt', 'yuv420p',
+      '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
+      '-r', '30',
+      '-preset', 'ultrafast',
+      outputName
+    ]);
 
-        // Use lower framerate for speed (5 fps is enough for static images)
-        const fps = 5;
-        const stream = canvas.captureStream(fps);
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'video/webm;codecs=vp9',
-          videoBitsPerSecond: 2000000,
-        });
+    // Read the output video
+    const data = await ffmpeg.readFile(outputName);
+    const blob = new Blob([new Uint8Array(data as Uint8Array)], { type: 'video/mp4' });
 
-        const chunks: Blob[] = [];
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            chunks.push(e.data);
-          }
-        };
+    // Cleanup
+    await ffmpeg.deleteFile(inputName);
+    await ffmpeg.deleteFile(outputName);
 
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          resolve(blob);
-        };
-
-        mediaRecorder.onerror = (e) => {
-          reject(new Error('MediaRecorder error: ' + e));
-        };
-
-        // Start recording - we'll use timeslice to control duration
-        mediaRecorder.start(100);
-
-        // For static images, we just need to wait the duration
-        // Use fast simulation - record for a short burst then stop
-        const recordDurationMs = Math.min(duration * 1000, 3000); // Cap at 3 seconds actual recording
-        
-        let elapsed = 0;
-        const interval = setInterval(() => {
-          elapsed += 100;
-          if (onProgress) {
-            onProgress(elapsed / recordDurationMs);
-          }
-          
-          // Trigger canvas update to keep stream alive
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, 1920, 1080);
-          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-          
-          if (elapsed >= recordDurationMs) {
-            clearInterval(interval);
-            mediaRecorder.stop();
-          }
-        }, 100);
-      };
-
-      img.onerror = () => {
-        reject(new Error('Failed to load image: ' + imageUrl));
-      };
-
-      img.src = imageUrl;
-    });
+    return blob;
   }, []);
 
   const generateVideo = useCallback(async (
@@ -174,8 +158,11 @@ export function useVideoGeneration() {
 
     setIsGenerating(true);
     setProgress(0);
+    setStatus('Loading video encoder...');
 
     try {
+      const ffmpeg = await loadFFmpeg();
+      
       const timings = calculateImageTimings(imageUrls, srtContent);
       console.log('Image timings:', timings);
 
@@ -184,17 +171,18 @@ export function useVideoGeneration() {
 
       for (let i = 0; i < totalImages; i++) {
         const timing = timings[i];
-        const baseProgress = (i / totalImages) * 100;
+        const progressPercent = Math.round(((i + 0.5) / totalImages) * 100);
         
-        setStatus(`Creating clip ${i + 1} of ${totalImages}...`);
-        setProgress(Math.round(baseProgress));
+        setStatus(`Creating clip ${i + 1} of ${totalImages} (${timing.duration.toFixed(1)}s)...`);
+        setProgress(progressPercent);
 
         console.log(`Creating clip ${i + 1} with duration ${timing.duration.toFixed(2)}s...`);
 
         const videoBlob = await createVideoFromImage(
+          ffmpeg,
           timing.imageUrl,
           timing.duration,
-          (p) => setProgress(Math.round(baseProgress + (p * 100 / totalImages)))
+          i
         );
 
         const videoUrl = URL.createObjectURL(videoBlob);
@@ -206,7 +194,9 @@ export function useVideoGeneration() {
           duration: timing.duration,
         });
 
-        console.log(`Clip ${i + 1} created: ${(videoBlob.size / 1024).toFixed(1)}KB`);
+        console.log(`Clip ${i + 1} created: ${(videoBlob.size / 1024).toFixed(1)}KB, duration: ${timing.duration.toFixed(2)}s`);
+        
+        setProgress(Math.round(((i + 1) / totalImages) * 100));
       }
 
       setProgress(100);
@@ -222,7 +212,7 @@ export function useVideoGeneration() {
         error: error instanceof Error ? error.message : 'Failed to generate video' 
       };
     }
-  }, [calculateImageTimings, createVideoFromImage]);
+  }, [loadFFmpeg, calculateImageTimings, createVideoFromImage]);
 
   return {
     generateVideo,
