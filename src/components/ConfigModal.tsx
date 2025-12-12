@@ -21,7 +21,7 @@ export interface ScriptTemplate {
 export interface CartesiaVoice {
   id: string;
   name: string;
-  voiceId: string;
+  voiceId: string; // For Google Chirp 3: en-US-Chirp3-HD-{VoiceName}
 }
 
 interface ConfigModalProps {
@@ -97,7 +97,7 @@ export function ConfigModal({
         <Tabs defaultValue="templates" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="templates">Script Templates</TabsTrigger>
-            <TabsTrigger value="voices">Cartesia Voices</TabsTrigger>
+            <TabsTrigger value="voices">Voices</TabsTrigger>
             <TabsTrigger value="image-style">Image Style</TabsTrigger>
           </TabsList>
 
@@ -127,11 +127,11 @@ export function ConfigModal({
             ))}
           </TabsContent>
 
-          {/* Cartesia Voices Tab */}
+          {/* Voices Tab */}
           <TabsContent value="voices" className="space-y-4 py-4">
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                Add your custom Cartesia voice IDs.
+                Add Google Chirp 3 HD voices (e.g., en-US-Chirp3-HD-Puck).
               </p>
               <Button variant="outline" size="sm" onClick={addVoice} className="gap-2">
                 <Plus className="w-4 h-4" />
@@ -161,7 +161,7 @@ export function ConfigModal({
                         <Input
                           value={voice.voiceId}
                           onChange={(e) => updateVoice(voice.id, "voiceId", e.target.value)}
-                          placeholder="Cartesia voice ID"
+                          placeholder="en-US-Chirp3-HD-Puck"
                         />
                       </div>
                     </div>
