@@ -421,8 +421,6 @@ const Index = () => {
             onSaveVoices={handleSaveVoices}
             imageStylePrompt={imageStylePrompt}
             onSaveImageStylePrompt={handleSaveImageStylePrompt}
-            selectedVoiceId={selectedElevenLabsVoiceId}
-            onSelectVoice={setSelectedElevenLabsVoiceId}
           />
         </div>
       </header>
@@ -477,7 +475,6 @@ const Index = () => {
                 settings={settings} 
                 onSettingsChange={setSettings}
                 scriptTemplates={scriptTemplates}
-                cartesiaVoices={cartesiaVoices}
               />
               
               <Button
