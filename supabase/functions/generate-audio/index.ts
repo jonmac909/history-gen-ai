@@ -104,14 +104,72 @@ function splitScript(script: string, maxChars: number = 4000): string[] {
   return chunks;
 }
 
-// Generate audio using Google Cloud TTS with Chirp 3
-async function generateWithGoogleTTS(
+// Generate audio using Google Cloud TTS with Chirp 3 Instant Custom Voice
+async function generateWithCustomVoice(
+  text: string,
+  accessToken: string,
+  referenceAudioBase64: string,
+  voiceCloneKey: string
+): Promise<Uint8Array> {
+  console.log('Using Chirp 3 Instant Custom Voice cloning...');
+  
+  const requestBody = {
+    input: { text },
+    voice: {
+      languageCode: 'en-US',
+      customVoice: {
+        model: 'chirp3-hd',
+        reportedUsage: 'REALTIME',
+        voiceCloningKey: voiceCloneKey,
+      },
+    },
+    audioConfig: {
+      audioEncoding: 'LINEAR16',
+      sampleRateHertz: 24000,
+    },
+    referenceAudio: {
+      audioContent: referenceAudioBase64,
+    },
+  };
+  
+  const response = await fetch('https://texttospeech.googleapis.com/v1beta1/text:synthesize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Google TTS Custom Voice error:', error);
+    throw new Error(`Google TTS Custom Voice failed: ${error}`);
+  }
+  
+  const data = await response.json();
+  
+  // Decode base64 audio content
+  const audioContent = data.audioContent;
+  const binaryString = atob(audioContent);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  
+  return bytes;
+}
+
+// Generate audio using Google Cloud TTS with standard Chirp 3 HD voice
+async function generateWithStandardVoice(
   text: string,
   accessToken: string,
   voiceName: string = 'en-US-Chirp3-HD-Puck'
 ): Promise<Uint8Array> {
   // Extract language code from voice name (e.g., en-US-Chirp3-HD-Puck -> en-US)
   const languageCode = voiceName.split('-').slice(0, 2).join('-');
+  
+  console.log(`Using standard Chirp 3 HD voice: ${voiceName}`);
   
   const requestBody = {
     input: { text },
@@ -124,8 +182,6 @@ async function generateWithGoogleTTS(
       sampleRateHertz: 24000,
     },
   };
-  
-  console.log(`Calling Google TTS with voice: ${voiceName}`);
   
   const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
     method: 'POST',
@@ -196,13 +252,31 @@ function stripWavHeader(audioData: Uint8Array): Uint8Array {
   return audioData;
 }
 
+// Fetch reference audio and convert to base64
+async function fetchReferenceAudio(url: string): Promise<string> {
+  console.log('Fetching reference audio from:', url);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reference audio: ${response.status}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  
+  // Convert to base64
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { script, voiceId, projectId, stream } = await req.json();
+    const { script, voiceId, projectId, stream, referenceAudioUrl, voiceCloningKey } = await req.json();
     
     if (!script) {
       return new Response(
@@ -240,20 +314,38 @@ serve(async (req) => {
       .trim();
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    console.log(`Generating audio for ${wordCount} words with Google Chirp 3...`);
+    
+    // Determine if using custom voice cloning
+    const useCustomVoice = referenceAudioUrl && voiceCloningKey;
+    console.log(`Generating audio for ${wordCount} words with ${useCustomVoice ? 'custom cloned voice' : 'standard Chirp 3 HD voice'}...`);
 
     // Get access token
     console.log('Getting Google OAuth2 access token...');
     const accessToken = await getAccessToken(serviceAccount);
     console.log('Access token obtained');
 
-    // Use Chirp 3 HD voices - default to Puck (clear narrator voice)
-    // Available voices: Aoede, Charon, Fenrir, Kore, Leda, Orus, Puck, Schedar, Zephyr
+    // Fetch reference audio if using custom voice
+    let referenceAudioBase64: string | null = null;
+    if (useCustomVoice) {
+      referenceAudioBase64 = await fetchReferenceAudio(referenceAudioUrl);
+      console.log(`Reference audio loaded: ${referenceAudioBase64.length} chars base64`);
+    }
+
+    // Use provided voice name or default
     const voiceName = voiceId || 'en-US-Chirp3-HD-Puck';
     
     // Split script into chunks for API limits
     const chunks = splitScript(cleanScript);
     console.log(`Split into ${chunks.length} chunks for processing`);
+
+    // Generator function for audio chunks
+    const generateChunk = async (text: string): Promise<Uint8Array> => {
+      if (useCustomVoice && referenceAudioBase64) {
+        return generateWithCustomVoice(text, accessToken, referenceAudioBase64, voiceCloningKey);
+      } else {
+        return generateWithStandardVoice(text, accessToken, voiceName);
+      }
+    };
 
     if (stream) {
       // Streaming mode with progress updates
@@ -276,7 +368,7 @@ serve(async (req) => {
                 message: `Generating audio chunk ${i + 1}/${chunks.length}...`
               })}\n\n`));
               
-              const audioData = await generateWithGoogleTTS(chunk, accessToken, voiceName);
+              const audioData = await generateChunk(chunk);
               // Strip WAV header from chunks (we'll add one combined header later)
               const pcmData = stripWavHeader(audioData);
               allAudioData.push(pcmData);
@@ -373,7 +465,7 @@ serve(async (req) => {
     
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const audioData = await generateWithGoogleTTS(chunk, accessToken, voiceName);
+      const audioData = await generateChunk(chunk);
       const pcmData = stripWavHeader(audioData);
       allAudioData.push(pcmData);
       console.log(`Chunk ${i + 1}/${chunks.length} generated: ${pcmData.length} bytes`);
