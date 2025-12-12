@@ -1,9 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import { Download, RefreshCw, Layers, ExternalLink, Video, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Download, RefreshCw, Layers, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-import { Progress } from "@/components/ui/progress";
-import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 
 export interface GeneratedAsset {
   id: string;
@@ -15,13 +13,6 @@ export interface GeneratedAsset {
   content?: string;
 }
 
-interface VideoClip {
-  index: number;
-  videoUrl: string;
-  videoBlob: Blob;
-  duration: number;
-}
-
 interface ProjectResultsProps {
   sourceUrl: string;
   onNewProject: () => void;
@@ -29,6 +20,48 @@ interface ProjectResultsProps {
   audioUrl?: string;
   srtContent?: string;
 }
+
+// Parse SRT to get timing info
+const parseSRTTimings = (srtContent: string): { startTime: number; endTime: number }[] => {
+  const segments: { startTime: number; endTime: number }[] = [];
+  const blocks = srtContent.trim().split(/\n\n+/);
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    if (lines.length >= 2) {
+      const timeLine = lines[1];
+      const timeMatch = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+      
+      if (timeMatch) {
+        const startTime = 
+          parseInt(timeMatch[1]) * 3600 + 
+          parseInt(timeMatch[2]) * 60 + 
+          parseInt(timeMatch[3]) + 
+          parseInt(timeMatch[4]) / 1000;
+        
+        const endTime = 
+          parseInt(timeMatch[5]) * 3600 + 
+          parseInt(timeMatch[6]) * 60 + 
+          parseInt(timeMatch[7]) + 
+          parseInt(timeMatch[8]) / 1000;
+        
+        segments.push({ startTime, endTime });
+      }
+    }
+  }
+
+  return segments;
+};
+
+// Format seconds to timestamp string (e.g., "00m00s-00m30s")
+const formatTimestamp = (startSec: number, endSec: number): string => {
+  const formatTime = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = Math.floor(sec % 60);
+    return `${mins.toString().padStart(2, '0')}m${secs.toString().padStart(2, '0')}s`;
+  };
+  return `${formatTime(startSec)}-${formatTime(endSec)}`;
+};
 
 // Download file from URL
 const downloadFromUrl = async (url: string, filename: string) => {
@@ -63,115 +96,50 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
 };
 
 export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtContent }: ProjectResultsProps) {
-  const [videoClips, setVideoClips] = useState<VideoClip[]>([]);
-  const { generateVideo, isGenerating, progress, status } = useVideoGeneration();
-  const hasStartedGeneration = useRef(false);
+  // Calculate image timings based on SRT
+  const getImageTimings = () => {
+    const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
+    if (!srtContent || imageAssets.length === 0) return [];
 
-  // Extract image URLs from assets
-  const imageUrls = assets
-    .filter(a => a.id.startsWith('image-') && a.url)
-    .map(a => a.url!);
+    const segments = parseSRTTimings(srtContent);
+    if (segments.length === 0) return [];
 
-  // Auto-generate video clips when component mounts with required data
-  useEffect(() => {
-    if (hasStartedGeneration.current) return;
-    if (imageUrls.length === 0 || !srtContent || isGenerating) return;
+    const totalDuration = segments[segments.length - 1].endTime;
+    const imageDuration = totalDuration / imageAssets.length;
 
-    hasStartedGeneration.current = true;
-    
-    const autoGenerate = async () => {
-      const result = await generateVideo(imageUrls, srtContent, audioUrl);
-      if (result.success && result.clips) {
-        setVideoClips(result.clips);
-      }
-    };
-    
-    autoGenerate();
-  }, [imageUrls.length, srtContent, audioUrl]);
-
-  const handleGenerateVideo = async () => {
-    if (imageUrls.length === 0) {
-      toast({
-        title: "No Images",
-        description: "No images available to generate video.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!srtContent) {
-      toast({
-        title: "No Captions",
-        description: "SRT captions are required to generate video with proper timing.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Generating Video Clips",
-      description: `Creating ${imageUrls.length} video clips...`,
-    });
-
-    const result = await generateVideo(imageUrls, srtContent, audioUrl);
-
-    if (result.success && result.clips) {
-      setVideoClips(result.clips);
-      toast({
-        title: "Video Clips Ready!",
-        description: `Generated ${result.clips.length} video clips.`,
-      });
-    } else {
-      toast({
-        title: "Video Generation Failed",
-        description: result.error || "Failed to generate video",
-        variant: "destructive",
-      });
-    }
+    return imageAssets.map((asset, index) => ({
+      asset,
+      startTime: index * imageDuration,
+      endTime: (index + 1) * imageDuration,
+    }));
   };
 
-  const handleDownloadClip = (clip: VideoClip) => {
-    const link = document.createElement('a');
-    link.href = clip.videoUrl;
-    link.download = `clip_${clip.index + 1}.webm`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const imageTimings = getImageTimings();
 
-  const handleDownloadAllClips = () => {
-    videoClips.forEach((clip, i) => {
-      setTimeout(() => handleDownloadClip(clip), i * 500);
-    });
-    toast({
-      title: "Downloading All Clips",
-      description: `Downloading ${videoClips.length} video clips...`,
-    });
-  };
-
-  const handleDownload = async (asset: GeneratedAsset) => {
+  const handleDownload = async (asset: GeneratedAsset, customFilename?: string) => {
     try {
       if (asset.content) {
-        // If we have content, download it directly as text
         const extension = asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
         const mimeType = asset.type === 'Markdown' ? 'text/markdown' : 
                          asset.type === 'SRT' ? 'text/plain' : 'text/plain';
-        downloadTextContent(asset.content, `${asset.name.replace(/\s+/g, '_')}.${extension}`, mimeType);
+        const filename = customFilename || `${asset.name.replace(/\s+/g, '_')}.${extension}`;
+        downloadTextContent(asset.content, filename, mimeType);
         toast({
           title: "Download Complete",
-          description: `${asset.name} downloaded successfully.`,
+          description: `${filename} downloaded successfully.`,
         });
       } else if (asset.url) {
-        // Download from URL
         toast({
           title: "Downloading...",
           description: `Downloading ${asset.name}...`,
         });
-        const extension = asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
-        await downloadFromUrl(asset.url, `${asset.name.replace(/\s+/g, '_')}.${extension}`);
+        const extension = asset.type.toLowerCase() === 'png' ? 'png' : 
+                         asset.type.toLowerCase() === 'markdown' ? 'md' : asset.type.toLowerCase();
+        const filename = customFilename || `${asset.name.replace(/\s+/g, '_')}.${extension}`;
+        await downloadFromUrl(asset.url, filename);
         toast({
           title: "Download Complete",
-          description: `${asset.name} downloaded successfully.`,
+          description: `${filename} downloaded successfully.`,
         });
       } else {
         toast({
@@ -187,6 +155,32 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
         variant: "destructive",
       });
     }
+  };
+
+  const handleDownloadImage = (asset: GeneratedAsset) => {
+    // Find timing for this image
+    const timing = imageTimings.find(t => t.asset.id === asset.id);
+    if (timing) {
+      const timestamp = formatTimestamp(timing.startTime, timing.endTime);
+      const filename = `image_${timestamp}.png`;
+      handleDownload(asset, filename);
+    } else {
+      handleDownload(asset);
+    }
+  };
+
+  const handleDownloadAllImages = () => {
+    imageTimings.forEach((timing, i) => {
+      setTimeout(() => {
+        const timestamp = formatTimestamp(timing.startTime, timing.endTime);
+        const filename = `image_${timestamp}.png`;
+        handleDownload(timing.asset, filename);
+      }, i * 500);
+    });
+    toast({
+      title: "Downloading All Images",
+      description: `Downloading ${imageTimings.length} images with timestamps...`,
+    });
   };
 
   return (
@@ -208,12 +202,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
         {/* Preview Area */}
         <div className="space-y-4">
           <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-            {videoClips.length > 0 ? (
-              <video controls className="w-full h-full">
-                <source src={videoClips[0].videoUrl} type="video/mp4" />
-                Your browser does not support the video element.
-              </video>
-            ) : audioUrl ? (
+            {audioUrl ? (
               <audio controls className="w-full max-w-md px-8">
                 <source src={audioUrl} type="audio/mpeg" />
                 Your browser does not support the audio element.
@@ -225,53 +214,34 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
             )}
           </div>
 
-          {/* Video Generation Section */}
-          <div className="bg-card rounded-xl border border-border p-4 space-y-4">
-            <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <Video className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">Video Clips</h3>
-              </div>
-              {videoClips.length > 0 && (
-                <Button onClick={handleDownloadAllClips} className="gap-2">
-                  <Download className="w-4 h-4" />
-                  Download All ({videoClips.length})
-                </Button>
-              )}
-            </div>
-
-            {isGenerating && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{status}</span>
-                  <span>{progress}%</span>
+          {/* Image Timings Info */}
+          {imageTimings.length > 0 && (
+            <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Image Timings</h3>
                 </div>
-                <Progress value={progress} className="h-2" />
+                <Button onClick={handleDownloadAllImages} className="gap-2">
+                  <Download className="w-4 h-4" />
+                  Download All ({imageTimings.length})
+                </Button>
               </div>
-            )}
 
-            {/* Video Clips List */}
-            {videoClips.length > 0 && (
               <div className="space-y-2">
-                {videoClips.map((clip) => (
-                  <div key={clip.index} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg">
+                {imageTimings.map((timing, index) => (
+                  <div key={timing.asset.id} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg">
                     <span className="text-sm text-foreground">
-                      Clip {clip.index + 1} ({clip.duration.toFixed(1)}s)
+                      Image {index + 1}: {formatTimestamp(timing.startTime, timing.endTime)}
                     </span>
-                    <Button size="sm" variant="ghost" onClick={() => handleDownloadClip(clip)}>
+                    <Button size="sm" variant="ghost" onClick={() => handleDownloadImage(timing.asset)}>
                       <Download className="w-4 h-4" />
                     </Button>
                   </div>
                 ))}
               </div>
-            )}
-
-            {videoClips.length === 0 && !isGenerating && (
-              <p className="text-sm text-muted-foreground">
-                Generating video clips automatically...
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Generated Assets */}
@@ -282,46 +252,54 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
           </div>
 
           <div className="space-y-3">
-            {assets.map((asset) => (
-              <div
-                key={asset.id}
-                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                    {asset.icon}
+            {assets.map((asset) => {
+              const isImage = asset.id.startsWith('image-');
+              const timing = isImage ? imageTimings.find(t => t.asset.id === asset.id) : null;
+              const displayName = timing 
+                ? `Image ${formatTimestamp(timing.startTime, timing.endTime)}`
+                : asset.name;
+
+              return (
+                <div
+                  key={asset.id}
+                  className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                      {asset.icon}
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{displayName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {asset.type} • {asset.size}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground">{asset.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {asset.type} • {asset.size}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {asset.url && (
+                  <div className="flex items-center gap-2">
+                    {asset.url && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.open(asset.url, '_blank')}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Open in new tab"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => window.open(asset.url, '_blank')}
+                      onClick={() => isImage ? handleDownloadImage(asset) : handleDownload(asset)}
                       className="text-muted-foreground hover:text-foreground"
-                      title="Open in new tab"
+                      title="Download"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <Download className="w-5 h-5" />
                     </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDownload(asset)}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Download"
-                  >
-                    <Download className="w-5 h-5" />
-                  </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {assets.length === 0 && (
