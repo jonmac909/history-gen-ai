@@ -74,12 +74,8 @@ const Index = () => {
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
-  const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([
-    { id: "voice-puck", name: "Puck (Clear Narrator)", voiceId: "en-US-Chirp3-HD-Puck" },
-    { id: "voice-fenrir", name: "Fenrir (Deep)", voiceId: "en-US-Chirp3-HD-Fenrir" },
-    { id: "voice-charon", name: "Charon (Warm)", voiceId: "en-US-Chirp3-HD-Charon" },
-    { id: "voice-kore", name: "Kore (Soft)", voiceId: "en-US-Chirp3-HD-Kore" },
-  ]);
+  const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
+  const [selectedElevenLabsVoiceId, setSelectedElevenLabsVoiceId] = useState("3GntEbfzhYH3X9VCuIHy"); // Asleep Voice
   const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
@@ -151,11 +147,11 @@ const Index = () => {
       return;
     }
 
-    const selectedVoice = cartesiaVoices.find(v => v.id === settings.voice);
-    if (!selectedVoice) {
+    // Voice is now selected via ElevenLabs in Settings
+    if (!selectedElevenLabsVoiceId) {
       toast({
         title: "Voice Required",
-        description: "Please add and select a voice in Settings.",
+        description: "Please select a voice in Settings → Voices.",
         variant: "destructive",
       });
       return;
@@ -231,8 +227,8 @@ const Index = () => {
   };
 
   const handleScriptConfirm = async (confirmedScript: string) => {
-    const selectedVoice = cartesiaVoices.find(v => v.id === settings.voice);
-    if (!selectedVoice) return;
+    // Use ElevenLabs voice ID directly
+    const voiceId = selectedElevenLabsVoiceId || "3GntEbfzhYH3X9VCuIHy";
 
     // Initialize processing steps - Phase 2 (images, audio, captions)
     const steps: GenerationStep[] = [
@@ -294,12 +290,11 @@ const Index = () => {
       updateStep("audio", "active", "0%");
       const audioRes = await generateAudioStreaming(
         confirmedScript, 
-        selectedVoice.voiceId, 
+        voiceId, 
         projectId,
         (progress, currentChunk, totalChunks) => {
           updateStep("audio", "active", `${progress}% (chunk ${currentChunk}/${totalChunks})`);
-        },
-        selectedVoice.referenceAudioUrl
+        }
       );
       
       if (!audioRes.success) {
@@ -426,6 +421,8 @@ const Index = () => {
             onSaveVoices={handleSaveVoices}
             imageStylePrompt={imageStylePrompt}
             onSaveImageStylePrompt={handleSaveImageStylePrompt}
+            selectedVoiceId={selectedElevenLabsVoiceId}
+            onSelectVoice={setSelectedElevenLabsVoiceId}
           />
         </div>
       </header>
