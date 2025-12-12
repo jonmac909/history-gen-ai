@@ -56,9 +56,15 @@ serve(async (req) => {
     const segments = splitIntoSegments(cleanScript, 8);
     const totalWords = cleanScript.split(/\s+/).length;
     
-    // Estimate timing (average speaking rate ~150 words per minute)
-    const estimatedDuration = audioDuration || (totalWords / 150) * 60;
-    const segmentDuration = estimatedDuration / segments.length;
+    // Use the ACTUAL audio duration passed from the audio generation
+    // Only fall back to estimation if audioDuration is not provided
+    const actualDuration = audioDuration && audioDuration > 0 
+      ? audioDuration 
+      : (totalWords / 150) * 60; // Fallback: ~150 words per minute
+    
+    console.log(`Using audio duration: ${actualDuration}s (provided: ${audioDuration}s, words: ${totalWords})`);
+    
+    const segmentDuration = actualDuration / segments.length;
 
     // Generate SRT content
     let srtContent = '';
@@ -111,7 +117,7 @@ serve(async (req) => {
         captionsUrl: urlData.publicUrl,
         srtContent,
         segmentCount: segments.length,
-        estimatedDuration,
+        audioDuration: actualDuration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

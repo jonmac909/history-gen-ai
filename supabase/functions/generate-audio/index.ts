@@ -225,8 +225,12 @@ serve(async (req) => {
 
             console.log('Audio uploaded:', urlData.publicUrl);
 
-            // Estimate duration: ~150 words/minute average
-            const durationSeconds = Math.round((wordCount / 150) * 60);
+            // Calculate actual duration from MP3 file size
+            // Formula: duration = (file_size_bytes * 8) / bit_rate
+            // Our MP3 is 128kbps = 128000 bits per second
+            const bitRate = 128000;
+            const durationSeconds = Math.round((combinedMp3.length * 8) / bitRate);
+            console.log(`Audio duration: ${durationSeconds}s (calculated from ${combinedMp3.length} bytes @ ${bitRate}bps)`);
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
@@ -294,7 +298,10 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    const durationSeconds = Math.round((wordCount / 150) * 60);
+    // Calculate actual duration from MP3 file size (128kbps)
+    const bitRate = 128000;
+    const durationSeconds = Math.round((combinedMp3.length * 8) / bitRate);
+    console.log(`Audio duration: ${durationSeconds}s (from ${combinedMp3.length} bytes)`);
 
     return new Response(
       JSON.stringify({ 
