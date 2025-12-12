@@ -16,13 +16,19 @@ function formatSrtTime(seconds: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
 }
 
-// Split text into caption segments
-function splitIntoSegments(text: string, wordsPerSegment: number = 8): string[] {
-  const words = text.split(/\s+/).filter(w => w.length > 0);
-  const segments: string[] = [];
+// Group words into caption segments (max ~8 words per segment)
+function groupWordsIntoSegments(words: { word: string; start: number; end: number }[], maxWords: number = 8): { text: string; start: number; end: number }[] {
+  const segments: { text: string; start: number; end: number }[] = [];
   
-  for (let i = 0; i < words.length; i += wordsPerSegment) {
-    segments.push(words.slice(i, i + wordsPerSegment).join(' '));
+  for (let i = 0; i < words.length; i += maxWords) {
+    const chunk = words.slice(i, i + maxWords);
+    if (chunk.length > 0) {
+      segments.push({
+        text: chunk.map(w => w.word).join(' '),
+        start: chunk[0].start,
+        end: chunk[chunk.length - 1].end,
+      });
+    }
   }
   
   return segments;
@@ -34,54 +40,76 @@ serve(async (req) => {
   }
 
   try {
-    const { script, audioDuration, projectId } = await req.json();
+    const { audioUrl, projectId } = await req.json();
     
-    if (!script) {
+    if (!audioUrl) {
       return new Response(
-        JSON.stringify({ error: 'Script is required' }),
+        JSON.stringify({ error: 'Audio URL is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Generating SRT captions...');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiApiKey) {
+      return new Response(
+        JSON.stringify({ error: 'OPENAI_API_KEY is not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Clean script - remove visual cues
-    const cleanScript = script
-      .replace(/\[SCENE \d+\]/g, '')
-      .replace(/\[[^\]]+\]/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    console.log('Fetching audio from:', audioUrl);
+    
+    // Download the audio file
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
+    }
+    const audioBlob = await audioResponse.blob();
+    console.log('Audio size:', audioBlob.size, 'bytes');
 
-    // Split into segments
-    const segments = splitIntoSegments(cleanScript, 8);
-    const totalWords = cleanScript.split(/\s+/).length;
+    // Send to Whisper API with word-level timestamps
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.mp3');
+    formData.append('model', 'whisper-1');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'word');
+
+    console.log('Sending to Whisper API for transcription...');
     
-    // Use the ACTUAL audio duration passed from the audio generation
-    // Only fall back to estimation if audioDuration is not provided
-    const actualDuration = audioDuration && audioDuration > 0 
-      ? audioDuration 
-      : (totalWords / 150) * 60; // Fallback: ~150 words per minute
-    
-    console.log(`Using audio duration: ${actualDuration}s (provided: ${audioDuration}s, words: ${totalWords})`);
-    
-    const segmentDuration = actualDuration / segments.length;
+    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiApiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!whisperResponse.ok) {
+      const errorText = await whisperResponse.text();
+      console.error('Whisper API error:', whisperResponse.status, errorText);
+      throw new Error(`Whisper API error: ${whisperResponse.status}`);
+    }
+
+    const whisperResult = await whisperResponse.json();
+    console.log('Whisper transcription complete, duration:', whisperResult.duration, 's');
+    console.log('Word count:', whisperResult.words?.length || 0);
+
+    // Check if we got word-level timestamps
+    if (!whisperResult.words || whisperResult.words.length === 0) {
+      throw new Error('Whisper did not return word-level timestamps');
+    }
+
+    // Group words into caption segments
+    const segments = groupWordsIntoSegments(whisperResult.words, 8);
+    console.log('Generated', segments.length, 'caption segments');
 
     // Generate SRT content
     let srtContent = '';
-    let currentTime = 0;
-
     segments.forEach((segment, index) => {
-      const startTime = currentTime;
-      const endTime = currentTime + segmentDuration;
-      
       srtContent += `${index + 1}\n`;
-      srtContent += `${formatSrtTime(startTime)} --> ${formatSrtTime(endTime)}\n`;
-      srtContent += `${segment}\n\n`;
-      
-      currentTime = endTime;
+      srtContent += `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}\n`;
+      srtContent += `${segment.text}\n\n`;
     });
-
-    console.log('Generated', segments.length, 'caption segments');
 
     // Upload to Supabase Storage
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -117,7 +145,7 @@ serve(async (req) => {
         captionsUrl: urlData.publicUrl,
         srtContent,
         segmentCount: segments.length,
-        audioDuration: actualDuration,
+        audioDuration: whisperResult.duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
