@@ -78,7 +78,7 @@ export function useVideoGeneration() {
     }));
   }, [parseSRT]);
 
-  // Create video from single image using Canvas + MediaRecorder
+  // Create video from single image using Canvas + MediaRecorder (fast mode)
   const createVideoFromImage = useCallback(async (
     imageUrl: string,
     duration: number,
@@ -105,11 +105,12 @@ export function useVideoGeneration() {
         ctx.fillRect(0, 0, 1920, 1080);
         ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
 
-        // Create video stream from canvas
-        const stream = canvas.captureStream(30); // 30 fps
+        // Use lower framerate for speed (5 fps is enough for static images)
+        const fps = 5;
+        const stream = canvas.captureStream(fps);
         const mediaRecorder = new MediaRecorder(stream, {
           mimeType: 'video/webm;codecs=vp9',
-          videoBitsPerSecond: 5000000,
+          videoBitsPerSecond: 2000000,
         });
 
         const chunks: Blob[] = [];
@@ -128,34 +129,30 @@ export function useVideoGeneration() {
           reject(new Error('MediaRecorder error: ' + e));
         };
 
-        // Start recording
-        mediaRecorder.start(100); // Collect data every 100ms
+        // Start recording - we'll use timeslice to control duration
+        mediaRecorder.start(100);
 
-        // Redraw canvas periodically (needed for captureStream)
-        const fps = 30;
-        const totalFrames = Math.ceil(duration * fps);
-        let frame = 0;
-
-        const drawFrame = () => {
-          if (frame >= totalFrames) {
-            mediaRecorder.stop();
-            return;
+        // For static images, we just need to wait the duration
+        // Use fast simulation - record for a short burst then stop
+        const recordDurationMs = Math.min(duration * 1000, 3000); // Cap at 3 seconds actual recording
+        
+        let elapsed = 0;
+        const interval = setInterval(() => {
+          elapsed += 100;
+          if (onProgress) {
+            onProgress(elapsed / recordDurationMs);
           }
-
-          // Redraw same image (keeps the stream active)
+          
+          // Trigger canvas update to keep stream alive
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, 1920, 1080);
           ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-
-          frame++;
-          if (onProgress) {
-            onProgress(frame / totalFrames);
+          
+          if (elapsed >= recordDurationMs) {
+            clearInterval(interval);
+            mediaRecorder.stop();
           }
-
-          requestAnimationFrame(drawFrame);
-        };
-
-        drawFrame();
+        }, 100);
       };
 
       img.onerror = () => {
