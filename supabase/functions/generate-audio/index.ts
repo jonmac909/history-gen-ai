@@ -6,89 +6,96 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Split script into smaller chunks to avoid timeout
-function splitScriptIntoChunks(script: string, maxChunkWords: number = 800): string[] {
-  const chunks: string[] = [];
-  const sections = script.split(/\n\n+/);
-  let currentChunk = "";
-  let currentWordCount = 0;
-  
-  for (const section of sections) {
-    const sectionWords = section.split(/\s+/).filter(Boolean).length;
-    
-    if (currentWordCount + sectionWords > maxChunkWords && currentChunk) {
-      chunks.push(currentChunk.trim());
-      currentChunk = section;
-      currentWordCount = sectionWords;
-    } else {
-      currentChunk += (currentChunk ? "\n\n" : "") + section;
-      currentWordCount += sectionWords;
-    }
-  }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
-}
-
-// Generate audio using bytes endpoint with context for voice consistency
-async function generateChunkAudioBytes(
-  chunk: string, 
-  voiceId: string, 
-  apiKey: string,
-  previousText?: string
+// Generate audio for full script via WebSocket for seamless voice continuity
+async function generateAudioWebSocket(
+  script: string,
+  voiceId: string,
+  apiKey: string
 ): Promise<Uint8Array> {
-  const body: Record<string, unknown> = {
-    model_id: 'sonic-3',
-    transcript: chunk,
-    voice: {
-      mode: 'id',
-      id: voiceId,
-    },
-    output_format: {
-      container: 'mp3',
-      bit_rate: 128000,
-      sample_rate: 44100,
-    },
-  };
-
-  // Add context from previous chunk to maintain voice consistency
-  if (previousText) {
-    body.context = { previous_text: previousText.slice(-500) }; // Last 500 chars for context
-  }
-
-  const response = await fetch('https://api.cartesia.ai/tts/bytes', {
-    method: 'POST',
-    headers: {
-      'Cartesia-Version': '2025-04-16',
-      'X-API-Key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+  // Use WebSocket API for seamless audio with continuations
+  // Note: API key is passed as query parameter for WebSocket auth
+  const ws = new WebSocket(`wss://api.cartesia.ai/tts/websocket?cartesia_version=2025-04-16&api_key=${apiKey}`);
+  
+  return new Promise((resolve, reject) => {
+    const audioChunks: Uint8Array[] = [];
+    let contextId = crypto.randomUUID();
+    
+    ws.onopen = () => {
+      console.log('WebSocket connected, sending transcript...');
+      
+      // Send the full transcript in a single context for seamless audio
+      const message = {
+        context_id: contextId,
+        model_id: 'sonic-3',
+        transcript: script,
+        voice: {
+          mode: 'id',
+          id: voiceId,
+        },
+        output_format: {
+          container: 'mp3',
+          bit_rate: 128000,
+          sample_rate: 44100,
+        },
+        continue: false,
+      };
+      
+      ws.send(JSON.stringify(message));
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'chunk' && data.data) {
+          // Decode base64 audio chunk
+          const binaryString = atob(data.data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          audioChunks.push(bytes);
+        } else if (data.type === 'done') {
+          console.log(`WebSocket complete, received ${audioChunks.length} chunks`);
+          ws.close();
+          
+          // Combine all chunks
+          const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of audioChunks) {
+            combined.set(chunk, offset);
+            offset += chunk.length;
+          }
+          resolve(combined);
+        } else if (data.error) {
+          console.error('WebSocket error:', data.error);
+          reject(new Error(data.error));
+        }
+      } catch (e) {
+        // Ignore parse errors for non-JSON messages
+      }
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      reject(new Error('WebSocket connection failed'));
+    };
+    
+    ws.onclose = (event) => {
+      if (!event.wasClean && audioChunks.length === 0) {
+        reject(new Error(`WebSocket closed unexpectedly: ${event.code}`));
+      }
+    };
+    
+    // Timeout after 5 minutes
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        reject(new Error('WebSocket timeout'));
+      }
+    }, 300000);
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Cartesia bytes error:', response.status, errorText);
-    throw new Error(`Cartesia API error: ${response.status}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return new Uint8Array(arrayBuffer);
-}
-
-// Simple MP3 concatenation (works for constant bitrate MP3s)
-function concatenateMp3Chunks(chunks: Uint8Array[]): Uint8Array {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return combined;
 }
 
 serve(async (req) => {
@@ -131,48 +138,30 @@ serve(async (req) => {
       .trim();
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    console.log(`Generating audio for ${wordCount} words...`);
-
-    // Split into smaller chunks (800 words max for faster processing)
-    const chunks = splitScriptIntoChunks(cleanScript, 800);
-    console.log(`Split into ${chunks.length} chunks`);
+    console.log(`Generating audio for ${wordCount} words via WebSocket...`);
 
     if (stream) {
-      // Streaming mode - process chunks SEQUENTIALLY for voice consistency
+      // Streaming mode with progress updates
       const encoder = new TextEncoder();
       
       const responseStream = new ReadableStream({
         async start(controller) {
           try {
-            const audioChunks: Uint8Array[] = [];
-            let previousText = "";
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'progress', 
+              progress: 10, 
+              message: 'Connecting to Cartesia...'
+            })}\n\n`));
             
-            for (let i = 0; i < chunks.length; i++) {
-              console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
-              
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'progress', 
-                progress: Math.round((i / chunks.length) * 90), 
-                currentChunk: i + 1, 
-                totalChunks: chunks.length,
-                message: `Generating audio segment ${i + 1}/${chunks.length}...`
-              })}\n\n`));
-              
-              const chunkAudio = await generateChunkAudioBytes(
-                chunks[i], 
-                voiceId, 
-                CARTESIA_API_KEY,
-                previousText || undefined
-              );
-              audioChunks.push(chunkAudio);
-              previousText = chunks[i]; // Use this chunk as context for next
-              
-              console.log(`Chunk ${i + 1} complete: ${chunkAudio.length} bytes`);
-            }
-
-            // Combine MP3 chunks
-            const combinedMp3 = concatenateMp3Chunks(audioChunks);
-            console.log(`Combined MP3: ${combinedMp3.length} bytes from ${audioChunks.length} chunks`);
+            // Generate audio via WebSocket for seamless voice
+            const audioData = await generateAudioWebSocket(cleanScript, voiceId, CARTESIA_API_KEY);
+            console.log(`Generated ${audioData.length} bytes of seamless audio`);
+            
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'progress', 
+              progress: 90, 
+              message: 'Uploading audio file...'
+            })}\n\n`));
 
             // Upload to storage
             const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -181,15 +170,9 @@ serve(async (req) => {
 
             const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
             
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'progress', 
-              progress: 95, 
-              message: 'Uploading audio file...'
-            })}\n\n`));
-            
             const { error: uploadError } = await supabase.storage
               .from('generated-assets')
-              .upload(fileName, combinedMp3, {
+              .upload(fileName, audioData, {
                 contentType: 'audio/mpeg',
                 upsert: true,
               });
@@ -210,19 +193,15 @@ serve(async (req) => {
 
             console.log('Audio uploaded:', urlData.publicUrl);
 
-            // Calculate actual duration from MP3 file size
-            // Formula: duration = (file_size_bytes * 8) / bit_rate
-            // Our MP3 is 128kbps = 128000 bits per second
-            const bitRate = 128000;
-            const durationSeconds = Math.round((combinedMp3.length * 8) / bitRate);
-            console.log(`Audio duration: ${durationSeconds}s (calculated from ${combinedMp3.length} bytes @ ${bitRate}bps)`);
+            // Calculate duration (128kbps = 16000 bytes/sec)
+            const durationSeconds = Math.round(audioData.length / 16000);
+            console.log(`Audio duration: ${durationSeconds}s`);
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
               audioUrl: urlData.publicUrl,
               duration: durationSeconds,
-              size: combinedMp3.length,
-              totalChunks: chunks.length
+              size: audioData.length
             })}\n\n`));
 
           } catch (error) {
@@ -242,23 +221,9 @@ serve(async (req) => {
       });
     }
 
-    // Non-streaming mode - process sequentially for voice consistency
-    const audioChunks: Uint8Array[] = [];
-    let previousText = "";
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
-      const chunkAudio = await generateChunkAudioBytes(
-        chunks[i], 
-        voiceId, 
-        CARTESIA_API_KEY,
-        previousText || undefined
-      );
-      audioChunks.push(chunkAudio);
-      previousText = chunks[i];
-    }
-
-    const combinedMp3 = concatenateMp3Chunks(audioChunks);
-    console.log(`Combined MP3: ${combinedMp3.length} bytes`);
+    // Non-streaming mode
+    const audioData = await generateAudioWebSocket(cleanScript, voiceId, CARTESIA_API_KEY);
+    console.log(`Generated ${audioData.length} bytes of seamless audio`);
 
     // Upload
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -269,7 +234,7 @@ serve(async (req) => {
     
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(fileName, combinedMp3, {
+      .upload(fileName, audioData, {
         contentType: 'audio/mpeg',
         upsert: true,
       });
@@ -286,19 +251,15 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    // Calculate actual duration from MP3 file size
-    // Cartesia uses VBR MP3, effective bitrate is ~144kbps (18000 bytes/sec)
-    // This makes captions sync better with actual audio playback
-    const durationSeconds = Math.round(combinedMp3.length / 18000);
-    console.log(`Audio duration: ${durationSeconds}s (from ${combinedMp3.length} bytes @ 18KB/s)`);
+    const durationSeconds = Math.round(audioData.length / 16000);
+    console.log(`Audio duration: ${durationSeconds}s`);
 
     return new Response(
       JSON.stringify({ 
         success: true,
         audioUrl: urlData.publicUrl,
         duration: durationSeconds,
-        size: combinedMp3.length,
-        chunks: chunks.length,
+        size: audioData.length,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
