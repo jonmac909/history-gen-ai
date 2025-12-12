@@ -298,10 +298,11 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    // Calculate actual duration from MP3 file size (128kbps)
-    const bitRate = 128000;
-    const durationSeconds = Math.round((combinedMp3.length * 8) / bitRate);
-    console.log(`Audio duration: ${durationSeconds}s (from ${combinedMp3.length} bytes)`);
+    // Calculate actual duration from MP3 file size
+    // Cartesia uses VBR MP3, effective bitrate is ~144kbps (18000 bytes/sec)
+    // This makes captions sync better with actual audio playback
+    const durationSeconds = Math.round(combinedMp3.length / 18000);
+    console.log(`Audio duration: ${durationSeconds}s (from ${combinedMp3.length} bytes @ 18KB/s)`);
 
     return new Response(
       JSON.stringify({ 
