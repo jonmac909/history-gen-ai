@@ -79,6 +79,7 @@ const Index = () => {
     { id: "voice-fenrir", name: "Fenrir (Deep)", voiceId: "en-US-Chirp3-HD-Fenrir" },
     { id: "voice-charon", name: "Charon (Warm)", voiceId: "en-US-Chirp3-HD-Charon" },
     { id: "voice-kore", name: "Kore (Soft)", voiceId: "en-US-Chirp3-HD-Kore" },
+    { id: "voice-sleepy", name: "Sleepy (Custom Clone)", voiceId: "", referenceAudioUrl: `${window.location.origin}/voices/sleepy_voice.wav`, isCustom: true },
   ]);
   const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -298,7 +299,8 @@ const Index = () => {
         projectId,
         (progress, currentChunk, totalChunks) => {
           updateStep("audio", "active", `${progress}% (chunk ${currentChunk}/${totalChunks})`);
-        }
+        },
+        selectedVoice.referenceAudioUrl
       );
       
       if (!audioRes.success) {
