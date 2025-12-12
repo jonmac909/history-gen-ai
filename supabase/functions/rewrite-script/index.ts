@@ -8,8 +8,8 @@ const corsHeaders = {
 // Claude Sonnet 4.5 has a max output of ~16k tokens per call
 const MAX_TOKENS_PER_CALL = 16000;
 
-// Timeout for each Claude API call (90 seconds)
-const API_CALL_TIMEOUT = 90000;
+// Timeout for each Claude API call (5 minutes - Claude needs time for large outputs)
+const API_CALL_TIMEOUT = 300000;
 
 async function generateScriptChunk(
   apiKey: string,
@@ -76,7 +76,7 @@ serve(async (req) => {
       );
     }
 
-    const selectedModel = model || 'claude-sonnet-4-5-20250929';
+    const selectedModel = model || 'claude-sonnet-4-5';
     console.log(`Rewriting script with ${selectedModel}...`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration. 
