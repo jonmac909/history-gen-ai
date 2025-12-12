@@ -6,277 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Get OAuth2 access token from service account
-async function getAccessToken(serviceAccount: any): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const exp = now + 3600; // 1 hour expiry
-  
-  // Create JWT header and payload
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = {
-    iss: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: exp,
-  };
-  
-  // Base64url encode
-  const base64url = (data: object | Uint8Array) => {
-    const str = typeof data === 'object' && !(data instanceof Uint8Array) 
-      ? JSON.stringify(data) 
-      : new TextDecoder().decode(data as Uint8Array);
-    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
-  
-  const headerB64 = base64url(header);
-  const payloadB64 = base64url(payload);
-  const unsignedJwt = `${headerB64}.${payloadB64}`;
-  
-  // Import private key and sign
-  const privateKeyPem = serviceAccount.private_key;
-  const pemContents = privateKeyPem
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '');
-  
-  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-  
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryKey,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    new TextEncoder().encode(unsignedJwt)
-  );
-  
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  
-  const signedJwt = `${unsignedJwt}.${signatureB64}`;
-  
-  // Exchange JWT for access token
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: signedJwt,
-    }),
-  });
-  
-  if (!tokenResponse.ok) {
-    const error = await tokenResponse.text();
-    throw new Error(`Failed to get access token: ${error}`);
-  }
-  
-  const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
-}
-
-// Split script into chunks for API limits (max ~5000 bytes per request)
-function splitScript(script: string, maxChars: number = 4000): string[] {
-  const sentences = script.split(/(?<=[.!?])\s+/);
-  const chunks: string[] = [];
-  let currentChunk = '';
-  
-  for (const sentence of sentences) {
-    if ((currentChunk + ' ' + sentence).length > maxChars && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      currentChunk = sentence;
-    } else {
-      currentChunk = currentChunk ? currentChunk + ' ' + sentence : sentence;
-    }
-  }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
-}
-
-// Generate audio using Google Cloud TTS with Chirp 3 Instant Custom Voice
-async function generateWithCustomVoice(
-  text: string,
-  accessToken: string,
-  referenceAudioBase64: string,
-  voiceCloneKey: string
-): Promise<Uint8Array> {
-  console.log('Using Chirp 3 Instant Custom Voice cloning...');
-  
-  const requestBody = {
-    input: { text },
-    voice: {
-      languageCode: 'en-US',
-      customVoice: {
-        model: 'chirp3-hd',
-        reportedUsage: 'REALTIME',
-        voiceCloningKey: voiceCloneKey,
-      },
-    },
-    audioConfig: {
-      audioEncoding: 'LINEAR16',
-      sampleRateHertz: 24000,
-    },
-    referenceAudio: {
-      audioContent: referenceAudioBase64,
-    },
-  };
-  
-  const response = await fetch('https://texttospeech.googleapis.com/v1beta1/text:synthesize', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('Google TTS Custom Voice error:', error);
-    throw new Error(`Google TTS Custom Voice failed: ${error}`);
-  }
-  
-  const data = await response.json();
-  
-  // Decode base64 audio content
-  const audioContent = data.audioContent;
-  const binaryString = atob(audioContent);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  
-  return bytes;
-}
-
-// Generate audio using Google Cloud TTS with standard Chirp 3 HD voice
-async function generateWithStandardVoice(
-  text: string,
-  accessToken: string,
-  voiceName: string = 'en-US-Chirp3-HD-Puck'
-): Promise<Uint8Array> {
-  // Extract language code from voice name (e.g., en-US-Chirp3-HD-Puck -> en-US)
-  const languageCode = voiceName.split('-').slice(0, 2).join('-');
-  
-  console.log(`Using standard Chirp 3 HD voice: ${voiceName}`);
-  
-  const requestBody = {
-    input: { text },
-    voice: {
-      languageCode,
-      name: voiceName,
-    },
-    audioConfig: {
-      audioEncoding: 'LINEAR16',
-      sampleRateHertz: 24000,
-    },
-  };
-  
-  const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('Google TTS error:', error);
-    throw new Error(`Google TTS failed: ${error}`);
-  }
-  
-  const data = await response.json();
-  
-  // Decode base64 audio content
-  const audioContent = data.audioContent;
-  const binaryString = atob(audioContent);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  
-  return bytes;
-}
-
-// Create WAV header for PCM data
-function createWavHeader(dataLength: number, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
-  const header = new ArrayBuffer(44);
-  const view = new DataView(header);
-  
-  const byteRate = sampleRate * channels * (bitsPerSample / 8);
-  const blockAlign = channels * (bitsPerSample / 8);
-  
-  // RIFF header
-  view.setUint32(0, 0x52494646, false); // "RIFF"
-  view.setUint32(4, 36 + dataLength, true); // File size - 8
-  view.setUint32(8, 0x57415645, false); // "WAVE"
-  
-  // fmt chunk
-  view.setUint32(12, 0x666D7420, false); // "fmt "
-  view.setUint32(16, 16, true); // Chunk size
-  view.setUint16(20, 1, true); // Audio format (PCM)
-  view.setUint16(22, channels, true); // Channels
-  view.setUint32(24, sampleRate, true); // Sample rate
-  view.setUint32(28, byteRate, true); // Byte rate
-  view.setUint16(32, blockAlign, true); // Block align
-  view.setUint16(34, bitsPerSample, true); // Bits per sample
-  
-  // data chunk
-  view.setUint32(36, 0x64617461, false); // "data"
-  view.setUint32(40, dataLength, true); // Data size
-  
-  return new Uint8Array(header);
-}
-
-// Strip WAV header from audio data (returns just PCM)
-function stripWavHeader(audioData: Uint8Array): Uint8Array {
-  // Check if it has a WAV header (starts with RIFF)
-  if (audioData.length > 44 && 
-      audioData[0] === 0x52 && audioData[1] === 0x49 && 
-      audioData[2] === 0x46 && audioData[3] === 0x46) {
-    return audioData.slice(44);
-  }
-  return audioData;
-}
-
-// Fetch reference audio and convert to base64
-async function fetchReferenceAudio(url: string): Promise<string> {
-  console.log('Fetching reference audio from:', url);
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch reference audio: ${response.status}`);
-  }
-  const arrayBuffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  
-  // Convert to base64
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { script, voiceId, projectId, stream, referenceAudioUrl, voiceCloningKey } = await req.json();
+    const { script, voiceId, projectId, stream } = await req.json();
     
     if (!script) {
       return new Response(
@@ -285,58 +21,15 @@ serve(async (req) => {
       );
     }
 
-    // Get service account credentials
-    const serviceAccountKey = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY');
-    if (!serviceAccountKey) {
+    const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
+    if (!ELEVENLABS_API_KEY) {
       return new Response(
-        JSON.stringify({ error: 'Google Service Account not configured' }),
+        JSON.stringify({ error: 'ElevenLabs API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get voice cloning key from environment
-    const storedVoiceCloningKey = Deno.env.get('GOOGLE_VOICE_CLONING_KEY');
-
-    let serviceAccount;
-    try {
-      // Handle various escaping formats that can occur when storing JSON in secrets
-      let cleanedKey = serviceAccountKey;
-      
-      // If wrapped in extra quotes, remove them
-      if (cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) {
-        cleanedKey = cleanedKey.slice(1, -1);
-      }
-      
-      // Handle escaped newlines (\\n -> \n)
-      cleanedKey = cleanedKey.replace(/\\\\n/g, '\\n');
-      
-      // Handle double-escaped quotes
-      cleanedKey = cleanedKey.replace(/\\\\"/g, '\\"');
-      
-      // Try to parse
-      serviceAccount = JSON.parse(cleanedKey);
-      
-      // Validate required fields
-      if (!serviceAccount.client_email || !serviceAccount.private_key) {
-        throw new Error('Missing required fields');
-      }
-      
-      console.log(`Service account loaded: ${serviceAccount.client_email}`);
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-      console.error('Service account parsing error:', errorMessage);
-      console.error('Key starts with:', serviceAccountKey.substring(0, 50));
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid service account key format',
-          details: errorMessage,
-          hint: 'Ensure the JSON is properly formatted without extra escaping'
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Clean script
+    // Clean script - remove image prompts and markdown
     const cleanScript = script
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
@@ -347,39 +40,12 @@ serve(async (req) => {
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     
-    // Determine if using custom voice cloning
-    // Use provided key or fall back to stored environment key
-    const effectiveVoiceCloningKey = voiceCloningKey || storedVoiceCloningKey;
-    const useCustomVoice = referenceAudioUrl && effectiveVoiceCloningKey;
-    console.log(`Generating audio for ${wordCount} words with ${useCustomVoice ? 'custom cloned voice' : 'standard Chirp 3 HD voice'}...`);
-
-    // Get access token
-    console.log('Getting Google OAuth2 access token...');
-    const accessToken = await getAccessToken(serviceAccount);
-    console.log('Access token obtained');
-
-    // Fetch reference audio if using custom voice
-    let referenceAudioBase64: string | null = null;
-    if (useCustomVoice) {
-      referenceAudioBase64 = await fetchReferenceAudio(referenceAudioUrl);
-      console.log(`Reference audio loaded: ${referenceAudioBase64.length} chars base64`);
-    }
-
-    // Use provided voice name or default
-    const voiceName = voiceId || 'en-US-Chirp3-HD-Puck';
+    // Use provided voice ID or default to the user's custom "Asleep Voice"
+    // Note: User needs to provide their ElevenLabs voice ID for "Asleep Voice"
+    const selectedVoiceId = voiceId || 'JBFqnCBsd6RMkjVDRZzb'; // Default: George
     
-    // Split script into chunks for API limits
-    const chunks = splitScript(cleanScript);
-    console.log(`Split into ${chunks.length} chunks for processing`);
-
-    // Generator function for audio chunks
-    const generateChunk = async (text: string): Promise<Uint8Array> => {
-      if (useCustomVoice && referenceAudioBase64 && effectiveVoiceCloningKey) {
-        return generateWithCustomVoice(text, accessToken, referenceAudioBase64, effectiveVoiceCloningKey);
-      } else {
-        return generateWithStandardVoice(text, accessToken, voiceName);
-      }
-    };
+    console.log(`Generating audio for ${wordCount} words with ElevenLabs Flash v2.5...`);
+    console.log(`Using voice ID: ${selectedVoiceId}`);
 
     if (stream) {
       // Streaming mode with progress updates
@@ -388,50 +54,89 @@ serve(async (req) => {
       const responseStream = new ReadableStream({
         async start(controller) {
           try {
-            const allAudioData: Uint8Array[] = [];
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'progress', 
+              progress: 10,
+              message: 'Connecting to ElevenLabs...'
+            })}\n\n`));
+
+            // Use streaming endpoint for faster first byte
+            const response = await fetch(
+              `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}/stream`,
+              {
+                method: 'POST',
+                headers: {
+                  'xi-api-key': ELEVENLABS_API_KEY,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  text: cleanScript,
+                  model_id: 'eleven_flash_v2_5',
+                  output_format: 'mp3_44100_128',
+                  voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75,
+                    style: 0.5,
+                    use_speaker_boost: true,
+                  },
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('ElevenLabs error:', response.status, errorText);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                error: `ElevenLabs API error: ${response.status}` 
+              })}\n\n`));
+              controller.close();
+              return;
+            }
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'progress', 
+              progress: 30,
+              message: 'Generating audio...'
+            })}\n\n`));
+
+            // Collect streaming response
+            const reader = response.body?.getReader();
+            if (!reader) {
+              throw new Error('Failed to get response reader');
+            }
+
+            const chunks: Uint8Array[] = [];
+            let totalBytes = 0;
             
-            for (let i = 0; i < chunks.length; i++) {
-              const chunk = chunks[i];
-              const progress = Math.round(10 + (i / chunks.length) * 75);
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              totalBytes += value.length;
               
+              // Send progress updates periodically
+              const progress = Math.min(30 + Math.floor(totalBytes / 10000), 80);
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                 type: 'progress', 
                 progress,
-                currentChunk: i + 1,
-                totalChunks: chunks.length,
-                message: `Generating audio chunk ${i + 1}/${chunks.length}...`
+                message: `Receiving audio... (${Math.round(totalBytes / 1024)}KB)`
               })}\n\n`));
-              
-              const audioData = await generateChunk(chunk);
-              // Strip WAV header from chunks (we'll add one combined header later)
-              const pcmData = stripWavHeader(audioData);
-              allAudioData.push(pcmData);
-              
-              console.log(`Chunk ${i + 1}/${chunks.length} generated: ${pcmData.length} bytes`);
             }
-            
-            // Combine all audio chunks
-            const totalPcmLength = allAudioData.reduce((sum, d) => sum + d.length, 0);
-            const combinedPcm = new Uint8Array(totalPcmLength);
+
+            // Combine chunks
+            const audioData = new Uint8Array(totalBytes);
             let offset = 0;
-            for (const pcm of allAudioData) {
-              combinedPcm.set(pcm, offset);
-              offset += pcm.length;
+            for (const chunk of chunks) {
+              audioData.set(chunk, offset);
+              offset += chunk.length;
             }
-            
-            // Add WAV header
-            const wavHeader = createWavHeader(totalPcmLength, 24000);
-            const finalAudio = new Uint8Array(wavHeader.length + combinedPcm.length);
-            finalAudio.set(wavHeader, 0);
-            finalAudio.set(combinedPcm, wavHeader.length);
-            
-            console.log(`Combined audio: ${finalAudio.length} bytes`);
-            
+
+            console.log(`Audio generated: ${audioData.length} bytes`);
+
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'progress', 
-              progress: 90, 
-              currentChunk: chunks.length,
-              totalChunks: chunks.length,
+              progress: 85,
               message: 'Uploading audio file...'
             })}\n\n`));
 
@@ -440,12 +145,12 @@ serve(async (req) => {
             const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
             const supabase = createClient(supabaseUrl, supabaseKey);
 
-            const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+            const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
             
             const { error: uploadError } = await supabase.storage
               .from('generated-assets')
-              .upload(fileName, finalAudio, {
-                contentType: 'audio/wav',
+              .upload(fileName, audioData, {
+                contentType: 'audio/mpeg',
                 upsert: true,
               });
 
@@ -465,16 +170,15 @@ serve(async (req) => {
 
             console.log('Audio uploaded:', urlData.publicUrl);
 
-            // Calculate duration (24000 Hz, 16-bit mono = 48000 bytes/sec)
-            const durationSeconds = Math.round(totalPcmLength / 48000);
-            console.log(`Audio duration: ${durationSeconds}s`);
+            // Calculate approximate duration (MP3 at 128kbps = 16000 bytes/sec)
+            const durationSeconds = Math.round(audioData.length / 16000);
+            console.log(`Audio duration: ~${durationSeconds}s`);
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
               audioUrl: urlData.publicUrl,
               duration: durationSeconds,
-              size: finalAudio.length,
-              totalChunks: chunks.length
+              size: audioData.length
             })}\n\n`));
 
           } catch (error) {
@@ -495,51 +199,60 @@ serve(async (req) => {
     }
 
     // Non-streaming mode
-    const allAudioData: Uint8Array[] = [];
-    
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const audioData = await generateChunk(chunk);
-      const pcmData = stripWavHeader(audioData);
-      allAudioData.push(pcmData);
-      console.log(`Chunk ${i + 1}/${chunks.length} generated: ${pcmData.length} bytes`);
-    }
-    
-    // Combine all audio chunks
-    const totalPcmLength = allAudioData.reduce((sum, d) => sum + d.length, 0);
-    const combinedPcm = new Uint8Array(totalPcmLength);
-    let offset = 0;
-    for (const pcm of allAudioData) {
-      combinedPcm.set(pcm, offset);
-      offset += pcm.length;
-    }
-    
-    // Add WAV header
-    const wavHeader = createWavHeader(totalPcmLength, 24000);
-    const finalAudio = new Uint8Array(wavHeader.length + combinedPcm.length);
-    finalAudio.set(wavHeader, 0);
-    finalAudio.set(combinedPcm, wavHeader.length);
-    
-    console.log(`Combined audio: ${finalAudio.length} bytes`);
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: cleanScript,
+          model_id: 'eleven_flash_v2_5',
+          output_format: 'mp3_44100_128',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.5,
+            use_speaker_boost: true,
+          },
+        }),
+      }
+    );
 
-    // Upload
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('ElevenLabs error:', response.status, errorText);
+      return new Response(
+        JSON.stringify({ error: `ElevenLabs API error: ${response.status}`, details: errorText }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const audioBuffer = await response.arrayBuffer();
+    const audioData = new Uint8Array(audioBuffer);
+
+    console.log(`Audio generated: ${audioData.length} bytes`);
+
+    // Upload to storage
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
     
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(fileName, finalAudio, {
-        contentType: 'audio/wav',
+      .upload(fileName, audioData, {
+        contentType: 'audio/mpeg',
         upsert: true,
       });
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
       return new Response(
-        JSON.stringify({ error: 'Failed to upload audio' }),
+        JSON.stringify({ error: 'Failed to upload audio', details: uploadError.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -548,16 +261,16 @@ serve(async (req) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    // Calculate duration (24000 Hz, 16-bit mono = 48000 bytes/sec)
-    const durationSeconds = Math.round(totalPcmLength / 48000);
-    console.log(`Audio duration: ${durationSeconds}s`);
+    // Calculate approximate duration (MP3 at 128kbps = 16000 bytes/sec)
+    const durationSeconds = Math.round(audioData.length / 16000);
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         audioUrl: urlData.publicUrl,
         duration: durationSeconds,
-        size: finalAudio.length,
+        wordCount,
+        size: audioData.length
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -565,7 +278,9 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error generating audio:', error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Failed to generate audio' }),
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Audio generation failed'
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
