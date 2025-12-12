@@ -292,8 +292,8 @@ const Index = () => {
         confirmedScript, 
         voiceId, 
         projectId,
-        (progress, currentChunk, totalChunks) => {
-          updateStep("audio", "active", `${progress}% (chunk ${currentChunk}/${totalChunks})`);
+        (progress) => {
+          updateStep("audio", "active", `${progress}%`);
         }
       );
       
