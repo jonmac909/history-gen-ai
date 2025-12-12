@@ -299,10 +299,39 @@ serve(async (req) => {
 
     let serviceAccount;
     try {
-      serviceAccount = JSON.parse(serviceAccountKey);
+      // Handle various escaping formats that can occur when storing JSON in secrets
+      let cleanedKey = serviceAccountKey;
+      
+      // If wrapped in extra quotes, remove them
+      if (cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) {
+        cleanedKey = cleanedKey.slice(1, -1);
+      }
+      
+      // Handle escaped newlines (\\n -> \n)
+      cleanedKey = cleanedKey.replace(/\\\\n/g, '\\n');
+      
+      // Handle double-escaped quotes
+      cleanedKey = cleanedKey.replace(/\\\\"/g, '\\"');
+      
+      // Try to parse
+      serviceAccount = JSON.parse(cleanedKey);
+      
+      // Validate required fields
+      if (!serviceAccount.client_email || !serviceAccount.private_key) {
+        throw new Error('Missing required fields');
+      }
+      
+      console.log(`Service account loaded: ${serviceAccount.client_email}`);
     } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      console.error('Service account parsing error:', errorMessage);
+      console.error('Key starts with:', serviceAccountKey.substring(0, 50));
       return new Response(
-        JSON.stringify({ error: 'Invalid service account key format' }),
+        JSON.stringify({ 
+          error: 'Invalid service account key format',
+          details: errorMessage,
+          hint: 'Ensure the JSON is properly formatted without extra escaping'
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
