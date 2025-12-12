@@ -16,22 +16,27 @@ function formatSrtTime(seconds: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
 }
 
-// Group words into caption segments (max ~8 words per segment)
-function groupWordsIntoSegments(words: { word: string; start: number; end: number }[], maxWords: number = 8): { text: string; start: number; end: number }[] {
-  const segments: { text: string; start: number; end: number }[] = [];
-  
-  for (let i = 0; i < words.length; i += maxWords) {
-    const chunk = words.slice(i, i + maxWords);
-    if (chunk.length > 0) {
-      segments.push({
-        text: chunk.map(w => w.word).join(' '),
-        start: chunk[0].start,
-        end: chunk[chunk.length - 1].end,
-      });
-    }
+// Split segment text into smaller chunks while preserving punctuation
+function splitSegmentIntoChunks(segment: { text: string; start: number; end: number }, maxWords: number = 8): { text: string; start: number; end: number }[] {
+  const words = segment.text.split(/\s+/).filter(w => w.length > 0);
+  if (words.length <= maxWords) {
+    return [segment];
   }
   
-  return segments;
+  const chunks: { text: string; start: number; end: number }[] = [];
+  const totalDuration = segment.end - segment.start;
+  const durationPerWord = totalDuration / words.length;
+  
+  for (let i = 0; i < words.length; i += maxWords) {
+    const chunkWords = words.slice(i, i + maxWords);
+    chunks.push({
+      text: chunkWords.join(' '),
+      start: segment.start + (i * durationPerWord),
+      end: segment.start + ((i + chunkWords.length) * durationPerWord),
+    });
+  }
+  
+  return chunks;
 }
 
 serve(async (req) => {
@@ -94,18 +99,26 @@ serve(async (req) => {
     console.log('Whisper transcription complete, duration:', whisperResult.duration, 's');
     console.log('Word count:', whisperResult.words?.length || 0);
 
-    // Check if we got word-level timestamps
-    if (!whisperResult.words || whisperResult.words.length === 0) {
-      throw new Error('Whisper did not return word-level timestamps');
+    // Check if we got segments with timestamps
+    if (!whisperResult.segments || whisperResult.segments.length === 0) {
+      throw new Error('Whisper did not return segments');
     }
 
-    // Group words into caption segments
-    const segments = groupWordsIntoSegments(whisperResult.words, 8);
-    console.log('Generated', segments.length, 'caption segments');
+    // Split segments into smaller chunks for captions
+    const allChunks: { text: string; start: number; end: number }[] = [];
+    for (const seg of whisperResult.segments) {
+      const chunks = splitSegmentIntoChunks({
+        text: seg.text.trim(),
+        start: seg.start,
+        end: seg.end,
+      }, 8);
+      allChunks.push(...chunks);
+    }
+    console.log('Generated', allChunks.length, 'caption segments');
 
     // Generate SRT content
     let srtContent = '';
-    segments.forEach((segment, index) => {
+    allChunks.forEach((segment: { text: string; start: number; end: number }, index: number) => {
       srtContent += `${index + 1}\n`;
       srtContent += `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}\n`;
       srtContent += `${segment.text}\n\n`;
@@ -144,7 +157,7 @@ serve(async (req) => {
         success: true,
         captionsUrl: urlData.publicUrl,
         srtContent,
-        segmentCount: segments.length,
+        segmentCount: allChunks.length,
         audioDuration: whisperResult.duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
