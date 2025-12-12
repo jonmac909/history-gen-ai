@@ -308,7 +308,7 @@ const Index = () => {
 
       // Step 3: Generate captions
       updateStep("captions", "active");
-      const captionsRes = await generateCaptions(confirmedScript, audioRes.duration || 0, projectId);
+      const captionsRes = await generateCaptions(audioRes.audioUrl!, projectId);
       
       if (!captionsRes.success) {
         throw new Error(captionsRes.error || "Failed to generate captions");

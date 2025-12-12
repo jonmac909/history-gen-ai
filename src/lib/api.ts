@@ -417,9 +417,9 @@ export async function generateImagesStreaming(
   return result;
 }
 
-export async function generateCaptions(script: string, audioDuration: number, projectId: string): Promise<CaptionsResult> {
+export async function generateCaptions(audioUrl: string, projectId: string): Promise<CaptionsResult> {
   const { data, error } = await supabase.functions.invoke('generate-captions', {
-    body: { script, audioDuration, projectId }
+    body: { audioUrl, projectId }
   });
 
   if (error) {
