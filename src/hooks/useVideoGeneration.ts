@@ -1,11 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { useState, useCallback } from 'react';
 
 interface ImageTiming {
   imageUrl: string;
-  startTime: number;
-  endTime: number;
   duration: number;
 }
 
@@ -26,56 +22,8 @@ export function useVideoGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
-  const ffmpegRef = useRef<FFmpeg | null>(null);
-  const loadedRef = useRef(false);
 
-  const loadFFmpeg = useCallback(async () => {
-    if (loadedRef.current && ffmpegRef.current) {
-      return ffmpegRef.current;
-    }
-
-    const ffmpeg = new FFmpeg();
-    ffmpegRef.current = ffmpeg;
-
-    ffmpeg.on('log', ({ message }) => {
-      console.log('[FFmpeg]', message);
-    });
-
-    setStatus('Downloading FFmpeg...');
-    setProgress(5);
-    
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-    
-    try {
-      console.log('[FFmpeg] Fetching core JS...');
-      const coreResponse = await fetch(`${baseURL}/ffmpeg-core.js`);
-      const coreBlob = new Blob([await coreResponse.text()], { type: 'text/javascript' });
-      const coreURL = URL.createObjectURL(coreBlob);
-      setProgress(10);
-      
-      setStatus('Downloading FFmpeg WASM...');
-      console.log('[FFmpeg] Fetching WASM...');
-      const wasmResponse = await fetch(`${baseURL}/ffmpeg-core.wasm`);
-      const wasmBlob = new Blob([await wasmResponse.arrayBuffer()], { type: 'application/wasm' });
-      const wasmURL = URL.createObjectURL(wasmBlob);
-      setProgress(20);
-      
-      setStatus('Initializing FFmpeg...');
-      console.log('[FFmpeg] Loading...');
-      await ffmpeg.load({ coreURL, wasmURL });
-      setProgress(25);
-      
-      console.log('[FFmpeg] Loaded successfully!');
-    } catch (e) {
-      console.error('FFmpeg load failed:', e);
-      throw new Error('Failed to load FFmpeg: ' + (e instanceof Error ? e.message : 'Unknown error'));
-    }
-
-    loadedRef.current = true;
-    return ffmpeg;
-  }, []);
-
-  // Parse SRT content to get timings
+  // Parse SRT content to get total duration
   const parseSRT = useCallback((srtContent: string): { startTime: number; endTime: number }[] => {
     const segments: { startTime: number; endTime: number }[] = [];
     const blocks = srtContent.trim().split(/\n\n+/);
@@ -115,10 +63,8 @@ export function useVideoGeneration() {
     const segments = parseSRT(srtContent);
     if (segments.length === 0) {
       // Fallback: 5 seconds per image
-      return imageUrls.map((url, i) => ({
+      return imageUrls.map((url) => ({
         imageUrl: url,
-        startTime: i * 5,
-        endTime: (i + 1) * 5,
         duration: 5,
       }));
     }
@@ -126,18 +72,104 @@ export function useVideoGeneration() {
     const totalDuration = segments[segments.length - 1].endTime;
     const imageDuration = totalDuration / imageUrls.length;
 
-    return imageUrls.map((url, i) => ({
+    return imageUrls.map((url) => ({
       imageUrl: url,
-      startTime: i * imageDuration,
-      endTime: (i + 1) * imageDuration,
       duration: imageDuration,
     }));
   }, [parseSRT]);
 
+  // Create video from single image using Canvas + MediaRecorder
+  const createVideoFromImage = useCallback(async (
+    imageUrl: string,
+    duration: number,
+    onProgress?: (p: number) => void
+  ): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      img.onload = () => {
+        // Create canvas at 1920x1080
+        const canvas = document.createElement('canvas');
+        canvas.width = 1920;
+        canvas.height = 1080;
+        const ctx = canvas.getContext('2d')!;
+
+        // Calculate scaling to fit image
+        const scale = Math.min(1920 / img.width, 1080 / img.height);
+        const x = (1920 - img.width * scale) / 2;
+        const y = (1080 - img.height * scale) / 2;
+
+        // Draw black background and centered image
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, 1920, 1080);
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+
+        // Create video stream from canvas
+        const stream = canvas.captureStream(30); // 30 fps
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 5000000,
+        });
+
+        const chunks: Blob[] = [];
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          resolve(blob);
+        };
+
+        mediaRecorder.onerror = (e) => {
+          reject(new Error('MediaRecorder error: ' + e));
+        };
+
+        // Start recording
+        mediaRecorder.start(100); // Collect data every 100ms
+
+        // Redraw canvas periodically (needed for captureStream)
+        const fps = 30;
+        const totalFrames = Math.ceil(duration * fps);
+        let frame = 0;
+
+        const drawFrame = () => {
+          if (frame >= totalFrames) {
+            mediaRecorder.stop();
+            return;
+          }
+
+          // Redraw same image (keeps the stream active)
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, 1920, 1080);
+          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+
+          frame++;
+          if (onProgress) {
+            onProgress(frame / totalFrames);
+          }
+
+          requestAnimationFrame(drawFrame);
+        };
+
+        drawFrame();
+      };
+
+      img.onerror = () => {
+        reject(new Error('Failed to load image: ' + imageUrl));
+      };
+
+      img.src = imageUrl;
+    });
+  }, []);
+
   const generateVideo = useCallback(async (
     imageUrls: string[],
     srtContent: string,
-    _audioUrl?: string // Not used for individual clips
+    _audioUrl?: string
   ): Promise<VideoGenerationResult> => {
     if (imageUrls.length === 0) {
       return { success: false, error: 'No images provided' };
@@ -147,9 +179,6 @@ export function useVideoGeneration() {
     setProgress(0);
 
     try {
-      const ffmpeg = await loadFFmpeg();
-      
-      // Calculate timings
       const timings = calculateImageTimings(imageUrls, srtContent);
       console.log('Image timings:', timings);
 
@@ -158,47 +187,29 @@ export function useVideoGeneration() {
 
       for (let i = 0; i < totalImages; i++) {
         const timing = timings[i];
-        const progressBase = 25 + (i / totalImages) * 70;
+        const baseProgress = (i / totalImages) * 100;
         
-        setStatus(`Processing clip ${i + 1} of ${totalImages}...`);
-        setProgress(Math.round(progressBase));
+        setStatus(`Creating clip ${i + 1} of ${totalImages}...`);
+        setProgress(Math.round(baseProgress));
 
-        // Download image
-        console.log(`[FFmpeg] Downloading image ${i + 1}...`);
-        const imageData = await fetchFile(timing.imageUrl);
-        await ffmpeg.writeFile(`image${i}.png`, imageData);
+        console.log(`Creating clip ${i + 1} with duration ${timing.duration.toFixed(2)}s...`);
 
-        // Generate video clip for this image
-        const duration = Math.max(timing.duration, 1); // At least 1 second
-        console.log(`[FFmpeg] Creating clip ${i + 1} with duration ${duration.toFixed(2)}s...`);
+        const videoBlob = await createVideoFromImage(
+          timing.imageUrl,
+          timing.duration,
+          (p) => setProgress(Math.round(baseProgress + (p * 100 / totalImages)))
+        );
 
-        await ffmpeg.exec([
-          '-loop', '1',
-          '-i', `image${i}.png`,
-          '-c:v', 'libx264',
-          '-t', duration.toFixed(3),
-          '-pix_fmt', 'yuv420p',
-          '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
-          '-r', '30',
-          '-preset', 'ultrafast',
-          `clip${i}.mp4`
-        ]);
-
-        // Read output
-        const data = await ffmpeg.readFile(`clip${i}.mp4`);
-        const videoBlob = new Blob([new Uint8Array(data as Uint8Array)], { type: 'video/mp4' });
         const videoUrl = URL.createObjectURL(videoBlob);
 
         clips.push({
           index: i,
           videoUrl,
           videoBlob,
-          duration,
+          duration: timing.duration,
         });
 
-        // Cleanup this image
-        try { await ffmpeg.deleteFile(`image${i}.png`); } catch {}
-        try { await ffmpeg.deleteFile(`clip${i}.mp4`); } catch {}
+        console.log(`Clip ${i + 1} created: ${(videoBlob.size / 1024).toFixed(1)}KB`);
       }
 
       setProgress(100);
@@ -214,7 +225,7 @@ export function useVideoGeneration() {
         error: error instanceof Error ? error.message : 'Failed to generate video' 
       };
     }
-  }, [loadFFmpeg, calculateImageTimings]);
+  }, [calculateImageTimings, createVideoFromImage]);
 
   return {
     generateVideo,
