@@ -40,8 +40,8 @@ serve(async (req) => {
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     
-    // Use provided voice ID or default to George
-    const selectedVoiceId = voiceId || 'JBFqnCBsd6RMkjVDRZzb';
+    // Use provided voice ID or default to Asleep Voice
+    const selectedVoiceId = voiceId || '3GntEbfzhYH3X9VCuIHy';
     
     console.log(`Generating audio for ${wordCount} words with ElevenLabs Flash v2.5...`);
     console.log(`Using voice ID: ${selectedVoiceId}`);
