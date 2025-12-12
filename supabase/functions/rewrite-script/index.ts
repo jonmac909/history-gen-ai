@@ -6,8 +6,10 @@ const corsHeaders = {
 };
 
 // Claude Sonnet 4.5 has a max output of ~16k tokens per call
-// We need to chain calls to reach higher word counts
 const MAX_TOKENS_PER_CALL = 16000;
+
+// Timeout for each Claude API call (90 seconds)
+const API_CALL_TIMEOUT = 90000;
 
 async function generateScriptChunk(
   apiKey: string,
@@ -15,31 +17,39 @@ async function generateScriptChunk(
   systemPrompt: string,
   messages: { role: string; content: string }[]
 ): Promise<{ text: string; stopReason: string }> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: MAX_TOKENS_PER_CALL,
-      system: systemPrompt,
-      messages,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_CALL_TIMEOUT);
+  
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: MAX_TOKENS_PER_CALL,
+        system: systemPrompt,
+        messages,
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return {
+      text: data.content[0]?.text || '',
+      stopReason: data.stop_reason || 'end_turn',
+    };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = await response.json();
-  return {
-    text: data.content[0]?.text || '',
-    stopReason: data.stop_reason || 'end_turn',
-  };
 }
 
 
@@ -94,6 +104,9 @@ CRITICAL RULES:
             let iteration = 0;
             const maxIterations = 10; // Safety limit
             
+            // For very long scripts, we need to be more aggressive with single-call output
+            const wordsPerIteration = Math.ceil(targetWords / 3); // Aim for ~3 iterations max
+            
             while (currentWordCount < targetWords && iteration < maxIterations) {
               iteration++;
               const wordsRemaining = targetWords - currentWordCount;
@@ -118,31 +131,31 @@ REQUIREMENTS:
 - No headers, no formatting, no scene markers
 - Dramatic, cinematic, educational style
 - Expand with rich historical context and vivid descriptions
+- Write as much as you possibly can in this response
 
 Begin the ${targetWords}-word narration now:`
                   }
                 ];
               } else {
                 // Continuation: ask to continue from where we left off
+                // Truncate the context to avoid token limits
+                const contextWords = fullScript.split(/\s+/);
+                const lastPortion = contextWords.slice(-500).join(' '); // Keep last 500 words for context
+                
                 messages = [
                   {
                     role: 'user',
-                    content: `Write a ${targetWords}-word documentary narration based on this transcript.
+                    content: `Continue this documentary narration. You've written ${currentWordCount} words. Write ${Math.min(wordsRemaining, 5000)} more words.
 
-TRANSCRIPT:
-${transcript}
+TRANSCRIPT CONTEXT:
+${transcript.substring(0, 3000)}...
 
-TITLE: ${title || 'Historical Documentary'}`
-                  },
-                  {
-                    role: 'assistant',
-                    content: fullScript
-                  },
-                  {
-                    role: 'user',
-                    content: `You've written ${currentWordCount} words so far. Continue writing ${wordsRemaining} more words to reach the ${targetWords} word target. 
+TITLE: ${title || 'Historical Documentary'}
 
-CONTINUE SEAMLESSLY from where you left off. Do not repeat anything. Do not add headers or formatting. Just continue the narration with more content, more historical detail, more dramatic storytelling.
+THE SCRIPT SO FAR ENDS WITH:
+...${lastPortion}
+
+CONTINUE SEAMLESSLY from where you left off. Write as much as you can. Do not repeat anything. Do not add headers or formatting. Just continue the narration.
 
 Continue now:`
                   }
@@ -155,23 +168,24 @@ Continue now:`
                 type: 'progress', 
                 progress: startProgress,
                 wordCount: currentWordCount,
-                message: `Writing... ${currentWordCount}/${targetWords} words`
+                message: `Writing... ${currentWordCount}/${targetWords} words (pass ${iteration})`
               })}\n\n`));
               
               // Start keepalive pings while waiting for Claude
               let pingCount = 0;
               const keepaliveInterval = setInterval(() => {
                 pingCount++;
-                // Send simulated progress during API call with estimated words
-                const simulatedProgress = Math.min(startProgress + pingCount, 95);
-                const estimatedWords = Math.round((simulatedProgress / 100) * targetWords);
+                // Send simulated progress during API call
+                const estimatedNewWords = Math.min(pingCount * 200, wordsPerIteration);
+                const estimatedTotal = currentWordCount + estimatedNewWords;
+                const simulatedProgress = Math.min(Math.round((estimatedTotal / targetWords) * 100), 95);
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                   type: 'progress', 
                   progress: simulatedProgress,
-                  wordCount: estimatedWords,
-                  message: `Writing... ~${estimatedWords}/${targetWords} words`
+                  wordCount: estimatedTotal,
+                  message: `Writing... ~${estimatedTotal}/${targetWords} words`
                 })}\n\n`));
-              }, 5000); // Ping every 5 seconds
+              }, 3000); // Ping every 3 seconds
               
               let result;
               try {
@@ -181,6 +195,26 @@ Continue now:`
                   systemPrompt,
                   messages
                 );
+              } catch (apiError) {
+                clearInterval(keepaliveInterval);
+                console.error(`API error on iteration ${iteration}:`, apiError);
+                
+                // If we have some content, return what we have
+                if (currentWordCount > 500) {
+                  console.log(`Returning partial script with ${currentWordCount} words after error`);
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'complete', 
+                    success: true,
+                    script: fullScript,
+                    wordCount: currentWordCount,
+                    progress: 100,
+                    partial: true,
+                    message: `Generated ${currentWordCount} words (target was ${targetWords})`
+                  })}\n\n`));
+                  controller.close();
+                  return;
+                }
+                throw apiError;
               } finally {
                 clearInterval(keepaliveInterval);
               }
@@ -196,7 +230,7 @@ Continue now:`
               console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason})`);
               
               // If the model stopped naturally and we're close enough, break
-              if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.9) {
+              if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.85) {
                 console.log('Model finished naturally and we have enough words');
                 break;
               }
@@ -231,7 +265,7 @@ Continue now:`
       });
 
       return new Response(responseStream, {
-        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
       });
     } else {
       // Non-streaming mode with continuation loop
