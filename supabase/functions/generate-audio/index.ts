@@ -187,6 +187,8 @@ serve(async (req) => {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'progress', 
               progress: 10, 
+              currentChunk: 1,
+              totalChunks: 1,
               message: 'Connecting to Cartesia...'
             })}\n\n`));
             
@@ -197,6 +199,8 @@ serve(async (req) => {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'progress', 
               progress: 90, 
+              currentChunk: 1,
+              totalChunks: 1,
               message: 'Uploading audio file...'
             })}\n\n`));
 
@@ -238,7 +242,8 @@ serve(async (req) => {
               type: 'complete', 
               audioUrl: urlData.publicUrl,
               duration: durationSeconds,
-              size: audioData.length
+              size: audioData.length,
+              totalChunks: 1
             })}\n\n`));
 
           } catch (error) {
