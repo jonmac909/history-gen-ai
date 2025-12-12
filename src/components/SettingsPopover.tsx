@@ -29,8 +29,8 @@ export interface GenerationSettings {
 }
 
 const aiModelOptions = [
-  { value: "claude-opus-4-5-20251101", label: "Claude Opus 4.5", description: "Powerful model for complex challenges" },
-  { value: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", description: "Smart, efficient for everyday use" },
+  { value: "claude-opus-4-1-20250805", label: "Claude Opus 4.1", description: "Most intelligent, expensive" },
+  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Smart, efficient for everyday use" },
 ];
 
 interface SettingsPopoverProps {
