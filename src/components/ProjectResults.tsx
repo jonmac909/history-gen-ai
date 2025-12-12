@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Download, RefreshCw, Layers, ExternalLink, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -65,11 +65,29 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
 export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtContent }: ProjectResultsProps) {
   const [videoClips, setVideoClips] = useState<VideoClip[]>([]);
   const { generateVideo, isGenerating, progress, status } = useVideoGeneration();
+  const hasStartedGeneration = useRef(false);
 
   // Extract image URLs from assets
   const imageUrls = assets
     .filter(a => a.id.startsWith('image-') && a.url)
     .map(a => a.url!);
+
+  // Auto-generate video clips when component mounts with required data
+  useEffect(() => {
+    if (hasStartedGeneration.current) return;
+    if (imageUrls.length === 0 || !srtContent || isGenerating) return;
+
+    hasStartedGeneration.current = true;
+    
+    const autoGenerate = async () => {
+      const result = await generateVideo(imageUrls, srtContent, audioUrl);
+      if (result.success && result.clips) {
+        setVideoClips(result.clips);
+      }
+    };
+    
+    autoGenerate();
+  }, [imageUrls.length, srtContent, audioUrl]);
 
   const handleGenerateVideo = async () => {
     if (imageUrls.length === 0) {
@@ -214,28 +232,10 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
                 <Video className="w-5 h-5 text-primary" />
                 <h3 className="font-semibold text-foreground">MP4 Video Clips</h3>
               </div>
-              {videoClips.length > 0 ? (
+              {videoClips.length > 0 && (
                 <Button onClick={handleDownloadAllClips} className="gap-2">
                   <Download className="w-4 h-4" />
                   Download All ({videoClips.length})
-                </Button>
-              ) : (
-                <Button 
-                  onClick={handleGenerateVideo} 
-                  disabled={isGenerating || imageUrls.length === 0}
-                  className="gap-2"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Video className="w-4 h-4" />
-                      Generate Clips
-                    </>
-                  )}
                 </Button>
               )}
             </div>
@@ -268,7 +268,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
             {videoClips.length === 0 && !isGenerating && (
               <p className="text-sm text-muted-foreground">
-                Generate individual MP4 clips for each image with proper timing.
+                Generating video clips automatically...
               </p>
             )}
           </div>
