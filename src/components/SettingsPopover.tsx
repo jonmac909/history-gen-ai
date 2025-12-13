@@ -39,10 +39,6 @@ export interface GenerationSettings {
   quality: string;
 }
 
-const aiModelOptions = [
-  { value: "claude-opus-4-1-20250805", label: "Claude Opus 4.1", description: "Most intelligent, expensive" },
-  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Smart, efficient for everyday use" },
-];
 
 interface SettingsPopoverProps {
   settings: GenerationSettings;
@@ -54,11 +50,6 @@ const scriptTemplateOptions = [
   { value: "template-a", label: "Template A" },
   { value: "template-b", label: "Template B" },
   { value: "template-c", label: "Template C" },
-];
-
-const qualityOptions = [
-  { value: "basic", label: "Basic (2K)" },
-  { value: "high", label: "High (4K)" },
 ];
 
 export function SettingsPopover({ 
@@ -164,26 +155,14 @@ export function SettingsPopover({
             </Select>
           </div>
 
-          {/* AI Model */}
+          {/* AI Model - Fixed to Claude Sonnet 4.5 */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
               Select Your Model:
             </label>
-            <Select
-              value={settings.aiModel}
-              onValueChange={(value) => updateSetting("aiModel", value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a model" />
-              </SelectTrigger>
-              <SelectContent>
-                {aiModelOptions.map((model) => (
-                  <SelectItem key={model.value} value={model.value}>
-                    {model.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
+              Claude Sonnet 4.5
+            </div>
           </div>
 
           {/* Voice Selection */}
@@ -273,27 +252,6 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Quality */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Quality:
-            </label>
-            <Select
-              value={settings.quality}
-              onValueChange={(value) => updateSetting("quality", value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {qualityOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           {/* Image Count */}
           <div className="space-y-2">
