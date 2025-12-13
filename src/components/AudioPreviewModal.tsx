@@ -135,20 +135,20 @@ export function AudioPreviewModal({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button variant="outline" onClick={onRegenerate} className="mr-auto">
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={onRegenerate} className="w-full sm:w-auto sm:mr-auto">
             <RotateCcw className="w-4 h-4 mr-2" />
             Regenerate
           </Button>
           
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} className="w-full sm:w-auto">
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
           
-          <Button onClick={onConfirm}>
+          <Button onClick={onConfirm} className="w-full sm:w-auto">
             <Check className="w-4 h-4 mr-2" />
-            Confirm & Generate Captions
+            Confirm
           </Button>
         </DialogFooter>
       </DialogContent>
