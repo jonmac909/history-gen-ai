@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,40 +11,32 @@ serve(async (req) => {
   }
 
   try {
-    const { imageUrls, filenames } = await req.json();
+    const { imageUrl } = await req.json();
 
-    if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+    if (!imageUrl) {
       return new Response(
-        JSON.stringify({ error: "No image URLs provided" }),
+        JSON.stringify({ error: "No image URL provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fetch all images and convert to base64
-    const images = await Promise.all(
-      imageUrls.map(async (url: string, index: number) => {
-        try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status}`);
-          }
-          const arrayBuffer = await response.arrayBuffer();
-          const base64 = base64Encode(arrayBuffer);
-          const filename = filenames?.[index] || `image_${index + 1}.png`;
-          return { filename, base64, success: true };
-        } catch (error) {
-          console.error(`Error fetching image ${index}:`, error);
-          return { filename: `image_${index + 1}.png`, base64: null, success: false };
-        }
-      })
-    );
+    console.log("Fetching image:", imageUrl);
 
-    const successfulImages = images.filter(img => img.success);
+    // Fetch the single image
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
 
-    return new Response(
-      JSON.stringify({ images: successfulImages }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Return the image as binary
+    return new Response(arrayBuffer, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": response.headers.get("Content-Type") || "image/png",
+      }
+    });
   } catch (error) {
     console.error("Error:", error);
     return new Response(
