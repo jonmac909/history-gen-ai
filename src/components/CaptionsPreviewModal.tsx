@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Check, X, Edit3, FileText } from "lucide-react";
 import {
   Dialog,
@@ -27,6 +27,13 @@ export function CaptionsPreviewModal({
 }: CaptionsPreviewModalProps) {
   const [editedSrt, setEditedSrt] = useState(srtContent);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Sync state when srtContent prop changes
+  useEffect(() => {
+    if (srtContent) {
+      setEditedSrt(srtContent);
+    }
+  }, [srtContent]);
 
   // Count caption entries
   const captionCount = (editedSrt.match(/^\d+$/gm) || []).length;
