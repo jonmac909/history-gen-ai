@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Download, RefreshCw, Layers, ExternalLink } from "lucide-react";
+import { Download, RefreshCw, Layers, ExternalLink, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
+import JSZip from "jszip";
 
 export interface GeneratedAsset {
   id: string;
@@ -157,30 +157,60 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
     }
   };
 
-  const handleDownloadImage = (asset: GeneratedAsset) => {
-    // Find timing for this image
-    const timing = imageTimings.find(t => t.asset.id === asset.id);
-    if (timing) {
-      const timestamp = formatTimestamp(timing.startTime, timing.endTime);
-      const filename = `image_${timestamp}.png`;
-      handleDownload(asset, filename);
-    } else {
-      handleDownload(asset);
-    }
-  };
 
-  const handleDownloadAllImages = () => {
-    imageTimings.forEach((timing, i) => {
-      setTimeout(() => {
-        const timestamp = formatTimestamp(timing.startTime, timing.endTime);
-        const filename = `image_${timestamp}.png`;
-        handleDownload(timing.asset, filename);
-      }, i * 500);
-    });
+  const handleDownloadAllImagesAsZip = async () => {
+    const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
+    if (imageAssets.length === 0) {
+      toast({
+        title: "No Images",
+        description: "No images available to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     toast({
-      title: "Downloading All Images",
-      description: `Downloading ${imageTimings.length} images with timestamps...`,
+      title: "Preparing Download",
+      description: `Creating zip file with ${imageAssets.length} images...`,
     });
+
+    try {
+      const zip = new JSZip();
+      
+      await Promise.all(imageAssets.map(async (asset, index) => {
+        if (asset.url) {
+          const response = await fetch(asset.url);
+          const blob = await response.blob();
+          const timing = imageTimings.find(t => t.asset.id === asset.id);
+          const filename = timing 
+            ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
+            : `image_${index + 1}.png`;
+          zip.file(filename, blob);
+        }
+      }));
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'images.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download Complete",
+        description: `images.zip downloaded successfully.`,
+      });
+    } catch (error) {
+      console.error('Zip creation failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to create zip file. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -214,34 +244,6 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
             )}
           </div>
 
-          {/* Image Timings Info */}
-          {imageTimings.length > 0 && (
-            <div className="bg-card rounded-xl border border-border p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-primary" />
-                  <h3 className="font-semibold text-foreground">Image Timings</h3>
-                </div>
-                <Button onClick={handleDownloadAllImages} className="gap-2">
-                  <Download className="w-4 h-4" />
-                  Download All ({imageTimings.length})
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {imageTimings.map((timing, index) => (
-                  <div key={timing.asset.id} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg">
-                    <span className="text-sm text-foreground">
-                      Image {index + 1}: {formatTimestamp(timing.startTime, timing.endTime)}
-                    </span>
-                    <Button size="sm" variant="ghost" onClick={() => handleDownloadImage(timing.asset)}>
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Generated Assets */}
@@ -252,54 +254,75 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
           </div>
 
           <div className="space-y-3">
-            {assets.map((asset) => {
-              const isImage = asset.id.startsWith('image-');
-              const timing = isImage ? imageTimings.find(t => t.asset.id === asset.id) : null;
-              const displayName = timing 
-                ? `Image ${formatTimestamp(timing.startTime, timing.endTime)}`
-                : asset.name;
-
-              return (
-                <div
-                  key={asset.id}
-                  className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                      {asset.icon}
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{displayName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {asset.type} • {asset.size}
-                      </p>
-                    </div>
+            {/* Filter out individual images and script, show other assets */}
+            {assets.filter(a => !a.id.startsWith('image-') && a.id !== 'script').map((asset) => (
+              <div
+                key={asset.id}
+                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                    {asset.icon}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {asset.url && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => window.open(asset.url, '_blank')}
-                        className="text-muted-foreground hover:text-foreground"
-                        title="Open in new tab"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    )}
+                  <div>
+                    <p className="font-medium text-foreground">{asset.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {asset.type} • {asset.size}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {asset.url && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => isImage ? handleDownloadImage(asset) : handleDownload(asset)}
+                      onClick={() => window.open(asset.url, '_blank')}
                       className="text-muted-foreground hover:text-foreground"
-                      title="Download"
+                      title="Open in new tab"
                     >
-                      <Download className="w-5 h-5" />
+                      <ExternalLink className="w-4 h-4" />
                     </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDownload(asset)}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Download"
+                  >
+                    <Download className="w-5 h-5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            {/* Single Images download block */}
+            {assets.some(a => a.id.startsWith('image-') && a.url) && (
+              <div
+                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                    <Image className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Images</p>
+                    <p className="text-sm text-muted-foreground">
+                      ZIP • {assets.filter(a => a.id.startsWith('image-') && a.url).length} images
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDownloadAllImagesAsZip}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+              </div>
+            )}
           </div>
 
           {assets.length === 0 && (
