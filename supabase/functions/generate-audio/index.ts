@@ -67,8 +67,10 @@ async function generateWithOpenVoice(
     );
   }
 
-  // Use the default voice sample if no reference provided
-  const voiceUrl = referenceAudioUrl || 'https://crrgvodgeqayidluzqwz.supabase.co/storage/v1/object/public/generated-assets/voices/sleepy_voice.wav';
+  // Use a publicly accessible sample voice if no reference provided
+  // Using a sample from a reliable CDN that Segmind can fetch
+  const defaultVoiceUrl = 'https://github.com/snakers4/silero-models/raw/master/sample-audio/en_sample.wav';
+  const voiceUrl = referenceAudioUrl || defaultVoiceUrl;
   
   console.log(`Generating audio with OpenVoice for ${wordCount} words...`);
   console.log(`Reference audio: ${voiceUrl}`);
@@ -222,7 +224,7 @@ async function generateWithOpenVoice(
       },
       body: JSON.stringify({
         text: chunk,
-        reference_audio: referenceAudioUrl || 'https://crrgvodgeqayidluzqwz.supabase.co/storage/v1/object/public/generated-assets/voices/sleepy_voice.wav',
+        reference_audio: voiceUrl,
         language: 'EN_NEWEST',
         speed: 1.0,
       }),
