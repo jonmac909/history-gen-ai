@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, Video } from "lucide-react";
+import { useState } from "react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -8,6 +8,9 @@ import { ProcessingModal, type GenerationStep } from "@/components/ProcessingMod
 import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/components/ConfigModal";
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
+import { AudioPreviewModal } from "@/components/AudioPreviewModal";
+import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
+import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import { 
   getYouTubeTranscript, 
   rewriteScriptStreaming, 
@@ -19,15 +22,13 @@ import {
 import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "review" | "results";
+type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-images" | "results";
 
 // Generate image prompts evenly spaced throughout the script
 function generateImagePrompts(script: string, imageCount: number, stylePrompt: string): string[] {
-  // Split script into sentences for more precise spacing
   const sentences = script.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 20);
   
   if (sentences.length === 0) {
-    // Fallback to paragraphs
     const paragraphs = script.split(/\n\n+/).filter(p => p.trim().length > 50);
     const sectionSize = Math.max(1, Math.ceil(paragraphs.length / imageCount));
     
@@ -41,17 +42,13 @@ function generateImagePrompts(script: string, imageCount: number, stylePrompt: s
     return prompts;
   }
   
-  // Calculate even spacing through the script
   const spacing = sentences.length / imageCount;
   const prompts: string[] = [];
   
   for (let i = 0; i < imageCount; i++) {
-    // Pick sentence at evenly spaced interval
     const sentenceIndex = Math.floor(i * spacing);
     const contextStart = Math.max(0, sentenceIndex - 1);
     const contextEnd = Math.min(sentences.length, sentenceIndex + 2);
-    
-    // Get 2-3 surrounding sentences for context
     const context = sentences.slice(contextStart, contextEnd).join(' ').substring(0, 300);
     prompts.push(`${stylePrompt}. Scene depicting: ${context}`);
   }
@@ -75,17 +72,24 @@ const Index = () => {
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
-  const [selectedElevenLabsVoiceId, setSelectedElevenLabsVoiceId] = useState("3GntEbfzhYH3X9VCuIHy"); // Asleep Voice
+  const [selectedElevenLabsVoiceId, setSelectedElevenLabsVoiceId] = useState("3GntEbfzhYH3X9VCuIHy");
   const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
   const [srtContent, setSrtContent] = useState<string | undefined>();
   
-  // Script review state
+  // Step-by-step state
   const [pendingScript, setPendingScript] = useState("");
+  const [confirmedScript, setConfirmedScript] = useState("");
   const [projectId, setProjectId] = useState("");
   const [videoTitle, setVideoTitle] = useState("History Documentary");
+  const [pendingAudioUrl, setPendingAudioUrl] = useState("");
+  const [pendingAudioDuration, setPendingAudioDuration] = useState<number>(0);
+  const [pendingAudioSize, setPendingAudioSize] = useState<number>(0);
+  const [pendingSrtContent, setPendingSrtContent] = useState("");
+  const [pendingSrtUrl, setPendingSrtUrl] = useState("");
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -112,6 +116,7 @@ const Index = () => {
     ));
   };
 
+  // Step 1: Generate transcript and script
   const handleGenerate = async () => {
     if (!inputValue.trim()) {
       toast({
@@ -136,7 +141,6 @@ const Index = () => {
       }
     }
 
-    // Check for required configuration
     const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
     if (!currentTemplate?.template) {
       toast({
@@ -147,11 +151,10 @@ const Index = () => {
       return;
     }
 
-    // Voice is now selected via ElevenLabs in Settings
     if (!selectedElevenLabsVoiceId) {
       toast({
         title: "Voice Required",
-        description: "Please select a voice in Settings → Voices.",
+        description: "Please select a voice in Settings.",
         variant: "destructive",
       });
       return;
@@ -161,7 +164,6 @@ const Index = () => {
     const newProjectId = crypto.randomUUID();
     setProjectId(newProjectId);
 
-    // Initialize processing steps - Phase 1 (transcript + script)
     const steps: GenerationStep[] = [
       { id: "transcript", label: "Fetching YouTube Transcript", status: "pending" },
       { id: "script", label: "Rewriting Script", status: "pending" },
@@ -169,12 +171,9 @@ const Index = () => {
 
     setProcessingSteps(steps);
     setViewState("processing");
-    setGeneratedAssets([]);
-    setAudioUrl(undefined);
-    setSrtContent(undefined);
+    resetPendingState();
 
     try {
-      // Step 1: Fetch transcript
       updateStep("transcript", "active");
       const transcriptResult = await getYouTubeTranscript(inputValue);
       
@@ -186,7 +185,6 @@ const Index = () => {
       setVideoTitle(transcriptResult.title || "History Documentary");
       updateStep("transcript", "completed");
 
-      // Step 2: Rewrite script with streaming progress
       updateStep("script", "active", "0%");
 
       const scriptResult = await rewriteScriptStreaming(
@@ -205,15 +203,10 @@ const Index = () => {
       }
       
       updateStep("script", "completed");
-      
-      // Store script for review
       setPendingScript(scriptResult.script);
       
-      // Short delay before showing review modal
       await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Switch to review state
-      setViewState("review");
+      setViewState("review-script");
 
     } catch (error) {
       console.error("Generation error:", error);
@@ -226,70 +219,24 @@ const Index = () => {
     }
   };
 
-  const handleScriptConfirm = async (confirmedScript: string) => {
-    // Use ElevenLabs voice ID directly
+  // Step 2: After script confirmed, generate audio
+  const handleScriptConfirm = async (script: string) => {
+    setConfirmedScript(script);
     const voiceId = selectedElevenLabsVoiceId || "3GntEbfzhYH3X9VCuIHy";
 
-    // Initialize processing steps - Phase 2 (images, audio, captions)
     const steps: GenerationStep[] = [
-      { id: "images", label: "Generating Images", status: "pending" },
       { id: "audio", label: "Generating Audio", status: "pending" },
-      { id: "captions", label: "Generating SRT Captions", status: "pending" },
     ];
 
     setProcessingSteps(steps);
     setViewState("processing");
 
-    let audioResult: { audioUrl?: string; duration?: number; size?: number } = {};
-    let captionsResult: { captionsUrl?: string; srtContent?: string } = {};
-    let generatedImages: string[] = [];
-
     try {
-      // Save script to storage
-      const scriptUrl = await saveScriptToStorage(confirmedScript, projectId);
+      await saveScriptToStorage(script, projectId);
 
-      // Step 1: Generate images with streaming progress
-      updateStep("images", "active", "0/" + settings.imageCount);
-      
-      // Generate image prompts evenly spaced throughout the script
-      const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
-      console.log(`Generating ${imagePrompts.length} images evenly spaced through script...`);
-      
-      try {
-        const imageResult = await generateImagesStreaming(
-          imagePrompts, 
-          settings.quality,
-          "16:9",
-          (completed, total, message) => {
-            updateStep("images", "active", `${completed}/${total}`);
-          }
-        );
-        
-        if (!imageResult.success) {
-          console.error('Image generation failed:', imageResult.error);
-          toast({
-            title: "Image Generation Issue",
-            description: imageResult.error || "Some images may not have generated",
-            variant: "destructive",
-          });
-        } else {
-          console.log(`Generated ${imageResult.images?.length || 0} images`);
-          generatedImages = imageResult.images || [];
-        }
-      } catch (imgError) {
-        console.error('Image generation error:', imgError);
-        toast({
-          title: "Image Generation Failed",
-          description: imgError instanceof Error ? imgError.message : "Failed to generate images",
-          variant: "destructive",
-        });
-      }
-      updateStep("images", "completed", "Done");
-
-      // Step 2: Generate audio with streaming progress
       updateStep("audio", "active", "0%");
       const audioRes = await generateAudioStreaming(
-        confirmedScript, 
+        script, 
         voiceId, 
         projectId,
         (progress) => {
@@ -297,96 +244,195 @@ const Index = () => {
         }
       );
       
-      if (!audioRes.success) {
+      if (!audioRes.success || !audioRes.audioUrl) {
         throw new Error(audioRes.error || "Failed to generate audio");
       }
       
-      audioResult = audioRes;
       updateStep("audio", "completed", "100%");
-
-      // Step 3: Generate captions
-      updateStep("captions", "active");
-      const captionsRes = await generateCaptions(audioRes.audioUrl!, projectId);
       
-      if (!captionsRes.success) {
-        throw new Error(captionsRes.error || "Failed to generate captions");
-      }
-      
-      captionsResult = captionsRes;
-      updateStep("captions", "completed");
+      setPendingAudioUrl(audioRes.audioUrl);
+      setPendingAudioDuration(audioRes.duration || 0);
+      setPendingAudioSize(audioRes.size || 0);
 
-      // Prepare assets
-      const assets: GeneratedAsset[] = [
-        {
-          id: "script",
-          name: "Rewritten Script",
-          type: "Markdown",
-          size: `${Math.round(confirmedScript.length / 1024)} KB`,
-          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
-          url: scriptUrl || undefined,
-          content: confirmedScript,
-        },
-        {
-          id: "audio",
-          name: "Voiceover Audio",
-          type: "MP3",
-          size: audioResult.size ? `${(audioResult.size / (1024 * 1024)).toFixed(1)} MB` : "Unknown",
-          icon: <Mic className="w-5 h-5 text-muted-foreground" />,
-          url: audioResult.audioUrl,
-        },
-        {
-          id: "captions",
-          name: "Captions",
-          type: "SRT",
-          size: captionsResult.srtContent ? `${Math.round(captionsResult.srtContent.length / 1024)} KB` : "Unknown",
-          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
-          url: captionsResult.captionsUrl,
-          content: captionsResult.srtContent,
-        },
-      ];
-
-      // Add generated images as individual downloadable assets
-      generatedImages.forEach((imageUrl, index) => {
-        assets.push({
-          id: `image-${index + 1}`,
-          name: `Image ${index + 1}`,
-          type: "PNG",
-          size: "~1 MB",
-          icon: <Image className="w-5 h-5 text-muted-foreground" />,
-          url: imageUrl,
-        });
-      });
-
-      setGeneratedAssets(assets);
-      setAudioUrl(audioResult.audioUrl);
-      setSrtContent(captionsResult.srtContent);
-
-      // Short delay before showing results
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setViewState("results");
-      toast({
-        title: "Generation Complete!",
-        description: "Your history video assets are ready.",
-      });
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-audio");
 
     } catch (error) {
-      console.error("Generation error:", error);
+      console.error("Audio generation error:", error);
       toast({
-        title: "Generation Failed",
-        description: error instanceof Error ? error.message : "An error occurred during generation.",
+        title: "Audio Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
         variant: "destructive",
       });
       setViewState("create");
     }
   };
 
-  const handleScriptCancel = () => {
+  // Regenerate audio
+  const handleAudioRegenerate = () => {
+    handleScriptConfirm(confirmedScript);
+  };
+
+  // Step 3: After audio confirmed, generate captions
+  const handleAudioConfirm = async () => {
+    const steps: GenerationStep[] = [
+      { id: "captions", label: "Generating SRT Captions", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("captions", "active");
+      const captionsRes = await generateCaptions(pendingAudioUrl, projectId);
+      
+      if (!captionsRes.success || !captionsRes.srtContent) {
+        throw new Error(captionsRes.error || "Failed to generate captions");
+      }
+      
+      updateStep("captions", "completed");
+      
+      setPendingSrtContent(captionsRes.srtContent);
+      setPendingSrtUrl(captionsRes.captionsUrl || "");
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-captions");
+
+    } catch (error) {
+      console.error("Captions generation error:", error);
+      toast({
+        title: "Captions Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("create");
+    }
+  };
+
+  // Step 4: After captions confirmed, generate images
+  const handleCaptionsConfirm = async (srt: string) => {
+    setPendingSrtContent(srt);
+
+    const steps: GenerationStep[] = [
+      { id: "images", label: "Generating Images", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("images", "active", `0/${settings.imageCount}`);
+      
+      const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
+      console.log(`Generating ${imagePrompts.length} images...`);
+      
+      const imageResult = await generateImagesStreaming(
+        imagePrompts, 
+        settings.quality,
+        "16:9",
+        (completed, total) => {
+          updateStep("images", "active", `${completed}/${total}`);
+        }
+      );
+      
+      if (!imageResult.success) {
+        console.error('Image generation failed:', imageResult.error);
+        toast({
+          title: "Image Generation Issue",
+          description: imageResult.error || "Some images may not have generated",
+          variant: "destructive",
+        });
+      }
+
+      updateStep("images", "completed", "Done");
+      setPendingImages(imageResult.images || []);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-images");
+
+    } catch (error) {
+      console.error("Image generation error:", error);
+      toast({
+        title: "Image Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("create");
+    }
+  };
+
+  // Step 5: Complete - show results
+  const handleImagesConfirm = () => {
+    const assets: GeneratedAsset[] = [
+      {
+        id: "script",
+        name: "Rewritten Script",
+        type: "Markdown",
+        size: `${Math.round(confirmedScript.length / 1024)} KB`,
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        content: confirmedScript,
+      },
+      {
+        id: "audio",
+        name: "Voiceover Audio",
+        type: "MP3",
+        size: pendingAudioSize ? `${(pendingAudioSize / (1024 * 1024)).toFixed(1)} MB` : "Unknown",
+        icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+        url: pendingAudioUrl,
+      },
+      {
+        id: "captions",
+        name: "Captions",
+        type: "SRT",
+        size: pendingSrtContent ? `${Math.round(pendingSrtContent.length / 1024)} KB` : "Unknown",
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        url: pendingSrtUrl,
+        content: pendingSrtContent,
+      },
+    ];
+
+    pendingImages.forEach((imageUrl, index) => {
+      assets.push({
+        id: `image-${index + 1}`,
+        name: `Image ${index + 1}`,
+        type: "PNG",
+        size: "~1 MB",
+        icon: <Image className="w-5 h-5 text-muted-foreground" />,
+        url: imageUrl,
+      });
+    });
+
+    setGeneratedAssets(assets);
+    setAudioUrl(pendingAudioUrl);
+    setSrtContent(pendingSrtContent);
+    setViewState("results");
+    
+    toast({
+      title: "Generation Complete!",
+      description: "Your history video assets are ready.",
+    });
+  };
+
+  const resetPendingState = () => {
+    setGeneratedAssets([]);
+    setAudioUrl(undefined);
+    setSrtContent(undefined);
     setPendingScript("");
+    setConfirmedScript("");
+    setPendingAudioUrl("");
+    setPendingAudioDuration(0);
+    setPendingAudioSize(0);
+    setPendingSrtContent("");
+    setPendingSrtUrl("");
+    setPendingImages([]);
+  };
+
+  const handleCancel = () => {
+    resetPendingState();
     setViewState("create");
     toast({
       title: "Generation Cancelled",
-      description: "Script generation was cancelled.",
+      description: "Process was cancelled.",
     });
   };
 
@@ -394,10 +440,7 @@ const Index = () => {
     setViewState("create");
     setInputValue("");
     setSourceUrl("");
-    setGeneratedAssets([]);
-    setAudioUrl(undefined);
-    setSrtContent(undefined);
-    setPendingScript("");
+    resetPendingState();
   };
 
   return (
@@ -437,7 +480,6 @@ const Index = () => {
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
           <div className="w-full max-w-3xl mx-auto text-center space-y-8">
-            {/* Title */}
             <div className="space-y-3">
               <h1 className="text-4xl md:text-5xl font-bold text-foreground tracking-tight">
                 Create Your History AI Video
@@ -447,7 +489,6 @@ const Index = () => {
               </p>
             </div>
 
-            {/* URL/Title Input */}
             <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
               <button
                 onClick={toggleInputMode}
@@ -479,14 +520,13 @@ const Index = () => {
               
               <Button
                 onClick={handleGenerate}
-                disabled={viewState === "processing" || viewState === "review"}
+                disabled={viewState !== "create"}
                 className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
               >
                 <Sparkles className="w-4 h-4 mr-2" />
                 Generate
               </Button>
             </div>
-
           </div>
         </main>
       )}
@@ -500,10 +540,36 @@ const Index = () => {
 
       {/* Script Review Modal */}
       <ScriptReviewModal
-        isOpen={viewState === "review"}
+        isOpen={viewState === "review-script"}
         script={pendingScript}
         onConfirm={handleScriptConfirm}
-        onCancel={handleScriptCancel}
+        onCancel={handleCancel}
+      />
+
+      {/* Audio Preview Modal */}
+      <AudioPreviewModal
+        isOpen={viewState === "review-audio"}
+        audioUrl={pendingAudioUrl}
+        duration={pendingAudioDuration}
+        onConfirm={handleAudioConfirm}
+        onRegenerate={handleAudioRegenerate}
+        onCancel={handleCancel}
+      />
+
+      {/* Captions Preview Modal */}
+      <CaptionsPreviewModal
+        isOpen={viewState === "review-captions"}
+        srtContent={pendingSrtContent}
+        onConfirm={handleCaptionsConfirm}
+        onCancel={handleCancel}
+      />
+
+      {/* Images Preview Modal */}
+      <ImagesPreviewModal
+        isOpen={viewState === "review-images"}
+        images={pendingImages}
+        onConfirm={handleImagesConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );
