@@ -183,8 +183,9 @@ async function generateWithOpenVoice(
 
           console.log('Audio uploaded:', urlData.publicUrl);
 
-          const durationSeconds = Math.round(audioData.length / 32000); // WAV estimate
-          console.log(`Audio duration: ~${durationSeconds}s`);
+          // OpenVoice returns 24kHz, 16-bit mono WAV = 48000 bytes/sec
+          const durationSeconds = Math.round(audioData.length / 48000);
+          console.log(`Audio duration: ~${durationSeconds}s (${audioData.length} bytes)`);
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'complete', 
@@ -279,7 +280,8 @@ async function generateWithOpenVoice(
     .from('generated-assets')
     .getPublicUrl(fileName);
 
-  const durationSeconds = Math.round(audioData.length / 32000);
+  // OpenVoice returns 24kHz, 16-bit mono WAV = 48000 bytes/sec
+  const durationSeconds = Math.round(audioData.length / 48000);
 
   return new Response(
     JSON.stringify({
