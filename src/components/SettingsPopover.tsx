@@ -37,6 +37,7 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
+  ttsEngine: 'elevenlabs' | 'openvoice';
 }
 
 const aiModelOptions = [
@@ -186,57 +187,100 @@ export function SettingsPopover({
             </Select>
           </div>
 
-          {/* Voice */}
+          {/* TTS Engine */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Select Your Voice:
+              Select Your TTS Engine:
             </label>
-            <div className="flex gap-2">
-              <Select
-                value={settings.voice}
-                onValueChange={(value) => updateSetting("voice", value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={loadingVoices ? "Loading voices..." : "Select a voice"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  {loadingVoices ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    </div>
-                  ) : elevenLabsVoices.length > 0 ? (
-                    elevenLabsVoices.map((voice) => (
-                      <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                        <div className="flex items-center gap-2">
-                          <span>{voice.name}</span>
-                          <span className="text-xs text-muted-foreground">({voice.category})</span>
-                        </div>
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="none" disabled>
-                      No voices found
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {settings.voice && elevenLabsVoices.find(v => v.voice_id === settings.voice)?.preview_url && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => {
-                    const voice = elevenLabsVoices.find(v => v.voice_id === settings.voice);
-                    if (voice?.preview_url) {
-                      playPreview(voice.preview_url, voice.voice_id);
-                    }
-                  }}
-                >
-                  <Volume2 className={`w-4 h-4 ${playingPreview === settings.voice ? "text-primary animate-pulse" : ""}`} />
-                </Button>
-              )}
-            </div>
+            <Select
+              value={settings.ttsEngine}
+              onValueChange={(value: 'elevenlabs' | 'openvoice') => updateSetting("ttsEngine", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openvoice">
+                  <div className="flex flex-col">
+                    <span>OpenVoice (Cheaper)</span>
+                    <span className="text-xs text-muted-foreground">~$0.009/generation</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="elevenlabs">
+                  <div className="flex flex-col">
+                    <span>ElevenLabs (Premium)</span>
+                    <span className="text-xs text-muted-foreground">~$10/15K words</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* Voice - only show for ElevenLabs */}
+          {settings.ttsEngine === 'elevenlabs' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-center block">
+                Select Your Voice:
+              </label>
+              <div className="flex gap-2">
+                <Select
+                  value={settings.voice}
+                  onValueChange={(value) => updateSetting("voice", value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={loadingVoices ? "Loading voices..." : "Select a voice"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {loadingVoices ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      </div>
+                    ) : elevenLabsVoices.length > 0 ? (
+                      elevenLabsVoices.map((voice) => (
+                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                          <div className="flex items-center gap-2">
+                            <span>{voice.name}</span>
+                            <span className="text-xs text-muted-foreground">({voice.category})</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No voices found
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {settings.voice && elevenLabsVoices.find(v => v.voice_id === settings.voice)?.preview_url && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => {
+                      const voice = elevenLabsVoices.find(v => v.voice_id === settings.voice);
+                      if (voice?.preview_url) {
+                        playPreview(voice.preview_url, voice.voice_id);
+                      }
+                    }}
+                  >
+                    <Volume2 className={`w-4 h-4 ${playingPreview === settings.voice ? "text-primary animate-pulse" : ""}`} />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* OpenVoice info */}
+          {settings.ttsEngine === 'openvoice' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-center block">
+                Voice Cloning:
+              </label>
+              <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center text-muted-foreground">
+                Uses your uploaded voice sample for cloning
+              </div>
+            </div>
+          )}
 
           {/* Speed */}
           <div className="space-y-2">

@@ -68,6 +68,7 @@ const Index = () => {
     imageCount: 10,
     wordCount: 15000,
     quality: "basic",
+    ttsEngine: "openvoice",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
@@ -241,7 +242,9 @@ const Index = () => {
         projectId,
         (progress) => {
           updateStep("audio", "active", `${progress}%`);
-        }
+        },
+        undefined, // referenceAudioUrl - uses default voice sample
+        settings.ttsEngine
       );
       
       if (!audioRes.success || !audioRes.audioUrl) {
