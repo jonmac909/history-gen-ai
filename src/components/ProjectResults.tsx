@@ -176,35 +176,29 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
     });
 
     try {
-      // Get filenames with timings
-      const imageUrls = imageAssets.map(a => a.url).filter(Boolean) as string[];
-      const filenames = imageAssets.map((asset, index) => {
-        const timing = imageTimings.find(t => t.asset.id === asset.id);
-        return timing 
-          ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
-          : `image_${index + 1}.png`;
-      });
-
-      // Call edge function to fetch images (bypasses CORS)
-      const { data, error } = await supabase.functions.invoke('download-images-zip', {
-        body: { imageUrls, filenames }
-      });
-
-      if (error) throw error;
-
-      // Create zip from base64 images
       const zip = new JSZip();
       
-      for (const img of data.images) {
-        if (img.base64) {
-          // Decode base64 to binary
-          const binaryString = atob(img.base64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          zip.file(img.filename, bytes);
+      // Fetch each image one at a time via proxy to avoid memory limits
+      for (let i = 0; i < imageAssets.length; i++) {
+        const asset = imageAssets[i];
+        if (!asset.url) continue;
+
+        const timing = imageTimings.find(t => t.asset.id === asset.id);
+        const filename = timing 
+          ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
+          : `image_${i + 1}.png`;
+
+        // Call edge function to proxy single image (bypasses CORS)
+        const { data, error } = await supabase.functions.invoke('download-images-zip', {
+          body: { imageUrl: asset.url }
+        });
+
+        if (error) {
+          console.error(`Failed to fetch image ${i + 1}:`, error);
+          continue;
         }
+
+        zip.file(filename, data);
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
