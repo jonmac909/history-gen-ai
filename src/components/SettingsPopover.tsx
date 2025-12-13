@@ -193,7 +193,7 @@ export function SettingsPopover({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4 overflow-y-auto flex-1 pr-2">
+        <div className="space-y-6 py-4 overflow-y-auto flex-1 px-1">
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
