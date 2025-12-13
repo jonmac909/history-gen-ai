@@ -177,6 +177,8 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
     try {
       const zip = new JSZip();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       
       // Fetch each image one at a time via proxy to avoid memory limits
       for (let i = 0; i < imageAssets.length; i++) {
@@ -188,17 +190,24 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
           ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
           : `image_${i + 1}.png`;
 
-        // Call edge function to proxy single image (bypasses CORS)
-        const { data, error } = await supabase.functions.invoke('download-images-zip', {
-          body: { imageUrl: asset.url }
+        // Use fetch directly to get binary response from edge function
+        const response = await fetch(`${supabaseUrl}/functions/v1/download-images-zip`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`,
+            'apikey': supabaseKey,
+          },
+          body: JSON.stringify({ imageUrl: asset.url })
         });
 
-        if (error) {
-          console.error(`Failed to fetch image ${i + 1}:`, error);
+        if (!response.ok) {
+          console.error(`Failed to fetch image ${i + 1}:`, response.status);
           continue;
         }
 
-        zip.file(filename, data);
+        const blob = await response.blob();
+        zip.file(filename, blob);
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
