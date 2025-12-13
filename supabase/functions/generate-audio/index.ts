@@ -67,13 +67,12 @@ async function generateWithOpenVoice(
     );
   }
 
-  // Use a publicly accessible sample voice if no reference provided
-  // Using a sample from a reliable CDN that Segmind can fetch
-  const defaultVoiceUrl = 'https://github.com/snakers4/silero-models/raw/master/sample-audio/en_sample.wav';
+  // Use Segmind's sample audio as default - this URL is known to work with their API
+  const defaultVoiceUrl = 'https://segmind-sd-models.s3.amazonaws.com/display_images/openvoice-ip.mp3';
   const voiceUrl = referenceAudioUrl || defaultVoiceUrl;
   
   console.log(`Generating audio with OpenVoice for ${wordCount} words...`);
-  console.log(`Reference audio: ${voiceUrl}`);
+  console.log(`Input audio: ${voiceUrl}`);
 
   if (stream) {
     const encoder = new TextEncoder();
@@ -110,7 +109,7 @@ async function generateWithOpenVoice(
               },
               body: JSON.stringify({
                 text: chunk,
-                reference_audio: voiceUrl,
+                input_audio: voiceUrl,
                 language: 'EN_NEWEST',
                 speed: 1.0,
               }),
@@ -224,7 +223,7 @@ async function generateWithOpenVoice(
       },
       body: JSON.stringify({
         text: chunk,
-        reference_audio: voiceUrl,
+        input_audio: voiceUrl,
         language: 'EN_NEWEST',
         speed: 1.0,
       }),
