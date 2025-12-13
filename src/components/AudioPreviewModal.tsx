@@ -9,7 +9,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 
 interface AudioPreviewModalProps {
   isOpen: boolean;
@@ -87,7 +86,7 @@ export function AudioPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-6 space-y-4">
+        <div className="py-6 space-y-6">
           <audio
             ref={audioRef}
             src={audioUrl}
@@ -101,7 +100,7 @@ export function AudioPreviewModal({
             <Button
               size="lg"
               variant="outline"
-              className="w-20 h-20 rounded-full"
+              className="w-20 h-20 rounded-full border-2 hover:bg-primary hover:text-primary-foreground transition-colors"
               onClick={togglePlay}
             >
               {isPlaying ? (
@@ -113,15 +112,23 @@ export function AudioPreviewModal({
           </div>
 
           {/* Progress Bar */}
-          <div className="space-y-2">
-            <Slider
-              value={[currentTime]}
-              max={audioDuration || 100}
-              step={0.1}
-              onValueChange={handleSeek}
-              className="w-full"
-            />
-            <div className="flex justify-between text-sm text-muted-foreground">
+          <div className="space-y-3 px-2">
+            <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+              <div 
+                className="absolute h-full bg-primary rounded-full transition-all"
+                style={{ width: `${audioDuration ? (currentTime / audioDuration) * 100 : 0}%` }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={audioDuration || 100}
+                step={0.1}
+                value={currentTime}
+                onChange={(e) => handleSeek([parseFloat(e.target.value)])}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </div>
+            <div className="flex justify-between text-sm font-medium text-muted-foreground">
               <span>{formatTime(currentTime)}</span>
               <span>{formatTime(audioDuration)}</span>
             </div>
