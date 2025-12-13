@@ -131,7 +131,7 @@ export function SettingsPopover({
           <Settings className="w-5 h-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-center gap-2 text-primary">
             <Settings className="w-4 h-4" />
@@ -141,7 +141,7 @@ export function SettingsPopover({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4 overflow-y-auto flex-1 px-1">
+        <div className="space-y-5 py-4 px-1">
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
