@@ -296,13 +296,13 @@ export function SettingsPopover({
                 value={[settings.wordCount]}
                 onValueChange={(value) => updateSetting("wordCount", value[0])}
                 min={500}
-                max={2000}
-                step={100}
+                max={30000}
+                step={500}
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-1">
                 <span>500</span>
-                <span>2,000</span>
+                <span>30,000</span>
               </div>
             </div>
           </div>
