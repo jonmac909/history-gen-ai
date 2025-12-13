@@ -2,6 +2,7 @@ import { Download, RefreshCw, Layers, ExternalLink, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface GeneratedAsset {
   id: string;
@@ -175,19 +176,36 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
     });
 
     try {
+      // Get filenames with timings
+      const imageUrls = imageAssets.map(a => a.url).filter(Boolean) as string[];
+      const filenames = imageAssets.map((asset, index) => {
+        const timing = imageTimings.find(t => t.asset.id === asset.id);
+        return timing 
+          ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
+          : `image_${index + 1}.png`;
+      });
+
+      // Call edge function to fetch images (bypasses CORS)
+      const { data, error } = await supabase.functions.invoke('download-images-zip', {
+        body: { imageUrls, filenames }
+      });
+
+      if (error) throw error;
+
+      // Create zip from base64 images
       const zip = new JSZip();
       
-      await Promise.all(imageAssets.map(async (asset, index) => {
-        if (asset.url) {
-          const response = await fetch(asset.url);
-          const blob = await response.blob();
-          const timing = imageTimings.find(t => t.asset.id === asset.id);
-          const filename = timing 
-            ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
-            : `image_${index + 1}.png`;
-          zip.file(filename, blob);
+      for (const img of data.images) {
+        if (img.base64) {
+          // Decode base64 to binary
+          const binaryString = atob(img.base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          zip.file(img.filename, bytes);
         }
-      }));
+      }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(zipBlob);
