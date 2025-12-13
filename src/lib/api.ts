@@ -235,9 +235,7 @@ export async function generateAudioStreaming(
   script: string, 
   voiceId: string, 
   projectId: string,
-  onProgress: (progress: number) => void,
-  referenceAudioUrl?: string,
-  ttsEngine?: 'elevenlabs' | 'openvoice'
+  onProgress: (progress: number) => void
 ): Promise<AudioResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -253,9 +251,7 @@ export async function generateAudioStreaming(
       script, 
       voiceId, 
       projectId, 
-      stream: true,
-      referenceAudioUrl,
-      ttsEngine: ttsEngine || 'openvoice'
+      stream: true
     })
   });
 
