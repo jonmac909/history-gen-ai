@@ -243,7 +243,7 @@ const Index = () => {
         (progress) => {
           updateStep("audio", "active", `${progress}%`);
         },
-        undefined, // referenceAudioUrl - uses default voice sample
+        settings.customVoiceUrl, // Use uploaded voice sample for OpenVoice
         settings.ttsEngine
       );
       

@@ -67,12 +67,13 @@ async function generateWithOpenVoice(
     );
   }
 
-  // Use Segmind's sample audio as default - this URL is known to work with their API
-  const defaultVoiceUrl = 'https://segmind-sd-models.s3.amazonaws.com/display_images/openvoice-ip.mp3';
-  const voiceUrl = referenceAudioUrl || defaultVoiceUrl;
+  // Use the provided reference audio URL for voice cloning
+  // If no URL provided, use Segmind's sample (female voice)
+  const voiceUrl = referenceAudioUrl || 'https://segmind-sd-models.s3.amazonaws.com/display_images/openvoice-ip.mp3';
   
   console.log(`Generating audio with OpenVoice for ${wordCount} words...`);
-  console.log(`Input audio: ${voiceUrl}`);
+  console.log(`Input audio URL: ${voiceUrl}`);
+  console.log(`Using custom voice: ${!!referenceAudioUrl}`);
 
   if (stream) {
     const encoder = new TextEncoder();

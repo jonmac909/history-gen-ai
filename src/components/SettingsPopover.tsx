@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Settings, Minus, Plus, Loader2, Volume2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Settings, Minus, Plus, Loader2, Volume2, Upload, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
@@ -38,6 +38,7 @@ export interface GenerationSettings {
   wordCount: number;
   quality: string;
   ttsEngine: 'elevenlabs' | 'openvoice';
+  customVoiceUrl?: string;
 }
 
 const aiModelOptions = [
@@ -71,6 +72,8 @@ export function SettingsPopover({
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
+  const [uploadingVoice, setUploadingVoice] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchElevenLabsVoices = async () => {
     setLoadingVoices(true);
@@ -115,6 +118,54 @@ export function SettingsPopover({
     value: GenerationSettings[K]
   ) => {
     onSettingsChange({ ...settings, [key]: value });
+  };
+
+  const handleVoiceUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('audio/')) {
+      toast({ title: "Error", description: "Please upload an audio file (WAV, MP3, etc.)", variant: "destructive" });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Error", description: "File size must be under 10MB", variant: "destructive" });
+      return;
+    }
+
+    setUploadingVoice(true);
+    try {
+      const fileName = `voice-samples/${Date.now()}-${file.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('voice-samples')
+        .upload(fileName, file, {
+          contentType: file.type,
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('voice-samples')
+        .getPublicUrl(fileName);
+
+      updateSetting("customVoiceUrl", urlData.publicUrl);
+      toast({ title: "Success", description: "Voice sample uploaded!" });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({ title: "Error", description: "Failed to upload voice sample", variant: "destructive" });
+    } finally {
+      setUploadingVoice(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const removeCustomVoice = () => {
+    updateSetting("customVoiceUrl", undefined);
   };
 
   return (
@@ -270,15 +321,61 @@ export function SettingsPopover({
             </div>
           )}
 
-          {/* OpenVoice info */}
+          {/* OpenVoice voice upload */}
           {settings.ttsEngine === 'openvoice' && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-center block">
-                Voice Cloning:
+                Your Voice Sample:
               </label>
-              <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center text-muted-foreground">
-                Uses your uploaded voice sample for cloning
-              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={handleVoiceUpload}
+                className="hidden"
+              />
+              {settings.customVoiceUrl ? (
+                <div className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-lg">
+                  <Volume2 className="w-4 h-4 text-primary" />
+                  <span className="text-sm flex-1 truncate">Voice sample uploaded</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => {
+                      const audio = new Audio(settings.customVoiceUrl);
+                      audio.play();
+                    }}
+                  >
+                    <Volume2 className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 text-destructive"
+                    onClick={removeCustomVoice}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingVoice}
+                >
+                  {uploadingVoice ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  {uploadingVoice ? "Uploading..." : "Upload Voice Sample"}
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground text-center">
+                Upload a 10-30 second clear audio sample of your voice
+              </p>
             </div>
           )}
 
