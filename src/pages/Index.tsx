@@ -63,12 +63,11 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
-    voice: "voice-puck",
+    voice: "3GntEbfzhYH3X9VCuIHy",
     speed: 1,
     imageCount: 10,
-    wordCount: 15000,
+    wordCount: 1000,
     quality: "basic",
-    ttsEngine: "openvoice",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
@@ -242,9 +241,7 @@ const Index = () => {
         projectId,
         (progress) => {
           updateStep("audio", "active", `${progress}%`);
-        },
-        settings.customVoiceUrl, // Use uploaded voice sample for OpenVoice
-        settings.ttsEngine
+        }
       );
       
       if (!audioRes.success || !audioRes.audioUrl) {

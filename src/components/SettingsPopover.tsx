@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Settings, Minus, Plus, Loader2, Volume2, Upload, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings, Minus, Plus, Loader2, Volume2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
@@ -37,8 +37,6 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
-  ttsEngine: 'elevenlabs' | 'openvoice';
-  customVoiceUrl?: string;
 }
 
 const aiModelOptions = [
@@ -72,8 +70,6 @@ export function SettingsPopover({
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
-  const [uploadingVoice, setUploadingVoice] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchElevenLabsVoices = async () => {
     setLoadingVoices(true);
@@ -118,54 +114,6 @@ export function SettingsPopover({
     value: GenerationSettings[K]
   ) => {
     onSettingsChange({ ...settings, [key]: value });
-  };
-
-  const handleVoiceUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('audio/')) {
-      toast({ title: "Error", description: "Please upload an audio file (WAV, MP3, etc.)", variant: "destructive" });
-      return;
-    }
-
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "Error", description: "File size must be under 10MB", variant: "destructive" });
-      return;
-    }
-
-    setUploadingVoice(true);
-    try {
-      const fileName = `voice-samples/${Date.now()}-${file.name}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('voice-samples')
-        .upload(fileName, file, {
-          contentType: file.type,
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('voice-samples')
-        .getPublicUrl(fileName);
-
-      updateSetting("customVoiceUrl", urlData.publicUrl);
-      toast({ title: "Success", description: "Voice sample uploaded!" });
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast({ title: "Error", description: "Failed to upload voice sample", variant: "destructive" });
-    } finally {
-      setUploadingVoice(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const removeCustomVoice = () => {
-    updateSetting("customVoiceUrl", undefined);
   };
 
   return (
@@ -238,146 +186,57 @@ export function SettingsPopover({
             </Select>
           </div>
 
-          {/* TTS Engine */}
+          {/* Voice Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Select Your TTS Engine:
+              Select Your Voice:
             </label>
-            <Select
-              value={settings.ttsEngine}
-              onValueChange={(value: 'elevenlabs' | 'openvoice') => updateSetting("ttsEngine", value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openvoice">
-                  <div className="flex flex-col">
-                    <span>OpenVoice (Cheaper)</span>
-                    <span className="text-xs text-muted-foreground">~$0.009/generation</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="elevenlabs">
-                  <div className="flex flex-col">
-                    <span>ElevenLabs (Premium)</span>
-                    <span className="text-xs text-muted-foreground">~$10/15K words</span>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Voice - only show for ElevenLabs */}
-          {settings.ttsEngine === 'elevenlabs' && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-center block">
-                Select Your Voice:
-              </label>
-              <div className="flex gap-2">
-                <Select
-                  value={settings.voice}
-                  onValueChange={(value) => updateSetting("voice", value)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={loadingVoices ? "Loading voices..." : "Select a voice"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {loadingVoices ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      </div>
-                    ) : elevenLabsVoices.length > 0 ? (
-                      elevenLabsVoices.map((voice) => (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                          <div className="flex items-center gap-2">
-                            <span>{voice.name}</span>
-                            <span className="text-xs text-muted-foreground">({voice.category})</span>
-                          </div>
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>
-                        No voices found
+            <div className="flex gap-2">
+              <Select
+                value={settings.voice}
+                onValueChange={(value) => updateSetting("voice", value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={loadingVoices ? "Loading voices..." : "Select a voice"} />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {loadingVoices ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : elevenLabsVoices.length > 0 ? (
+                    elevenLabsVoices.map((voice) => (
+                      <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                        <div className="flex items-center gap-2">
+                          <span>{voice.name}</span>
+                          <span className="text-xs text-muted-foreground">({voice.category})</span>
+                        </div>
                       </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {settings.voice && elevenLabsVoices.find(v => v.voice_id === settings.voice)?.preview_url && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={() => {
-                      const voice = elevenLabsVoices.find(v => v.voice_id === settings.voice);
-                      if (voice?.preview_url) {
-                        playPreview(voice.preview_url, voice.voice_id);
-                      }
-                    }}
-                  >
-                    <Volume2 className={`w-4 h-4 ${playingPreview === settings.voice ? "text-primary animate-pulse" : ""}`} />
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* OpenVoice voice upload */}
-          {settings.ttsEngine === 'openvoice' && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-center block">
-                Your Voice Sample:
-              </label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                onChange={handleVoiceUpload}
-                className="hidden"
-              />
-              {settings.customVoiceUrl ? (
-                <div className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-lg">
-                  <Volume2 className="w-4 h-4 text-primary" />
-                  <span className="text-sm flex-1 truncate">Voice sample uploaded</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0"
-                    onClick={() => {
-                      const audio = new Audio(settings.customVoiceUrl);
-                      audio.play();
-                    }}
-                  >
-                    <Volume2 className="w-3 h-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0 text-destructive"
-                    onClick={removeCustomVoice}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingVoice}
-                >
-                  {uploadingVoice ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ))
                   ) : (
-                    <Upload className="w-4 h-4 mr-2" />
+                    <SelectItem value="none" disabled>
+                      No voices found
+                    </SelectItem>
                   )}
-                  {uploadingVoice ? "Uploading..." : "Upload Voice Sample"}
+                </SelectContent>
+              </Select>
+              {settings.voice && elevenLabsVoices.find(v => v.voice_id === settings.voice)?.preview_url && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => {
+                    const voice = elevenLabsVoices.find(v => v.voice_id === settings.voice);
+                    if (voice?.preview_url) {
+                      playPreview(voice.preview_url, voice.voice_id);
+                    }
+                  }}
+                >
+                  <Volume2 className={`w-4 h-4 ${playingPreview === settings.voice ? "text-primary animate-pulse" : ""}`} />
                 </Button>
               )}
-              <p className="text-xs text-muted-foreground text-center">
-                Upload a 10-30 second clear audio sample of your voice
-              </p>
             </div>
-          )}
+          </div>
 
           {/* Speed */}
           <div className="space-y-2">
@@ -478,14 +337,14 @@ export function SettingsPopover({
               <Slider
                 value={[settings.wordCount]}
                 onValueChange={(value) => updateSetting("wordCount", value[0])}
-                min={1000}
-                max={30000}
-                step={1000}
+                min={500}
+                max={2000}
+                step={100}
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>1,000</span>
-                <span>30,000</span>
+                <span>500</span>
+                <span>2,000</span>
               </div>
             </div>
           </div>
