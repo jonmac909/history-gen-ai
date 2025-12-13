@@ -183,9 +183,9 @@ async function generateWithOpenVoice(
 
           console.log('Audio uploaded:', urlData.publicUrl);
 
-          // OpenVoice returns 24kHz, 16-bit mono WAV = 48000 bytes/sec
-          const durationSeconds = Math.round(audioData.length / 48000);
-          console.log(`Audio duration: ~${durationSeconds}s (${audioData.length} bytes)`);
+          // Parse WAV header to get accurate duration
+          const durationSeconds = parseWavDuration(audioData);
+          console.log(`Audio duration: ${durationSeconds}s (${audioData.length} bytes)`);
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'complete', 
@@ -280,8 +280,8 @@ async function generateWithOpenVoice(
     .from('generated-assets')
     .getPublicUrl(fileName);
 
-  // OpenVoice returns 24kHz, 16-bit mono WAV = 48000 bytes/sec
-  const durationSeconds = Math.round(audioData.length / 48000);
+  // Parse WAV header to get accurate duration
+  const durationSeconds = parseWavDuration(audioData);
 
   return new Response(
     JSON.stringify({
@@ -311,6 +311,38 @@ function splitTextIntoChunks(text: string, maxChars: number): string[] {
   if (currentChunk) chunks.push(currentChunk.trim());
   
   return chunks;
+}
+
+// Parse WAV file header to get accurate duration
+function parseWavDuration(audioData: Uint8Array): number {
+  try {
+    // WAV header structure:
+    // Bytes 24-27: Sample rate (little-endian)
+    // Bytes 28-31: Byte rate (little-endian)
+    // Bytes 34-35: Bits per sample
+    // Bytes 40-43: Data chunk size (after "data" marker)
+    
+    const dataView = new DataView(audioData.buffer);
+    const sampleRate = dataView.getUint32(24, true);
+    const byteRate = dataView.getUint32(28, true);
+    
+    // Find "data" chunk - it starts at byte 36 in standard WAV
+    // Data size is at bytes 40-43
+    const dataSize = dataView.getUint32(40, true);
+    
+    if (byteRate > 0) {
+      const duration = dataSize / byteRate;
+      console.log(`WAV: sampleRate=${sampleRate}, byteRate=${byteRate}, dataSize=${dataSize}, duration=${duration}s`);
+      return Math.round(duration);
+    }
+    
+    // Fallback: estimate based on typical 24kHz 16-bit mono
+    return Math.round((audioData.length - 44) / 48000);
+  } catch (e) {
+    console.error('Error parsing WAV header:', e);
+    // Fallback estimate
+    return Math.round((audioData.length - 44) / 48000);
+  }
 }
 
 async function generateWithElevenLabs(

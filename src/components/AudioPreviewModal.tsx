@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Check, X, Play, Pause, RotateCcw, Volume2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Check, X, Play, Pause, RotateCcw, Volume2, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +30,18 @@ export function AudioPreviewModal({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
+  const [isLoading, setIsLoading] = useState(true);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Reset state when modal opens with new audio
+  useEffect(() => {
+    if (isOpen && audioUrl) {
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setIsLoading(true);
+      setAudioDuration(duration || 0);
+    }
+  }, [isOpen, audioUrl, duration]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -51,8 +62,16 @@ export function AudioPreviewModal({
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
-      setAudioDuration(audioRef.current.duration);
+      const realDuration = audioRef.current.duration;
+      if (realDuration && isFinite(realDuration) && realDuration > 0) {
+        setAudioDuration(realDuration);
+      }
+      setIsLoading(false);
     }
+  };
+
+  const handleCanPlay = () => {
+    setIsLoading(false);
   };
 
   const handleSeek = (value: number[]) => {
@@ -90,8 +109,10 @@ export function AudioPreviewModal({
           <audio
             ref={audioRef}
             src={audioUrl}
+            preload="metadata"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
+            onCanPlay={handleCanPlay}
             onEnded={handleEnded}
           />
 
@@ -102,8 +123,11 @@ export function AudioPreviewModal({
               variant="outline"
               className="w-20 h-20 rounded-full border-2 hover:bg-primary hover:text-primary-foreground transition-colors"
               onClick={togglePlay}
+              disabled={isLoading}
             >
-              {isPlaying ? (
+              {isLoading ? (
+                <Loader2 className="w-8 h-8 animate-spin" />
+              ) : isPlaying ? (
                 <Pause className="w-8 h-8" />
               ) : (
                 <Play className="w-8 h-8 ml-1" />
