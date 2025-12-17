@@ -40,6 +40,15 @@ export function AudioPreviewModal({
       setCurrentTime(0);
       setIsLoading(true);
       setAudioDuration(duration || 0);
+      
+      // Fallback: if audio doesn't load within 3 seconds but we have duration, show controls
+      const timeout = setTimeout(() => {
+        if (duration && duration > 0) {
+          setIsLoading(false);
+        }
+      }, 3000);
+      
+      return () => clearTimeout(timeout);
     }
   }, [isOpen, audioUrl, duration]);
 
@@ -86,6 +95,12 @@ export function AudioPreviewModal({
     setCurrentTime(0);
   };
 
+  const handleError = () => {
+    // Even on error, allow user to try playing - some browsers report errors but still play
+    console.error('Audio load error, but allowing playback attempt');
+    setIsLoading(false);
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -109,11 +124,12 @@ export function AudioPreviewModal({
           <audio
             ref={audioRef}
             src={audioUrl}
-            preload="metadata"
+            preload="auto"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
             onCanPlay={handleCanPlay}
             onEnded={handleEnded}
+            onError={handleError}
           />
 
           {/* Play/Pause Button */}
