@@ -9,6 +9,82 @@ const corsHeaders = {
 const RUNPOD_ENDPOINT_ID = "n4m8bw1kmrdd9e";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
+// Hard validation - reject early if text is unsafe
+function validateTTSInput(text: string): boolean {
+  if (!text) return false;
+  if (text.trim().length < 5) return false;
+  if (text.length > 400) return false;
+
+  // reject emojis & non-basic unicode
+  if (/[^\x00-\x7F]/.test(text)) return false;
+
+  // must contain letters or numbers
+  if (!/[a-zA-Z0-9]/.test(text)) return false;
+
+  return true;
+}
+
+// Mandatory normalization before sending to API
+function normalizeText(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")   // strip unicode
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Split text into safe chunks at sentence boundaries
+function splitIntoChunks(text: string, maxLength: number = 180): string[] {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let currentChunk = "";
+
+  for (const sentence of sentences) {
+    // If single sentence is too long, split by commas or force split
+    if (sentence.length > maxLength) {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = "";
+      }
+      // Try splitting by commas first
+      const parts = sentence.split(/,\s*/);
+      let partChunk = "";
+      for (const part of parts) {
+        if (part.length > maxLength) {
+          // Force split at maxLength
+          if (partChunk) {
+            chunks.push(partChunk.trim());
+            partChunk = "";
+          }
+          for (let i = 0; i < part.length; i += maxLength) {
+            chunks.push(part.slice(i, i + maxLength).trim());
+          }
+        } else if ((partChunk + ", " + part).length > maxLength) {
+          if (partChunk) chunks.push(partChunk.trim());
+          partChunk = part;
+        } else {
+          partChunk = partChunk ? partChunk + ", " + part : part;
+        }
+      }
+      if (partChunk) chunks.push(partChunk.trim());
+    } else if ((currentChunk + " " + sentence).length > maxLength) {
+      if (currentChunk) chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk = currentChunk ? currentChunk + " " + sentence : sentence;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks.filter(c => c.length > 0);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -33,7 +109,7 @@ serve(async (req) => {
     }
 
     // Clean script - remove image prompts and markdown
-    const cleanScript = script
+    let cleanScript = script
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
       .replace(/#{1,6}\s+/g, '')
@@ -41,13 +117,32 @@ serve(async (req) => {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
+    // Apply mandatory normalization
+    cleanScript = normalizeText(cleanScript);
+    
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     console.log(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
+    console.log(`Normalized text length: ${cleanScript.length} chars`);
+
+    // Split into chunks for safety (Chatterbox crashes on long text)
+    const chunks = splitIntoChunks(cleanScript, 180);
+    console.log(`Split into ${chunks.length} chunks`);
+
+    // Validate each chunk
+    for (let i = 0; i < chunks.length; i++) {
+      if (!validateTTSInput(chunks[i])) {
+        console.error(`Chunk ${i + 1} failed validation: "${chunks[i].substring(0, 50)}..."`);
+        return new Response(
+          JSON.stringify({ error: `Text chunk ${i + 1} contains invalid characters or is too short/long` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     if (stream) {
-      return generateWithStreaming(cleanScript, projectId, wordCount, RUNPOD_API_KEY);
+      return generateWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
     } else {
-      return generateWithoutStreaming(cleanScript, projectId, wordCount, RUNPOD_API_KEY);
+      return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
     }
 
   } catch (error) {
@@ -146,7 +241,39 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-async function generateWithStreaming(text: string, projectId: string, wordCount: number, apiKey: string): Promise<Response> {
+// Concatenate multiple WAV files (assumes same sample rate, mono, 16-bit PCM)
+function concatenateWavFiles(audioChunks: Uint8Array[], sampleRate: number): Uint8Array {
+  // Each WAV has 44-byte header, we only need one header for output
+  const headerSize = 44;
+  
+  // Calculate total data size (excluding headers from all chunks)
+  let totalDataSize = 0;
+  for (const chunk of audioChunks) {
+    totalDataSize += chunk.length - headerSize;
+  }
+  
+  // Create output buffer: header + all data
+  const outputBuffer = new Uint8Array(headerSize + totalDataSize);
+  
+  // Copy first chunk's header as template
+  outputBuffer.set(audioChunks[0].subarray(0, headerSize), 0);
+  
+  // Update header with new sizes
+  const dataView = new DataView(outputBuffer.buffer);
+  dataView.setUint32(4, 36 + totalDataSize, true);  // ChunkSize
+  dataView.setUint32(40, totalDataSize, true);       // Subchunk2Size
+  
+  // Copy audio data from all chunks
+  let offset = headerSize;
+  for (const chunk of audioChunks) {
+    outputBuffer.set(chunk.subarray(headerSize), offset);
+    offset += chunk.length - headerSize;
+  }
+  
+  return outputBuffer;
+}
+
+async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
   const encoder = new TextEncoder();
   
   const responseStream = new ReadableStream({
@@ -155,71 +282,81 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 5,
-          message: 'Starting Chatterbox TTS job...'
+          message: `Starting Chatterbox TTS (${chunks.length} chunks)...`
         })}\n\n`));
 
-        // Start the TTS job
-        const jobId = await startTTSJob(text, apiKey);
-        
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-          type: 'progress', 
-          progress: 15,
-          message: 'TTS job queued, generating audio...'
-        })}\n\n`));
+        const audioChunks: Uint8Array[] = [];
+        let sampleRate = 24000;
 
-        // Poll for completion with progress updates
-        const maxAttempts = 120;
-        const pollInterval = 2000;
-        let output: { audio_base64: string; sample_rate: number } | null = null;
-        
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${apiKey}` },
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to poll job status: ${response.status}`);
-          }
-
-          const result = await response.json();
+        // Process each chunk sequentially
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkText = chunks[i];
+          console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
           
-          if (result.status === 'COMPLETED') {
-            if (!result.output?.audio_base64) {
-              throw new Error('No audio_base64 in completed job output');
-            }
-            output = result.output;
-            break;
-          }
-
-          if (result.status === 'FAILED') {
-            throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
-          }
-
-          // Update progress (15% to 70% during generation)
-          const progress = Math.min(15 + (attempt / maxAttempts) * 55, 70);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'progress', 
-            progress: Math.round(progress),
-            message: `Generating audio (${result.status})...`
+            progress: 5 + Math.round((i / chunks.length) * 60),
+            message: `Generating audio chunk ${i + 1}/${chunks.length}...`
           })}\n\n`));
 
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
-        }
+          // Start the TTS job for this chunk
+          const jobId = await startTTSJob(chunkText, apiKey);
+          
+          // Poll for completion
+          const maxAttempts = 120;
+          const pollInterval = 2000;
+          let output: { audio_base64: string; sample_rate: number } | null = null;
+          
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${apiKey}` },
+            });
 
-        if (!output) {
-          throw new Error('TTS job timed out after 2 minutes');
+            if (!response.ok) {
+              throw new Error(`Failed to poll job status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.status === 'COMPLETED') {
+              if (!result.output?.audio_base64) {
+                throw new Error('No audio_base64 in completed job output');
+              }
+              output = result.output;
+              sampleRate = result.output.sample_rate || 24000;
+              break;
+            }
+
+            if (result.status === 'FAILED') {
+              throw new Error(`TTS job failed for chunk ${i + 1}: ${result.error || 'Unknown error'}`);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+          }
+
+          if (!output) {
+            throw new Error(`TTS job timed out for chunk ${i + 1}`);
+          }
+
+          // Decode and store this chunk's audio
+          const audioData = base64ToUint8Array(output.audio_base64);
+          audioChunks.push(audioData);
+          console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 75,
-          message: 'Processing audio...'
+          message: 'Concatenating audio chunks...'
         })}\n\n`));
 
-        // Decode base64 audio
-        const audioData = base64ToUint8Array(output.audio_base64);
-        console.log(`Audio decoded: ${audioData.length} bytes, sample rate: ${output.sample_rate}`);
+        // Concatenate all audio chunks
+        const finalAudio = audioChunks.length === 1 
+          ? audioChunks[0] 
+          : concatenateWavFiles(audioChunks, sampleRate);
+        
+        console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
@@ -236,7 +373,7 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
         
         const { error: uploadError } = await supabase.storage
           .from('generated-assets')
-          .upload(fileName, audioData, {
+          .upload(fileName, finalAudio, {
             contentType: 'audio/wav',
             upsert: true,
           });
@@ -258,13 +395,13 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
         console.log('Audio uploaded:', urlData.publicUrl);
 
         // Estimate duration based on sample rate (mono 16-bit WAV)
-        const durationSeconds = Math.round(audioData.length / (output.sample_rate * 2));
+        const durationSeconds = Math.round(finalAudio.length / (sampleRate * 2));
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'complete', 
           audioUrl: urlData.publicUrl,
           duration: durationSeconds,
-          size: audioData.length
+          size: finalAudio.length
         })}\n\n`));
 
       } catch (error) {
@@ -284,18 +421,36 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
   });
 }
 
-async function generateWithoutStreaming(text: string, projectId: string, wordCount: number, apiKey: string): Promise<Response> {
-  // Start the TTS job
-  const jobId = await startTTSJob(text, apiKey);
-  console.log(`TTS job started with ID: ${jobId}`);
+async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
+  const audioChunks: Uint8Array[] = [];
+  let sampleRate = 24000;
 
-  // Poll for completion
-  const output = await pollJobStatus(jobId, apiKey);
-  console.log(`TTS job completed, sample rate: ${output.sample_rate}`);
+  // Process each chunk sequentially
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkText = chunks[i];
+    console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+    
+    // Start the TTS job for this chunk
+    const jobId = await startTTSJob(chunkText, apiKey);
+    console.log(`TTS job started with ID: ${jobId}`);
 
-  // Decode base64 audio
-  const audioData = base64ToUint8Array(output.audio_base64);
-  console.log(`Audio decoded: ${audioData.length} bytes`);
+    // Poll for completion
+    const output = await pollJobStatus(jobId, apiKey);
+    sampleRate = output.sample_rate || 24000;
+    console.log(`TTS job completed, sample rate: ${sampleRate}`);
+
+    // Decode audio
+    const audioData = base64ToUint8Array(output.audio_base64);
+    audioChunks.push(audioData);
+    console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+  }
+
+  // Concatenate all audio chunks
+  const finalAudio = audioChunks.length === 1 
+    ? audioChunks[0] 
+    : concatenateWavFiles(audioChunks, sampleRate);
+  
+  console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
   // Upload to Supabase Storage
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -306,7 +461,7 @@ async function generateWithoutStreaming(text: string, projectId: string, wordCou
   
   const { error: uploadError } = await supabase.storage
     .from('generated-assets')
-    .upload(fileName, audioData, {
+    .upload(fileName, finalAudio, {
       contentType: 'audio/wav',
       upsert: true,
     });
@@ -321,7 +476,7 @@ async function generateWithoutStreaming(text: string, projectId: string, wordCou
     .getPublicUrl(fileName);
 
   // Estimate duration based on sample rate (mono 16-bit WAV)
-  const durationSeconds = Math.round(audioData.length / (output.sample_rate * 2));
+  const durationSeconds = Math.round(finalAudio.length / (sampleRate * 2));
 
   return new Response(
     JSON.stringify({
@@ -329,7 +484,7 @@ async function generateWithoutStreaming(text: string, projectId: string, wordCou
       audioUrl: urlData.publicUrl,
       duration: durationSeconds,
       wordCount,
-      size: audioData.length
+      size: finalAudio.length
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
