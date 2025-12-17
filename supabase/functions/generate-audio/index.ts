@@ -241,36 +241,99 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-// Concatenate multiple WAV files (assumes same sample rate, mono, 16-bit PCM)
-function concatenateWavFiles(audioChunks: Uint8Array[], sampleRate: number): Uint8Array {
-  // Each WAV has 44-byte header, we only need one header for output
-  const headerSize = 44;
-  
-  // Calculate total data size (excluding headers from all chunks)
-  let totalDataSize = 0;
-  for (const chunk of audioChunks) {
-    totalDataSize += chunk.length - headerSize;
+// Concatenate multiple WAV files by extracting the actual PCM data chunk from each file.
+// This is more robust than assuming a fixed 44-byte header because some WAVs include extra chunks.
+function concatenateWavFiles(audioChunks: Uint8Array[]): { wav: Uint8Array; durationSeconds: number } {
+  if (audioChunks.length === 0) {
+    throw new Error('No audio chunks to concatenate');
   }
-  
-  // Create output buffer: header + all data
-  const outputBuffer = new Uint8Array(headerSize + totalDataSize);
-  
-  // Copy first chunk's header as template
-  outputBuffer.set(audioChunks[0].subarray(0, headerSize), 0);
-  
-  // Update header with new sizes
-  const dataView = new DataView(outputBuffer.buffer);
-  dataView.setUint32(4, 36 + totalDataSize, true);  // ChunkSize
-  dataView.setUint32(40, totalDataSize, true);       // Subchunk2Size
-  
-  // Copy audio data from all chunks
-  let offset = headerSize;
-  for (const chunk of audioChunks) {
-    outputBuffer.set(chunk.subarray(headerSize), offset);
-    offset += chunk.length - headerSize;
+
+  const findChunk = (bytes: Uint8Array, fourcc: string) => {
+    const needle = new TextEncoder().encode(fourcc);
+    for (let i = 0; i <= bytes.length - 4; i++) {
+      if (
+        bytes[i] === needle[0] &&
+        bytes[i + 1] === needle[1] &&
+        bytes[i + 2] === needle[2] &&
+        bytes[i + 3] === needle[3]
+      ) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  const extract = (wav: Uint8Array) => {
+    if (wav.length < 16) throw new Error('WAV chunk too small');
+
+    // Basic RIFF/WAVE sanity check (best-effort)
+    const riff = new TextDecoder().decode(wav.subarray(0, 4));
+    const wave = new TextDecoder().decode(wav.subarray(8, 12));
+    if (riff !== 'RIFF' || wave !== 'WAVE') {
+      console.warn('Unexpected WAV header (not RIFF/WAVE); attempting to parse anyway');
+    }
+
+    const fmtIdx = findChunk(wav, 'fmt ');
+    const dataIdx = findChunk(wav, 'data');
+    if (fmtIdx === -1) throw new Error('Missing fmt chunk in WAV');
+    if (dataIdx === -1) throw new Error('Missing data chunk in WAV');
+
+    const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+
+    // fmt chunk layout
+    const fmtDataStart = fmtIdx + 8;
+    const audioFormat = dv.getUint16(fmtDataStart + 0, true);
+    const channels = dv.getUint16(fmtDataStart + 2, true);
+    const sampleRate = dv.getUint32(fmtDataStart + 4, true);
+    const byteRate = dv.getUint32(fmtDataStart + 8, true);
+    const bitsPerSample = dv.getUint16(fmtDataStart + 14, true);
+
+    if (audioFormat !== 1) {
+      console.warn(`Non-PCM WAV detected (audioFormat=${audioFormat}). Browser playback may fail.`);
+    }
+
+    const dataSizeOffset = dataIdx + 4;
+    const dataSize = dv.getUint32(dataSizeOffset, true);
+    const dataStart = dataIdx + 8;
+    const dataEnd = Math.min(wav.length, dataStart + dataSize);
+
+    const header = wav.subarray(0, dataStart);
+    const data = wav.subarray(dataStart, dataEnd);
+
+    return { header, data, dataIdx, dataSizeOffset, sampleRate, channels, bitsPerSample, byteRate };
+  };
+
+  const first = extract(audioChunks[0]);
+
+  // Extract PCM data from each chunk
+  const extracted = audioChunks.map(extract);
+
+  // Total data bytes
+  const totalDataSize = extracted.reduce((sum, e) => sum + e.data.length, 0);
+
+  // Output header = everything before the first chunk's data bytes (includes 'data' + size field)
+  const output = new Uint8Array(first.header.length + totalDataSize);
+  output.set(first.header, 0);
+
+  // Update RIFF chunk size (at offset 4) => fileSize - 8
+  const outDv = new DataView(output.buffer);
+  outDv.setUint32(4, output.length - 8, true);
+
+  // Update data chunk size (at the first chunk's data size offset)
+  outDv.setUint32(first.dataSizeOffset, totalDataSize, true);
+
+  // Copy all PCM data back-to-back
+  let offset = first.header.length;
+  for (const e of extracted) {
+    output.set(e.data, offset);
+    offset += e.data.length;
   }
-  
-  return outputBuffer;
+
+  // Duration estimate from byteRate if available
+  const safeByteRate = first.byteRate || (first.sampleRate * first.channels * (first.bitsPerSample / 8));
+  const durationSeconds = safeByteRate > 0 ? totalDataSize / safeByteRate : 0;
+
+  return { wav: output, durationSeconds };
 }
 
 async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
@@ -286,7 +349,6 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
         })}\n\n`));
 
         const audioChunks: Uint8Array[] = [];
-        let sampleRate = 24000;
 
         // Process each chunk sequentially
         for (let i = 0; i < chunks.length; i++) {
@@ -319,14 +381,13 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
             const result = await response.json();
             
-            if (result.status === 'COMPLETED') {
-              if (!result.output?.audio_base64) {
-                throw new Error('No audio_base64 in completed job output');
-              }
-              output = result.output;
-              sampleRate = result.output.sample_rate || 24000;
-              break;
-            }
+             if (result.status === 'COMPLETED') {
+               if (!result.output?.audio_base64) {
+                 throw new Error('No audio_base64 in completed job output');
+               }
+               output = result.output;
+               break;
+             }
 
             if (result.status === 'FAILED') {
               throw new Error(`TTS job failed for chunk ${i + 1}: ${result.error || 'Unknown error'}`);
@@ -351,11 +412,10 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
           message: 'Concatenating audio chunks...'
         })}\n\n`));
 
-        // Concatenate all audio chunks
-        const finalAudio = audioChunks.length === 1 
-          ? audioChunks[0] 
-          : concatenateWavFiles(audioChunks, sampleRate);
-        
+        // Concatenate all audio chunks (robust parsing of WAV data chunk)
+        const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+        const durationRounded = Math.round(durationSeconds);
+
         console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -370,7 +430,7 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
         const supabase = createClient(supabaseUrl, supabaseKey);
 
         const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from('generated-assets')
           .upload(fileName, finalAudio, {
@@ -394,13 +454,10 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         console.log('Audio uploaded:', urlData.publicUrl);
 
-        // Estimate duration based on sample rate (mono 16-bit WAV)
-        const durationSeconds = Math.round(finalAudio.length / (sampleRate * 2));
-
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'complete', 
           audioUrl: urlData.publicUrl,
-          duration: durationSeconds,
+          duration: durationRounded,
           size: finalAudio.length
         })}\n\n`));
 
@@ -423,7 +480,6 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
 async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
-  let sampleRate = 24000;
 
   // Process each chunk sequentially
   for (let i = 0; i < chunks.length; i++) {
@@ -436,8 +492,6 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
 
     // Poll for completion
     const output = await pollJobStatus(jobId, apiKey);
-    sampleRate = output.sample_rate || 24000;
-    console.log(`TTS job completed, sample rate: ${sampleRate}`);
 
     // Decode audio
     const audioData = base64ToUint8Array(output.audio_base64);
@@ -445,10 +499,9 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
     console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
   }
 
-  // Concatenate all audio chunks
-  const finalAudio = audioChunks.length === 1 
-    ? audioChunks[0] 
-    : concatenateWavFiles(audioChunks, sampleRate);
+  // Concatenate all audio chunks (robust parsing of WAV data chunk)
+  const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+  const durationRounded = Math.round(durationSeconds);
   
   console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
@@ -475,14 +528,11 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
     .from('generated-assets')
     .getPublicUrl(fileName);
 
-  // Estimate duration based on sample rate (mono 16-bit WAV)
-  const durationSeconds = Math.round(finalAudio.length / (sampleRate * 2));
-
   return new Response(
     JSON.stringify({
       success: true,
       audioUrl: urlData.publicUrl,
-      duration: durationSeconds,
+      duration: durationRounded,
       wordCount,
       size: finalAudio.length
     }),
