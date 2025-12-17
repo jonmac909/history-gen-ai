@@ -139,10 +139,17 @@ serve(async (req) => {
       }
     }
 
-    if (stream) {
-      return generateWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
-    } else {
+    // IMPORTANT: Voice cloning requires non-streaming to avoid timeouts
+    // Chatterbox needs the full request to complete before returning
+    if (voiceSampleUrl) {
+      console.log('Voice cloning detected - using non-streaming mode');
       return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+    }
+
+    if (stream) {
+      return generateWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
+    } else {
+      return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
     }
 
   } catch (error) {
@@ -179,36 +186,22 @@ async function downloadVoiceSample(url: string): Promise<string> {
   return base64;
 }
 
-type VoiceReference = {
-  url?: string;
-  base64?: string;
-};
-
-async function startTTSJob(text: string, apiKey: string, voiceRef?: VoiceReference): Promise<string> {
+// Chatterbox only supports cloning via reference_audio_base64
+// The worker decodes it and passes as reference_audio + reference_sr to synthesize()
+async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
   console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
   console.log(`Text length: ${text.length} chars`);
-  console.log(`Voice reference url: ${voiceRef?.url ? 'yes' : 'no'}`);
-  console.log(`Voice reference base64: ${voiceRef?.base64 ? `yes (${voiceRef.base64.length} chars)` : 'no'}`);
+  console.log(`Reference audio: ${referenceAudioBase64 ? `yes (${referenceAudioBase64.length} chars)` : 'no (using default voice)'}`);
 
   const inputPayload: Record<string, unknown> = {
     text: text,
     prompt: text,
   };
 
-  // Voice cloning reference audio (send in every generation request)
-  // Different workers may expect different field names; we provide the common ones.
-  if (voiceRef?.url) {
-    inputPayload.voice_audio_url = voiceRef.url;
-    inputPayload.reference_audio_url = voiceRef.url;
-  }
-
-  if (voiceRef?.base64) {
-    inputPayload.voice_audio_base64 = voiceRef.base64;
-    inputPayload.reference_audio = voiceRef.base64;
-    inputPayload.reference_audio_base64 = voiceRef.base64;
-
-    // Backward compatibility for some worker variants
-    inputPayload.audio_prompt = voiceRef.base64;
+  // CANONICAL FIELD for Chatterbox voice cloning
+  // Worker must decode this and pass as reference_audio (and reference_sr) to tts.synthesize()
+  if (referenceAudioBase64) {
+    inputPayload.reference_audio_base64 = referenceAudioBase64;
   }
 
   const response = await fetch(`${RUNPOD_API_URL}/run`, {
@@ -384,7 +377,8 @@ function concatenateWavFiles(audioChunks: Uint8Array[]): { wav: Uint8Array; dura
   return { wav: output, durationSeconds };
 }
 
-async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
+// Streaming mode - only used when NO voice cloning (default voice)
+async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
   const encoder = new TextEncoder();
   
   const responseStream = new ReadableStream({
@@ -407,27 +401,13 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
       try {
         safeEnqueue(`data: ${JSON.stringify({ 
           type: 'progress', 
-          progress: 2,
-          message: 'Preparing voice sample...'
-        })}\n\n`);
-
-        // Download voice sample once if provided
-        let voiceSampleBase64: string | undefined;
-        let voiceRef: VoiceReference | undefined;
-        if (voiceSampleUrl) {
-          voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
-          voiceRef = { url: voiceSampleUrl, base64: voiceSampleBase64 };
-        }
-
-        safeEnqueue(`data: ${JSON.stringify({ 
-          type: 'progress', 
           progress: 5,
-          message: `Starting Chatterbox TTS (${chunks.length} chunks)...`
+          message: `Starting Chatterbox TTS (${chunks.length} chunks, default voice)...`
         })}\n\n`);
 
         const audioChunks: Uint8Array[] = [];
 
-        // Process each chunk sequentially
+        // Process each chunk sequentially (no voice cloning in streaming mode)
         for (let i = 0; i < chunks.length; i++) {
           const chunkText = chunks[i];
           console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
@@ -438,8 +418,8 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
             message: `Generating audio chunk ${i + 1}/${chunks.length}...`
           })}\n\n`);
 
-          // Start the TTS job for this chunk with voice reference
-          const jobId = await startTTSJob(chunkText, apiKey, voiceRef);
+          // Start the TTS job for this chunk (no voice reference in streaming mode)
+          const jobId = await startTTSJob(chunkText, apiKey);
           
           // Poll for completion
           const maxAttempts = 120;
@@ -555,15 +535,16 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
   });
 }
 
+// Non-streaming mode - used for voice cloning (required) or when stream=false
 async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
 
-  // Download voice sample once if provided
-  let voiceSampleBase64: string | undefined;
-  let voiceRef: VoiceReference | undefined;
+  // Download voice sample once and convert to base64 for Chatterbox
+  let referenceAudioBase64: string | undefined;
   if (voiceSampleUrl) {
-    voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
-    voiceRef = { url: voiceSampleUrl, base64: voiceSampleBase64 };
+    console.log('Downloading voice sample for cloning...');
+    referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
+    console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
   }
 
   // Process each chunk sequentially
@@ -571,8 +552,8 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
     const chunkText = chunks[i];
     console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
     
-    // Start the TTS job for this chunk with voice reference
-    const jobId = await startTTSJob(chunkText, apiKey, voiceRef);
+    // Start the TTS job with reference_audio_base64 for cloning
+    const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
     console.log(`TTS job started with ID: ${jobId}`);
 
     // Poll for completion
