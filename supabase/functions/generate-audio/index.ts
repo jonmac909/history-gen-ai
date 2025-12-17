@@ -389,12 +389,27 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
   
   const responseStream = new ReadableStream({
     async start(controller) {
+      let streamClosed = false;
+      
+      // Safe enqueue helper - handles closed stream gracefully
+      const safeEnqueue = (data: string) => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(encoder.encode(data));
+          return true;
+        } catch {
+          streamClosed = true;
+          console.log('Stream closed by client');
+          return false;
+        }
+      };
+
       try {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 2,
           message: 'Preparing voice sample...'
-        })}\n\n`));
+        })}\n\n`);
 
         // Download voice sample once if provided
         let voiceSampleBase64: string | undefined;
@@ -404,11 +419,11 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
           voiceRef = { url: voiceSampleUrl, base64: voiceSampleBase64 };
         }
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 5,
           message: `Starting Chatterbox TTS (${chunks.length} chunks)...`
-        })}\n\n`));
+        })}\n\n`);
 
         const audioChunks: Uint8Array[] = [];
 
@@ -417,11 +432,11 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
           const chunkText = chunks[i];
           console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
           
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+          safeEnqueue(`data: ${JSON.stringify({ 
             type: 'progress', 
             progress: 5 + Math.round((i / chunks.length) * 60),
             message: `Generating audio chunk ${i + 1}/${chunks.length}...`
-          })}\n\n`));
+          })}\n\n`);
 
           // Start the TTS job for this chunk with voice reference
           const jobId = await startTTSJob(chunkText, apiKey, voiceRef);
@@ -468,11 +483,11 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
           console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
         }
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 75,
           message: 'Concatenating audio chunks...'
-        })}\n\n`));
+        })}\n\n`);
 
         // Concatenate all audio chunks (robust parsing of WAV data chunk)
         const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
@@ -480,11 +495,11 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'progress', 
           progress: 85,
           message: 'Uploading audio file...'
-        })}\n\n`));
+        })}\n\n`);
 
         // Upload to Supabase Storage
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -502,11 +517,11 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         if (uploadError) {
           console.error('Upload error:', uploadError);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+          safeEnqueue(`data: ${JSON.stringify({ 
             type: 'error', 
             error: 'Failed to upload audio' 
-          })}\n\n`));
-          controller.close();
+          })}\n\n`);
+          try { controller.close(); } catch { /* already closed */ }
           return;
         }
 
@@ -516,21 +531,21 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         console.log('Audio uploaded:', urlData.publicUrl);
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'complete', 
           audioUrl: urlData.publicUrl,
           duration: durationRounded,
           size: finalAudio.length
-        })}\n\n`));
+        })}\n\n`);
 
       } catch (error) {
         console.error('Audio error:', error);
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        safeEnqueue(`data: ${JSON.stringify({ 
           type: 'error', 
           error: error instanceof Error ? error.message : 'Audio generation failed' 
-        })}\n\n`));
+        })}\n\n`);
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       }
     }
   });
