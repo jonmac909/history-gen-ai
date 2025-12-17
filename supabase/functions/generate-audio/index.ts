@@ -140,9 +140,9 @@ serve(async (req) => {
     }
 
     if (stream) {
-      return generateWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
+      return generateWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
     } else {
-      return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY);
+      return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
     }
 
   } catch (error) {
@@ -156,9 +156,20 @@ serve(async (req) => {
   }
 });
 
-async function startTTSJob(text: string, apiKey: string): Promise<string> {
+async function startTTSJob(text: string, apiKey: string, voiceSampleUrl?: string): Promise<string> {
   console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
   console.log(`Text length: ${text.length} chars`);
+  console.log(`Voice sample URL: ${voiceSampleUrl || 'none (using default)'}`);
+  
+  const inputPayload: Record<string, unknown> = {
+    text: text,
+    prompt: text
+  };
+  
+  // Add voice sample URL for voice cloning if provided
+  if (voiceSampleUrl) {
+    inputPayload.audio_prompt_path = voiceSampleUrl;
+  }
   
   const response = await fetch(`${RUNPOD_API_URL}/run`, {
     method: 'POST',
@@ -167,10 +178,7 @@ async function startTTSJob(text: string, apiKey: string): Promise<string> {
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      input: {
-        text: text,
-        prompt: text
-      }
+      input: inputPayload
     }),
   });
 
@@ -336,7 +344,7 @@ function concatenateWavFiles(audioChunks: Uint8Array[]): { wav: Uint8Array; dura
   return { wav: output, durationSeconds };
 }
 
-async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
+async function generateWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const encoder = new TextEncoder();
   
   const responseStream = new ReadableStream({
@@ -361,8 +369,8 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
             message: `Generating audio chunk ${i + 1}/${chunks.length}...`
           })}\n\n`));
 
-          // Start the TTS job for this chunk
-          const jobId = await startTTSJob(chunkText, apiKey);
+          // Start the TTS job for this chunk with voice sample
+          const jobId = await startTTSJob(chunkText, apiKey, voiceSampleUrl);
           
           // Poll for completion
           const maxAttempts = 120;
@@ -478,7 +486,7 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
   });
 }
 
-async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string): Promise<Response> {
+async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
 
   // Process each chunk sequentially
@@ -486,8 +494,8 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
     const chunkText = chunks[i];
     console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
     
-    // Start the TTS job for this chunk
-    const jobId = await startTTSJob(chunkText, apiKey);
+    // Start the TTS job for this chunk with voice sample
+    const jobId = await startTTSJob(chunkText, apiKey, voiceSampleUrl);
     console.log(`TTS job started with ID: ${jobId}`);
 
     // Poll for completion
