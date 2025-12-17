@@ -179,21 +179,38 @@ async function downloadVoiceSample(url: string): Promise<string> {
   return base64;
 }
 
-async function startTTSJob(text: string, apiKey: string, voiceSampleBase64?: string): Promise<string> {
+type VoiceReference = {
+  url?: string;
+  base64?: string;
+};
+
+async function startTTSJob(text: string, apiKey: string, voiceRef?: VoiceReference): Promise<string> {
   console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
   console.log(`Text length: ${text.length} chars`);
-  console.log(`Voice sample provided: ${voiceSampleBase64 ? 'yes' : 'no'}`);
-  
+  console.log(`Voice reference url: ${voiceRef?.url ? 'yes' : 'no'}`);
+  console.log(`Voice reference base64: ${voiceRef?.base64 ? `yes (${voiceRef.base64.length} chars)` : 'no'}`);
+
   const inputPayload: Record<string, unknown> = {
     text: text,
-    prompt: text
+    prompt: text,
   };
-  
-  // Add voice sample as base64 audio data for voice cloning
-  if (voiceSampleBase64) {
-    inputPayload.audio_prompt = voiceSampleBase64;
+
+  // Voice cloning reference audio (send in every generation request)
+  // Different workers may expect different field names; we provide the common ones.
+  if (voiceRef?.url) {
+    inputPayload.voice_audio_url = voiceRef.url;
+    inputPayload.reference_audio_url = voiceRef.url;
   }
-  
+
+  if (voiceRef?.base64) {
+    inputPayload.voice_audio_base64 = voiceRef.base64;
+    inputPayload.reference_audio = voiceRef.base64;
+    inputPayload.reference_audio_base64 = voiceRef.base64;
+
+    // Backward compatibility for some worker variants
+    inputPayload.audio_prompt = voiceRef.base64;
+  }
+
   const response = await fetch(`${RUNPOD_API_URL}/run`, {
     method: 'POST',
     headers: {
@@ -201,7 +218,7 @@ async function startTTSJob(text: string, apiKey: string, voiceSampleBase64?: str
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      input: inputPayload
+      input: inputPayload,
     }),
   });
 
@@ -381,8 +398,10 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         // Download voice sample once if provided
         let voiceSampleBase64: string | undefined;
+        let voiceRef: VoiceReference | undefined;
         if (voiceSampleUrl) {
           voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
+          voiceRef = { url: voiceSampleUrl, base64: voiceSampleBase64 };
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -404,8 +423,8 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
             message: `Generating audio chunk ${i + 1}/${chunks.length}...`
           })}\n\n`));
 
-          // Start the TTS job for this chunk with voice sample base64
-          const jobId = await startTTSJob(chunkText, apiKey, voiceSampleBase64);
+          // Start the TTS job for this chunk with voice reference
+          const jobId = await startTTSJob(chunkText, apiKey, voiceRef);
           
           // Poll for completion
           const maxAttempts = 120;
@@ -526,8 +545,10 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
 
   // Download voice sample once if provided
   let voiceSampleBase64: string | undefined;
+  let voiceRef: VoiceReference | undefined;
   if (voiceSampleUrl) {
     voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
+    voiceRef = { url: voiceSampleUrl, base64: voiceSampleBase64 };
   }
 
   // Process each chunk sequentially
@@ -535,8 +556,8 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
     const chunkText = chunks[i];
     console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
     
-    // Start the TTS job for this chunk with voice sample base64
-    const jobId = await startTTSJob(chunkText, apiKey, voiceSampleBase64);
+    // Start the TTS job for this chunk with voice reference
+    const jobId = await startTTSJob(chunkText, apiKey, voiceRef);
     console.log(`TTS job started with ID: ${jobId}`);
 
     // Poll for completion
