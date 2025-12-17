@@ -11,13 +11,13 @@ import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { AudioPreviewModal } from "@/components/AudioPreviewModal";
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
-import { 
-  getYouTubeTranscript, 
-  rewriteScriptStreaming, 
-  generateAudioStreaming,
+import {
+  getYouTubeTranscript,
+  rewriteScriptStreaming,
+  generateAudio,
   generateImagesStreaming,
   generateCaptions,
-  saveScriptToStorage 
+  saveScriptToStorage,
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 
@@ -232,15 +232,8 @@ const Index = () => {
     try {
       await saveScriptToStorage(script, projectId);
 
-      updateStep("audio", "active", "0%");
-      const audioRes = await generateAudioStreaming(
-        script, 
-        settings.voiceSampleUrl!, 
-        projectId,
-        (progress) => {
-          updateStep("audio", "active", `${progress}%`);
-        }
-      );
+      updateStep("audio", "active", "Generating...");
+      const audioRes = await generateAudio(script, settings.voiceSampleUrl!, projectId);
       
       if (!audioRes.success || !audioRes.audioUrl) {
         throw new Error(audioRes.error || "Failed to generate audio");
