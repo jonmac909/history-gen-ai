@@ -156,19 +156,42 @@ serve(async (req) => {
   }
 });
 
-async function startTTSJob(text: string, apiKey: string, voiceSampleUrl?: string): Promise<string> {
+// Download voice sample and convert to base64
+async function downloadVoiceSample(url: string): Promise<string> {
+  console.log(`Downloading voice sample from: ${url}`);
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download voice sample: ${response.status}`);
+  }
+  
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  
+  // Convert to base64
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  
+  console.log(`Voice sample downloaded: ${bytes.length} bytes, base64 length: ${base64.length}`);
+  return base64;
+}
+
+async function startTTSJob(text: string, apiKey: string, voiceSampleBase64?: string): Promise<string> {
   console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
   console.log(`Text length: ${text.length} chars`);
-  console.log(`Voice sample URL: ${voiceSampleUrl || 'none (using default)'}`);
+  console.log(`Voice sample provided: ${voiceSampleBase64 ? 'yes' : 'no'}`);
   
   const inputPayload: Record<string, unknown> = {
     text: text,
     prompt: text
   };
   
-  // Add voice sample URL for voice cloning if provided
-  if (voiceSampleUrl) {
-    inputPayload.audio_prompt_path = voiceSampleUrl;
+  // Add voice sample as base64 audio data for voice cloning
+  if (voiceSampleBase64) {
+    inputPayload.audio_prompt = voiceSampleBase64;
   }
   
   const response = await fetch(`${RUNPOD_API_URL}/run`, {
@@ -352,6 +375,18 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
+          progress: 2,
+          message: 'Preparing voice sample...'
+        })}\n\n`));
+
+        // Download voice sample once if provided
+        let voiceSampleBase64: string | undefined;
+        if (voiceSampleUrl) {
+          voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
+        }
+
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+          type: 'progress', 
           progress: 5,
           message: `Starting Chatterbox TTS (${chunks.length} chunks)...`
         })}\n\n`));
@@ -369,8 +404,8 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
             message: `Generating audio chunk ${i + 1}/${chunks.length}...`
           })}\n\n`));
 
-          // Start the TTS job for this chunk with voice sample
-          const jobId = await startTTSJob(chunkText, apiKey, voiceSampleUrl);
+          // Start the TTS job for this chunk with voice sample base64
+          const jobId = await startTTSJob(chunkText, apiKey, voiceSampleBase64);
           
           // Poll for completion
           const maxAttempts = 120;
@@ -489,13 +524,19 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
 
+  // Download voice sample once if provided
+  let voiceSampleBase64: string | undefined;
+  if (voiceSampleUrl) {
+    voiceSampleBase64 = await downloadVoiceSample(voiceSampleUrl);
+  }
+
   // Process each chunk sequentially
   for (let i = 0; i < chunks.length; i++) {
     const chunkText = chunks[i];
     console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
     
-    // Start the TTS job for this chunk with voice sample
-    const jobId = await startTTSJob(chunkText, apiKey, voiceSampleUrl);
+    // Start the TTS job for this chunk with voice sample base64
+    const jobId = await startTTSJob(chunkText, apiKey, voiceSampleBase64);
     console.log(`TTS job started with ID: ${jobId}`);
 
     // Poll for completion
