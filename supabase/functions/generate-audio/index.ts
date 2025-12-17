@@ -62,12 +62,12 @@ async function generateWithChatterbox(
   console.log(`Generating audio for ${wordCount} words with Chatterbox Turbo...`);
   console.log(`Voice sample URL: ${voiceSampleUrl}`);
 
-  // HuggingFace Space API endpoint
+  // HuggingFace Space API endpoint - use Gradio API format
   const HF_SPACE_URL = "https://resembleai-chatterbox-turbo-demo.hf.space";
   
+  const encoder = new TextEncoder();
+  
   if (stream) {
-    const encoder = new TextEncoder();
-    
     const responseStream = new ReadableStream({
       async start(controller) {
         try {
@@ -77,71 +77,69 @@ async function generateWithChatterbox(
             message: 'Connecting to Chatterbox Turbo...'
           })}\n\n`));
 
-          // Call the HuggingFace Space Gradio API
-          // First, we need to get the session and then make the prediction
-          const predictResponse = await fetch(`${HF_SPACE_URL}/api/predict`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              fn_index: 0,
-              data: [
-                cleanScript,           // text input
-                voiceSampleUrl,        // audio reference URL
-                0.5,                   // exaggeration (default)
-                0.5,                   // cfg_weight (default)
-                42,                    // random seed
-              ],
-              session_hash: crypto.randomUUID(),
-            }),
-          });
-
-          if (!predictResponse.ok) {
-            const errorText = await predictResponse.text();
-            console.error('Chatterbox API error:', predictResponse.status, errorText);
-            
-            // Try alternative API format for newer Gradio versions
-            const altResponse = await fetch(`${HF_SPACE_URL}/run/predict`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                data: [
-                  cleanScript,
-                  voiceSampleUrl,
-                  0.5,
-                  0.5,
-                  42,
-                ],
-              }),
-            });
-            
-            if (!altResponse.ok) {
-              const altError = await altResponse.text();
-              console.error('Alternative API also failed:', altResponse.status, altError);
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'error', 
-                error: `Chatterbox API error: ${predictResponse.status} - Service may be unavailable` 
-              })}\n\n`));
-              controller.close();
-              return;
-            }
-            
-            const altResult = await altResponse.json();
-            await processChatterboxResult(altResult, controller, encoder, projectId, wordCount);
+          const audioData = await callChatterboxAPI(HF_SPACE_URL, cleanScript, voiceSampleUrl);
+          
+          if (!audioData) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'error', 
+              error: 'Chatterbox API failed - the HuggingFace Space may be unavailable or sleeping. Try again in a moment.' 
+            })}\n\n`));
+            controller.close();
             return;
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'progress', 
-            progress: 30,
-            message: 'Generating audio with voice cloning...'
+            progress: 70,
+            message: 'Processing generated audio...'
           })}\n\n`));
 
-          const result = await predictResponse.json();
-          await processChatterboxResult(result, controller, encoder, projectId, wordCount);
+          console.log(`Audio generated: ${audioData.length} bytes`);
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            type: 'progress', 
+            progress: 85,
+            message: 'Uploading audio file...'
+          })}\n\n`));
+
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const supabase = createClient(supabaseUrl, supabaseKey);
+
+          const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('generated-assets')
+            .upload(fileName, audioData, {
+              contentType: 'audio/wav',
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.error('Upload error:', uploadError);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+              type: 'error', 
+              error: 'Failed to upload audio' 
+            })}\n\n`));
+            controller.close();
+            return;
+          }
+
+          const { data: urlData } = supabase.storage
+            .from('generated-assets')
+            .getPublicUrl(fileName);
+
+          console.log('Audio uploaded:', urlData.publicUrl);
+
+          const durationSeconds = Math.round(audioData.length / 88200);
+          console.log(`Audio duration: ~${durationSeconds}s`);
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            type: 'complete', 
+            audioUrl: urlData.publicUrl,
+            duration: durationSeconds,
+            size: audioData.length
+          })}\n\n`));
 
         } catch (error) {
           console.error('Audio error:', error);
@@ -162,60 +160,12 @@ async function generateWithChatterbox(
 
   // Non-streaming version
   try {
-    const predictResponse = await fetch(`${HF_SPACE_URL}/api/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        fn_index: 0,
-        data: [
-          cleanScript,
-          voiceSampleUrl,
-          0.5,
-          0.5,
-          42,
-        ],
-        session_hash: crypto.randomUUID(),
-      }),
-    });
-
-    let result;
-    if (!predictResponse.ok) {
-      // Try alternative endpoint
-      const altResponse = await fetch(`${HF_SPACE_URL}/run/predict`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          data: [
-            cleanScript,
-            voiceSampleUrl,
-            0.5,
-            0.5,
-            42,
-          ],
-        }),
-      });
-      
-      if (!altResponse.ok) {
-        const errorText = await altResponse.text();
-        throw new Error(`Chatterbox API error: ${altResponse.status} - ${errorText}`);
-      }
-      
-      result = await altResponse.json();
-    } else {
-      result = await predictResponse.json();
-    }
-
-    // Extract audio from result
-    const audioData = extractAudioFromResult(result);
+    const audioData = await callChatterboxAPI(HF_SPACE_URL, cleanScript, voiceSampleUrl);
+    
     if (!audioData) {
-      throw new Error('No audio data in response');
+      throw new Error('Chatterbox API failed - the HuggingFace Space may be unavailable');
     }
 
-    // Upload to Supabase storage
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -238,7 +188,6 @@ async function generateWithChatterbox(
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    // WAV at 44.1kHz 16-bit mono = 88200 bytes per second
     const durationSeconds = Math.round(audioData.length / 88200);
 
     return new Response(
@@ -261,77 +210,107 @@ async function generateWithChatterbox(
   }
 }
 
-async function processChatterboxResult(
-  result: any, 
-  controller: ReadableStreamDefaultController, 
-  encoder: TextEncoder,
-  projectId: string,
-  wordCount: number
-) {
-  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-    type: 'progress', 
-    progress: 70,
-    message: 'Processing generated audio...'
-  })}\n\n`));
-
-  const audioData = extractAudioFromResult(result);
-  if (!audioData) {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-      type: 'error', 
-      error: 'No audio data in response' 
-    })}\n\n`));
-    return;
-  }
-
-  console.log(`Audio generated: ${audioData.length} bytes`);
-
-  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-    type: 'progress', 
-    progress: 85,
-    message: 'Uploading audio file...'
-  })}\n\n`));
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+async function callChatterboxAPI(baseUrl: string, text: string, voiceSampleUrl: string): Promise<Uint8Array | null> {
+  // Try Gradio 4.x/5.x API format first
+  const endpoints = [
+    `${baseUrl}/gradio_api/call/generate`,
+    `${baseUrl}/api/predict`,
+    `${baseUrl}/call/generate`,
+    `${baseUrl}/run/predict`,
+  ];
   
-  const { error: uploadError } = await supabase.storage
-    .from('generated-assets')
-    .upload(fileName, audioData, {
-      contentType: 'audio/wav',
-      upsert: true,
-    });
-
-  if (uploadError) {
-    console.error('Upload error:', uploadError);
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-      type: 'error', 
-      error: 'Failed to upload audio' 
-    })}\n\n`));
-    return;
+  for (const endpoint of endpoints) {
+    console.log(`Trying endpoint: ${endpoint}`);
+    
+    try {
+      // For gradio_api/call endpoints, we need a two-step process
+      if (endpoint.includes('gradio_api/call')) {
+        // Step 1: Submit the job
+        const submitResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: [text, voiceSampleUrl, 0.5, 0.5, 42]
+          }),
+        });
+        
+        if (!submitResponse.ok) {
+          console.log(`Submit failed: ${submitResponse.status}`);
+          continue;
+        }
+        
+        const submitResult = await submitResponse.json();
+        console.log('Submit result:', JSON.stringify(submitResult).substring(0, 200));
+        
+        // Step 2: Get the result using event_id
+        if (submitResult.event_id) {
+          const resultResponse = await fetch(`${endpoint}/${submitResult.event_id}`, {
+            method: 'GET',
+            headers: { 'Accept': 'text/event-stream' },
+          });
+          
+          if (resultResponse.ok) {
+            const resultText = await resultResponse.text();
+            console.log('Result:', resultText.substring(0, 500));
+            
+            // Parse SSE response to get audio data
+            const audioData = parseSSEResponse(resultText, baseUrl);
+            if (audioData) return audioData;
+          }
+        }
+      } else {
+        // Direct API call for older Gradio versions
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fn_index: 0,
+            data: [text, voiceSampleUrl, 0.5, 0.5, 42],
+            session_hash: crypto.randomUUID(),
+          }),
+        });
+        
+        if (!response.ok) {
+          console.log(`Endpoint failed: ${response.status}`);
+          continue;
+        }
+        
+        const result = await response.json();
+        console.log('API result:', JSON.stringify(result).substring(0, 500));
+        
+        const audioData = extractAudioFromResult(result, baseUrl);
+        if (audioData) return audioData;
+      }
+    } catch (error) {
+      console.log(`Endpoint ${endpoint} error:`, error);
+    }
   }
-
-  const { data: urlData } = supabase.storage
-    .from('generated-assets')
-    .getPublicUrl(fileName);
-
-  console.log('Audio uploaded:', urlData.publicUrl);
-
-  // WAV at 44.1kHz 16-bit mono = 88200 bytes per second
-  const durationSeconds = Math.round(audioData.length / 88200);
-  console.log(`Audio duration: ~${durationSeconds}s`);
-
-  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-    type: 'complete', 
-    audioUrl: urlData.publicUrl,
-    duration: durationSeconds,
-    size: audioData.length
-  })}\n\n`));
+  
+  return null;
 }
 
-function extractAudioFromResult(result: any): Uint8Array | null {
+async function parseSSEResponse(sseText: string, baseUrl: string): Promise<Uint8Array | null> {
+  const lines = sseText.split('\n');
+  
+  for (const line of lines) {
+    if (line.startsWith('data:')) {
+      try {
+        const data = JSON.parse(line.substring(5).trim());
+        if (data && Array.isArray(data)) {
+          const audioData = await extractAudioFromResult({ data }, baseUrl);
+          if (audioData) return audioData;
+        }
+      } catch (e) {
+        // Continue parsing
+      }
+    }
+  }
+  
+  return null;
+}
+
+
+async function extractAudioFromResult(result: any, baseUrl: string): Promise<Uint8Array | null> {
   try {
     // Gradio returns data in different formats
     // Try to find the audio data in the response
@@ -349,7 +328,7 @@ function extractAudioFromResult(result: any): Uint8Array | null {
           return bytes;
         }
         
-        // Check for file path (need to fetch)
+        // Check for file object with path/url
         if (typeof item === 'object' && item !== null) {
           if (item.data && typeof item.data === 'string' && item.data.startsWith('data:audio')) {
             const base64Data = item.data.split(',')[1];
@@ -361,10 +340,19 @@ function extractAudioFromResult(result: any): Uint8Array | null {
             return bytes;
           }
           
-          // Handle file object with name/url
-          if (item.name || item.url || item.path) {
-            console.log('Found file reference:', item);
-            // This would need fetching from the HF Space file server
+          // Handle file reference from Gradio
+          const fileUrl = item.url || item.path || item.name;
+          if (fileUrl) {
+            console.log('Found file reference:', fileUrl);
+            // Fetch from HF Space file server
+            const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${baseUrl}/file=${fileUrl}`;
+            console.log('Fetching audio from:', fullUrl);
+            
+            const fileResponse = await fetch(fullUrl);
+            if (fileResponse.ok) {
+              const arrayBuffer = await fileResponse.arrayBuffer();
+              return new Uint8Array(arrayBuffer);
+            }
           }
         }
       }
