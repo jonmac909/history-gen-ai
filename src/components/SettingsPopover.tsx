@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Settings, Minus, Plus, Loader2, Volume2 } from "lucide-react";
+import { useState } from "react";
+import { Settings, Minus, Plus } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
@@ -16,23 +16,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
+import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
-
-interface ElevenLabsVoice {
-  voice_id: string;
-  name: string;
-  category: string;
-  description?: string;
-  preview_url?: string;
-  labels?: Record<string, string>;
-}
 
 export interface GenerationSettings {
   scriptTemplate: string;
   aiModel: string;
-  voice: string;
+  voiceSampleUrl: string | null;
   speed: number;
   imageCount: number;
   wordCount: number;
@@ -58,47 +48,6 @@ export function SettingsPopover({
   scriptTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
-  const [playingPreview, setPlayingPreview] = useState<string | null>(null);
-
-  const fetchElevenLabsVoices = async () => {
-    setLoadingVoices(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('get-elevenlabs-voices');
-      if (error) throw error;
-      if (data.voices) {
-        setElevenLabsVoices(data.voices);
-      }
-    } catch (error) {
-      console.error('Error fetching voices:', error);
-      toast({ title: "Error", description: "Failed to fetch voices", variant: "destructive" });
-    } finally {
-      setLoadingVoices(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen && elevenLabsVoices.length === 0) {
-      fetchElevenLabsVoices();
-    }
-  }, [isOpen]);
-
-  const playPreview = async (previewUrl: string, voiceId: string) => {
-    if (playingPreview === voiceId) {
-      setPlayingPreview(null);
-      return;
-    }
-    setPlayingPreview(voiceId);
-    try {
-      const audio = new Audio(previewUrl);
-      audio.onended = () => setPlayingPreview(null);
-      audio.onerror = () => setPlayingPreview(null);
-      await audio.play();
-    } catch (error) {
-      setPlayingPreview(null);
-    }
-  };
 
   const updateSetting = <K extends keyof GenerationSettings>(
     key: K,
@@ -165,57 +114,11 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Voice Selection */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Voice:
-            </label>
-            <div className="flex gap-2">
-              <Select
-                value={settings.voice}
-                onValueChange={(value) => updateSetting("voice", value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={loadingVoices ? "Loading voices..." : "Select a voice"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  {loadingVoices ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    </div>
-                  ) : elevenLabsVoices.length > 0 ? (
-                    elevenLabsVoices.map((voice) => (
-                      <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                        <div className="flex items-center gap-2">
-                          <span>{voice.name}</span>
-                          <span className="text-xs text-muted-foreground">({voice.category})</span>
-                        </div>
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="none" disabled>
-                      No voices found
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {settings.voice && elevenLabsVoices.find(v => v.voice_id === settings.voice)?.preview_url && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => {
-                    const voice = elevenLabsVoices.find(v => v.voice_id === settings.voice);
-                    if (voice?.preview_url) {
-                      playPreview(voice.preview_url, voice.voice_id);
-                    }
-                  }}
-                >
-                  <Volume2 className={`w-4 h-4 ${playingPreview === settings.voice ? "text-primary animate-pulse" : ""}`} />
-                </Button>
-              )}
-            </div>
-          </div>
+          {/* Voice Sample Upload */}
+          <VoiceSampleUpload
+            voiceSampleUrl={settings.voiceSampleUrl}
+            onVoiceSampleChange={(url) => updateSetting("voiceSampleUrl", url)}
+          />
 
           {/* Speed */}
           <div className="space-y-2">
