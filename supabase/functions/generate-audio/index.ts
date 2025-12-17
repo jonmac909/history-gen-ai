@@ -143,6 +143,28 @@ serve(async (req) => {
     // Chatterbox needs the full request to complete before returning
     if (voiceSampleUrl) {
       console.log('Voice cloning detected - using non-streaming mode');
+      console.log(`Voice sample URL: ${voiceSampleUrl}`);
+
+      // Pre-validate voice sample accessibility
+      try {
+        console.log('Pre-validating voice sample accessibility...');
+        const testResponse = await fetch(voiceSampleUrl, { method: 'HEAD' });
+        if (!testResponse.ok) {
+          console.error(`Voice sample not accessible: HTTP ${testResponse.status}`);
+          return new Response(
+            JSON.stringify({ error: `Voice sample not accessible (HTTP ${testResponse.status}). Please re-upload your voice sample.` }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        console.log('Voice sample is accessible');
+      } catch (error) {
+        console.error('Failed to access voice sample:', error);
+        return new Response(
+          JSON.stringify({ error: `Cannot access voice sample: ${error instanceof Error ? error.message : 'Network error'}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
     }
 
@@ -166,32 +188,75 @@ serve(async (req) => {
 // Download voice sample and convert to base64
 async function downloadVoiceSample(url: string): Promise<string> {
   console.log(`Downloading voice sample from: ${url}`);
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download voice sample: ${response.status}`);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download voice sample: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    // Check content type
+    const contentType = response.headers.get('content-type');
+    console.log(`Voice sample content-type: ${contentType}`);
+
+    if (contentType && !contentType.includes('audio')) {
+      console.warn(`Unexpected content-type: ${contentType}. Expected audio/* type.`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    if (bytes.length === 0) {
+      throw new Error('Voice sample is empty (0 bytes)');
+    }
+
+    if (bytes.length > 10 * 1024 * 1024) {
+      throw new Error(`Voice sample too large: ${bytes.length} bytes (max 10MB)`);
+    }
+
+    // Verify it looks like a valid audio file (check for common audio file signatures)
+    const header = new TextDecoder().decode(bytes.subarray(0, 4));
+    if (header === 'RIFF' || header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
+      console.log(`Voice sample format detected: ${header === 'RIFF' ? 'WAV' : header.startsWith('ID3') ? 'MP3' : 'MP3'}`);
+    } else {
+      console.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+    }
+
+    // Convert to base64
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+
+    console.log(`Voice sample downloaded successfully:`);
+    console.log(`  - Size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
+    console.log(`  - Base64 length: ${base64.length} chars`);
+    console.log(`  - URL: ${url.substring(0, 100)}...`);
+
+    return base64;
+  } catch (error) {
+    console.error('Error downloading voice sample:', error);
+    throw new Error(`Voice sample download failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-  
-  const arrayBuffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  
-  // Convert to base64
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 = btoa(binary);
-  
-  console.log(`Voice sample downloaded: ${bytes.length} bytes, base64 length: ${base64.length}`);
-  return base64;
 }
 
 // Chatterbox only supports cloning via reference_audio_base64
 // The worker decodes it and passes as reference_audio + reference_sr to synthesize()
 async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
-  console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
+  console.log(`\n=== Starting TTS Job ===`);
+  console.log(`Endpoint: ${RUNPOD_API_URL}/run`);
   console.log(`Text length: ${text.length} chars`);
-  console.log(`Reference audio: ${referenceAudioBase64 ? `yes (${referenceAudioBase64.length} chars)` : 'no (using default voice)'}`);
+  console.log(`Text preview: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+
+  if (referenceAudioBase64) {
+    console.log(`Voice Cloning: ENABLED`);
+    console.log(`Reference audio base64 length: ${referenceAudioBase64.length} chars`);
+    console.log(`Reference audio size estimate: ${(referenceAudioBase64.length * 0.75 / 1024).toFixed(2)} KB`);
+    console.log(`Base64 preview: ${referenceAudioBase64.substring(0, 50)}...`);
+  } else {
+    console.log(`Voice Cloning: DISABLED (using default voice)`);
+  }
 
   const inputPayload: Record<string, unknown> = {
     text: text,
@@ -202,42 +267,59 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
   // Worker must decode this and pass as reference_audio (and reference_sr) to tts.synthesize()
   if (referenceAudioBase64) {
     inputPayload.reference_audio_base64 = referenceAudioBase64;
+    console.log(`Added reference_audio_base64 to payload`);
   }
 
-  const response = await fetch(`${RUNPOD_API_URL}/run`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      input: inputPayload,
-    }),
-  });
+  console.log(`Payload keys: ${Object.keys(inputPayload).join(', ')}`);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Failed to start TTS job:', response.status, errorText);
-    throw new Error(`Failed to start TTS job: ${response.status}`);
-  }
+  try {
+    const response = await fetch(`${RUNPOD_API_URL}/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        input: inputPayload,
+      }),
+    });
 
-  const result = await response.json();
-  console.log('TTS job started:', result);
-  
-  if (!result.id) {
-    throw new Error('No job ID returned from RunPod');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`RunPod API error: ${response.status} ${response.statusText}`);
+      console.error(`Error response: ${errorText}`);
+      throw new Error(`Failed to start TTS job: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+    }
+
+    const result = await response.json();
+    console.log(`TTS job created successfully`);
+    console.log(`Job ID: ${result.id}`);
+    console.log(`Job status: ${result.status || 'N/A'}`);
+
+    if (!result.id) {
+      throw new Error('No job ID returned from RunPod');
+    }
+
+    console.log(`=== TTS Job Started ===\n`);
+    return result.id;
+  } catch (error) {
+    console.error('Failed to start TTS job:', error);
+    throw error;
   }
-  
-  return result.id;
 }
 
 async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_base64: string; sample_rate: number }> {
   const maxAttempts = 120; // 2 minutes max
   const pollInterval = 2000; // 2 seconds
-  
+
+  console.log(`\n=== Polling Job Status ===`);
+  console.log(`Job ID: ${jobId}`);
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    console.log(`Polling job status (attempt ${attempt + 1}/${maxAttempts})...`);
-    
+    if (attempt % 5 === 0 || attempt < 3) {
+      console.log(`Polling attempt ${attempt + 1}/${maxAttempts}...`);
+    }
+
     const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
       method: 'GET',
       headers: {
@@ -247,7 +329,8 @@ async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_bas
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Failed to poll job status:', response.status, errorText);
+      console.error(`Failed to poll job status: HTTP ${response.status}`);
+      console.error(`Error response: ${errorText}`);
       throw new Error(`Failed to poll job status: ${response.status}`);
     }
 
@@ -255,21 +338,36 @@ async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_bas
     console.log(`Job status: ${result.status}`);
 
     if (result.status === 'COMPLETED') {
+      console.log(`Job completed successfully!`);
       if (!result.output?.audio_base64) {
+        console.error('Missing audio_base64 in output:', result.output);
         throw new Error('No audio_base64 in completed job output');
       }
+      console.log(`Audio output received: ${result.output.audio_base64.length} chars base64`);
+      console.log(`Sample rate: ${result.output.sample_rate || 'N/A'}`);
+      console.log(`=== Job Completed ===\n`);
       return result.output;
     }
 
     if (result.status === 'FAILED') {
-      console.error('TTS job failed:', result);
+      console.error(`\n!!! TTS Job FAILED !!!`);
+      console.error(`Job ID: ${jobId}`);
+      console.error(`Error: ${result.error || 'Unknown error'}`);
+      console.error(`Full result:`, JSON.stringify(result, null, 2));
       throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
+    }
+
+    // Log queue position if available
+    if (result.delayTime) {
+      console.log(`Estimated delay: ${result.delayTime}ms`);
     }
 
     // Wait before next poll
     await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
+  console.error(`\n!!! Job Timeout !!!`);
+  console.error(`Job ID: ${jobId} timed out after ${maxAttempts * pollInterval / 1000} seconds`);
   throw new Error('TTS job timed out after 2 minutes');
 }
 

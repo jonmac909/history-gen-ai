@@ -219,15 +219,37 @@ export async function rewriteScriptStreaming(
 }
 
 export async function generateAudio(script: string, voiceSampleUrl: string, projectId: string): Promise<AudioResult> {
+  console.log('Generating audio with voice cloning...');
+  console.log('Voice sample URL:', voiceSampleUrl);
+  console.log('Script length:', script.length, 'chars');
+
   const { data, error } = await supabase.functions.invoke('generate-audio', {
     body: { script, voiceSampleUrl, projectId }
   });
 
   if (error) {
-    console.error('Audio error:', error);
-    return { success: false, error: error.message };
+    console.error('Audio generation error:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+
+    // Provide more helpful error messages
+    let errorMessage = error.message;
+    if (errorMessage.includes('Voice sample not accessible')) {
+      errorMessage = 'Cannot access your voice sample. Please try re-uploading it in Settings.';
+    } else if (errorMessage.includes('TTS job failed')) {
+      errorMessage = 'Voice cloning failed. This may be due to an issue with the voice sample or the TTS service. Try a different voice sample or contact support.';
+    } else if (errorMessage.includes('timed out')) {
+      errorMessage = 'Audio generation timed out. The script might be too long, or the service is experiencing delays. Try again in a moment.';
+    }
+
+    return { success: false, error: errorMessage };
   }
 
+  if (data?.error) {
+    console.error('Audio generation returned error:', data.error);
+    return { success: false, error: data.error };
+  }
+
+  console.log('Audio generated successfully:', data);
   return data;
 }
 
