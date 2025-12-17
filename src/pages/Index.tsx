@@ -63,7 +63,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
-    voice: "3GntEbfzhYH3X9VCuIHy",
+    voiceSampleUrl: null,
     speed: 1,
     imageCount: 10,
     wordCount: 1000,
@@ -72,7 +72,6 @@ const Index = () => {
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
-  const [selectedElevenLabsVoiceId, setSelectedElevenLabsVoiceId] = useState("3GntEbfzhYH3X9VCuIHy");
   const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
@@ -151,10 +150,10 @@ const Index = () => {
       return;
     }
 
-    if (!selectedElevenLabsVoiceId) {
+    if (!settings.voiceSampleUrl) {
       toast({
-        title: "Voice Required",
-        description: "Please select a voice in Settings.",
+        title: "Voice Sample Required",
+        description: "Please upload a voice sample for cloning in Settings.",
         variant: "destructive",
       });
       return;
@@ -222,10 +221,9 @@ const Index = () => {
   // Step 2: After script confirmed, generate audio
   const handleScriptConfirm = async (script: string) => {
     setConfirmedScript(script);
-    const voiceId = selectedElevenLabsVoiceId || "3GntEbfzhYH3X9VCuIHy";
 
     const steps: GenerationStep[] = [
-      { id: "audio", label: "Generating Audio", status: "pending" },
+      { id: "audio", label: "Generating Audio with Chatterbox", status: "pending" },
     ];
 
     setProcessingSteps(steps);
@@ -237,7 +235,7 @@ const Index = () => {
       updateStep("audio", "active", "0%");
       const audioRes = await generateAudioStreaming(
         script, 
-        voiceId, 
+        settings.voiceSampleUrl!, 
         projectId,
         (progress) => {
           updateStep("audio", "active", `${progress}%`);

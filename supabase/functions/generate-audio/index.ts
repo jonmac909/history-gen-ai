@@ -12,11 +12,18 @@ serve(async (req) => {
   }
 
   try {
-    const { script, voiceId, projectId, stream } = await req.json();
+    const { script, voiceSampleUrl, projectId, stream } = await req.json();
     
     if (!script) {
       return new Response(
         JSON.stringify({ error: 'Script is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!voiceSampleUrl) {
+      return new Response(
+        JSON.stringify({ error: 'Voice sample URL is required for voice cloning' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -32,7 +39,7 @@ serve(async (req) => {
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     
-    return await generateWithElevenLabs(cleanScript, voiceId, projectId, stream, wordCount);
+    return await generateWithChatterbox(cleanScript, voiceSampleUrl, projectId, stream, wordCount);
 
   } catch (error) {
     console.error('Error generating audio:', error);
@@ -45,26 +52,19 @@ serve(async (req) => {
   }
 });
 
-async function generateWithElevenLabs(
+async function generateWithChatterbox(
   cleanScript: string, 
-  voiceId: string, 
+  voiceSampleUrl: string, 
   projectId: string, 
   stream: boolean,
   wordCount: number
 ) {
-  const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-  if (!ELEVENLABS_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: 'ElevenLabs API key not configured' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
+  console.log(`Generating audio for ${wordCount} words with Chatterbox Turbo...`);
+  console.log(`Voice sample URL: ${voiceSampleUrl}`);
 
-  const selectedVoiceId = voiceId || '3GntEbfzhYH3X9VCuIHy';
+  // HuggingFace Space API endpoint
+  const HF_SPACE_URL = "https://resembleai-chatterbox-turbo-demo.hf.space";
   
-  console.log(`Generating audio for ${wordCount} words with ElevenLabs Flash v2.5...`);
-  console.log(`Using voice ID: ${selectedVoiceId}`);
-
   if (stream) {
     const encoder = new TextEncoder();
     
@@ -74,124 +74,74 @@ async function generateWithElevenLabs(
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'progress', 
             progress: 10,
-            message: 'Connecting to ElevenLabs...'
+            message: 'Connecting to Chatterbox Turbo...'
           })}\n\n`));
 
-          const response = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}/stream`,
-            {
+          // Call the HuggingFace Space Gradio API
+          // First, we need to get the session and then make the prediction
+          const predictResponse = await fetch(`${HF_SPACE_URL}/api/predict`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fn_index: 0,
+              data: [
+                cleanScript,           // text input
+                voiceSampleUrl,        // audio reference URL
+                0.5,                   // exaggeration (default)
+                0.5,                   // cfg_weight (default)
+                42,                    // random seed
+              ],
+              session_hash: crypto.randomUUID(),
+            }),
+          });
+
+          if (!predictResponse.ok) {
+            const errorText = await predictResponse.text();
+            console.error('Chatterbox API error:', predictResponse.status, errorText);
+            
+            // Try alternative API format for newer Gradio versions
+            const altResponse = await fetch(`${HF_SPACE_URL}/run/predict`, {
               method: 'POST',
               headers: {
-                'xi-api-key': ELEVENLABS_API_KEY,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                text: cleanScript,
-                model_id: 'eleven_flash_v2_5',
-                output_format: 'mp3_44100_128',
-                voice_settings: {
-                  stability: 0.5,
-                  similarity_boost: 0.75,
-                  style: 0.5,
-                  use_speaker_boost: true,
-                },
+                data: [
+                  cleanScript,
+                  voiceSampleUrl,
+                  0.5,
+                  0.5,
+                  42,
+                ],
               }),
+            });
+            
+            if (!altResponse.ok) {
+              const altError = await altResponse.text();
+              console.error('Alternative API also failed:', altResponse.status, altError);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                error: `Chatterbox API error: ${predictResponse.status} - Service may be unavailable` 
+              })}\n\n`));
+              controller.close();
+              return;
             }
-          );
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('ElevenLabs error:', response.status, errorText);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'error', 
-              error: `ElevenLabs API error: ${response.status} - ${errorText}` 
-            })}\n\n`));
-            controller.close();
+            
+            const altResult = await altResponse.json();
+            await processChatterboxResult(altResult, controller, encoder, projectId, wordCount);
             return;
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'progress', 
             progress: 30,
-            message: 'Generating audio...'
+            message: 'Generating audio with voice cloning...'
           })}\n\n`));
 
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('Failed to get response reader');
-          }
-
-          const chunks: Uint8Array[] = [];
-          let totalBytes = 0;
-          
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            totalBytes += value.length;
-            
-            const progress = Math.min(30 + Math.floor(totalBytes / 10000), 80);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'progress', 
-              progress,
-              message: `Receiving audio... (${Math.round(totalBytes / 1024)}KB)`
-            })}\n\n`));
-          }
-
-          const audioData = new Uint8Array(totalBytes);
-          let offset = 0;
-          for (const chunk of chunks) {
-            audioData.set(chunk, offset);
-            offset += chunk.length;
-          }
-
-          console.log(`Audio generated: ${audioData.length} bytes`);
-
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'progress', 
-            progress: 85,
-            message: 'Uploading audio file...'
-          })}\n\n`));
-
-          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-          const supabase = createClient(supabaseUrl, supabaseKey);
-
-          const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from('generated-assets')
-            .upload(fileName, audioData, {
-              contentType: 'audio/mpeg',
-              upsert: true,
-            });
-
-          if (uploadError) {
-            console.error('Upload error:', uploadError);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'error', 
-              error: 'Failed to upload audio' 
-            })}\n\n`));
-            controller.close();
-            return;
-          }
-
-          const { data: urlData } = supabase.storage
-            .from('generated-assets')
-            .getPublicUrl(fileName);
-
-          console.log('Audio uploaded:', urlData.publicUrl);
-
-          // MP3 at 128kbps = 16000 bytes per second
-          const durationSeconds = Math.round(audioData.length / 16000);
-          console.log(`Audio duration: ~${durationSeconds}s`);
-
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'complete', 
-            audioUrl: urlData.publicUrl,
-            duration: durationSeconds,
-            size: audioData.length
-          })}\n\n`));
+          const result = await predictResponse.json();
+          await processChatterboxResult(result, controller, encoder, projectId, wordCount);
 
         } catch (error) {
           console.error('Audio error:', error);
@@ -210,79 +160,220 @@ async function generateWithElevenLabs(
     });
   }
 
-  // Non-streaming ElevenLabs
-  const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
-    {
+  // Non-streaming version
+  try {
+    const predictResponse = await fetch(`${HF_SPACE_URL}/api/predict`, {
       method: 'POST',
       headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        text: cleanScript,
-        model_id: 'eleven_flash_v2_5',
-        output_format: 'mp3_44100_128',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          style: 0.5,
-          use_speaker_boost: true,
-        },
+        fn_index: 0,
+        data: [
+          cleanScript,
+          voiceSampleUrl,
+          0.5,
+          0.5,
+          42,
+        ],
+        session_hash: crypto.randomUUID(),
       }),
-    }
-  );
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('ElevenLabs error:', response.status, errorText);
+    let result;
+    if (!predictResponse.ok) {
+      // Try alternative endpoint
+      const altResponse = await fetch(`${HF_SPACE_URL}/run/predict`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: [
+            cleanScript,
+            voiceSampleUrl,
+            0.5,
+            0.5,
+            42,
+          ],
+        }),
+      });
+      
+      if (!altResponse.ok) {
+        const errorText = await altResponse.text();
+        throw new Error(`Chatterbox API error: ${altResponse.status} - ${errorText}`);
+      }
+      
+      result = await altResponse.json();
+    } else {
+      result = await predictResponse.json();
+    }
+
+    // Extract audio from result
+    const audioData = extractAudioFromResult(result);
+    if (!audioData) {
+      throw new Error('No audio data in response');
+    }
+
+    // Upload to Supabase storage
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(fileName, audioData, {
+        contentType: 'audio/wav',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      throw new Error('Failed to upload audio');
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(fileName);
+
+    // WAV at 44.1kHz 16-bit mono = 88200 bytes per second
+    const durationSeconds = Math.round(audioData.length / 88200);
+
     return new Response(
-      JSON.stringify({ error: `ElevenLabs API error: ${response.status}`, details: errorText }),
-      { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({
+        success: true,
+        audioUrl: urlData.publicUrl,
+        duration: durationSeconds,
+        wordCount,
+        size: audioData.length
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Chatterbox error:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Audio generation failed' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
+}
 
-  const audioBuffer = await response.arrayBuffer();
-  const audioData = new Uint8Array(audioBuffer);
-  
+async function processChatterboxResult(
+  result: any, 
+  controller: ReadableStreamDefaultController, 
+  encoder: TextEncoder,
+  projectId: string,
+  wordCount: number
+) {
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+    type: 'progress', 
+    progress: 70,
+    message: 'Processing generated audio...'
+  })}\n\n`));
+
+  const audioData = extractAudioFromResult(result);
+  if (!audioData) {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+      type: 'error', 
+      error: 'No audio data in response' 
+    })}\n\n`));
+    return;
+  }
+
   console.log(`Audio generated: ${audioData.length} bytes`);
+
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+    type: 'progress', 
+    progress: 85,
+    message: 'Uploading audio file...'
+  })}\n\n`));
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+  const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
   
   const { error: uploadError } = await supabase.storage
     .from('generated-assets')
     .upload(fileName, audioData, {
-      contentType: 'audio/mpeg',
+      contentType: 'audio/wav',
       upsert: true,
     });
 
   if (uploadError) {
     console.error('Upload error:', uploadError);
-    return new Response(
-      JSON.stringify({ error: 'Failed to upload audio', details: uploadError.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+      type: 'error', 
+      error: 'Failed to upload audio' 
+    })}\n\n`));
+    return;
   }
 
   const { data: urlData } = supabase.storage
     .from('generated-assets')
     .getPublicUrl(fileName);
 
-  // MP3 at 128kbps = 16000 bytes per second
-  const durationSeconds = Math.round(audioData.length / 16000);
+  console.log('Audio uploaded:', urlData.publicUrl);
 
-  return new Response(
-    JSON.stringify({
-      success: true,
-      audioUrl: urlData.publicUrl,
-      duration: durationSeconds,
-      wordCount,
-      size: audioData.length
-    }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
+  // WAV at 44.1kHz 16-bit mono = 88200 bytes per second
+  const durationSeconds = Math.round(audioData.length / 88200);
+  console.log(`Audio duration: ~${durationSeconds}s`);
+
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+    type: 'complete', 
+    audioUrl: urlData.publicUrl,
+    duration: durationSeconds,
+    size: audioData.length
+  })}\n\n`));
+}
+
+function extractAudioFromResult(result: any): Uint8Array | null {
+  try {
+    // Gradio returns data in different formats
+    // Try to find the audio data in the response
+    
+    if (result.data && Array.isArray(result.data)) {
+      for (const item of result.data) {
+        // Check for base64 audio data
+        if (typeof item === 'string' && item.startsWith('data:audio')) {
+          const base64Data = item.split(',')[1];
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          return bytes;
+        }
+        
+        // Check for file path (need to fetch)
+        if (typeof item === 'object' && item !== null) {
+          if (item.data && typeof item.data === 'string' && item.data.startsWith('data:audio')) {
+            const base64Data = item.data.split(',')[1];
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes;
+          }
+          
+          // Handle file object with name/url
+          if (item.name || item.url || item.path) {
+            console.log('Found file reference:', item);
+            // This would need fetching from the HF Space file server
+          }
+        }
+      }
+    }
+    
+    console.log('Could not extract audio from result:', JSON.stringify(result).substring(0, 500));
+    return null;
+  } catch (error) {
+    console.error('Error extracting audio:', error);
+    return null;
+  }
 }

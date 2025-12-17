@@ -218,9 +218,9 @@ export async function rewriteScriptStreaming(
   }
 }
 
-export async function generateAudio(script: string, voiceId: string, projectId: string): Promise<AudioResult> {
+export async function generateAudio(script: string, voiceSampleUrl: string, projectId: string): Promise<AudioResult> {
   const { data, error } = await supabase.functions.invoke('generate-audio', {
-    body: { script, voiceId, projectId }
+    body: { script, voiceSampleUrl, projectId }
   });
 
   if (error) {
@@ -233,7 +233,7 @@ export async function generateAudio(script: string, voiceId: string, projectId: 
 
 export async function generateAudioStreaming(
   script: string, 
-  voiceId: string, 
+  voiceSampleUrl: string, 
   projectId: string,
   onProgress: (progress: number) => void
 ): Promise<AudioResult> {
@@ -249,7 +249,7 @@ export async function generateAudioStreaming(
     },
     body: JSON.stringify({ 
       script, 
-      voiceId, 
+      voiceSampleUrl, 
       projectId, 
       stream: true
     })
