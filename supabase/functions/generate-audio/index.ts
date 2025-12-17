@@ -63,6 +63,7 @@ serve(async (req) => {
 
 async function startTTSJob(text: string, apiKey: string): Promise<string> {
   console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
+  console.log(`Text length: ${text.length} chars`);
   
   const response = await fetch(`${RUNPOD_API_URL}/run`, {
     method: 'POST',
@@ -72,6 +73,7 @@ async function startTTSJob(text: string, apiKey: string): Promise<string> {
     },
     body: JSON.stringify({
       input: {
+        text: text,
         prompt: text
       }
     }),
