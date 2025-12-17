@@ -6,7 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RUNPOD_BASE_URL = "https://7sqcxx5mmgaiws-8000.proxy.runpod.net";
+const RUNPOD_ENDPOINT_ID = "n4m8bw1kmrdd9e";
+const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -23,6 +24,14 @@ serve(async (req) => {
       );
     }
 
+    const RUNPOD_API_KEY = Deno.env.get('RUNPOD_API_KEY');
+    if (!RUNPOD_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: 'RUNPOD_API_KEY not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Clean script - remove image prompts and markdown
     const cleanScript = script
       .replace(/\[SCENE \d+\]/g, '')
@@ -33,12 +42,12 @@ serve(async (req) => {
       .trim();
 
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    console.log(`Generating audio for ${wordCount} words with RunPod TTS...`);
+    console.log(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
 
     if (stream) {
-      return generateWithStreaming(cleanScript, projectId, wordCount);
+      return generateWithStreaming(cleanScript, projectId, wordCount, RUNPOD_API_KEY);
     } else {
-      return generateWithoutStreaming(cleanScript, projectId, wordCount);
+      return generateWithoutStreaming(cleanScript, projectId, wordCount, RUNPOD_API_KEY);
     }
 
   } catch (error) {
@@ -52,7 +61,90 @@ serve(async (req) => {
   }
 });
 
-async function generateWithStreaming(text: string, projectId: string, wordCount: number): Promise<Response> {
+async function startTTSJob(text: string, apiKey: string): Promise<string> {
+  console.log(`Starting TTS job at ${RUNPOD_API_URL}/run`);
+  
+  const response = await fetch(`${RUNPOD_API_URL}/run`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      input: {
+        prompt: text
+      }
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to start TTS job:', response.status, errorText);
+    throw new Error(`Failed to start TTS job: ${response.status}`);
+  }
+
+  const result = await response.json();
+  console.log('TTS job started:', result);
+  
+  if (!result.id) {
+    throw new Error('No job ID returned from RunPod');
+  }
+  
+  return result.id;
+}
+
+async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_base64: string; sample_rate: number }> {
+  const maxAttempts = 120; // 2 minutes max
+  const pollInterval = 2000; // 2 seconds
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    console.log(`Polling job status (attempt ${attempt + 1}/${maxAttempts})...`);
+    
+    const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to poll job status:', response.status, errorText);
+      throw new Error(`Failed to poll job status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`Job status: ${result.status}`);
+
+    if (result.status === 'COMPLETED') {
+      if (!result.output?.audio_base64) {
+        throw new Error('No audio_base64 in completed job output');
+      }
+      return result.output;
+    }
+
+    if (result.status === 'FAILED') {
+      console.error('TTS job failed:', result);
+      throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('TTS job timed out after 2 minutes');
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function generateWithStreaming(text: string, projectId: string, wordCount: number, apiKey: string): Promise<Response> {
   const encoder = new TextEncoder();
   
   const responseStream = new ReadableStream({
@@ -60,65 +152,72 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          progress: 10,
-          message: 'Connecting to RunPod TTS...'
+          progress: 5,
+          message: 'Starting Chatterbox TTS job...'
         })}\n\n`));
 
-        // Call RunPod TTS API
-        console.log(`Calling RunPod TTS: ${RUNPOD_BASE_URL}/tts`);
-        const ttsResponse = await fetch(`${RUNPOD_BASE_URL}/tts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        });
+        // Start the TTS job
+        const jobId = await startTTSJob(text, apiKey);
+        
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+          type: 'progress', 
+          progress: 15,
+          message: 'TTS job queued, generating audio...'
+        })}\n\n`));
 
-        if (!ttsResponse.ok) {
-          const errorText = await ttsResponse.text();
-          console.error('RunPod TTS error:', ttsResponse.status, errorText);
+        // Poll for completion with progress updates
+        const maxAttempts = 120;
+        const pollInterval = 2000;
+        let output: { audio_base64: string; sample_rate: number } | null = null;
+        
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to poll job status: ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          if (result.status === 'COMPLETED') {
+            if (!result.output?.audio_base64) {
+              throw new Error('No audio_base64 in completed job output');
+            }
+            output = result.output;
+            break;
+          }
+
+          if (result.status === 'FAILED') {
+            throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
+          }
+
+          // Update progress (15% to 70% during generation)
+          const progress = Math.min(15 + (attempt / maxAttempts) * 55, 70);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: `RunPod TTS failed: ${ttsResponse.status}` 
+            type: 'progress', 
+            progress: Math.round(progress),
+            message: `Generating audio (${result.status})...`
           })}\n\n`));
-          controller.close();
-          return;
+
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
         }
 
-        const ttsResult = await ttsResponse.json();
-        console.log('RunPod TTS response:', ttsResult);
-
-        if (!ttsResult.file) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: 'No audio file returned from RunPod' 
-          })}\n\n`));
-          controller.close();
-          return;
+        if (!output) {
+          throw new Error('TTS job timed out after 2 minutes');
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          progress: 50,
-          message: 'Downloading generated audio...'
+          progress: 75,
+          message: 'Processing audio...'
         })}\n\n`));
 
-        // Download the audio from RunPod
-        const audioFileName = ttsResult.file;
-        const runpodAudioUrl = `${RUNPOD_BASE_URL}/outputs/${audioFileName}`;
-        console.log(`Downloading audio from: ${runpodAudioUrl}`);
-
-        const audioResponse = await fetch(runpodAudioUrl);
-        if (!audioResponse.ok) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: `Failed to download audio: ${audioResponse.status}` 
-          })}\n\n`));
-          controller.close();
-          return;
-        }
-
-        const audioArrayBuffer = await audioResponse.arrayBuffer();
-        const audioData = new Uint8Array(audioArrayBuffer);
-        console.log(`Audio downloaded: ${audioData.length} bytes`);
+        // Decode base64 audio
+        const audioData = base64ToUint8Array(output.audio_base64);
+        console.log(`Audio decoded: ${audioData.length} bytes, sample rate: ${output.sample_rate}`);
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
@@ -156,7 +255,8 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
 
         console.log('Audio uploaded:', urlData.publicUrl);
 
-        const durationSeconds = Math.round(audioData.length / 88200);
+        // Estimate duration based on sample rate (mono 16-bit WAV)
+        const durationSeconds = Math.round(audioData.length / (output.sample_rate * 2));
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'complete', 
@@ -182,41 +282,18 @@ async function generateWithStreaming(text: string, projectId: string, wordCount:
   });
 }
 
-async function generateWithoutStreaming(text: string, projectId: string, wordCount: number): Promise<Response> {
-  // Call RunPod TTS API
-  console.log(`Calling RunPod TTS: ${RUNPOD_BASE_URL}/tts`);
-  const ttsResponse = await fetch(`${RUNPOD_BASE_URL}/tts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
+async function generateWithoutStreaming(text: string, projectId: string, wordCount: number, apiKey: string): Promise<Response> {
+  // Start the TTS job
+  const jobId = await startTTSJob(text, apiKey);
+  console.log(`TTS job started with ID: ${jobId}`);
 
-  if (!ttsResponse.ok) {
-    const errorText = await ttsResponse.text();
-    console.error('RunPod TTS error:', ttsResponse.status, errorText);
-    throw new Error(`RunPod TTS failed: ${ttsResponse.status}`);
-  }
+  // Poll for completion
+  const output = await pollJobStatus(jobId, apiKey);
+  console.log(`TTS job completed, sample rate: ${output.sample_rate}`);
 
-  const ttsResult = await ttsResponse.json();
-  console.log('RunPod TTS response:', ttsResult);
-
-  if (!ttsResult.file) {
-    throw new Error('No audio file returned from RunPod');
-  }
-
-  // Download the audio from RunPod
-  const audioFileName = ttsResult.file;
-  const runpodAudioUrl = `${RUNPOD_BASE_URL}/outputs/${audioFileName}`;
-  console.log(`Downloading audio from: ${runpodAudioUrl}`);
-
-  const audioResponse = await fetch(runpodAudioUrl);
-  if (!audioResponse.ok) {
-    throw new Error(`Failed to download audio: ${audioResponse.status}`);
-  }
-
-  const audioArrayBuffer = await audioResponse.arrayBuffer();
-  const audioData = new Uint8Array(audioArrayBuffer);
-  console.log(`Audio downloaded: ${audioData.length} bytes`);
+  // Decode base64 audio
+  const audioData = base64ToUint8Array(output.audio_base64);
+  console.log(`Audio decoded: ${audioData.length} bytes`);
 
   // Upload to Supabase Storage
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -241,7 +318,8 @@ async function generateWithoutStreaming(text: string, projectId: string, wordCou
     .from('generated-assets')
     .getPublicUrl(fileName);
 
-  const durationSeconds = Math.round(audioData.length / 88200);
+  // Estimate duration based on sample rate (mono 16-bit WAV)
+  const durationSeconds = Math.round(audioData.length / (output.sample_rate * 2));
 
   return new Response(
     JSON.stringify({
