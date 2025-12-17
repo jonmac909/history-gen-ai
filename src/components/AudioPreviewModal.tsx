@@ -53,14 +53,28 @@ export function AudioPreviewModal({
   }, [isOpen, audioUrl, duration]);
 
   const togglePlay = () => {
-    if (!audioRef.current) return;
+    if (!audioRef.current) {
+      console.error('Audio ref not available');
+      return;
+    }
     
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      console.log('Attempting to play audio from:', audioUrl);
+      audioRef.current.play()
+        .then(() => {
+          console.log('Audio playback started');
+          setIsPlaying(true);
+        })
+        .catch((err) => {
+          console.error('Failed to play audio:', err);
+          // Try loading and playing again
+          audioRef.current?.load();
+          audioRef.current?.play().catch(e => console.error('Retry failed:', e));
+        });
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleTimeUpdate = () => {
