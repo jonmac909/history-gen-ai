@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RUNPOD_ENDPOINT_ID = "n4m8bw1kmrdd9e";
+const RUNPOD_ENDPOINT_ID = "vo9tpom0pvi9zk";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
 // Hard validation - reject early if text is unsafe
@@ -139,10 +139,9 @@ serve(async (req) => {
       }
     }
 
-    // IMPORTANT: Voice cloning requires non-streaming to avoid timeouts
-    // Chatterbox needs the full request to complete before returning
+    // Voice cloning - now supports streaming!
     if (voiceSampleUrl) {
-      console.log('Voice cloning detected - using non-streaming mode');
+      console.log('Voice cloning detected');
       console.log(`Voice sample URL: ${voiceSampleUrl}`);
 
       // Pre-validate voice sample accessibility
@@ -165,7 +164,14 @@ serve(async (req) => {
         );
       }
 
-      return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      // Use streaming for voice cloning if requested
+      if (stream) {
+        console.log('Using streaming mode with voice cloning');
+        return generateVoiceCloningWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      } else {
+        console.log('Using non-streaming mode with voice cloning');
+        return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      }
     }
 
     if (stream) {
@@ -633,6 +639,139 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
   });
 }
 
+// Streaming mode with voice cloning support
+async function generateVoiceCloningWithStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string): Promise<Response> {
+  const encoder = new TextEncoder();
+
+  const responseStream = new ReadableStream({
+    async start(controller) {
+      let streamClosed = false;
+
+      // Safe enqueue helper
+      const safeEnqueue = (data: string) => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(encoder.encode(data));
+          return true;
+        } catch {
+          streamClosed = true;
+          console.log('Stream closed by client');
+          return false;
+        }
+      };
+
+      try {
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
+          progress: 5,
+          message: `Starting voice cloning (${chunks.length} chunks)...`
+        })}\n\n`);
+
+        // Download voice sample
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
+          progress: 10,
+          message: 'Downloading voice sample...'
+        })}\n\n`);
+
+        const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
+        console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
+
+        const audioChunks: Uint8Array[] = [];
+
+        // Process each chunk with progress updates
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkText = chunks[i];
+          const chunkProgress = 15 + Math.round((i / chunks.length) * 60);
+
+          console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+
+          safeEnqueue(`data: ${JSON.stringify({
+            type: 'progress',
+            progress: chunkProgress,
+            message: `Generating audio chunk ${i + 1}/${chunks.length} with voice cloning...`
+          })}\n\n`);
+
+          // Start TTS job with voice cloning
+          const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+          console.log(`TTS job started with ID: ${jobId}`);
+
+          // Poll for completion
+          const output = await pollJobStatus(jobId, apiKey);
+
+          // Decode audio
+          const audioData = base64ToUint8Array(output.audio_base64);
+          audioChunks.push(audioData);
+          console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+        }
+
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
+          progress: 80,
+          message: 'Concatenating audio chunks...'
+        })}\n\n`);
+
+        // Concatenate audio
+        const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+        const durationRounded = Math.round(durationSeconds);
+
+        console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
+          progress: 90,
+          message: 'Uploading audio...'
+        })}\n\n`);
+
+        // Upload to Supabase Storage
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('generated-assets')
+          .upload(fileName, finalAudio, {
+            contentType: 'audio/wav',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw new Error('Failed to upload audio');
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('generated-assets')
+          .getPublicUrl(fileName);
+
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'complete',
+          success: true,
+          audioUrl: urlData.publicUrl,
+          duration: durationRounded,
+          wordCount,
+          size: finalAudio.length
+        })}\n\n`);
+
+      } catch (error) {
+        console.error('Audio error:', error);
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'error',
+          error: error instanceof Error ? error.message : 'Audio generation failed'
+        })}\n\n`);
+      } finally {
+        try { controller.close(); } catch { /* already closed */ }
+      }
+    }
+  });
+
+  return new Response(responseStream, {
+    headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+  });
+}
+
 // Non-streaming mode - used for voice cloning (required) or when stream=false
 async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
@@ -649,7 +788,7 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
   for (let i = 0; i < chunks.length; i++) {
     const chunkText = chunks[i];
     console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
-    
+
     // Start the TTS job with reference_audio_base64 for cloning
     const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
     console.log(`TTS job started with ID: ${jobId}`);

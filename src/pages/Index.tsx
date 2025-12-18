@@ -14,7 +14,7 @@ import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
-  generateAudio,
+  generateAudioStreaming,
   generateImagesStreaming,
   generateCaptions,
   saveScriptToStorage,
@@ -232,13 +232,20 @@ const Index = () => {
     try {
       await saveScriptToStorage(script, projectId);
 
-      updateStep("audio", "active", "Generating...");
-      const audioRes = await generateAudio(script, settings.voiceSampleUrl!, projectId);
-      
+      updateStep("audio", "active", "0%");
+      const audioRes = await generateAudioStreaming(
+        script,
+        settings.voiceSampleUrl!,
+        projectId,
+        (progress) => {
+          updateStep("audio", "active", `${progress}%`);
+        }
+      );
+
       if (!audioRes.success || !audioRes.audioUrl) {
         throw new Error(audioRes.error || "Failed to generate audio");
       }
-      
+
       updateStep("audio", "completed", "100%");
       
       setPendingAudioUrl(audioRes.audioUrl);
