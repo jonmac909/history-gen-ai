@@ -89,6 +89,8 @@ const Index = () => {
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [imagePrompts, setImagePrompts] = useState<string[]>([]);
+  const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -320,19 +322,20 @@ const Index = () => {
 
     try {
       updateStep("images", "active", `0/${settings.imageCount}`);
-      
-      const imagePrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
-      console.log(`Generating ${imagePrompts.length} images...`);
-      
+
+      const generatedPrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
+      console.log(`Generating ${generatedPrompts.length} images...`);
+      setImagePrompts(generatedPrompts);
+
       const imageResult = await generateImagesStreaming(
-        imagePrompts, 
+        generatedPrompts,
         settings.quality,
         "16:9",
         (completed, total) => {
           updateStep("images", "active", `${completed}/${total}`);
         }
       );
-      
+
       if (!imageResult.success) {
         console.error('Image generation failed:', imageResult.error);
         toast({
@@ -356,6 +359,57 @@ const Index = () => {
         variant: "destructive",
       });
       setViewState("create");
+    }
+  };
+
+  // Regenerate a single image
+  const handleRegenerateImage = async (index: number) => {
+    if (!imagePrompts[index]) {
+      toast({
+        title: "Error",
+        description: "Image prompt not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRegeneratingImageIndex(index);
+
+    try {
+      console.log(`Regenerating image ${index + 1}...`);
+
+      const imageResult = await generateImagesStreaming(
+        [imagePrompts[index]], // Regenerate just this one prompt
+        settings.quality,
+        "16:9",
+        () => {} // No progress callback needed for single image
+      );
+
+      if (!imageResult.success || !imageResult.images || imageResult.images.length === 0) {
+        throw new Error(imageResult.error || 'Failed to regenerate image');
+      }
+
+      // Update the image at the specific index
+      setPendingImages(prev => {
+        const newImages = [...prev];
+        newImages[index] = imageResult.images![0];
+        return newImages;
+      });
+
+      toast({
+        title: "Image Regenerated",
+        description: `Image ${index + 1} has been regenerated successfully.`,
+      });
+
+    } catch (error) {
+      console.error("Image regeneration error:", error);
+      toast({
+        title: "Regeneration Failed",
+        description: error instanceof Error ? error.message : "Failed to regenerate image",
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingImageIndex(undefined);
     }
   };
 
@@ -568,6 +622,8 @@ const Index = () => {
         images={pendingImages}
         onConfirm={handleImagesConfirm}
         onCancel={handleCancel}
+        onRegenerate={handleRegenerateImage}
+        regeneratingIndex={regeneratingImageIndex}
       />
     </div>
   );
