@@ -1,10 +1,23 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Helper function to safely get Supabase credentials
+function getSupabaseCredentials(): { url: string; key: string } | null {
+  const url = Deno.env.get('SUPABASE_URL');
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!url || !key) {
+    console.error('Supabase credentials not configured');
+    return null;
+  }
+
+  return { url, key };
+}
 
 // WAV file constants
 const SAMPLE_RATE = 44100;
@@ -228,9 +241,15 @@ serve(async (req) => {
     });
 
     // Upload to Supabase Storage
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const credentials = getSupabaseCredentials();
+    if (!credentials) {
+      return new Response(
+        JSON.stringify({ error: 'Supabase credentials not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabase = createClient(credentials.url, credentials.key);
 
     const fileName = `${projectId || crypto.randomUUID()}/captions.srt`;
     

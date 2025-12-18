@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,14 +6,138 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RUNPOD_ENDPOINT_ID = "vo9tpom0pvi9zk";
+const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ENDPOINT_ID') || "ei3k5udz4c68b8";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
+
+// TTS Configuration Constants
+const MAX_TTS_CHUNK_LENGTH = 180; // Chatterbox TTS has a 180 character limit per chunk
+const MIN_TEXT_LENGTH = 5; // Minimum characters required for valid TTS input
+const MAX_TEXT_LENGTH = 400; // Maximum total text length to process
+const MAX_VOICE_SAMPLE_SIZE = 10 * 1024 * 1024; // 10MB max voice sample file size
+const TTS_JOB_POLL_INTERVAL = 2000; // Poll RunPod job status every 2 seconds
+const TTS_JOB_TIMEOUT = 120000; // 2 minute timeout for TTS job completion
+const RETRY_MAX_ATTEMPTS = 3; // Maximum retry attempts for failed API calls
+const RETRY_INITIAL_DELAY = 1000; // Initial retry delay in milliseconds
+const RETRY_MAX_DELAY = 10000; // Maximum retry delay in milliseconds
+
+// Simple logger that can be disabled in production
+const DEBUG = Deno.env.get('DEBUG') === 'true';
+const logger = {
+  debug: (...args: unknown[]) => DEBUG && console.log('[DEBUG]', ...args),
+  info: (...args: unknown[]) => console.log('[INFO]', ...args),
+  error: (...args: unknown[]) => console.error('[ERROR]', ...args),
+  warn: (...args: unknown[]) => console.warn('[WARN]', ...args),
+};
+
+// Helper function to safely get Supabase credentials
+function getSupabaseCredentials(): { url: string; key: string } | null {
+  const url = Deno.env.get('SUPABASE_URL');
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!url || !key) {
+    console.error('Supabase credentials not configured');
+    return null;
+  }
+
+  return { url, key };
+}
+
+// SSRF protection: Validate that URL is from trusted Supabase storage
+function validateVoiceSampleUrl(url: string): { valid: boolean; error?: string } {
+  try {
+    const parsedUrl = new URL(url);
+
+    // Only allow HTTPS
+    if (parsedUrl.protocol !== 'https:') {
+      return { valid: false, error: 'Voice sample URL must use HTTPS protocol' };
+    }
+
+    // Only allow Supabase storage domains
+    const allowedDomains = [
+      'supabase.co',
+      'supabase.com',
+    ];
+
+    const hostname = parsedUrl.hostname;
+    const isAllowed = allowedDomains.some(domain =>
+      hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+
+    if (!isAllowed) {
+      return { valid: false, error: 'Voice sample URL must be from Supabase storage' };
+    }
+
+    // Block localhost and private IP ranges
+    if (hostname === 'localhost' || hostname === '127.0.0.1' ||
+        hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
+        hostname.startsWith('172.16.') || hostname === '[::1]') {
+      return { valid: false, error: 'Voice sample URL cannot point to internal resources' };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: 'Invalid voice sample URL format' };
+  }
+}
+
+// Standardized error response helpers
+function createErrorResponse(error: string, status: number = 500): Response {
+  return new Response(
+    JSON.stringify({ error }),
+    { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+function createSuccessResponse(data: unknown): Response {
+  return new Response(
+    JSON.stringify(data),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+// Retry logic for external API calls with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = RETRY_MAX_ATTEMPTS,
+  initialDelayMs: number = RETRY_INITIAL_DELAY,
+  maxDelayMs: number = RETRY_MAX_DELAY
+): Promise<T> {
+  let lastError: Error;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+
+      // Don't retry on certain errors (4xx client errors except 429)
+      if (error instanceof Response) {
+        const status = error.status;
+        if (status >= 400 && status < 500 && status !== 429) {
+          throw error; // Don't retry client errors (except rate limits)
+        }
+      }
+
+      if (attempt < maxRetries) {
+        // Exponential backoff with jitter
+        const delay = Math.min(
+          initialDelayMs * Math.pow(2, attempt) + Math.random() * 1000,
+          maxDelayMs
+        );
+        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError!;
+}
 
 // Hard validation - reject early if text is unsafe
 function validateTTSInput(text: string): boolean {
   if (!text) return false;
-  if (text.trim().length < 5) return false;
-  if (text.length > 400) return false;
+  if (text.trim().length < MIN_TEXT_LENGTH) return false;
+  if (text.length > MAX_TEXT_LENGTH) return false;
 
   // reject emojis & non-basic unicode
   if (/[^\x00-\x7F]/.test(text)) return false;
@@ -37,7 +161,7 @@ function normalizeText(text: string): string {
 }
 
 // Split text into safe chunks at sentence boundaries
-function splitIntoChunks(text: string, maxLength: number = 180): string[] {
+function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH): string[] {
   const sentences = text.split(/(?<=[.!?])\s+/);
   const chunks: string[] = [];
   let currentChunk = "";
@@ -94,18 +218,12 @@ serve(async (req) => {
     const { script, voiceSampleUrl, projectId, stream } = await req.json();
     
     if (!script) {
-      return new Response(
-        JSON.stringify({ error: 'Script is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return createErrorResponse('Script is required', 400);
     }
 
     const RUNPOD_API_KEY = Deno.env.get('RUNPOD_API_KEY');
     if (!RUNPOD_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'RUNPOD_API_KEY not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return createErrorResponse('RUNPOD_API_KEY not configured');
     }
 
     // Clean script - remove image prompts and markdown
@@ -121,55 +239,46 @@ serve(async (req) => {
     cleanScript = normalizeText(cleanScript);
     
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    console.log(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
-    console.log(`Normalized text length: ${cleanScript.length} chars`);
+    logger.info(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
+    logger.debug(`Normalized text length: ${cleanScript.length} chars`);
 
     // Split into chunks for safety (Chatterbox crashes on long text)
     const chunks = splitIntoChunks(cleanScript, 180);
-    console.log(`Split into ${chunks.length} chunks`);
+    logger.debug(`Split into ${chunks.length} chunks`);
 
     // Validate each chunk
     for (let i = 0; i < chunks.length; i++) {
       if (!validateTTSInput(chunks[i])) {
-        console.error(`Chunk ${i + 1} failed validation: "${chunks[i].substring(0, 50)}..."`);
-        return new Response(
-          JSON.stringify({ error: `Text chunk ${i + 1} contains invalid characters or is too short/long` }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        logger.error(`Chunk ${i + 1} failed validation: "${chunks[i].substring(0, 50)}..."`);
+        return createErrorResponse(`Text chunk ${i + 1} contains invalid characters or is too short/long`, 400);
       }
     }
 
     // Voice cloning - now supports streaming!
     if (voiceSampleUrl) {
-      console.log('Voice cloning detected');
-      console.log(`Voice sample URL: ${voiceSampleUrl}`);
+      logger.info('Voice cloning enabled');
+      logger.debug(`Voice sample URL: ${voiceSampleUrl}`);
 
       // Pre-validate voice sample accessibility
       try {
-        console.log('Pre-validating voice sample accessibility...');
+        logger.debug('Pre-validating voice sample accessibility...');
         const testResponse = await fetch(voiceSampleUrl, { method: 'HEAD' });
         if (!testResponse.ok) {
-          console.error(`Voice sample not accessible: HTTP ${testResponse.status}`);
-          return new Response(
-            JSON.stringify({ error: `Voice sample not accessible (HTTP ${testResponse.status}). Please re-upload your voice sample.` }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+          logger.error(`Voice sample not accessible: HTTP ${testResponse.status}`);
+          return createErrorResponse(`Voice sample not accessible (HTTP ${testResponse.status}). Please re-upload your voice sample.`, 400);
         }
-        console.log('Voice sample is accessible');
+        logger.debug('Voice sample is accessible');
       } catch (error) {
-        console.error('Failed to access voice sample:', error);
-        return new Response(
-          JSON.stringify({ error: `Cannot access voice sample: ${error instanceof Error ? error.message : 'Network error'}` }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        logger.error('Failed to access voice sample:', error);
+        return createErrorResponse(`Cannot access voice sample: ${error instanceof Error ? error.message : 'Network error'}`, 400);
       }
 
       // Use streaming for voice cloning if requested
       if (stream) {
-        console.log('Using streaming mode with voice cloning');
+        logger.info('Using streaming mode with voice cloning');
         return generateVoiceCloningWithStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
       } else {
-        console.log('Using non-streaming mode with voice cloning');
+        logger.info('Using non-streaming mode with voice cloning');
         return generateWithoutStreaming(chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
       }
     }
@@ -181,19 +290,22 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('Error generating audio:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Audio generation failed'
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    logger.error('Error generating audio:', error);
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Audio generation failed'
     );
   }
 });
 
 // Download voice sample and convert to base64
 async function downloadVoiceSample(url: string): Promise<string> {
-  console.log(`Downloading voice sample from: ${url}`);
+  logger.debug(`Downloading voice sample from: ${url}`);
+
+  // SSRF protection: Validate URL before fetching
+  const validation = validateVoiceSampleUrl(url);
+  if (!validation.valid) {
+    throw new Error(`Security error: ${validation.error}`);
+  }
 
   try {
     const response = await fetch(url);
@@ -203,10 +315,10 @@ async function downloadVoiceSample(url: string): Promise<string> {
 
     // Check content type
     const contentType = response.headers.get('content-type');
-    console.log(`Voice sample content-type: ${contentType}`);
+    logger.debug(`Voice sample content-type: ${contentType}`);
 
     if (contentType && !contentType.includes('audio')) {
-      console.warn(`Unexpected content-type: ${contentType}. Expected audio/* type.`);
+      logger.warn(`Unexpected content-type: ${contentType}. Expected audio/* type.`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -216,8 +328,8 @@ async function downloadVoiceSample(url: string): Promise<string> {
       throw new Error('Voice sample is empty (0 bytes)');
     }
 
-    if (bytes.length > 10 * 1024 * 1024) {
-      throw new Error(`Voice sample too large: ${bytes.length} bytes (max 10MB)`);
+    if (bytes.length > MAX_VOICE_SAMPLE_SIZE) {
+      throw new Error(`Voice sample too large: ${bytes.length} bytes (max ${MAX_VOICE_SAMPLE_SIZE / 1024 / 1024}MB)`);
     }
 
     // Verify it looks like a valid audio file (check for common audio file signatures)
@@ -579,16 +691,24 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
 
         console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
-        safeEnqueue(`data: ${JSON.stringify({ 
-          type: 'progress', 
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
           progress: 85,
           message: 'Uploading audio file...'
         })}\n\n`);
 
         // Upload to Supabase Storage
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
+        const credentials = getSupabaseCredentials();
+        if (!credentials) {
+          safeEnqueue(`data: ${JSON.stringify({
+            type: 'error',
+            error: 'Supabase credentials not configured'
+          })}\n\n`);
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
+
+        const supabase = createClient(credentials.url, credentials.key);
 
         const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
 
@@ -724,9 +844,17 @@ async function generateVoiceCloningWithStreaming(chunks: string[], projectId: st
         })}\n\n`);
 
         // Upload to Supabase Storage
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
+        const credentials = getSupabaseCredentials();
+        if (!credentials) {
+          safeEnqueue(`data: ${JSON.stringify({
+            type: 'error',
+            error: 'Supabase credentials not configured'
+          })}\n\n`);
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
+
+        const supabase = createClient(credentials.url, credentials.key);
 
         const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
 
@@ -809,9 +937,15 @@ async function generateWithoutStreaming(chunks: string[], projectId: string, wor
   console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
   // Upload to Supabase Storage
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const credentials = getSupabaseCredentials();
+  if (!credentials) {
+    return new Response(
+      JSON.stringify({ error: 'Supabase credentials not configured' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const supabase = createClient(credentials.url, credentials.key);
 
   const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
   
