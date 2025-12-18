@@ -9,6 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Authentication:** Claude account (switched from API key)
 
 ### Recent Activity
+- **2025-12-18:** Fixed RunPod handler bugs and hardened error handling
+  - Switched to ChatterboxTurboTTS (was using wrong class name)
+  - Added voice sample validation (5+ seconds required)
+  - Added GPU OOM handling with graceful errors
+  - Added comprehensive input validation and error messages
+  - Updated to new RunPod endpoint: `eitsgz3gndkh3s`
 - Switched from API key authentication to Claude account authentication for Claude Code
 - Confirmed using latest Claude Sonnet 4.5 model
 - Project state: Stable, all systems operational
@@ -16,8 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Current Project State
 - **Frontend:** Deployed on Netlify, auto-deploys from main branch
 - **Backend:** Supabase Edge Functions operational
-- **TTS System:** RunPod endpoint `ei3k5udz4c68b8` with voice cloning capability
-- **Voice Cloning:** Functional with Chatterbox TTS (base64 encoding for voice samples)
+- **TTS System:** RunPod endpoint `eitsgz3gndkh3s` with ChatterboxTurboTTS voice cloning
+- **Voice Cloning:** Functional with hardened error handling (requires 5+ second voice samples)
 
 ### Next Steps
 - Monitor voice cloning quality and performance
@@ -146,7 +152,7 @@ VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
 - `OPENAI_API_KEY`: For image generation
 - Other API keys as needed
 
-**Current RunPod Endpoint:** `ei3k5udz4c68b8` (configurable via `RUNPOD_ENDPOINT_ID` env var or fallback in `generate-audio/index.ts` line 9)
+**Current RunPod Endpoint:** `eitsgz3gndkh3s` (configurable via `RUNPOD_ENDPOINT_ID` env var or fallback in `generate-audio/index.ts` line 9)
 
 ## Deployment
 
