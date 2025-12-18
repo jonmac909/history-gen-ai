@@ -177,40 +177,68 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
     try {
       const zip = new JSZip();
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
-      // Fetch each image one at a time via proxy to avoid memory limits
+
+      // Fetch each image directly from the public URL
       for (let i = 0; i < imageAssets.length; i++) {
         const asset = imageAssets[i];
         if (!asset.url) continue;
 
         const timing = imageTimings.find(t => t.asset.id === asset.id);
-        const filename = timing 
+        const filename = timing
           ? `image_${formatTimestamp(timing.startTime, timing.endTime)}.png`
           : `image_${i + 1}.png`;
 
-        // Use fetch directly to get binary response from edge function
-        const response = await fetch(`${supabaseUrl}/functions/v1/download-images-zip`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseKey}`,
-            'apikey': supabaseKey,
-          },
-          body: JSON.stringify({ imageUrl: asset.url })
-        });
+        console.log(`Fetching image ${i + 1}/${imageAssets.length}: ${filename}`);
 
-        if (!response.ok) {
-          console.error(`Failed to fetch image ${i + 1}:`, response.status);
+        try {
+          // Fetch image directly from public URL
+          const response = await fetch(asset.url);
+
+          if (!response.ok) {
+            console.error(`Failed to fetch image ${i + 1}:`, response.status);
+            continue;
+          }
+
+          const blob = await response.blob();
+          console.log(`Image ${i + 1} blob size:`, blob.size);
+
+          if (blob.size === 0) {
+            console.error(`Image ${i + 1} blob is empty`);
+            continue;
+          }
+
+          zip.file(filename, blob);
+        } catch (error) {
+          console.error(`Error fetching image ${i + 1}:`, error);
           continue;
         }
+      }
 
-        const blob = await response.blob();
-        zip.file(filename, blob);
+      // Check if any files were added to the ZIP
+      const fileCount = Object.keys(zip.files).length;
+      console.log(`ZIP contains ${fileCount} files`);
+
+      if (fileCount === 0) {
+        toast({
+          title: "No Images Downloaded",
+          description: "Failed to fetch images. Please try again.",
+          variant: "destructive",
+        });
+        return;
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
+      console.log(`Generated ZIP blob size: ${zipBlob.size} bytes`);
+
+      if (zipBlob.size === 0) {
+        toast({
+          title: "ZIP Creation Failed",
+          description: "Generated ZIP file is empty. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const url = window.URL.createObjectURL(zipBlob);
       const link = document.createElement('a');
       link.href = url;
@@ -222,7 +250,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
       toast({
         title: "Download Complete",
-        description: `images.zip downloaded successfully.`,
+        description: `images.zip downloaded with ${fileCount} images.`,
       });
     } catch (error) {
       console.error('Zip creation failed:', error);
