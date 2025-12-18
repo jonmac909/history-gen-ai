@@ -177,8 +177,10 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
 
     try {
       const zip = new JSZip();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-      // Fetch each image directly from the public URL
+      // Fetch each image via edge function proxy to bypass CORS restrictions
       for (let i = 0; i < imageAssets.length; i++) {
         const asset = imageAssets[i];
         if (!asset.url) continue;
@@ -191,11 +193,21 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
         console.log(`Fetching image ${i + 1}/${imageAssets.length}: ${filename}`);
 
         try {
-          // Fetch image directly from public URL
-          const response = await fetch(asset.url);
+          // Use edge function as proxy to bypass CORS restrictions
+          const response = await fetch(`${supabaseUrl}/functions/v1/download-images-zip`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseKey}`,
+              'apikey': supabaseKey,
+            },
+            body: JSON.stringify({ imageUrl: asset.url })
+          });
 
           if (!response.ok) {
             console.error(`Failed to fetch image ${i + 1}:`, response.status);
+            const errorText = await response.text();
+            console.error(`Error details:`, errorText);
             continue;
           }
 
