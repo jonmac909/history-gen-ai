@@ -40,6 +40,23 @@ export interface ImageGenerationResult {
   error?: string;
 }
 
+export interface ImagePromptWithTiming {
+  index: number;
+  startTime: string;
+  endTime: string;
+  startSeconds: number;
+  endSeconds: number;
+  prompt: string;
+  sceneDescription: string;
+}
+
+export interface ImagePromptsResult {
+  success: boolean;
+  prompts?: ImagePromptWithTiming[];
+  totalDuration?: number;
+  error?: string;
+}
+
 export interface GeneratedAssets {
   projectId: string;
   script: string;
@@ -344,13 +361,34 @@ export async function generateAudioStreaming(
   return result;
 }
 
+export async function generateImagePrompts(
+  script: string,
+  srtContent: string,
+  imageCount: number,
+  stylePrompt: string
+): Promise<ImagePromptsResult> {
+  console.log('Generating AI-powered image prompts from script and captions...');
+
+  const { data, error } = await supabase.functions.invoke('generate-image-prompts', {
+    body: { script, srtContent, imageCount, stylePrompt }
+  });
+
+  if (error) {
+    console.error('Image prompt generation error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
 export async function generateImages(
-  prompts: string[], 
-  quality: string, 
-  aspectRatio: string = "16:9"
+  prompts: string[] | ImagePromptWithTiming[],
+  quality: string,
+  aspectRatio: string = "16:9",
+  projectId?: string
 ): Promise<ImageGenerationResult> {
   const { data, error } = await supabase.functions.invoke('generate-images', {
-    body: { prompts, quality, aspectRatio }
+    body: { prompts, quality, aspectRatio, projectId }
   });
 
   if (error) {
@@ -362,14 +400,15 @@ export async function generateImages(
 }
 
 export async function generateImagesStreaming(
-  prompts: string[], 
-  quality: string, 
+  prompts: string[] | ImagePromptWithTiming[],
+  quality: string,
   aspectRatio: string = "16:9",
-  onProgress: (completed: number, total: number, message: string) => void
+  onProgress: (completed: number, total: number, message: string) => void,
+  projectId?: string
 ): Promise<ImageGenerationResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  
+
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-images`, {
     method: 'POST',
     headers: {
@@ -377,7 +416,7 @@ export async function generateImagesStreaming(
       'Authorization': `Bearer ${supabaseKey}`,
       'apikey': supabaseKey,
     },
-    body: JSON.stringify({ prompts, quality, aspectRatio, stream: true })
+    body: JSON.stringify({ prompts, quality, aspectRatio, stream: true, projectId })
   });
 
   if (!response.ok) {

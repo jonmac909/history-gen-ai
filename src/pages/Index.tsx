@@ -16,45 +16,15 @@ import {
   rewriteScriptStreaming,
   generateAudioStreaming,
   generateImagesStreaming,
+  generateImagePrompts,
   generateCaptions,
   saveScriptToStorage,
+  type ImagePromptWithTiming,
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-images" | "results";
-
-// Generate image prompts evenly spaced throughout the script
-function generateImagePrompts(script: string, imageCount: number, stylePrompt: string): string[] {
-  const sentences = script.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 20);
-  
-  if (sentences.length === 0) {
-    const paragraphs = script.split(/\n\n+/).filter(p => p.trim().length > 50);
-    const sectionSize = Math.max(1, Math.ceil(paragraphs.length / imageCount));
-    
-    const prompts: string[] = [];
-    for (let i = 0; i < imageCount && i * sectionSize < paragraphs.length; i++) {
-      const startIdx = i * sectionSize;
-      const section = paragraphs.slice(startIdx, startIdx + sectionSize).join(' ');
-      const context = section.substring(0, 300).replace(/\n/g, ' ');
-      prompts.push(`${stylePrompt}. Scene depicting: ${context}`);
-    }
-    return prompts;
-  }
-  
-  const spacing = sentences.length / imageCount;
-  const prompts: string[] = [];
-  
-  for (let i = 0; i < imageCount; i++) {
-    const sentenceIndex = Math.floor(i * spacing);
-    const contextStart = Math.max(0, sentenceIndex - 1);
-    const contextEnd = Math.min(sentences.length, sentenceIndex + 2);
-    const context = sentences.slice(contextStart, contextEnd).join(' ').substring(0, 300);
-    prompts.push(`${stylePrompt}. Scene depicting: ${context}`);
-  }
-  
-  return prompts;
-}
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -89,7 +59,7 @@ const Index = () => {
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
-  const [imagePrompts, setImagePrompts] = useState<string[]>([]);
+  const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
 
   const toggleInputMode = () => {
@@ -314,6 +284,7 @@ const Index = () => {
     setPendingSrtContent(srt);
 
     const steps: GenerationStep[] = [
+      { id: "prompts", label: "Generating Scene Descriptions", status: "pending" },
       { id: "images", label: "Generating Images", status: "pending" },
     ];
 
@@ -321,19 +292,35 @@ const Index = () => {
     setViewState("processing");
 
     try {
-      updateStep("images", "active", `0/${settings.imageCount}`);
+      // Step 1: Use AI to generate proper visual scene descriptions from script + SRT timing
+      updateStep("prompts", "active", "Analyzing script...");
 
-      const generatedPrompts = generateImagePrompts(confirmedScript, settings.imageCount, imageStylePrompt);
-      console.log(`Generating ${generatedPrompts.length} images...`);
-      setImagePrompts(generatedPrompts);
+      const promptResult = await generateImagePrompts(
+        confirmedScript,
+        srt,
+        settings.imageCount,
+        imageStylePrompt
+      );
+
+      if (!promptResult.success || !promptResult.prompts) {
+        throw new Error(promptResult.error || "Failed to generate image prompts");
+      }
+
+      console.log(`Generated ${promptResult.prompts.length} AI-powered image prompts with timing`);
+      setImagePrompts(promptResult.prompts);
+      updateStep("prompts", "completed", `${promptResult.prompts.length} scenes`);
+
+      // Step 2: Generate images from the AI prompts with timing-based filenames
+      updateStep("images", "active", `0/${promptResult.prompts.length}`);
 
       const imageResult = await generateImagesStreaming(
-        generatedPrompts,
+        promptResult.prompts,
         settings.quality,
         "16:9",
         (completed, total) => {
           updateStep("images", "active", `${completed}/${total}`);
-        }
+        },
+        projectId
       );
 
       if (!imageResult.success) {
@@ -379,10 +366,11 @@ const Index = () => {
       console.log(`Regenerating image ${index + 1}...`);
 
       const imageResult = await generateImagesStreaming(
-        [imagePrompts[index]], // Regenerate just this one prompt
+        [imagePrompts[index]], // Regenerate just this one prompt with timing
         settings.quality,
         "16:9",
-        () => {} // No progress callback needed for single image
+        () => {}, // No progress callback needed for single image
+        projectId
       );
 
       if (!imageResult.success || !imageResult.images || imageResult.images.length === 0) {
@@ -477,6 +465,7 @@ const Index = () => {
     setPendingSrtContent("");
     setPendingSrtUrl("");
     setPendingImages([]);
+    setImagePrompts([]);
   };
 
   const handleCancel = () => {

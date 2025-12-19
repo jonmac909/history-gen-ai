@@ -10,11 +10,19 @@ const corsHeaders = {
 const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ZIMAGE_ENDPOINT_ID');
 const RUNPOD_API_URL = RUNPOD_ENDPOINT_ID ? `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}` : null;
 
+interface ImagePromptWithTiming {
+  index: number;
+  prompt: string;
+  startTime: string;  // HH-MM-SS format
+  endTime: string;    // HH-MM-SS format
+}
+
 interface GenerateImagesRequest {
-  prompts: string[];
+  prompts: string[] | ImagePromptWithTiming[];
   quality: string;
   aspectRatio?: string;
   stream?: boolean;
+  projectId?: string;
 }
 
 interface JobStatus {
@@ -23,6 +31,7 @@ interface JobStatus {
   state: 'pending' | 'success' | 'fail';
   imageUrl?: string;
   error?: string;
+  filename?: string;  // Timing-based filename
 }
 
 /**
@@ -69,7 +78,9 @@ async function checkJobStatus(
   apiKey: string,
   jobId: string,
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  customFilename?: string,
+  projectId?: string
 ): Promise<{ state: string; imageUrl?: string; error?: string }> {
   try {
     const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
@@ -100,9 +111,9 @@ async function checkJobStatus(
         return { state: 'fail', error: 'No image data returned' };
       }
 
-      // Upload to Supabase storage
+      // Upload to Supabase storage with timing-based filename
       try {
-        const imageUrl = await uploadImageToStorage(imageBase64, jobId, supabaseUrl, supabaseKey);
+        const imageUrl = await uploadImageToStorage(imageBase64, supabaseUrl, supabaseKey, customFilename, projectId);
         console.log(`Job ${jobId} completed, uploaded to: ${imageUrl}`);
         return { state: 'success', imageUrl };
       } catch (uploadErr) {
@@ -127,13 +138,14 @@ async function checkJobStatus(
 }
 
 /**
- * Upload base64 image to Supabase storage
+ * Upload base64 image to Supabase storage with optional custom filename
  */
 async function uploadImageToStorage(
   base64: string,
-  jobId: string,
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  customFilename?: string,
+  projectId?: string
 ): Promise<string> {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -144,8 +156,15 @@ async function uploadImageToStorage(
     bytes[i] = binaryString.charCodeAt(i);
   }
 
-  // Generate unique filename
-  const fileName = `generated-images/${crypto.randomUUID()}.png`;
+  // Generate filename - use custom timing-based name if provided
+  let fileName: string;
+  if (customFilename && projectId) {
+    fileName = `${projectId}/images/${customFilename}`;
+  } else if (customFilename) {
+    fileName = `generated-images/${customFilename}`;
+  } else {
+    fileName = `generated-images/${crypto.randomUUID()}.png`;
+  }
 
   console.log(`Uploading image to storage: ${fileName} (${bytes.length} bytes)`);
 
@@ -195,14 +214,26 @@ serve(async (req) => {
       throw new Error('Supabase configuration missing');
     }
 
-    const { prompts, quality, aspectRatio = "16:9", stream = false }: GenerateImagesRequest = await req.json();
+    const { prompts, quality, aspectRatio = "16:9", stream = false, projectId }: GenerateImagesRequest = await req.json();
 
     if (!prompts || prompts.length === 0) {
       throw new Error('No prompts provided');
     }
 
-    const total = prompts.length;
-    console.log(`Generating ${total} images with Z-Image (quality: ${quality}, aspect: ${aspectRatio}, stream: ${stream})`);
+    // Normalize prompts - support both simple strings and objects with timing
+    const isTimedPrompts = typeof prompts[0] === 'object' && 'prompt' in prompts[0];
+    const normalizedPrompts: { prompt: string; filename: string }[] = isTimedPrompts
+      ? (prompts as ImagePromptWithTiming[]).map(p => ({
+          prompt: p.prompt,
+          filename: `image_${String(p.index).padStart(3, '0')}_${p.startTime}_to_${p.endTime}.png`
+        }))
+      : (prompts as string[]).map((prompt, i) => ({
+          prompt,
+          filename: `image_${String(i + 1).padStart(3, '0')}.png`
+        }));
+
+    const total = normalizedPrompts.length;
+    console.log(`Generating ${total} images with Z-Image (quality: ${quality}, aspect: ${aspectRatio}, stream: ${stream}, timed: ${isTimedPrompts})`);
 
     if (stream) {
       const encoder = new TextEncoder();
@@ -218,24 +249,25 @@ serve(async (req) => {
               message: `Creating ${total} image jobs...`
             })}\n\n`));
 
-            const createPromises = prompts.map(async (prompt, index) => {
+            const createPromises = normalizedPrompts.map(async (item, index) => {
               try {
-                const jobId = await startImageJob(runpodApiKey, prompt, quality, aspectRatio);
-                return { index, jobId, error: null };
+                const jobId = await startImageJob(runpodApiKey, item.prompt, quality, aspectRatio);
+                return { index, jobId, filename: item.filename, error: null };
               } catch (err) {
                 console.error(`Failed to create job for prompt ${index}:`, err);
-                return { index, jobId: null, error: err instanceof Error ? err.message : 'Failed to create job' };
+                return { index, jobId: null, filename: item.filename, error: err instanceof Error ? err.message : 'Failed to create job' };
               }
             });
 
             const createResults = await Promise.all(createPromises);
 
-            // Build job list
+            // Build job list with filenames
             const jobs: JobStatus[] = createResults.map(r => ({
               jobId: r.jobId || '',
               index: r.index,
               state: r.jobId ? 'pending' : 'fail',
-              error: r.error || undefined
+              error: r.error || undefined,
+              filename: r.filename
             }));
 
             console.log(`Created ${jobs.filter(j => j.state === 'pending').length}/${total} jobs`);
@@ -253,9 +285,9 @@ serve(async (req) => {
                 break;
               }
 
-              // Check all pending jobs in parallel
+              // Check all pending jobs in parallel - pass filename for storage
               const checkPromises = pendingJobs.map(async (job) => {
-                const status = await checkJobStatus(runpodApiKey, job.jobId, supabaseUrl, supabaseKey);
+                const status = await checkJobStatus(runpodApiKey, job.jobId, supabaseUrl, supabaseKey, job.filename, projectId);
                 return { job, status };
               });
 
@@ -265,7 +297,7 @@ serve(async (req) => {
                 if (status.state === 'success') {
                   job.state = 'success';
                   job.imageUrl = status.imageUrl;
-                  console.log(`Job ${job.index + 1}/${total} completed: ${status.imageUrl}`);
+                  console.log(`Job ${job.index + 1}/${total} completed (${job.filename}): ${status.imageUrl}`);
                 } else if (status.state === 'fail') {
                   job.state = 'fail';
                   job.error = status.error;
@@ -288,8 +320,9 @@ serve(async (req) => {
               }
             }
 
-            // Collect all successful images
-            const allImages = jobs
+            // Collect all successful images (sorted by index to maintain order)
+            const sortedJobs = [...jobs].sort((a, b) => a.index - b.index);
+            const allImages = sortedJobs
               .filter(j => j.state === 'success' && j.imageUrl)
               .map(j => j.imageUrl!);
 
@@ -325,17 +358,20 @@ serve(async (req) => {
         }
       });
     } else {
-      // Non-streaming mode - parallel creation and polling
-      const jobIds = await Promise.all(
-        prompts.map(prompt => startImageJob(runpodApiKey, prompt, quality, aspectRatio))
+      // Non-streaming mode - parallel creation and polling with timing support
+      const jobData = await Promise.all(
+        normalizedPrompts.map(async (item, index) => {
+          const jobId = await startImageJob(runpodApiKey, item.prompt, quality, aspectRatio);
+          return { jobId, filename: item.filename, index };
+        })
       );
 
       // Poll all in parallel
       const maxPollingTime = 5 * 60 * 1000;
       const pollInterval = 3000;
       const startTime = Date.now();
-      const results: (string | null)[] = new Array(jobIds.length).fill(null);
-      const completed: boolean[] = new Array(jobIds.length).fill(false);
+      const results: (string | null)[] = new Array(jobData.length).fill(null);
+      const completed: boolean[] = new Array(jobData.length).fill(false);
 
       while (Date.now() - startTime < maxPollingTime) {
         const pendingIndices = completed.map((c, i) => c ? -1 : i).filter(i => i >= 0);
@@ -344,7 +380,8 @@ serve(async (req) => {
 
         const checks = await Promise.all(
           pendingIndices.map(async (i) => {
-            const status = await checkJobStatus(runpodApiKey, jobIds[i], supabaseUrl, supabaseKey);
+            const { jobId, filename } = jobData[i];
+            const status = await checkJobStatus(runpodApiKey, jobId, supabaseUrl, supabaseKey, filename, projectId);
             return { index: i, status };
           })
         );
