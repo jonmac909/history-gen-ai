@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.get-elevenlabs-voices]
 verify_jwt = false
+
+[functions.download-images-zip]
+verify_jwt = false

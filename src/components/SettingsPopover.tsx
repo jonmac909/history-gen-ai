@@ -145,13 +145,13 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Image Model - Fixed to Seedream 4.5 */}
+          {/* Image Model - Fixed to Z-Image */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
               Select Your Image Model:
             </label>
             <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
-              Seedream 4.5
+              Z-IMAGE
             </div>
           </div>
 

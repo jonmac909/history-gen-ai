@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const KIE_API_URL = "https://api.kie.ai/api/v1/jobs";
+// RunPod Z-Image endpoint configuration
+const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ZIMAGE_ENDPOINT_ID');
+const RUNPOD_API_URL = RUNPOD_ENDPOINT_ID ? `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}` : null;
 
 interface GenerateImagesRequest {
   prompts: string[];
@@ -14,52 +17,62 @@ interface GenerateImagesRequest {
   stream?: boolean;
 }
 
-interface TaskStatus {
-  taskId: string;
+interface JobStatus {
+  jobId: string;
   index: number;
   state: 'pending' | 'success' | 'fail';
-  urls: string[];
+  imageUrl?: string;
   error?: string;
 }
 
-async function createImageTask(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
-  console.log(`Creating task for: ${prompt.substring(0, 50)}...`);
-  
-  const response = await fetch(`${KIE_API_URL}/createTask`, {
+/**
+ * Start a RunPod job for Z-Image generation
+ */
+async function startImageJob(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
+  console.log(`Starting RunPod job for: ${prompt.substring(0, 50)}...`);
+
+  const response = await fetch(`${RUNPOD_API_URL}/run`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "seedream/4.5-text-to-image",
       input: {
         prompt,
-        aspect_ratio: aspectRatio,
         quality: quality === "high" ? "high" : "basic",
+        aspectRatio,
       },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Kie AI createTask error:', response.status, errorText);
-    throw new Error(`Failed to create image task: ${response.status}`);
+    console.error('RunPod job creation error:', response.status, errorText);
+    throw new Error(`Failed to start image job: ${response.status}`);
   }
 
   const data = await response.json();
-  
-  if (data.code !== 200) {
-    throw new Error(data.message || 'Failed to create task');
+
+  if (!data.id) {
+    throw new Error('RunPod job creation failed: no job ID returned');
   }
-  
-  console.log(`Task created: ${data.data.taskId}`);
-  return data.data.taskId;
+
+  console.log(`RunPod job created: ${data.id}`);
+  return data.id;
 }
 
-async function checkTaskStatus(apiKey: string, taskId: string): Promise<{ state: string; urls: string[]; error?: string }> {
+/**
+ * Check RunPod job status and upload image if complete
+ */
+async function checkJobStatus(
+  apiKey: string,
+  jobId: string,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<{ state: string; imageUrl?: string; error?: string }> {
   try {
-    const response = await fetch(`${KIE_API_URL}/recordInfo?taskId=${taskId}`, {
+    const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -67,26 +80,98 @@ async function checkTaskStatus(apiKey: string, taskId: string): Promise<{ state:
     });
 
     if (!response.ok) {
-      return { state: 'pending', urls: [] };
+      console.error(`RunPod status check failed: ${response.status}`);
+      return { state: 'pending' };
     }
 
     const data = await response.json();
-    
-    if (data.code === 200 && data.data?.state === 'success') {
-      try {
-        const resultJson = JSON.parse(data.data.resultJson);
-        return { state: 'success', urls: resultJson.resultUrls || [] };
-      } catch {
-        return { state: 'success', urls: [] };
+
+    // RunPod statuses: IN_QUEUE, IN_PROGRESS, COMPLETED, FAILED, CANCELLED, TIMED_OUT
+    if (data.status === 'COMPLETED' && data.output) {
+      // Z-Image handler returns: { image_base64, width, height, steps }
+      if (data.output.error) {
+        console.error(`Job ${jobId} completed with error:`, data.output.error);
+        return { state: 'fail', error: data.output.error };
       }
-    } else if (data.data?.state === 'fail') {
-      return { state: 'fail', urls: [], error: data.data.failMsg || 'Failed' };
+
+      const imageBase64 = data.output.image_base64;
+      if (!imageBase64) {
+        console.error(`Job ${jobId} completed but no image_base64 in output`);
+        return { state: 'fail', error: 'No image data returned' };
+      }
+
+      // Upload to Supabase storage
+      try {
+        const imageUrl = await uploadImageToStorage(imageBase64, jobId, supabaseUrl, supabaseKey);
+        console.log(`Job ${jobId} completed, uploaded to: ${imageUrl}`);
+        return { state: 'success', imageUrl };
+      } catch (uploadErr) {
+        console.error(`Failed to upload image for job ${jobId}:`, uploadErr);
+        return { state: 'fail', error: `Upload failed: ${uploadErr instanceof Error ? uploadErr.message : 'Unknown error'}` };
+      }
+    } else if (data.status === 'FAILED') {
+      const errorMsg = data.error || data.output?.error || 'Job failed';
+      console.error(`Job ${jobId} failed:`, errorMsg);
+      return { state: 'fail', error: errorMsg };
+    } else if (data.status === 'CANCELLED' || data.status === 'TIMED_OUT') {
+      console.error(`Job ${jobId} ${data.status.toLowerCase()}`);
+      return { state: 'fail', error: `Job ${data.status.toLowerCase()}` };
     }
-    
-    return { state: data.data?.state || 'pending', urls: [] };
-  } catch {
-    return { state: 'pending', urls: [] };
+
+    // IN_QUEUE or IN_PROGRESS
+    return { state: 'pending' };
+  } catch (err) {
+    console.error(`Error checking job ${jobId}:`, err);
+    return { state: 'pending' };
   }
+}
+
+/**
+ * Upload base64 image to Supabase storage
+ */
+async function uploadImageToStorage(
+  base64: string,
+  jobId: string,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<string> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Decode base64 to Uint8Array
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Generate unique filename
+  const fileName = `generated-images/${crypto.randomUUID()}.png`;
+
+  console.log(`Uploading image to storage: ${fileName} (${bytes.length} bytes)`);
+
+  // Upload to storage bucket
+  const { error } = await supabase.storage
+    .from('generated-assets')
+    .upload(fileName, bytes, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+
+  if (error) {
+    console.error('Supabase storage upload error:', error);
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
+
+  // Get public URL
+  const { data } = supabase.storage
+    .from('generated-assets')
+    .getPublicUrl(fileName);
+
+  if (!data?.publicUrl) {
+    throw new Error('Failed to get public URL for uploaded image');
+  }
+
+  return data.publicUrl;
 }
 
 serve(async (req) => {
@@ -95,9 +180,19 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('KIE_API_KEY');
-    if (!apiKey) {
-      throw new Error('KIE_API_KEY not configured');
+    const runpodApiKey = Deno.env.get('RUNPOD_API_KEY');
+    if (!runpodApiKey) {
+      throw new Error('RUNPOD_API_KEY not configured');
+    }
+
+    if (!RUNPOD_ENDPOINT_ID || !RUNPOD_API_URL) {
+      throw new Error('RUNPOD_ZIMAGE_ENDPOINT_ID not configured - set this secret in Supabase dashboard');
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase configuration missing');
     }
 
     const { prompts, quality, aspectRatio = "16:9", stream = false }: GenerateImagesRequest = await req.json();
@@ -107,116 +202,112 @@ serve(async (req) => {
     }
 
     const total = prompts.length;
-    console.log(`Generating ${total} images with quality: ${quality}, stream: ${stream}`);
+    console.log(`Generating ${total} images with Z-Image (quality: ${quality}, aspect: ${aspectRatio}, stream: ${stream})`);
 
     if (stream) {
       const encoder = new TextEncoder();
-      
+
       const responseStream = new ReadableStream({
         async start(controller) {
           try {
-            // Step 1: Create ALL tasks in parallel upfront
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'progress', 
-              completed: 0, 
+            // Step 1: Create ALL RunPod jobs in parallel upfront
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'progress',
+              completed: 0,
               total,
-              message: `Creating ${total} image tasks...`
+              message: `Creating ${total} image jobs...`
             })}\n\n`));
 
-            const taskIds: string[] = [];
             const createPromises = prompts.map(async (prompt, index) => {
               try {
-                const taskId = await createImageTask(apiKey, prompt, quality, aspectRatio);
-                return { index, taskId, error: null };
+                const jobId = await startImageJob(runpodApiKey, prompt, quality, aspectRatio);
+                return { index, jobId, error: null };
               } catch (err) {
-                return { index, taskId: null, error: err instanceof Error ? err.message : 'Failed' };
+                console.error(`Failed to create job for prompt ${index}:`, err);
+                return { index, jobId: null, error: err instanceof Error ? err.message : 'Failed to create job' };
               }
             });
 
             const createResults = await Promise.all(createPromises);
-            
-            // Build task list
-            const tasks: TaskStatus[] = createResults.map(r => ({
-              taskId: r.taskId || '',
+
+            // Build job list
+            const jobs: JobStatus[] = createResults.map(r => ({
+              jobId: r.jobId || '',
               index: r.index,
-              state: r.taskId ? 'pending' : 'fail',
-              urls: [],
+              state: r.jobId ? 'pending' : 'fail',
               error: r.error || undefined
             }));
 
-            console.log(`Created ${tasks.filter(t => t.state === 'pending').length}/${total} tasks`);
+            console.log(`Created ${jobs.filter(j => j.state === 'pending').length}/${total} jobs`);
 
-            // Step 2: Poll ALL tasks in parallel until all complete
+            // Step 2: Poll ALL jobs in parallel until all complete
             const maxPollingTime = 5 * 60 * 1000; // 5 minutes max
             const pollInterval = 3000; // 3 seconds
             const startTime = Date.now();
-            
+
             while (Date.now() - startTime < maxPollingTime) {
-              const pendingTasks = tasks.filter(t => t.state === 'pending');
-              
-              if (pendingTasks.length === 0) {
-                console.log('All tasks completed');
+              const pendingJobs = jobs.filter(j => j.state === 'pending');
+
+              if (pendingJobs.length === 0) {
+                console.log('All jobs completed');
                 break;
               }
 
-              // Check all pending tasks in parallel
-              const checkPromises = pendingTasks.map(async (task) => {
-                const status = await checkTaskStatus(apiKey, task.taskId);
-                return { task, status };
+              // Check all pending jobs in parallel
+              const checkPromises = pendingJobs.map(async (job) => {
+                const status = await checkJobStatus(runpodApiKey, job.jobId, supabaseUrl, supabaseKey);
+                return { job, status };
               });
 
               const results = await Promise.all(checkPromises);
-              
-              let progressChanged = false;
-              for (const { task, status } of results) {
+
+              for (const { job, status } of results) {
                 if (status.state === 'success') {
-                  task.state = 'success';
-                  task.urls = status.urls;
-                  progressChanged = true;
-                  console.log(`Task ${task.index + 1}/${total} completed`);
+                  job.state = 'success';
+                  job.imageUrl = status.imageUrl;
+                  console.log(`Job ${job.index + 1}/${total} completed: ${status.imageUrl}`);
                 } else if (status.state === 'fail') {
-                  task.state = 'fail';
-                  task.error = status.error;
-                  progressChanged = true;
-                  console.log(`Task ${task.index + 1}/${total} failed: ${status.error}`);
+                  job.state = 'fail';
+                  job.error = status.error;
+                  console.log(`Job ${job.index + 1}/${total} failed: ${status.error}`);
                 }
               }
 
-              const completed = tasks.filter(t => t.state !== 'pending').length;
-              
+              const completed = jobs.filter(j => j.state !== 'pending').length;
+
               // Send progress update
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'progress', 
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                type: 'progress',
                 completed,
                 total,
                 message: `${completed}/${total} images done`
               })}\n\n`));
 
-              if (pendingTasks.length > 0) {
+              if (pendingJobs.length > 0) {
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
               }
             }
 
             // Collect all successful images
-            const allImages = tasks
-              .filter(t => t.state === 'success')
-              .flatMap(t => t.urls);
+            const allImages = jobs
+              .filter(j => j.state === 'success' && j.imageUrl)
+              .map(j => j.imageUrl!);
 
-            const failedCount = tasks.filter(t => t.state === 'fail').length;
-            
-            console.log(`Complete: ${allImages.length} images, ${failedCount} failed`);
+            const failedCount = jobs.filter(j => j.state === 'fail').length;
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            console.log(`Z-Image generation complete: ${allImages.length} images, ${failedCount} failed`);
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'complete',
               success: true,
               images: allImages,
               total: allImages.length,
               failed: failedCount
             })}\n\n`));
-            
+
           } catch (err) {
             console.error('Stream error:', err);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'error',
               error: err instanceof Error ? err.message : 'Generation failed'
             })}\n\n`));
@@ -227,33 +318,33 @@ serve(async (req) => {
       });
 
       return new Response(responseStream, {
-        headers: { 
-          ...corsHeaders, 
+        headers: {
+          ...corsHeaders,
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache'
         }
       });
     } else {
       // Non-streaming mode - parallel creation and polling
-      const taskIds = await Promise.all(
-        prompts.map(prompt => createImageTask(apiKey, prompt, quality, aspectRatio))
+      const jobIds = await Promise.all(
+        prompts.map(prompt => startImageJob(runpodApiKey, prompt, quality, aspectRatio))
       );
 
       // Poll all in parallel
       const maxPollingTime = 5 * 60 * 1000;
       const pollInterval = 3000;
       const startTime = Date.now();
-      const results: string[][] = new Array(taskIds.length).fill([]);
-      const completed: boolean[] = new Array(taskIds.length).fill(false);
+      const results: (string | null)[] = new Array(jobIds.length).fill(null);
+      const completed: boolean[] = new Array(jobIds.length).fill(false);
 
       while (Date.now() - startTime < maxPollingTime) {
         const pendingIndices = completed.map((c, i) => c ? -1 : i).filter(i => i >= 0);
-        
+
         if (pendingIndices.length === 0) break;
 
         const checks = await Promise.all(
           pendingIndices.map(async (i) => {
-            const status = await checkTaskStatus(apiKey, taskIds[i]);
+            const status = await checkJobStatus(runpodApiKey, jobIds[i], supabaseUrl, supabaseKey);
             return { index: i, status };
           })
         );
@@ -261,7 +352,7 @@ serve(async (req) => {
         for (const { index, status } of checks) {
           if (status.state === 'success' || status.state === 'fail') {
             completed[index] = true;
-            results[index] = status.urls;
+            results[index] = status.imageUrl || null;
           }
         }
 
@@ -270,8 +361,8 @@ serve(async (req) => {
         }
       }
 
-      const imageUrls = results.flat();
-      console.log(`Generated ${imageUrls.length} images`);
+      const imageUrls = results.filter((url): url is string => url !== null);
+      console.log(`Z-Image generated ${imageUrls.length} images`);
 
       return new Response(
         JSON.stringify({ success: true, images: imageUrls }),
