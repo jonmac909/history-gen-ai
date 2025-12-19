@@ -72,7 +72,7 @@ const Index = () => {
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
-  const [imageStylePrompt, setImageStylePrompt] = useState("Epic Rembrandt-style traditional oil painting with visible brushstrokes, painterly technique, impressionistic rather than photorealistic, dramatic chiaroscuro lighting with deep shadows and warm golden highlights, museum-quality classical aesthetic, rich warm amber, deep teal, and crimson red tones, smooth glowing light sources, and a loose, expressive oil-painting texture throughout.");
+  const [imageStylePrompt, setImageStylePrompt] = useState("Classical oil painting style, inspired by the Dutch Golden Age, with Rembrandt-style lighting and romantic historical painting sensibility. Painterly brushwork, rich traditional palette featuring warm golds and deep Prussian blues. Chiaroscuro lighting with softly emerging forms from shadow, intimate and atmospheric mood, timeless old-world elegance, contemplative and lyrical tone.");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
