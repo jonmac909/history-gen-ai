@@ -213,13 +213,13 @@ async function generateSingleChunk(
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
-  // Use Railway API for script generation (no timeout limits!)
-  const railwayUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  // Use Render API for script generation (no timeout limits!)
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  if (!railwayUrl) {
+  if (!renderUrl) {
     return {
       success: false,
-      error: 'Railway API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
     };
   }
 
@@ -230,16 +230,16 @@ async function generateSingleChunk(
 
   // Log timeout configuration for development debugging
   if (import.meta.env.DEV) {
-    console.log('[Script Generation] Using Railway API (unlimited timeout):', {
+    console.log('[Script Generation] Using Render API (unlimited timeout):', {
       targetWordCount: wordCount,
-      railwayUrl,
+      renderUrl,
       overallTimeoutMs: timeoutMs,
       overallTimeoutMinutes: (timeoutMs / 60000).toFixed(1),
     });
   }
 
   try {
-    const response = await fetch(`${railwayUrl}/rewrite-script`, {
+    const response = await fetch(`${renderUrl}/rewrite-script`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
