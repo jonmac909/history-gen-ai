@@ -122,7 +122,7 @@ export async function rewriteScriptStreaming(
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
-  const CHUNK_SIZE = 3000; // Generate in 3k word chunks to stay well within Supabase 5-min timeout
+  const CHUNK_SIZE = 30000; // Railway has no timeout limit - can generate full scripts in one call!
 
   // For large scripts, split into chunks to avoid Supabase 5-minute timeout
   if (wordCount > CHUNK_SIZE) {
@@ -213,8 +213,15 @@ async function generateSingleChunk(
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  // Use Railway API for script generation (no timeout limits!)
+  const railwayUrl = import.meta.env.VITE_RAILWAY_API_URL;
+
+  if (!railwayUrl) {
+    return {
+      success: false,
+      error: 'Railway API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
+  }
 
   // Add timeout and retry logic for long-running generations
   const controller = new AbortController();
@@ -223,22 +230,19 @@ async function generateSingleChunk(
 
   // Log timeout configuration for development debugging
   if (import.meta.env.DEV) {
-    console.log('[Script Generation] Timeout configuration:', {
+    console.log('[Script Generation] Using Railway API (unlimited timeout):', {
       targetWordCount: wordCount,
+      railwayUrl,
       overallTimeoutMs: timeoutMs,
       overallTimeoutMinutes: (timeoutMs / 60000).toFixed(1),
-      eventTimeoutMs: 600000,
-      eventTimeoutMinutes: 10,
     });
   }
-  
+
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/rewrite-script`, {
+    const response = await fetch(`${railwayUrl}/rewrite-script`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-        'apikey': supabaseKey,
       },
       body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true }),
       signal: controller.signal,
