@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
@@ -27,6 +28,7 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
+  name?: string;
 }
 
 
@@ -36,18 +38,26 @@ interface SettingsPopoverProps {
   scriptTemplates: ScriptTemplate[];
 }
 
-const scriptTemplateOptions = [
-  { value: "template-a", label: "Template A" },
-  { value: "template-b", label: "Template B" },
-  { value: "template-c", label: "Template C" },
-];
+const defaultTemplateLabels: Record<string, string> = {
+  "template-a": "Template A",
+  "template-b": "Template B",
+  "template-c": "Template C",
+  "template-d": "Template D",
+  "template-e": "Template E",
+};
 
-export function SettingsPopover({ 
-  settings, 
-  onSettingsChange, 
+export function SettingsPopover({
+  settings,
+  onSettingsChange,
   scriptTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Build template options from scriptTemplates with custom names or defaults
+  const scriptTemplateOptions = scriptTemplates.map((template) => ({
+    value: template.id,
+    label: template.name || defaultTemplateLabels[template.id] || template.id,
+  }));
 
   const updateSetting = <K extends keyof GenerationSettings>(
     key: K,
@@ -82,6 +92,20 @@ export function SettingsPopover({
         </DialogHeader>
 
         <div className="space-y-5 py-4 px-1">
+          {/* Settings Profile Name */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Profile Name:
+            </label>
+            <Input
+              type="text"
+              value={settings.name || ""}
+              onChange={(e) => updateSetting("name", e.target.value)}
+              placeholder="Enter profile name..."
+              className="w-full"
+            />
+          </div>
+
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -172,12 +196,23 @@ export function SettingsPopover({
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
-                <span className="w-6 text-center font-medium">{settings.imageCount}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settings.imageCount}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    if (!isNaN(value) && value >= 1) {
+                      updateSetting("imageCount", value);
+                    }
+                  }}
+                  className="w-16 h-8 text-center font-medium px-2"
+                />
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.min(30, settings.imageCount + 1))}
+                  onClick={() => updateSetting("imageCount", settings.imageCount + 1)}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
