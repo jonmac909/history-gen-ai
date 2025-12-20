@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export interface ScriptTemplate {
   id: string;
   template: string;
+  name?: string;
 }
 
 export interface CartesiaVoice {
