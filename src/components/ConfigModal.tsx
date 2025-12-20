@@ -88,7 +88,7 @@ export function ConfigModal({
           {/* Script Templates Tab */}
           <TabsContent value="templates" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
-              Configure your 3 script templates for Claude to use when generating scripts.
+              Configure your 5 script templates for Claude to use when generating scripts.
             </p>
             
             {templates.map((template, index) => (
