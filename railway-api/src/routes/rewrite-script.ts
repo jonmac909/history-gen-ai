@@ -57,7 +57,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const selectedModel = model || 'claude-sonnet-4-5';
-    console.log(`Rewriting script with ${selectedModel}...`);
+    console.log(`🚀 [v2.0-HONEST-PROGRESS] Rewriting script with ${selectedModel}...`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
