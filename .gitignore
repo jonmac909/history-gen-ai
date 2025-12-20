@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (SECURITY: contains API keys)
+.env
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -27,3 +32,6 @@ dist-ssr
 .auto-claude/
 .worktrees/
 .auto-claude-status
+
+# Nested git repository (separate project)
+history-gen-ai/
