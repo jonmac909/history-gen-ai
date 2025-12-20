@@ -127,18 +127,20 @@ CRITICAL RULES:
             ];
           }
 
-          // Start keepalive pings while waiting for Claude
-          let pingCount = 0;
+          // Send initial progress for this iteration (actual progress only)
+          const currentProgress = Math.round((currentWordCount / targetWords) * 100);
+          sendEvent({
+            type: 'progress',
+            progress: currentProgress,
+            wordCount: currentWordCount,
+            message: `Writing iteration ${iteration}/${Math.ceil(targetWords / wordsPerIteration)}... ${currentWordCount}/${targetWords} words`
+          });
+
+          // Keepalive pings (no fake progress - just prevent timeout)
           const keepaliveInterval = setInterval(() => {
-            pingCount++;
-            const estimatedNewWords = Math.min(pingCount * 200, wordsPerIteration);
-            const estimatedTotal = currentWordCount + estimatedNewWords;
-            const simulatedProgress = Math.min(Math.round((estimatedTotal / targetWords) * 100), 95);
             sendEvent({
-              type: 'progress',
-              progress: simulatedProgress,
-              wordCount: estimatedTotal,
-              message: `Writing... ~${estimatedTotal}/${targetWords} words`
+              type: 'keepalive',
+              message: `Generating...`
             });
           }, KEEPALIVE_INTERVAL_MS);
 
@@ -182,6 +184,15 @@ CRITICAL RULES:
 
           currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
           console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason})`);
+
+          // Send REAL progress update after iteration completes
+          const realProgress = Math.min(Math.round((currentWordCount / targetWords) * 100), 99);
+          sendEvent({
+            type: 'progress',
+            progress: realProgress,
+            wordCount: currentWordCount,
+            message: `Completed iteration ${iteration} - ${currentWordCount}/${targetWords} words`
+          });
 
           // If the model stopped naturally and we're close enough, break
           if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.85) {
