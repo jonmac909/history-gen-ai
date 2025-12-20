@@ -27,6 +27,7 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
+  name?: string;
 }
 
 
