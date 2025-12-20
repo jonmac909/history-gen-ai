@@ -494,7 +494,7 @@ const Index = () => {
               <Scroll className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold text-foreground">
-              HistoryGen AI
+              HistoryVidGen
             </span>
           </div>
           
