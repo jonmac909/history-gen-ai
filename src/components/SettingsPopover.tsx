@@ -178,7 +178,7 @@ export function SettingsPopover({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.min(30, settings.imageCount + 1))}
+                  onClick={() => updateSetting("imageCount", settings.imageCount + 1)}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
