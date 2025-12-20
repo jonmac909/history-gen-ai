@@ -93,7 +93,8 @@ CRITICAL RULES:
         let iteration = 0;
 
         // Optimize for Railway: larger chunks since no timeout limit
-        const wordsPerIteration = Math.min(5000, Math.ceil(targetWords / 2));
+        // 16k tokens ≈ 12k words, so request up to 12k words per iteration
+        const wordsPerIteration = Math.min(12000, Math.ceil(targetWords / 2));
 
         while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
           iteration++;
@@ -220,7 +221,8 @@ CRITICAL RULES:
       let currentWordCount = 0;
       let iteration = 0;
 
-      const wordsPerIteration = Math.min(5000, Math.ceil(targetWords / 2));
+      // 16k tokens ≈ 12k words, so request up to 12k words per iteration
+      const wordsPerIteration = Math.min(12000, Math.ceil(targetWords / 2));
 
       while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
         iteration++;
