@@ -21,15 +21,14 @@ import { calculateDynamicTimeout } from './api';
 describe('calculateDynamicTimeout', () => {
   // Constants from the implementation
   const MIN_TIMEOUT_MS = 120000; // 2 minutes
-  const MAX_TIMEOUT_MS = 600000; // 10 minutes
+  const MAX_TIMEOUT_MS = 1800000; // 30 minutes
   const WORDS_PER_MINUTE = 150;
 
   describe('timeout calculation formula', () => {
     it('should calculate timeout based on word count at 150 words/minute', () => {
       // 3000 words / 150 words per minute = 20 minutes = 1,200,000ms
-      // But capped at MAX_TIMEOUT_MS (600000ms)
-      // Actually: ceil(3000/150) = 20 minutes * 60000 = 1,200,000ms, capped to 600000
-      expect(calculateDynamicTimeout(3000)).toBe(MAX_TIMEOUT_MS);
+      // ceil(3000/150) = 20 minutes * 60000 = 1,200,000ms (under MAX_TIMEOUT_MS)
+      expect(calculateDynamicTimeout(3000)).toBe(1200000);
     });
 
     it('should return 2 minutes (minimum) for very short scripts', () => {
@@ -50,33 +49,26 @@ describe('calculateDynamicTimeout', () => {
   });
 
   describe('word count scenarios from spec', () => {
-    it('should return ~240s (4 minutes) for 6k words', () => {
-      // 6000 words / 150 = 40 minutes, capped at 10 minutes = 600000ms
-      // Wait, spec says 240s. Let me recalculate:
-      // ceil(6000/150) = 40 minutes * 60000 = 2,400,000ms, capped to 600000ms
-      // Actually 240s = 4 minutes. But the formula gives ceil(6000/150) = 40 min.
-      // This is capped at 600s (10 min). So spec expectation might be different.
-      // Let me check: the spec says "6k words → ~240s timeout"
-      // But the implementation caps at 600000ms (600s = 10 min)
-      // So for 6k words, we expect the MAX (600000ms)
+    it('should return max (1800s / 30 minutes) for 6k words', () => {
+      // ceil(6000/150) = 40 minutes * 60000 = 2,400,000ms, capped to 1800000ms (30 min)
       const result = calculateDynamicTimeout(6000);
       expect(result).toBe(MAX_TIMEOUT_MS);
     });
 
-    it('should return 600s (max) for 12k words', () => {
-      // 12000 words / 150 = 80 minutes, capped at 10 minutes
+    it('should return max (1800s / 30 minutes) for 12k words', () => {
+      // 12000 words / 150 = 80 minutes, capped at 30 minutes
       const result = calculateDynamicTimeout(12000);
       expect(result).toBe(MAX_TIMEOUT_MS);
     });
 
-    it('should return 600s (max/capped) for 16k words', () => {
-      // 16000 words / 150 = 107 minutes, capped at 10 minutes
+    it('should return max (1800s / 30 minutes) for 16k words', () => {
+      // 16000 words / 150 = 107 minutes, capped at 30 minutes
       const result = calculateDynamicTimeout(16000);
       expect(result).toBe(MAX_TIMEOUT_MS);
     });
 
-    it('should return 600s (max/capped) for 20k words', () => {
-      // 20000 words / 150 = 134 minutes, capped at 10 minutes
+    it('should return max (1800s / 30 minutes) for 20k words', () => {
+      // 20000 words / 150 = 134 minutes, capped at 30 minutes
       const result = calculateDynamicTimeout(20000);
       expect(result).toBe(MAX_TIMEOUT_MS);
     });
@@ -107,18 +99,19 @@ describe('calculateDynamicTimeout', () => {
       expect(calculateDynamicTimeout(600)).toBe(240000);
     });
 
-    it('should hit max timeout at ~1500 words (10 minutes)', () => {
-      // ceil(1500/150) = 10 minutes = 600000ms = MAX_TIMEOUT_MS
-      expect(calculateDynamicTimeout(1500)).toBe(MAX_TIMEOUT_MS);
-      // Anything above 1500 should also be max
-      expect(calculateDynamicTimeout(1501)).toBe(MAX_TIMEOUT_MS);
+    it('should hit max timeout at ~4500 words (30 minutes)', () => {
+      // ceil(4500/150) = 30 minutes = 1800000ms = MAX_TIMEOUT_MS
+      expect(calculateDynamicTimeout(4500)).toBe(MAX_TIMEOUT_MS);
+      // Anything above 4500 should also be max
+      expect(calculateDynamicTimeout(4501)).toBe(MAX_TIMEOUT_MS);
     });
 
-    it('should return max timeout for word counts that calculate to > 10 minutes', () => {
-      // ceil(1501/150) = 11 minutes, but capped at 10
-      expect(calculateDynamicTimeout(1501)).toBe(MAX_TIMEOUT_MS);
-      expect(calculateDynamicTimeout(5000)).toBe(MAX_TIMEOUT_MS);
+    it('should return max timeout for word counts that calculate to > 30 minutes', () => {
+      // ceil(4501/150) = 31 minutes, but capped at 30
+      expect(calculateDynamicTimeout(4501)).toBe(MAX_TIMEOUT_MS);
       expect(calculateDynamicTimeout(10000)).toBe(MAX_TIMEOUT_MS);
+      expect(calculateDynamicTimeout(20000)).toBe(MAX_TIMEOUT_MS);
+      expect(calculateDynamicTimeout(30000)).toBe(MAX_TIMEOUT_MS);
     });
   });
 
@@ -144,7 +137,7 @@ describe('calculateDynamicTimeout', () => {
     it('should provide adequate timeout for typical short video (500 words)', () => {
       // 500 words is typical for 3-4 minute video narration
       const timeout = calculateDynamicTimeout(500);
-      // Should be at least 2 minutes, at most 10 minutes
+      // Should be at least 2 minutes, at most 30 minutes
       expect(timeout).toBeGreaterThanOrEqual(MIN_TIMEOUT_MS);
       expect(timeout).toBeLessThanOrEqual(MAX_TIMEOUT_MS);
       // Specifically: ceil(500/150) = 4 minutes = 240000ms
@@ -154,14 +147,14 @@ describe('calculateDynamicTimeout', () => {
     it('should provide adequate timeout for medium video (2000 words)', () => {
       // 2000 words is typical for 10-15 minute video narration
       const timeout = calculateDynamicTimeout(2000);
-      // ceil(2000/150) = 14 minutes, capped at 10 = 600000ms
-      expect(timeout).toBe(MAX_TIMEOUT_MS);
+      // ceil(2000/150) = 14 minutes = 840000ms (under MAX of 1800000ms)
+      expect(timeout).toBe(840000);
     });
 
     it('should provide adequate timeout for long-form content (8000 words)', () => {
       // 8000 words is typical for documentary or educational deep-dive
       const timeout = calculateDynamicTimeout(8000);
-      // Should be capped at max
+      // ceil(8000/150) = 54 minutes, capped at 30 = 1800000ms
       expect(timeout).toBe(MAX_TIMEOUT_MS);
     });
   });
