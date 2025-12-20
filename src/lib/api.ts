@@ -115,8 +115,99 @@ export async function rewriteScript(transcript: string, template: string, title:
 }
 
 export async function rewriteScriptStreaming(
-  transcript: string, 
-  template: string, 
+  transcript: string,
+  template: string,
+  title: string,
+  aiModel: string,
+  wordCount: number,
+  onProgress: (progress: number, wordCount: number) => void
+): Promise<ScriptResult> {
+  const CHUNK_SIZE = 5000; // Generate in 5k word chunks to avoid Supabase timeout
+
+  // For large scripts, split into chunks to avoid Supabase 5-minute timeout
+  if (wordCount > CHUNK_SIZE) {
+    if (import.meta.env.DEV) {
+      console.log(`[Script Generation] Chunking ${wordCount} words into ${Math.ceil(wordCount / CHUNK_SIZE)} chunks of ${CHUNK_SIZE} words`);
+    }
+
+    const numChunks = Math.ceil(wordCount / CHUNK_SIZE);
+    let fullScript = '';
+    let totalWordsGenerated = 0;
+
+    for (let i = 0; i < numChunks; i++) {
+      const chunkWordCount = Math.min(CHUNK_SIZE, wordCount - totalWordsGenerated);
+      const chunkStartProgress = (i / numChunks) * 100;
+      const chunkEndProgress = ((i + 1) / numChunks) * 100;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Script Generation] Generating chunk ${i + 1}/${numChunks}: ${chunkWordCount} words (${chunkStartProgress.toFixed(0)}% - ${chunkEndProgress.toFixed(0)}%)`);
+      }
+
+      // Modify template for continuation chunks
+      let chunkTemplate = template;
+      if (fullScript) {
+        chunkTemplate = `${template}
+
+CRITICAL: You are continuing an existing script. Here is what has been written so far:
+
+${fullScript}
+
+Continue the narrative seamlessly from where this left off. DO NOT repeat any content. DO NOT add headers, titles, or scene markers. Write as if this is a natural continuation of the existing script.`;
+      }
+
+      // Generate this chunk with progress mapping
+      const chunkResult = await generateSingleChunk(
+        transcript,
+        chunkTemplate,
+        title,
+        aiModel,
+        chunkWordCount,
+        (chunkProgress, chunkWords) => {
+          // Map chunk progress to overall progress
+          const overallProgress = chunkStartProgress + (chunkProgress / 100) * (chunkEndProgress - chunkStartProgress);
+          const overallWords = totalWordsGenerated + chunkWords;
+          onProgress(Math.round(overallProgress), overallWords);
+        }
+      );
+
+      if (!chunkResult.success) {
+        // If chunk failed but we have partial script, return what we have
+        if (fullScript && totalWordsGenerated > 500) {
+          return {
+            success: true,
+            script: fullScript,
+            wordCount: totalWordsGenerated
+          };
+        }
+        return chunkResult;
+      }
+
+      fullScript += (fullScript ? '\n\n' : '') + chunkResult.script;
+      totalWordsGenerated += chunkResult.wordCount || 0;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Script Generation] Chunk ${i + 1}/${numChunks} complete: ${chunkResult.wordCount} words generated (total: ${totalWordsGenerated})`);
+      }
+    }
+
+    return {
+      success: true,
+      script: fullScript,
+      wordCount: totalWordsGenerated
+    };
+  }
+
+  // For scripts <= 5000 words, use single-chunk generation
+  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress);
+}
+
+/**
+ * Internal function to generate a single chunk of script
+ * Handles the actual API call and streaming logic
+ */
+async function generateSingleChunk(
+  transcript: string,
+  template: string,
   title: string,
   aiModel: string,
   wordCount: number,
@@ -124,7 +215,7 @@ export async function rewriteScriptStreaming(
 ): Promise<ScriptResult> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  
+
   // Add timeout and retry logic for long-running generations
   const controller = new AbortController();
   const timeoutMs = calculateDynamicTimeout(wordCount);

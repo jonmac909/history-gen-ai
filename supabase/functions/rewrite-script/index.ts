@@ -96,7 +96,7 @@ CRITICAL RULES:
 - Use vivid descriptions and emotional storytelling
 - When continuing a script, seamlessly continue from where you left off`;
 
-    const targetWords = wordCount || 15000;
+    const targetWords = wordCount || 5000; // Frontend sends 5k chunks to avoid timeout
     console.log(`Target word count: ${targetWords}`);
 
     if (stream) {
@@ -110,8 +110,9 @@ CRITICAL RULES:
             let currentWordCount = 0;
             let iteration = 0;
             
-            // For very long scripts, we need to be more aggressive with single-call output
-            const wordsPerIteration = Math.ceil(targetWords / 3); // Aim for ~3 iterations max
+            // Optimize for 5k chunks: aim for 2-3 iterations (2k-2.5k words per iteration)
+            // This keeps each Claude API call under 3 minutes
+            const wordsPerIteration = Math.min(2500, Math.ceil(targetWords / 2));
             
             while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
               iteration++;
