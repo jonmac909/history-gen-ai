@@ -92,6 +92,20 @@ export function SettingsPopover({
         </DialogHeader>
 
         <div className="space-y-5 py-4 px-1">
+          {/* Settings Profile Name */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Profile Name:
+            </label>
+            <Input
+              type="text"
+              value={settings.name || ""}
+              onChange={(e) => updateSetting("name", e.target.value)}
+              placeholder="Enter profile name..."
+              className="w-full"
+            />
+          </div>
+
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
