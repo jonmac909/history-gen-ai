@@ -2,18 +2,18 @@ import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Calculate dynamic timeout based on target word count
- * Formula: min(600000, (targetWords / 150) * 60000)
+ * Formula: min(1800000, (targetWords / 150) * 60000)
  * Assumes ~150 words/minute generation rate (conservative estimate)
- * Caps at 10 minutes max to prevent excessive waits
+ * Caps at 30 minutes max to support very long script generation
  *
  * @param targetWords - The target word count for script generation
- * @returns Timeout in milliseconds, capped at 600000 (10 minutes)
+ * @returns Timeout in milliseconds, capped at 1800000 (30 minutes)
  */
 export function calculateDynamicTimeout(targetWords: number): number {
   // Ensure minimum timeout of 2 minutes for any request
   const MIN_TIMEOUT_MS = 120000;
-  // Cap at 10 minutes to prevent excessive waits
-  const MAX_TIMEOUT_MS = 600000;
+  // Cap at 30 minutes to support very long script generation
+  const MAX_TIMEOUT_MS = 1800000;
 
   // Estimate generation time: ~150 words per minute
   const estimatedMinutes = Math.ceil(targetWords / 150);
@@ -136,8 +136,8 @@ export async function rewriteScriptStreaming(
       targetWordCount: wordCount,
       overallTimeoutMs: timeoutMs,
       overallTimeoutMinutes: (timeoutMs / 60000).toFixed(1),
-      eventTimeoutMs: 180000,
-      eventTimeoutMinutes: 3,
+      eventTimeoutMs: 600000,
+      eventTimeoutMinutes: 10,
     });
   }
   
@@ -170,20 +170,20 @@ export async function rewriteScriptStreaming(
     let lastWordCount = 0;
     let lastScript = '';
     let lastEventTime = Date.now();
-    const eventTimeout = 180000; // 3 minute timeout between events
+    const eventTimeout = 600000; // 10 minute timeout between events (for very long API calls)
 
     try {
       while (true) {
         // Check if we've been waiting too long for an event
         if (Date.now() - lastEventTime > eventTimeout) {
           if (import.meta.env.DEV) {
-            console.warn('[Script Generation] Event timeout triggered - no data received for 3 minutes', {
+            console.warn('[Script Generation] Event timeout triggered - no data received for 10 minutes', {
               lastEventTime: new Date(lastEventTime).toISOString(),
               elapsedMs: Date.now() - lastEventTime,
               lastWordCount,
             });
           } else {
-            console.warn('Event timeout - no data received for 3 minutes');
+            console.warn('Event timeout - no data received for 10 minutes');
           }
           break;
         }
@@ -255,7 +255,7 @@ export async function rewriteScriptStreaming(
         }
         return {
           success: false,
-          error: 'Request timed out. Scripts up to 12,000 words are supported (8-10 minutes generation time). For longer content, try reducing the word count.'
+          error: 'Request timed out. Scripts up to 30,000 words are supported (up to 30 minutes generation time). For very long content, ensure stable internet connection.'
         };
       }
       

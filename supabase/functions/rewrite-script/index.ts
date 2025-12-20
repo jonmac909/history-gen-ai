@@ -9,8 +9,8 @@ const corsHeaders = {
 // Claude Sonnet 4.5 has a max output of ~16k tokens per call
 const MAX_TOKENS_PER_CALL = 16000;
 
-// Timeout for each Claude API call (10 minutes - Claude needs time for large outputs)
-const API_CALL_TIMEOUT = 600000;
+// Timeout for each Claude API call (20 minutes - Claude needs time for very long outputs)
+const API_CALL_TIMEOUT = 1200000;
 
 // Maximum iterations for script generation
 const MAX_ITERATIONS = 10;
