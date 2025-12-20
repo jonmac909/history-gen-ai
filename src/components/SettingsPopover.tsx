@@ -38,20 +38,26 @@ interface SettingsPopoverProps {
   scriptTemplates: ScriptTemplate[];
 }
 
-const scriptTemplateOptions = [
-  { value: "template-a", label: "Template A" },
-  { value: "template-b", label: "Template B" },
-  { value: "template-c", label: "Template C" },
-  { value: "template-d", label: "Template D" },
-  { value: "template-e", label: "Template E" },
-];
+const defaultTemplateLabels: Record<string, string> = {
+  "template-a": "Template A",
+  "template-b": "Template B",
+  "template-c": "Template C",
+  "template-d": "Template D",
+  "template-e": "Template E",
+};
 
-export function SettingsPopover({ 
-  settings, 
-  onSettingsChange, 
+export function SettingsPopover({
+  settings,
+  onSettingsChange,
   scriptTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Build template options from scriptTemplates with custom names or defaults
+  const scriptTemplateOptions = scriptTemplates.map((template) => ({
+    value: template.id,
+    label: template.name || defaultTemplateLabels[template.id] || template.id,
+  }));
 
   const updateSetting = <K extends keyof GenerationSettings>(
     key: K,
