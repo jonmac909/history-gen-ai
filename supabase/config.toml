@@ -35,6 +35,7 @@ verify_jwt = false
 
 [functions.rewrite-script]
 verify_jwt = false
+timeout = 500  # Maximum Supabase timeout: 500 seconds (8.33 minutes)
 
 [functions.generate-audio]
 verify_jwt = false
