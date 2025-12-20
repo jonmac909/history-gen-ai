@@ -42,6 +42,8 @@ const scriptTemplateOptions = [
   { value: "template-a", label: "Template A" },
   { value: "template-b", label: "Template B" },
   { value: "template-c", label: "Template C" },
+  { value: "template-d", label: "Template D" },
+  { value: "template-e", label: "Template E" },
 ];
 
 export function SettingsPopover({ 
