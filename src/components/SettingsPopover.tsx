@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
@@ -173,7 +174,18 @@ export function SettingsPopover({
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
-                <span className="w-6 text-center font-medium">{settings.imageCount}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settings.imageCount}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    if (!isNaN(value) && value >= 1) {
+                      updateSetting("imageCount", value);
+                    }
+                  }}
+                  className="w-16 h-8 text-center font-medium px-2"
+                />
                 <Button
                   variant="ghost"
                   size="icon"
