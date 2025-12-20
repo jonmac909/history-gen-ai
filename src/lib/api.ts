@@ -122,7 +122,7 @@ export async function rewriteScriptStreaming(
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void
 ): Promise<ScriptResult> {
-  const CHUNK_SIZE = 5000; // Generate in 5k word chunks to avoid Supabase timeout
+  const CHUNK_SIZE = 3000; // Generate in 3k word chunks to stay well within Supabase 5-min timeout
 
   // For large scripts, split into chunks to avoid Supabase 5-minute timeout
   if (wordCount > CHUNK_SIZE) {
