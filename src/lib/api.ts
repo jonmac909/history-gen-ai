@@ -1,5 +1,27 @@
 import { supabase } from "@/integrations/supabase/client";
 
+/**
+ * Calculate dynamic timeout based on target word count
+ * Formula: min(600000, (targetWords / 150) * 60000)
+ * Assumes ~150 words/minute generation rate (conservative estimate)
+ * Caps at 10 minutes max to prevent excessive waits
+ *
+ * @param targetWords - The target word count for script generation
+ * @returns Timeout in milliseconds, capped at 600000 (10 minutes)
+ */
+export function calculateDynamicTimeout(targetWords: number): number {
+  // Ensure minimum timeout of 2 minutes for any request
+  const MIN_TIMEOUT_MS = 120000;
+  // Cap at 10 minutes to prevent excessive waits
+  const MAX_TIMEOUT_MS = 600000;
+
+  // Estimate generation time: ~150 words per minute
+  const estimatedMinutes = Math.ceil(targetWords / 150);
+  const timeoutMs = estimatedMinutes * 60000;
+
+  return Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeoutMs));
+}
+
 export interface TranscriptResult {
   success: boolean;
   videoId?: string;
@@ -105,8 +127,19 @@ export async function rewriteScriptStreaming(
   
   // Add timeout and retry logic for long-running generations
   const controller = new AbortController();
-  const timeoutMs = 300000; // 5 minute timeout for entire operation
+  const timeoutMs = calculateDynamicTimeout(wordCount);
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Log timeout configuration for development debugging
+  if (import.meta.env.DEV) {
+    console.log('[Script Generation] Timeout configuration:', {
+      targetWordCount: wordCount,
+      overallTimeoutMs: timeoutMs,
+      overallTimeoutMinutes: (timeoutMs / 60000).toFixed(1),
+      eventTimeoutMs: 180000,
+      eventTimeoutMinutes: 3,
+    });
+  }
   
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/rewrite-script`, {
@@ -137,13 +170,21 @@ export async function rewriteScriptStreaming(
     let lastWordCount = 0;
     let lastScript = '';
     let lastEventTime = Date.now();
-    const eventTimeout = 120000; // 2 minute timeout between events
+    const eventTimeout = 180000; // 3 minute timeout between events
 
     try {
       while (true) {
         // Check if we've been waiting too long for an event
         if (Date.now() - lastEventTime > eventTimeout) {
-          console.warn('Event timeout - no data received for 2 minutes');
+          if (import.meta.env.DEV) {
+            console.warn('[Script Generation] Event timeout triggered - no data received for 3 minutes', {
+              lastEventTime: new Date(lastEventTime).toISOString(),
+              elapsedMs: Date.now() - lastEventTime,
+              lastWordCount,
+            });
+          } else {
+            console.warn('Event timeout - no data received for 3 minutes');
+          }
           break;
         }
 
@@ -204,9 +245,17 @@ export async function rewriteScriptStreaming(
       
       // Check if it's an abort error
       if (streamError instanceof Error && streamError.name === 'AbortError') {
-        return { 
-          success: false, 
-          error: 'Request timed out. For very long scripts (15k+ words), try generating in smaller batches.' 
+        if (import.meta.env.DEV) {
+          console.error('[Script Generation] Request aborted due to timeout', {
+            targetWordCount: wordCount,
+            timeoutMs,
+            lastWordCount,
+            hasPartialScript: !!lastScript,
+          });
+        }
+        return {
+          success: false,
+          error: 'Request timed out. Scripts up to 12,000 words are supported (8-10 minutes generation time). For longer content, try reducing the word count.'
         };
       }
       
@@ -220,13 +269,28 @@ export async function rewriteScriptStreaming(
     if (!result.success && lastWordCount > 0) {
       // If we have a partial script, return it as success
       if (lastScript && lastWordCount > 500) {
+        if (import.meta.env.DEV) {
+          console.log('[Script Generation] Returning partial script after incomplete stream', {
+            wordCount: lastWordCount,
+            scriptLength: lastScript.length,
+          });
+        }
         return {
           success: true,
           script: lastScript,
           wordCount: lastWordCount
         };
       }
-      result.error = 'Script generation was interrupted. The connection may have timed out. Try a shorter word count (e.g., 5000-10000 words).';
+      result.error = 'Script generation was interrupted before completing. The connection may have been lost. Please try again.';
+    }
+
+    // Log successful completion in development mode
+    if (import.meta.env.DEV && result.success) {
+      console.log('[Script Generation] Stream completed successfully', {
+        targetWordCount: wordCount,
+        actualWordCount: result.wordCount,
+        scriptLength: result.script?.length,
+      });
     }
 
     return result;
