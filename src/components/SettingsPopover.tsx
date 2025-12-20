@@ -128,16 +128,6 @@ export function SettingsPopover({
             </Select>
           </div>
 
-          {/* AI Model - Fixed to Claude Sonnet 4.5 */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Model:
-            </label>
-            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
-              Claude Sonnet 4.5
-            </div>
-          </div>
-
           {/* Voice Sample Upload */}
           <VoiceSampleUpload
             voiceSampleUrl={settings.voiceSampleUrl}
@@ -168,17 +158,6 @@ export function SettingsPopover({
               </div>
             </div>
           </div>
-
-          {/* Image Model - Fixed to Z-Image */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Image Model:
-            </label>
-            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
-              Z-IMAGE
-            </div>
-          </div>
-
 
           {/* Image Count */}
           <div className="space-y-2">
