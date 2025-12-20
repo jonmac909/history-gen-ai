@@ -35,3 +35,12 @@ dist-ssr
 
 # Nested git repository (separate project)
 history-gen-ai/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Test outputs
+test-results/
+
+# Installers and binaries
+*.dmg
