@@ -81,8 +81,8 @@ const response = await fetch(imageUrl);  // NO VALIDATION!
 **Issue:** The `.env` file contains actual API credentials and is NOT included in `.gitignore`:
 
 **Exposed Credentials:**
-- `RUNPOD_API_KEY`: `rpa_QO86B6TGBISX76HWSU5DMJ1MMYZHKJTXFTR1ZE8Yhhsfyv`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`: `sb_publishable_U-2of9VUDYLQqqPoYBpR0w_iJ0jLjpm`
+- `RUNPOD_API_KEY`: `rpa_***********************************` (REDACTED)
+- `VITE_SUPABASE_PUBLISHABLE_KEY`: `sb_publishable_******************` (REDACTED)
 
 **Immediate Actions Required:**
 1. **IMMEDIATELY rotate both API keys**
