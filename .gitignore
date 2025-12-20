@@ -41,6 +41,7 @@ history-gen-ai/
 
 # Test outputs
 test-results/
+playwright-report/
 
 # Installers and binaries
 *.dmg
