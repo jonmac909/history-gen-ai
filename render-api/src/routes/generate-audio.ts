@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
-import lamejs from 'lamejs';
 
 const router = Router();
 
@@ -406,94 +405,6 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
   return { wav: output, durationSeconds };
 }
 
-// Convert WAV buffer to MP3 to reduce file size (90% smaller)
-function convertWavToMp3(wavBuffer: Buffer): Buffer {
-  logger.debug('Converting WAV to MP3...');
-
-  // Extract WAV header info
-  const findChunk = (bytes: Buffer, fourcc: string) => {
-    const needle = Buffer.from(fourcc, 'ascii');
-    for (let i = 0; i <= bytes.length - 4; i++) {
-      if (bytes.slice(i, i + 4).equals(needle)) {
-        return i;
-      }
-    }
-    return -1;
-  };
-
-  const fmtIdx = findChunk(wavBuffer, 'fmt ');
-  const dataIdx = findChunk(wavBuffer, 'data');
-
-  if (fmtIdx === -1 || dataIdx === -1) {
-    throw new Error('Invalid WAV file: missing fmt or data chunk');
-  }
-
-  const fmtDataStart = fmtIdx + 8;
-  const channels = wavBuffer.readUInt16LE(fmtDataStart + 2);
-  const sampleRate = wavBuffer.readUInt32LE(fmtDataStart + 4);
-  const bitsPerSample = wavBuffer.readUInt16LE(fmtDataStart + 14);
-
-  const dataSizeOffset = dataIdx + 4;
-  const dataSize = wavBuffer.readUInt32LE(dataSizeOffset);
-  const dataStart = dataIdx + 8;
-
-  // Extract PCM samples
-  const samples = wavBuffer.slice(dataStart, dataStart + dataSize);
-
-  logger.debug(`WAV info: ${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit, ${samples.length} bytes`);
-
-  // Convert to 16-bit PCM samples array
-  const samplesPerChannel = samples.length / (channels * 2); // 2 bytes per sample (16-bit)
-  const leftChannel = new Int16Array(samplesPerChannel);
-  const rightChannel = channels === 2 ? new Int16Array(samplesPerChannel) : null;
-
-  for (let i = 0; i < samplesPerChannel; i++) {
-    const offset = i * channels * 2;
-    leftChannel[i] = samples.readInt16LE(offset);
-    if (rightChannel && channels === 2) {
-      rightChannel[i] = samples.readInt16LE(offset + 2);
-    }
-  }
-
-  // Encode to MP3
-  const mp3encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128); // 128 kbps
-  const mp3Data: Uint8Array[] = [];
-  const sampleBlockSize = 1152; // LAME samples per frame
-
-  for (let i = 0; i < samplesPerChannel; i += sampleBlockSize) {
-    const leftChunk = leftChannel.subarray(i, i + sampleBlockSize);
-    const rightChunk = rightChannel ? rightChannel.subarray(i, i + sampleBlockSize) : null;
-
-    const mp3buf = rightChunk
-      ? mp3encoder.encodeBuffer(leftChunk, rightChunk)
-      : mp3encoder.encodeBuffer(leftChunk);
-
-    if (mp3buf.length > 0) {
-      mp3Data.push(mp3buf);
-    }
-  }
-
-  // Flush remaining data
-  const mp3buf = mp3encoder.flush();
-  if (mp3buf.length > 0) {
-    mp3Data.push(mp3buf);
-  }
-
-  // Concatenate all MP3 chunks
-  const totalLength = mp3Data.reduce((acc, chunk) => acc + chunk.length, 0);
-  const mp3Buffer = Buffer.alloc(totalLength);
-  let offset = 0;
-  for (const chunk of mp3Data) {
-    mp3Buffer.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  const compressionRatio = ((1 - mp3Buffer.length / wavBuffer.length) * 100).toFixed(1);
-  logger.info(`WAV to MP3 conversion: ${wavBuffer.length} bytes → ${mp3Buffer.length} bytes (${compressionRatio}% smaller)`);
-
-  return mp3Buffer;
-}
-
 // Main route handler
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -664,11 +575,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
     const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
     const durationRounded = Math.round(durationSeconds);
 
-    console.log(`Final audio WAV: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
-
-    sendEvent({ type: 'progress', progress: 85, message: 'Converting to MP3...' });
-    const mp3Audio = convertWavToMp3(finalAudio);
-    console.log(`Final audio MP3: ${mp3Audio.length} bytes (${((1 - mp3Audio.length / finalAudio.length) * 100).toFixed(1)}% smaller)`);
+    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
     sendEvent({ type: 'progress', progress: 90, message: 'Uploading audio file...' });
 
@@ -680,12 +587,12 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
     }
 
     const supabase = createClient(credentials.url, credentials.key);
-    const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
 
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(fileName, mp3Audio, {
-        contentType: 'audio/mpeg',
+      .upload(fileName, finalAudio, {
+        contentType: 'audio/wav',
         upsert: true,
       });
 
@@ -703,7 +610,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     console.log('Audio uploaded:', urlData.publicUrl);
 
-    sendEvent({ type: 'complete', audioUrl: urlData.publicUrl, duration: durationRounded, size: mp3Audio.length });
+    sendEvent({ type: 'complete', audioUrl: urlData.publicUrl, duration: durationRounded, size: finalAudio.length });
     res.end();
 
   } catch (error) {
@@ -821,11 +728,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
     const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
     const durationRounded = Math.round(durationSeconds);
 
-    console.log(`Final audio WAV: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
-
-    sendEvent({ type: 'progress', progress: 90, message: 'Converting to MP3...' });
-    const mp3Audio = convertWavToMp3(finalAudio);
-    console.log(`Final audio MP3: ${mp3Audio.length} bytes (${((1 - mp3Audio.length / finalAudio.length) * 100).toFixed(1)}% smaller)`);
+    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
     sendEvent({ type: 'progress', progress: 95, message: 'Uploading audio...' });
 
@@ -837,12 +740,12 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
     }
 
     const supabase = createClient(credentials.url, credentials.key);
-    const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
 
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(fileName, mp3Audio, {
-        contentType: 'audio/mpeg',
+      .upload(fileName, finalAudio, {
+        contentType: 'audio/wav',
         upsert: true,
       });
 
@@ -855,7 +758,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    sendEvent({ type: 'complete', success: true, audioUrl: urlData.publicUrl, duration: durationRounded, wordCount, size: mp3Audio.length });
+    sendEvent({ type: 'complete', success: true, audioUrl: urlData.publicUrl, duration: durationRounded, wordCount, size: finalAudio.length });
     res.end();
 
   } catch (error) {
@@ -954,10 +857,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
   const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
   const durationRounded = Math.round(durationSeconds);
 
-  console.log(`Final audio WAV: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
-
-  const mp3Audio = convertWavToMp3(finalAudio);
-  console.log(`Final audio MP3: ${mp3Audio.length} bytes (${((1 - mp3Audio.length / finalAudio.length) * 100).toFixed(1)}% smaller)`);
+  console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
   const credentials = getSupabaseCredentials();
   if (!credentials) {
@@ -965,12 +865,12 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
   }
 
   const supabase = createClient(credentials.url, credentials.key);
-  const fileName = `${projectId || crypto.randomUUID()}/voiceover.mp3`;
+  const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
 
   const { error: uploadError } = await supabase.storage
     .from('generated-assets')
-    .upload(fileName, mp3Audio, {
-      contentType: 'audio/mpeg',
+    .upload(fileName, finalAudio, {
+      contentType: 'audio/wav',
       upsert: true,
     });
 
@@ -988,7 +888,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
     audioUrl: urlData.publicUrl,
     duration: durationRounded,
     wordCount,
-    size: mp3Audio.length
+    size: finalAudio.length
   });
 }
 
