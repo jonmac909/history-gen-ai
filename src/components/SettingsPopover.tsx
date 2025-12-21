@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
@@ -28,6 +29,7 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
+  customScript?: string;
 }
 
 
@@ -90,15 +92,42 @@ export function SettingsPopover({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 py-4 px-1">
+        <div className="space-y-5 py-4 px-1 max-h-[70vh] overflow-y-auto">
+          {/* Custom Script Input */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Paste Your Own Script (Optional):
+            </label>
+            <p className="text-xs text-muted-foreground text-center">
+              Skip YouTube fetch and AI rewriting - go straight to audio generation
+            </p>
+            <Textarea
+              placeholder="Paste your pre-written script here to skip the transcript and rewriting steps..."
+              value={settings.customScript || ""}
+              onChange={(e) => updateSetting("customScript", e.target.value)}
+              className="min-h-[120px] resize-y"
+            />
+            {settings.customScript && settings.customScript.trim().length > 0 && (
+              <p className="text-xs text-primary text-center">
+                ✓ Custom script ready ({settings.customScript.trim().split(/\s+/).length} words)
+              </p>
+            )}
+          </div>
+
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Select Your Script:
+              Select Your Script Template:
             </label>
+            <p className="text-xs text-muted-foreground text-center">
+              {settings.customScript && settings.customScript.trim().length > 0
+                ? "(Ignored when using custom script)"
+                : "For AI-generated scripts from YouTube"}
+            </p>
             <Select
               value={settings.scriptTemplate}
               onValueChange={(value) => updateSetting("scriptTemplate", value)}
+              disabled={!!(settings.customScript && settings.customScript.trim().length > 0)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a template" />
