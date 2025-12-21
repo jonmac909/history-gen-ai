@@ -41,8 +41,20 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
+// Prevent uncaught exceptions from crashing the server
+process.on('uncaughtException', (error) => {
+  console.error('🔴 Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit - let the error handler deal with it
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  // Don't exit - let the error handler deal with it
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 HistoryVidGen API running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  // Trigger fresh deployment
 });
