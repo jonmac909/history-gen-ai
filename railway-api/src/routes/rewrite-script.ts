@@ -7,17 +7,21 @@ const router = Router();
 const MAX_TOKENS_PER_CALL = 16000;
 const API_CALL_TIMEOUT = 1200000; // 20 minutes
 const MAX_ITERATIONS = 10;
-const KEEPALIVE_INTERVAL_MS = 3000;
+const KEEPALIVE_INTERVAL_MS = 15000; // Reduced keepalive frequency (was 3s, now 15s)
+const WORDS_PER_ITERATION = 12000; // Increased from 8k to use full 16k token capacity (~0.75 words/token)
 
 interface GenerateScriptChunkOptions {
   apiKey: string;
   model: string;
   systemPrompt: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
+  usePromptCaching?: boolean;
+  onToken?: (text: string) => void; // Callback for streaming tokens
 }
 
+// Non-streaming version (for non-streaming endpoint)
 async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string }> {
-  const { apiKey, model, systemPrompt, messages } = options;
+  const { apiKey, model, systemPrompt, messages, usePromptCaching } = options;
 
   const anthropic = new Anthropic({ apiKey });
 
@@ -25,10 +29,21 @@ async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise
   const timeoutId = setTimeout(() => controller.abort(), API_CALL_TIMEOUT);
 
   try {
+    // OPTIMIZATION: Use prompt caching to avoid re-sending transcript every iteration
+    const systemConfig = usePromptCaching
+      ? [
+          {
+            type: 'text' as const,
+            text: systemPrompt,
+            cache_control: { type: 'ephemeral' as const }
+          }
+        ]
+      : systemPrompt;
+
     const response = await anthropic.messages.create({
       model,
       max_tokens: MAX_TOKENS_PER_CALL,
-      system: systemPrompt,
+      system: systemConfig,
       messages,
     }, {
       signal: controller.signal as any
@@ -38,6 +53,56 @@ async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise
       text: response.content[0]?.type === 'text' ? response.content[0].text : '',
       stopReason: response.stop_reason || 'end_turn',
     };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Streaming version (for streaming endpoint)
+async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string }> {
+  const { apiKey, model, systemPrompt, messages, usePromptCaching, onToken } = options;
+
+  const anthropic = new Anthropic({ apiKey });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_CALL_TIMEOUT);
+
+  try {
+    // OPTIMIZATION: Use prompt caching to avoid re-sending transcript every iteration
+    const systemConfig = usePromptCaching
+      ? [
+          {
+            type: 'text' as const,
+            text: systemPrompt,
+            cache_control: { type: 'ephemeral' as const }
+          }
+        ]
+      : systemPrompt;
+
+    let fullText = '';
+    let stopReason = 'end_turn';
+
+    // OPTIMIZATION: Token streaming for real-time progress
+    const stream = await anthropic.messages.stream({
+      model,
+      max_tokens: MAX_TOKENS_PER_CALL,
+      system: systemConfig,
+      messages,
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        const text = chunk.delta.text;
+        fullText += text;
+        if (onToken) {
+          onToken(text); // Stream tokens to client in real-time
+        }
+      } else if (chunk.type === 'message_stop') {
+        stopReason = 'end_turn';
+      }
+    }
+
+    return { text: fullText, stopReason };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -57,7 +122,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const selectedModel = model || 'claude-sonnet-4-5';
-    console.log(`🚀 [v2.0-HONEST-PROGRESS] Rewriting script with ${selectedModel}...`);
+    console.log(`🚀 [v3.0-OPTIMIZED] Rewriting script with ${selectedModel}...`);
+    console.log(`📊 Optimizations: Prompt Caching ✓ | Token Streaming ✓ | 12k words/iteration ✓`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
@@ -92,9 +158,9 @@ CRITICAL RULES:
         let currentWordCount = 0;
         let iteration = 0;
 
-        // Optimize for Railway: balance between speed and responsiveness
-        // 8k words ≈ 45-60s per call (sweet spot for progress updates)
-        const wordsPerIteration = Math.min(8000, Math.ceil(targetWords / 2));
+        // OPTIMIZATION: Use full 16k token capacity (≈12k words)
+        // This reduces iterations significantly: 3k words = 1 iteration, 15k = 2 iterations instead of 3+
+        const wordsPerIteration = WORDS_PER_ITERATION;
 
         while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
           iteration++;
@@ -129,28 +195,44 @@ CRITICAL RULES:
 
           // Send initial progress for this iteration (actual progress only)
           const currentProgress = Math.round((currentWordCount / targetWords) * 100);
+          const estimatedIterations = Math.ceil(targetWords / wordsPerIteration);
           sendEvent({
             type: 'progress',
             progress: currentProgress,
             wordCount: currentWordCount,
-            message: `Writing iteration ${iteration}/${Math.ceil(targetWords / wordsPerIteration)}... ${currentWordCount}/${targetWords} words`
+            message: `Writing iteration ${iteration}/${estimatedIterations}... ${currentWordCount}/${targetWords} words`
           });
 
-          // Keepalive pings (no fake progress - just prevent timeout)
+          // OPTIMIZATION: Token streaming means we don't need frequent keepalive pings
+          // Tokens stream in real-time, so only occasional keepalive needed
           const keepaliveInterval = setInterval(() => {
             sendEvent({
               type: 'keepalive',
-              message: `Generating...`
+              message: `Generating... (streaming tokens)`
             });
           }, KEEPALIVE_INTERVAL_MS);
 
           let result;
           try {
-            result = await generateScriptChunk({
+            const useCaching = iteration > 1;
+            if (useCaching) {
+              console.log(`💾 Using prompt cache for iteration ${iteration} (90% cost reduction + faster!)`);
+            }
+
+            // OPTIMIZATION: Use streaming with token callbacks + prompt caching
+            result = await generateScriptChunkStreaming({
               apiKey: ANTHROPIC_API_KEY,
               model: selectedModel,
               systemPrompt,
-              messages
+              messages,
+              usePromptCaching: useCaching, // Cache transcript on subsequent iterations
+              onToken: (text) => {
+                // Stream tokens to client in real-time for better UX
+                sendEvent({
+                  type: 'token',
+                  text,
+                });
+              }
             });
           } catch (apiError) {
             clearInterval(keepaliveInterval);
@@ -232,8 +314,8 @@ CRITICAL RULES:
       let currentWordCount = 0;
       let iteration = 0;
 
-      // 8k words ≈ 45-60s per call (sweet spot for progress updates)
-      const wordsPerIteration = Math.min(8000, Math.ceil(targetWords / 2));
+      // OPTIMIZATION: Use full 16k token capacity (≈12k words)
+      const wordsPerIteration = WORDS_PER_ITERATION;
 
       while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
         iteration++;
@@ -264,11 +346,13 @@ CRITICAL RULES:
           ];
         }
 
+        // OPTIMIZATION: Use prompt caching on subsequent iterations
         const result = await generateScriptChunk({
           apiKey: ANTHROPIC_API_KEY,
           model: selectedModel,
           systemPrompt,
-          messages
+          messages,
+          usePromptCaching: iteration > 1 // Cache transcript on subsequent iterations
         });
 
         if (iteration === 1) {
