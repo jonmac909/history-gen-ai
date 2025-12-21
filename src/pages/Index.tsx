@@ -256,12 +256,19 @@ const Index = () => {
 
     try {
       updateStep("captions", "active");
-      const captionsRes = await generateCaptions(pendingAudioUrl, projectId);
-      
+      const captionsRes = await generateCaptions(
+        pendingAudioUrl,
+        projectId,
+        (progress) => {
+          // Update progress in real-time as chunks are transcribed
+          updateStep("captions", "active", `${progress}%`);
+        }
+      );
+
       if (!captionsRes.success || !captionsRes.srtContent) {
         throw new Error(captionsRes.error || "Failed to generate captions");
       }
-      
+
       updateStep("captions", "completed");
       
       setPendingSrtContent(captionsRes.srtContent);

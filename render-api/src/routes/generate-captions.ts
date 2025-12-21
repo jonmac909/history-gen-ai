@@ -138,22 +138,52 @@ async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chun
 }
 
 router.post('/', async (req: Request, res: Response) => {
-  try {
-    const { audioUrl, projectId } = req.body;
+  const { audioUrl, projectId, stream } = req.body;
 
+  // Setup SSE if streaming is enabled
+  if (stream) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+  }
+
+  const sendEvent = (data: any) => {
+    if (stream) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  try {
     if (!audioUrl) {
-      return res.status(400).json({ error: 'Audio URL is required' });
+      const error = { error: 'Audio URL is required' };
+      if (stream) {
+        sendEvent({ type: 'error', ...error });
+        return res.end();
+      }
+      return res.status(400).json(error);
     }
 
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      const error = { error: 'OPENAI_API_KEY is not configured' };
+      if (stream) {
+        sendEvent({ type: 'error', ...error });
+        return res.end();
+      }
+      return res.status(500).json(error);
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Supabase credentials not configured' });
+      const error = { error: 'Supabase credentials not configured' };
+      if (stream) {
+        sendEvent({ type: 'error', ...error });
+        return res.end();
+      }
+      return res.status(500).json(error);
     }
 
     console.log('Fetching audio from:', audioUrl);
@@ -185,6 +215,16 @@ router.post('/', async (req: Request, res: Response) => {
       const startByte = i * chunkSizeBytes;
       const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
       const chunkPcm = pcmData.slice(startByte, endByte);
+
+      // Send progress update before transcribing
+      const progress = Math.round(((i + 1) / numChunks) * 100);
+      sendEvent({
+        type: 'progress',
+        progress,
+        message: `Transcribing chunk ${i + 1}/${numChunks}...`,
+        chunksProcessed: i + 1,
+        totalChunks: numChunks
+      });
 
       // Create WAV from chunk PCM
       const chunkWav = createWavFromPcm(chunkPcm);
@@ -246,17 +286,36 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log('Captions uploaded successfully:', urlData.publicUrl);
 
-    return res.json({
+    const result = {
       success: true,
       captionsUrl: urlData.publicUrl,
       srtContent,
       segmentCount: allChunks.length,
       audioDuration: totalDuration,
-    });
+    };
+
+    if (stream) {
+      sendEvent({
+        type: 'complete',
+        ...result
+      });
+      res.end();
+    } else {
+      return res.json(result);
+    }
 
   } catch (error) {
     console.error('Error generating captions:', error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to generate captions' });
+
+    if (stream) {
+      sendEvent({
+        type: 'error',
+        error: error instanceof Error ? error.message : 'Failed to generate captions'
+      });
+      res.end();
+    } else {
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to generate captions' });
+    }
   }
 });
 

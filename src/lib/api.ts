@@ -764,7 +764,11 @@ export async function generateImagesStreaming(
   return result;
 }
 
-export async function generateCaptions(audioUrl: string, projectId: string): Promise<CaptionsResult> {
+export async function generateCaptions(
+  audioUrl: string,
+  projectId: string,
+  onProgress?: (progress: number) => void
+): Promise<CaptionsResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
@@ -772,6 +776,11 @@ export async function generateCaptions(audioUrl: string, projectId: string): Pro
       success: false,
       error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
+  }
+
+  // Use streaming if onProgress callback is provided
+  if (onProgress) {
+    return generateCaptionsStreaming(audioUrl, projectId, onProgress);
   }
 
   try {
@@ -793,6 +802,90 @@ export async function generateCaptions(audioUrl: string, projectId: string): Pro
     return data;
   } catch (error) {
     console.error('Captions error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate captions' };
+  }
+}
+
+async function generateCaptionsStreaming(
+  audioUrl: string,
+  projectId: string,
+  onProgress: (progress: number) => void
+): Promise<CaptionsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-captions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audioUrl,
+        projectId,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Captions streaming error:', response.status, errorText);
+      return { success: false, error: `Failed to generate captions: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: CaptionsResult = { success: false, error: 'No response received' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+
+            if (parsed.type === 'progress') {
+              onProgress(parsed.progress);
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: true,
+                captionsUrl: parsed.captionsUrl,
+                srtContent: parsed.srtContent,
+                segmentCount: parsed.segmentCount,
+                audioDuration: parsed.audioDuration
+              };
+              onProgress(100);
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'Caption generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Captions streaming error:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Failed to generate captions' };
   }
 }
