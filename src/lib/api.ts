@@ -492,18 +492,25 @@ export async function generateAudioStreaming(
     };
   }
 
-  const response = await fetch(`${renderUrl}/generate-audio`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      script,
-      voiceSampleUrl,
-      projectId,
-      stream: true
-    })
-  });
+  // Add timeout for very large audio generations (20 minutes max)
+  const controller = new AbortController();
+  const AUDIO_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+  const timeoutId = setTimeout(() => controller.abort(), AUDIO_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        script,
+        voiceSampleUrl,
+        projectId,
+        stream: true
+      }),
+      signal: controller.signal
+    });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -519,26 +526,36 @@ export async function generateAudioStreaming(
   const decoder = new TextDecoder();
   let buffer = '';
   let result: AudioResult = { success: false, error: 'No response received' };
+  let lastEventTime = Date.now();
+  const EVENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes between events
 
   try {
     while (true) {
+      // Check if we've been waiting too long for an event
+      if (Date.now() - lastEventTime > EVENT_TIMEOUT_MS) {
+        console.error('[Audio Generation] Event timeout - no data received for 5 minutes');
+        result.error = 'Audio generation timed out - no progress received for 5 minutes. Please try again.';
+        break;
+      }
+
       const { done, value } = await reader.read();
       if (done) break;
 
+      lastEventTime = Date.now(); // Reset timeout on each chunk
       buffer += decoder.decode(value, { stream: true });
-      
+
       // Process complete SSE events
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
 
       for (const event of events) {
         if (!event.trim()) continue;
-        
+
         const dataMatch = event.match(/^data: (.+)$/m);
         if (dataMatch) {
           try {
             const parsed = JSON.parse(dataMatch[1]);
-            
+
             if (parsed.type === 'progress') {
               onProgress(parsed.progress);
             } else if (parsed.type === 'complete') {
@@ -563,13 +580,42 @@ export async function generateAudioStreaming(
     }
   } catch (streamError) {
     console.error('Stream reading error:', streamError);
-    return { 
-      success: false, 
-      error: streamError instanceof Error ? streamError.message : 'Stream reading failed' 
+
+    // Check if it's an abort error from timeout
+    if (streamError instanceof Error && streamError.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Audio generation timed out after 20 minutes. This may happen with very long scripts. Please try again or contact support.'
+      };
+    }
+
+    return {
+      success: false,
+      error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
     };
+  } finally {
+    // Always clear the timeout to prevent memory leaks
+    clearTimeout(timeoutId);
   }
 
   return result;
+  } catch (error) {
+    // Outer catch for fetch errors
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Audio generation timed out after 20 minutes. This may happen with very long scripts. Please try again or contact support.'
+      };
+    }
+
+    console.error('Audio generation fetch error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start audio generation'
+    };
+  }
 }
 
 export async function generateImagePrompts(
