@@ -492,9 +492,9 @@ export async function generateAudioStreaming(
     };
   }
 
-  // Add timeout for very large audio generations (20 minutes max)
+  // Add timeout for very large audio generations with voice cloning (60 minutes max)
   const controller = new AbortController();
-  const AUDIO_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+  const AUDIO_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (voice cloning takes longer)
   const timeoutId = setTimeout(() => controller.abort(), AUDIO_TIMEOUT_MS);
 
   try {
@@ -527,14 +527,14 @@ export async function generateAudioStreaming(
   let buffer = '';
   let result: AudioResult = { success: false, error: 'No response received' };
   let lastEventTime = Date.now();
-  const EVENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes between events
+  const EVENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes between events (voice cloning takes longer)
 
   try {
     while (true) {
       // Check if we've been waiting too long for an event
       if (Date.now() - lastEventTime > EVENT_TIMEOUT_MS) {
-        console.error('[Audio Generation] Event timeout - no data received for 5 minutes');
-        result.error = 'Audio generation timed out - no progress received for 5 minutes. Please try again.';
+        console.error('[Audio Generation] Event timeout - no data received for 10 minutes');
+        result.error = 'Audio generation timed out - no progress received for 10 minutes. Please try again.';
         break;
       }
 
@@ -585,7 +585,7 @@ export async function generateAudioStreaming(
     if (streamError instanceof Error && streamError.name === 'AbortError') {
       return {
         success: false,
-        error: 'Audio generation timed out after 20 minutes. This may happen with very long scripts. Please try again or contact support.'
+        error: 'Audio generation timed out after 60 minutes. This may happen with very long scripts or large voice samples. Please try again with a shorter script or smaller voice sample.'
       };
     }
 

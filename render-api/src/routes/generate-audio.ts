@@ -24,7 +24,7 @@ const TTS_JOB_TIMEOUT = 120000;
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY = 1000;
 const RETRY_MAX_DELAY = 10000;
-const BATCH_SIZE = 25; // Process jobs in batches to avoid RunPod queue saturation
+const BATCH_SIZE = 10; // Reduced batch size for voice cloning (large payloads + compute intensive)
 
 const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "eitsgz3gndkh3s";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
@@ -197,19 +197,11 @@ async function downloadVoiceSample(url: string): Promise<string> {
 
 // Start TTS job
 async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
-  console.log(`\n=== Starting TTS Job ===`);
-  console.log(`Endpoint: ${RUNPOD_API_URL}/run`);
-  console.log(`Text length: ${text.length} chars`);
-  console.log(`Text preview: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+  const payloadSizeKB = referenceAudioBase64
+    ? ((referenceAudioBase64.length * 0.75) / 1024).toFixed(2)
+    : '0';
 
-  if (referenceAudioBase64) {
-    console.log(`Voice Cloning: ENABLED`);
-    console.log(`Reference audio base64 length: ${referenceAudioBase64.length} chars`);
-    console.log(`Reference audio size estimate: ${(referenceAudioBase64.length * 0.75 / 1024).toFixed(2)} KB`);
-    console.log(`Base64 preview: ${referenceAudioBase64.substring(0, 50)}...`);
-  } else {
-    console.log(`Voice Cloning: DISABLED (using default voice)`);
-  }
+  logger.debug(`Starting TTS job (text: ${text.length} chars, voice sample: ${payloadSizeKB}KB)`);
 
   const inputPayload: Record<string, unknown> = {
     text: text,
@@ -218,43 +210,44 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
 
   if (referenceAudioBase64) {
     inputPayload.reference_audio_base64 = referenceAudioBase64;
-    console.log(`Added reference_audio_base64 to payload`);
   }
 
-  console.log(`Payload keys: ${Object.keys(inputPayload).join(', ')}`);
-
   try {
+    const requestBody = JSON.stringify({ input: inputPayload });
+    const requestSizeMB = (requestBody.length / 1024 / 1024).toFixed(2);
+
+    if (parseFloat(requestSizeMB) > 50) {
+      throw new Error(`Request payload too large: ${requestSizeMB}MB (RunPod limit is ~50MB). Try using a smaller voice sample.`);
+    }
+
+    logger.debug(`Sending ${requestSizeMB}MB request to RunPod...`);
+
     const response = await fetch(`${RUNPOD_API_URL}/run`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        input: inputPayload,
-      }),
+      body: requestBody,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`RunPod API error: ${response.status} ${response.statusText}`);
-      console.error(`Error response: ${errorText}`);
+      logger.error(`RunPod API error: ${response.status} ${response.statusText}`);
+      logger.error(`Error response: ${errorText.substring(0, 500)}`);
       throw new Error(`Failed to start TTS job: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
     }
 
     const result = await response.json() as any;
-    console.log(`TTS job created successfully`);
-    console.log(`Job ID: ${result.id}`);
-    console.log(`Job status: ${result.status || 'N/A'}`);
 
     if (!result.id) {
       throw new Error('No job ID returned from RunPod');
     }
 
-    console.log(`=== TTS Job Started ===\n`);
+    logger.debug(`TTS job created: ${result.id}`);
     return result.id;
   } catch (error) {
-    console.error('Failed to start TTS job:', error);
+    logger.error(`Failed to start TTS job: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
