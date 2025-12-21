@@ -4,29 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Session Status
 
-**Last Updated:** 2025-12-20
+**Last Updated:** 2025-12-21
 **Claude Version:** Sonnet 4.5 (claude-sonnet-4-5-20250929)
 
 ### Recent Activity
+- **2025-12-21:** Completed migration of all core functions from Supabase to Render
+  - Migrated: `generate-audio`, `generate-images`, `generate-captions`, `get-youtube-transcript`
+  - All long-running operations now on Render (no timeout limits)
+  - Updated frontend to use Render API for all migrated functions
+  - Hybrid architecture: Render for processing, Supabase for storage
 - **2025-12-20:** Migrated script generation API from Railway to Render
-  - Railway had persistent infrastructure issues (image push hanging at 285MB/285.1MB)
-  - Deployed v2.0-HONEST-PROGRESS to Render successfully
-  - Fixed progress bar to show real progress (no fake estimates)
-  - Fixed audio generation chunk validation (skips invalid chunks instead of failing)
+  - Deployed v2.0-HONEST-PROGRESS with real progress updates
+  - Fixed audio generation chunk validation (skips invalid chunks)
 - **2025-12-18:** Fixed RunPod handler bugs and hardened error handling
-  - Switched to ChatterboxTurboTTS
-  - Added voice sample validation (5+ seconds required)
-  - Added GPU OOM handling with graceful errors
+  - Switched to ChatterboxTurboTTS with voice sample validation
   - Updated to RunPod endpoint: `eitsgz3gndkh3s`
 
 ### Current Project State
 - **Frontend:** Deployed on Netlify (https://historygenai.netlify.app), auto-deploys from main branch
-- **Script Generation API:** Deployed on Render (https://history-gen-ai.onrender.com)
-  - Handles long-running script generation with honest progress updates
-  - No timeout limits (Railway replacement)
-- **Backend:** Supabase Edge Functions operational
+- **Render API:** Deployed at https://history-gen-ai.onrender.com
+  - Handles: script generation, audio, images, captions, YouTube transcripts
+  - No timeout limits (eliminates 2-minute Supabase Edge Function limit)
+- **Supabase:** Storage + quick functions (image prompts, video timeline, zip downloads)
 - **TTS System:** RunPod endpoint `eitsgz3gndkh3s` with ChatterboxTurboTTS voice cloning
-- **Voice Cloning:** Functional with hardened error handling (requires 5+ second voice samples)
 
 ## Project Overview
 
@@ -34,11 +34,11 @@ HistoryGen AI is a full-stack application that generates AI-powered historical v
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
-- Script Generation API: Express + TypeScript on Render (unlimited timeout for 20k+ word scripts)
-- Backend: Supabase Edge Functions (Deno)
-- Storage: Supabase Storage (for audio, scripts, captions, images)
+- Backend API: Express + TypeScript on Render (all long-running operations)
+- Storage: Supabase Storage (voice samples, audio, images, captions, scripts)
+- Quick Functions: Supabase Edge Functions (image prompts, video timeline, zip downloads)
 - TTS: RunPod serverless endpoint running Chatterbox TTS with voice cloning
-- Deployment: Netlify (frontend), Render (script API), Supabase (edge functions)
+- Deployment: Netlify (frontend), Render (backend API), Supabase (storage + quick functions)
 
 ## Development Commands
 
@@ -90,7 +90,7 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
 
 ### Render API (`railway-api/`)
 
-**Purpose:** Handles long-running script generation without timeout limits (Railway/Supabase Edge Functions have 2-minute limits).
+**Purpose:** Handles all long-running operations without timeout limits (Supabase Edge Functions have 2-minute limits).
 
 **Key Routes:**
 - `/rewrite-script` - Streaming script generation with honest progress updates
@@ -98,49 +98,53 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
   - Generates scripts in 8k word chunks (optimized for responsiveness)
   - Sends real progress only when iterations complete (no fake estimates)
   - Supports 20k+ word scripts (multiple iterations)
-- `/generate-audio` - Proxies to Supabase `generate-audio` function
-- `/generate-images` - Proxies to Supabase `generate-images` function
+- `/generate-audio` - Voice cloning with RunPod Chatterbox TTS (693 lines)
+  - Streaming SSE progress updates
+  - WAV file concatenation
+  - Validates and skips invalid chunks
+- `/generate-images` - Z-Image generation via RunPod (418 lines)
+  - Parallel job creation and polling
+  - Streaming progress updates
+  - Supports timed prompts with custom filenames
+- `/generate-captions` - Whisper transcription with SRT formatting (264 lines)
+  - WAV chunking for 25MB limit
+  - Supabase storage integration
+- `/get-youtube-transcript` - YouTube transcript fetching via Supadata API (110 lines)
 
 **Environment Variables:**
 ```
 ANTHROPIC_API_KEY=<claude-api-key>
 SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
-SUPABASE_ANON_KEY=<supabase-publishable-key>
+SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-key>
 RUNPOD_API_KEY=<runpod-key>
+RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint-id>
+OPENAI_API_KEY=<openai-key-for-whisper>
+SUPADATA_API_KEY=<supadata-key-for-youtube>
 NODE_ENV=production
 ```
 
 **Important Notes:**
 - TypeScript must be in `dependencies` (not `devDependencies`) for Render builds
 - Build command on Render: `npm install --include=dev && npm run build`
-- Progress updates send `type: 'progress'` events only when iterations complete
-- Keepalive pings send `type: 'keepalive'` to prevent connection drops
+- All streaming endpoints use SSE (Server-Sent Events)
+- Unlimited timeout allows processing very long scripts and audio generation
 
 ### Supabase Edge Functions (`supabase/functions/`)
 
-**`generate-audio/index.ts`** (Main TTS function):
-- Receives: `{ script, voiceSampleUrl, projectId, stream: true }`
-- Downloads voice sample from Supabase storage
-- Converts to base64 for RunPod
-- Splits text into 180-char chunks (Chatterbox limitation)
-- **Validates chunks and skips invalid ones** (won't fail entire job)
-- Sends chunks sequentially to RunPod endpoint `eitsgz3gndkh3s`
-- Streams progress: 5% → 10% → 15-75% (per chunk) → 80% → 90% → 100%
-- Concatenates WAV audio, uploads to storage
-- Returns: `{ audioUrl, duration, size }`
+**NOTE:** Core functions migrated to Render. Remaining Supabase functions are quick operations that won't hit 2-minute timeout.
 
-**Text Validation Rules:**
-- Min length: 5 characters
-- Max length: 400 characters per chunk
-- Must contain alphanumeric characters
-- Rejects emojis and non-ASCII unicode
-- Normalizes text before validation (strips special chars)
+**Still on Supabase:**
+- `generate-image-prompts`: Creates AI image prompts from script (quick operation)
+- `generate-video`: Creates EDL/CSV timeline files (quick operation)
+- `download-images-zip`: Packages images into downloadable zip (quick operation)
+- `get-elevenlabs-voices`: Fetches available ElevenLabs voices (quick API call)
 
-**Other functions:**
-- `get-youtube-transcript`: Fetches YouTube captions
-- `rewrite-script`: Streams script generation (NOTE: Has 2-min timeout, use Render API for >3k words)
-- `generate-images`: Streams image generation (DALL-E 3 via OpenAI)
-- `generate-captions`: Creates SRT files from audio
+**Migrated to Render:**
+- ~~`generate-audio`~~ → Now on Render
+- ~~`generate-images`~~ → Now on Render
+- ~~`generate-captions`~~ → Now on Render
+- ~~`get-youtube-transcript`~~ → Now on Render
+- ~~`rewrite-script`~~ → Now on Render (was first to migrate)
 
 ### RunPod Chatterbox Endpoint
 
