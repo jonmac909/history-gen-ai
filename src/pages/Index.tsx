@@ -308,7 +308,8 @@ const Index = () => {
         confirmedScript,
         srt,
         settings.imageCount,
-        imageStylePrompt
+        imageStylePrompt,
+        pendingAudioDuration // Pass actual audio duration to ensure images cover full audio
       );
 
       if (!promptResult.success || !promptResult.prompts) {

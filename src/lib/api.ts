@@ -622,12 +622,16 @@ export async function generateImagePrompts(
   script: string,
   srtContent: string,
   imageCount: number,
-  stylePrompt: string
+  stylePrompt: string,
+  audioDuration?: number
 ): Promise<ImagePromptsResult> {
   console.log('Generating AI-powered image prompts from script and captions...');
+  if (audioDuration) {
+    console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
+  }
 
   const { data, error } = await supabase.functions.invoke('generate-image-prompts', {
-    body: { script, srtContent, imageCount, stylePrompt }
+    body: { script, srtContent, imageCount, stylePrompt, audioDuration }
   });
 
   if (error) {
