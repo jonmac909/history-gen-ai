@@ -303,6 +303,28 @@ CRITICAL RULES:
           // If the model stopped naturally and we're close enough, break
           if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.85) {
             console.log('Model finished naturally and we have enough words');
+
+            // Truncate if we significantly exceeded the target (>10% overshoot)
+            if (currentWordCount > targetWords * 1.1) {
+              console.log(`Truncating script from ${currentWordCount} to ~${targetWords} words`);
+              const words = fullScript.split(/\s+/);
+              const truncatedWords = words.slice(0, targetWords);
+              fullScript = truncatedWords.join(' ');
+
+              // Ensure we end with a complete sentence
+              const lastPeriod = fullScript.lastIndexOf('.');
+              const lastQuestion = fullScript.lastIndexOf('?');
+              const lastExclamation = fullScript.lastIndexOf('!');
+              const lastSentenceEnd = Math.max(lastPeriod, lastQuestion, lastExclamation);
+
+              if (lastSentenceEnd > fullScript.length * 0.9) {
+                fullScript = fullScript.substring(0, lastSentenceEnd + 1);
+              }
+
+              currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
+              console.log(`Truncated to ${currentWordCount} words`);
+            }
+
             break;
           }
 
@@ -389,6 +411,27 @@ CRITICAL RULES:
         console.log(`After iteration ${iteration}: ${currentWordCount} words`);
 
         if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.85) {
+          // Truncate if we significantly exceeded the target (>10% overshoot)
+          if (currentWordCount > targetWords * 1.1) {
+            console.log(`Truncating script from ${currentWordCount} to ~${targetWords} words`);
+            const words = fullScript.split(/\s+/);
+            const truncatedWords = words.slice(0, targetWords);
+            fullScript = truncatedWords.join(' ');
+
+            // Ensure we end with a complete sentence
+            const lastPeriod = fullScript.lastIndexOf('.');
+            const lastQuestion = fullScript.lastIndexOf('?');
+            const lastExclamation = fullScript.lastIndexOf('!');
+            const lastSentenceEnd = Math.max(lastPeriod, lastQuestion, lastExclamation);
+
+            if (lastSentenceEnd > fullScript.length * 0.9) {
+              fullScript = fullScript.substring(0, lastSentenceEnd + 1);
+            }
+
+            currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
+            console.log(`Truncated to ${currentWordCount} words`);
+          }
+
           break;
         }
 
