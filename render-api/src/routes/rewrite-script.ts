@@ -219,6 +219,11 @@ CRITICAL RULES:
               console.log(`💾 Using prompt cache for iteration ${iteration} (90% cost reduction + faster!)`);
             }
 
+            // Track tokens for incremental progress updates
+            let iterationTokens = '';
+            let lastProgressUpdate = Date.now();
+            const PROGRESS_UPDATE_INTERVAL = 2000; // Update progress every 2 seconds
+
             // OPTIMIZATION: Use streaming with token callbacks + prompt caching
             result = await generateScriptChunkStreaming({
               apiKey: ANTHROPIC_API_KEY,
@@ -232,6 +237,25 @@ CRITICAL RULES:
                   type: 'token',
                   text,
                 });
+
+                // Accumulate tokens and send incremental progress updates
+                iterationTokens += text;
+                const now = Date.now();
+                if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+                  lastProgressUpdate = now;
+
+                  // Estimate current words in this iteration
+                  const iterationWords = iterationTokens.split(/\s+/).filter(w => w.length > 0).length;
+                  const estimatedTotal = currentWordCount + iterationWords;
+                  const estimatedProgress = Math.min(Math.round((estimatedTotal / targetWords) * 100), 99);
+
+                  sendEvent({
+                    type: 'progress',
+                    progress: estimatedProgress,
+                    wordCount: estimatedTotal,
+                    message: `Writing... ${estimatedTotal}/${targetWords} words`
+                  });
+                }
               }
             });
           } catch (apiError) {
