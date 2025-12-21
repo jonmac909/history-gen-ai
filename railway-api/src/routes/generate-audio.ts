@@ -1,37 +1,692 @@
 import { Router, Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
+import crypto from 'crypto';
 
 const router = Router();
 
-// For now, proxy to Supabase function
-// TODO: Migrate fully to Railway if needed
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+const DEBUG = process.env.DEBUG === 'true';
+const logger = {
+  debug: (...args: unknown[]) => DEBUG && console.log('[DEBUG]', ...args),
+  info: (...args: unknown[]) => console.log('[INFO]', ...args),
+  error: (...args: unknown[]) => console.error('[ERROR]', ...args),
+  warn: (...args: unknown[]) => console.warn('[WARN]', ...args),
+};
 
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      return res.status(500).json({ error: 'Supabase configuration missing' });
+// TTS Configuration Constants
+const MAX_TTS_CHUNK_LENGTH = 180;
+const MIN_TEXT_LENGTH = 5;
+const MAX_TEXT_LENGTH = 400;
+const MAX_VOICE_SAMPLE_SIZE = 10 * 1024 * 1024;
+const TTS_JOB_POLL_INTERVAL = 2000;
+const TTS_JOB_TIMEOUT = 120000;
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_INITIAL_DELAY = 1000;
+const RETRY_MAX_DELAY = 10000;
+
+const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "eitsgz3gndkh3s";
+const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
+
+// Helper function to safely get Supabase credentials
+function getSupabaseCredentials(): { url: string; key: string } | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    console.error('Supabase credentials not configured');
+    return null;
+  }
+
+  return { url, key };
+}
+
+// SSRF protection: Validate that URL is from trusted Supabase storage
+function validateVoiceSampleUrl(url: string): { valid: boolean; error?: string } {
+  try {
+    const parsedUrl = new URL(url);
+
+    if (parsedUrl.protocol !== 'https:') {
+      return { valid: false, error: 'Voice sample URL must use HTTPS protocol' };
     }
 
-    // Proxy to Supabase function
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-audio`, {
+    const allowedDomains = ['supabase.co', 'supabase.com'];
+    const hostname = parsedUrl.hostname;
+    const isAllowed = allowedDomains.some(domain =>
+      hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+
+    if (!isAllowed) {
+      return { valid: false, error: 'Voice sample URL must be from Supabase storage' };
+    }
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1' ||
+        hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
+        hostname.startsWith('172.16.') || hostname === '[::1]') {
+      return { valid: false, error: 'Voice sample URL cannot point to internal resources' };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: 'Invalid voice sample URL format' };
+  }
+}
+
+// Hard validation - reject early if text is unsafe
+function validateTTSInput(text: string): boolean {
+  if (!text) return false;
+  if (text.trim().length < MIN_TEXT_LENGTH) return false;
+  if (text.length > MAX_TEXT_LENGTH) return false;
+  if (/[^\x00-\x7F]/.test(text)) return false;
+  if (!/[a-zA-Z0-9]/.test(text)) return false;
+  return true;
+}
+
+// Mandatory normalization before sending to API
+function normalizeText(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Split text into safe chunks at sentence boundaries
+function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH): string[] {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let currentChunk = "";
+
+  for (const sentence of sentences) {
+    if (sentence.length > maxLength) {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = "";
+      }
+      const parts = sentence.split(/,\s*/);
+      let partChunk = "";
+      for (const part of parts) {
+        if (part.length > maxLength) {
+          if (partChunk) {
+            chunks.push(partChunk.trim());
+            partChunk = "";
+          }
+          for (let i = 0; i < part.length; i += maxLength) {
+            chunks.push(part.slice(i, i + maxLength).trim());
+          }
+        } else if ((partChunk + ", " + part).length > maxLength) {
+          if (partChunk) chunks.push(partChunk.trim());
+          partChunk = part;
+        } else {
+          partChunk = partChunk ? partChunk + ", " + part : part;
+        }
+      }
+      if (partChunk) chunks.push(partChunk.trim());
+    } else if ((currentChunk + " " + sentence).length > maxLength) {
+      if (currentChunk) chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk = currentChunk ? currentChunk + " " + sentence : sentence;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks.filter(c => c.length > 0);
+}
+
+// Download voice sample and convert to base64
+async function downloadVoiceSample(url: string): Promise<string> {
+  logger.debug(`Downloading voice sample from: ${url}`);
+
+  const validation = validateVoiceSampleUrl(url);
+  if (!validation.valid) {
+    throw new Error(`Security error: ${validation.error}`);
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download voice sample: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('content-type');
+    logger.debug(`Voice sample content-type: ${contentType}`);
+
+    if (contentType && !contentType.includes('audio')) {
+      logger.warn(`Unexpected content-type: ${contentType}. Expected audio/* type.`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    if (bytes.length === 0) {
+      throw new Error('Voice sample is empty (0 bytes)');
+    }
+
+    if (bytes.length > MAX_VOICE_SAMPLE_SIZE) {
+      throw new Error(`Voice sample too large: ${bytes.length} bytes (max ${MAX_VOICE_SAMPLE_SIZE / 1024 / 1024}MB)`);
+    }
+
+    const header = Buffer.from(bytes.subarray(0, 4)).toString('ascii');
+    if (header === 'RIFF' || header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
+      console.log(`Voice sample format detected: ${header === 'RIFF' ? 'WAV' : header.startsWith('ID3') ? 'MP3' : 'MP3'}`);
+    } else {
+      console.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+    }
+
+    const base64 = Buffer.from(bytes).toString('base64');
+
+    console.log(`Voice sample downloaded successfully:`);
+    console.log(`  - Size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
+    console.log(`  - Base64 length: ${base64.length} chars`);
+    console.log(`  - URL: ${url.substring(0, 100)}...`);
+
+    return base64;
+  } catch (error) {
+    console.error('Error downloading voice sample:', error);
+    throw new Error(`Voice sample download failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Start TTS job
+async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
+  console.log(`\n=== Starting TTS Job ===`);
+  console.log(`Endpoint: ${RUNPOD_API_URL}/run`);
+  console.log(`Text length: ${text.length} chars`);
+  console.log(`Text preview: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+
+  if (referenceAudioBase64) {
+    console.log(`Voice Cloning: ENABLED`);
+    console.log(`Reference audio base64 length: ${referenceAudioBase64.length} chars`);
+    console.log(`Reference audio size estimate: ${(referenceAudioBase64.length * 0.75 / 1024).toFixed(2)} KB`);
+    console.log(`Base64 preview: ${referenceAudioBase64.substring(0, 50)}...`);
+  } else {
+    console.log(`Voice Cloning: DISABLED (using default voice)`);
+  }
+
+  const inputPayload: Record<string, unknown> = {
+    text: text,
+    prompt: text,
+  };
+
+  if (referenceAudioBase64) {
+    inputPayload.reference_audio_base64 = referenceAudioBase64;
+    console.log(`Added reference_audio_base64 to payload`);
+  }
+
+  console.log(`Payload keys: ${Object.keys(inputPayload).join(', ')}`);
+
+  try {
+    const response = await fetch(`${RUNPOD_API_URL}/run`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify({
+        input: inputPayload,
+      }),
     });
 
-    const data = await response.json();
-    res.json(data);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`RunPod API error: ${response.status} ${response.statusText}`);
+      console.error(`Error response: ${errorText}`);
+      throw new Error(`Failed to start TTS job: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+    }
+
+    const result = await response.json() as any;
+    console.log(`TTS job created successfully`);
+    console.log(`Job ID: ${result.id}`);
+    console.log(`Job status: ${result.status || 'N/A'}`);
+
+    if (!result.id) {
+      throw new Error('No job ID returned from RunPod');
+    }
+
+    console.log(`=== TTS Job Started ===\n`);
+    return result.id;
   } catch (error) {
-    console.error('Audio generation error:', error);
-    res.status(500).json({
+    console.error('Failed to start TTS job:', error);
+    throw error;
+  }
+}
+
+// Poll job status
+async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_base64: string; sample_rate: number }> {
+  const maxAttempts = 120;
+  const pollInterval = 2000;
+
+  console.log(`\n=== Polling Job Status ===`);
+  console.log(`Job ID: ${jobId}`);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt % 5 === 0 || attempt < 3) {
+      console.log(`Polling attempt ${attempt + 1}/${maxAttempts}...`);
+    }
+
+    const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Failed to poll job status: HTTP ${response.status}`);
+      console.error(`Error response: ${errorText}`);
+      throw new Error(`Failed to poll job status: ${response.status}`);
+    }
+
+    const result = await response.json() as any;
+    console.log(`Job status: ${result.status}`);
+
+    if (result.status === 'COMPLETED') {
+      console.log(`Job completed successfully!`);
+      if (!result.output?.audio_base64) {
+        console.error('Missing audio_base64 in output:', result.output);
+        throw new Error('No audio_base64 in completed job output');
+      }
+      console.log(`Audio output received: ${result.output.audio_base64.length} chars base64`);
+      console.log(`Sample rate: ${result.output.sample_rate || 'N/A'}`);
+      console.log(`=== Job Completed ===\n`);
+      return result.output;
+    }
+
+    if (result.status === 'FAILED') {
+      console.error(`\n!!! TTS Job FAILED !!!`);
+      console.error(`Job ID: ${jobId}`);
+      console.error(`Error: ${result.error || 'Unknown error'}`);
+      console.error(`Full result:`, JSON.stringify(result, null, 2));
+      throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
+    }
+
+    if (result.delayTime) {
+      console.log(`Estimated delay: ${result.delayTime}ms`);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  console.error(`\n!!! Job Timeout !!!`);
+  console.error(`Job ID: ${jobId} timed out after ${maxAttempts * pollInterval / 1000} seconds`);
+  throw new Error('TTS job timed out after 2 minutes');
+}
+
+// Convert base64 to buffer
+function base64ToBuffer(base64: string): Buffer {
+  return Buffer.from(base64, 'base64');
+}
+
+// Concatenate multiple WAV files
+function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeconds: number } {
+  if (audioChunks.length === 0) {
+    throw new Error('No audio chunks to concatenate');
+  }
+
+  const findChunk = (bytes: Buffer, fourcc: string) => {
+    const needle = Buffer.from(fourcc, 'ascii');
+    for (let i = 0; i <= bytes.length - 4; i++) {
+      if (bytes.slice(i, i + 4).equals(needle)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  const extract = (wav: Buffer) => {
+    if (wav.length < 16) throw new Error('WAV chunk too small');
+
+    const riff = wav.slice(0, 4).toString('ascii');
+    const wave = wav.slice(8, 12).toString('ascii');
+    if (riff !== 'RIFF' || wave !== 'WAVE') {
+      console.warn('Unexpected WAV header (not RIFF/WAVE); attempting to parse anyway');
+    }
+
+    const fmtIdx = findChunk(wav, 'fmt ');
+    const dataIdx = findChunk(wav, 'data');
+    if (fmtIdx === -1) throw new Error('Missing fmt chunk in WAV');
+    if (dataIdx === -1) throw new Error('Missing data chunk in WAV');
+
+    const fmtDataStart = fmtIdx + 8;
+    const audioFormat = wav.readUInt16LE(fmtDataStart + 0);
+    const channels = wav.readUInt16LE(fmtDataStart + 2);
+    const sampleRate = wav.readUInt32LE(fmtDataStart + 4);
+    const byteRate = wav.readUInt32LE(fmtDataStart + 8);
+    const bitsPerSample = wav.readUInt16LE(fmtDataStart + 14);
+
+    if (audioFormat !== 1) {
+      console.warn(`Non-PCM WAV detected (audioFormat=${audioFormat}). Browser playback may fail.`);
+    }
+
+    const dataSizeOffset = dataIdx + 4;
+    const dataSize = wav.readUInt32LE(dataSizeOffset);
+    const dataStart = dataIdx + 8;
+    const dataEnd = Math.min(wav.length, dataStart + dataSize);
+
+    const header = wav.slice(0, dataStart);
+    const data = wav.slice(dataStart, dataEnd);
+
+    return { header, data, dataIdx, dataSizeOffset, sampleRate, channels, bitsPerSample, byteRate };
+  };
+
+  const first = extract(audioChunks[0]);
+  const extracted = audioChunks.map(extract);
+  const totalDataSize = extracted.reduce((sum, e) => sum + e.data.length, 0);
+
+  const output = Buffer.alloc(first.header.length + totalDataSize);
+  first.header.copy(output, 0);
+
+  output.writeUInt32LE(output.length - 8, 4);
+  output.writeUInt32LE(totalDataSize, first.dataSizeOffset);
+
+  let offset = first.header.length;
+  for (const e of extracted) {
+    e.data.copy(output, offset);
+    offset += e.data.length;
+  }
+
+  const safeByteRate = first.byteRate || (first.sampleRate * first.channels * (first.bitsPerSample / 8));
+  const durationSeconds = safeByteRate > 0 ? totalDataSize / safeByteRate : 0;
+
+  return { wav: output, durationSeconds };
+}
+
+// Main route handler
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { script, voiceSampleUrl, projectId, stream } = req.body;
+
+    if (!script) {
+      return res.status(400).json({ error: 'Script is required' });
+    }
+
+    const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+    if (!RUNPOD_API_KEY) {
+      return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
+    }
+
+    // Clean script
+    let cleanScript = script
+      .replace(/\[SCENE \d+\]/g, '')
+      .replace(/\[[^\]]+\]/g, '')
+      .replace(/#{1,6}\s+/g, '')
+      .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    cleanScript = normalizeText(cleanScript);
+
+    const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
+    logger.info(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
+    logger.debug(`Normalized text length: ${cleanScript.length} chars`);
+
+    const rawChunks = splitIntoChunks(cleanScript, 180);
+    logger.debug(`Split into ${rawChunks.length} chunks`);
+
+    const chunks: string[] = [];
+    for (let i = 0; i < rawChunks.length; i++) {
+      if (!validateTTSInput(rawChunks[i])) {
+        logger.warn(`Skipping chunk ${i + 1} (invalid): "${rawChunks[i].substring(0, 50)}..."`);
+        continue;
+      }
+      chunks.push(rawChunks[i]);
+    }
+
+    if (chunks.length === 0) {
+      return res.status(400).json({ error: 'No valid text chunks after validation. Script may contain only special characters or be too short.' });
+    }
+
+    logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
+
+    // Voice cloning support
+    if (voiceSampleUrl && stream) {
+      logger.info('Using streaming mode with voice cloning');
+      return handleVoiceCloningStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+    }
+
+    if (stream) {
+      return handleStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY);
+    } else {
+      return handleNonStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+    }
+
+  } catch (error) {
+    logger.error('Error generating audio:', error);
+    return res.status(500).json({
       error: error instanceof Error ? error.message : 'Audio generation failed'
     });
   }
 });
+
+// Handle streaming without voice cloning
+async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    sendEvent({ type: 'progress', progress: 5, message: `Starting Chatterbox TTS (${chunks.length} chunks, default voice)...` });
+
+    const audioChunks: Buffer[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkText = chunks[i];
+      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+
+      sendEvent({ type: 'progress', progress: 5 + Math.round((i / chunks.length) * 60), message: `Generating audio chunk ${i + 1}/${chunks.length}...` });
+
+      const jobId = await startTTSJob(chunkText, apiKey);
+      const output = await pollJobStatus(jobId, apiKey);
+
+      const audioData = base64ToBuffer(output.audio_base64);
+      audioChunks.push(audioData);
+      console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+    }
+
+    sendEvent({ type: 'progress', progress: 75, message: 'Concatenating audio chunks...' });
+
+    const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    const durationRounded = Math.round(durationSeconds);
+
+    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+    sendEvent({ type: 'progress', progress: 85, message: 'Uploading audio file...' });
+
+    const credentials = getSupabaseCredentials();
+    if (!credentials) {
+      sendEvent({ type: 'error', error: 'Supabase credentials not configured' });
+      res.end();
+      return;
+    }
+
+    const supabase = createClient(credentials.url, credentials.key);
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(fileName, finalAudio, {
+        contentType: 'audio/wav',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      sendEvent({ type: 'error', error: 'Failed to upload audio' });
+      res.end();
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(fileName);
+
+    console.log('Audio uploaded:', urlData.publicUrl);
+
+    sendEvent({ type: 'complete', audioUrl: urlData.publicUrl, duration: durationRounded, size: finalAudio.length });
+    res.end();
+
+  } catch (error) {
+    console.error('Audio error:', error);
+    sendEvent({ type: 'error', error: error instanceof Error ? error.message : 'Audio generation failed' });
+    res.end();
+  }
+}
+
+// Handle streaming with voice cloning
+async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${chunks.length} chunks)...` });
+
+    sendEvent({ type: 'progress', progress: 10, message: 'Downloading voice sample...' });
+
+    const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
+    console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
+
+    const audioChunks: Buffer[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkText = chunks[i];
+      const chunkProgress = 15 + Math.round((i / chunks.length) * 60);
+
+      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+
+      sendEvent({ type: 'progress', progress: chunkProgress, message: `Generating audio chunk ${i + 1}/${chunks.length} with voice cloning...` });
+
+      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+      console.log(`TTS job started with ID: ${jobId}`);
+
+      const output = await pollJobStatus(jobId, apiKey);
+
+      const audioData = base64ToBuffer(output.audio_base64);
+      audioChunks.push(audioData);
+      console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+    }
+
+    sendEvent({ type: 'progress', progress: 80, message: 'Concatenating audio chunks...' });
+
+    const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    const durationRounded = Math.round(durationSeconds);
+
+    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+    sendEvent({ type: 'progress', progress: 90, message: 'Uploading audio...' });
+
+    const credentials = getSupabaseCredentials();
+    if (!credentials) {
+      sendEvent({ type: 'error', error: 'Supabase credentials not configured' });
+      res.end();
+      return;
+    }
+
+    const supabase = createClient(credentials.url, credentials.key);
+    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(fileName, finalAudio, {
+        contentType: 'audio/wav',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      throw new Error('Failed to upload audio');
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(fileName);
+
+    sendEvent({ type: 'complete', success: true, audioUrl: urlData.publicUrl, duration: durationRounded, wordCount, size: finalAudio.length });
+    res.end();
+
+  } catch (error) {
+    console.error('Audio error:', error);
+    sendEvent({ type: 'error', error: error instanceof Error ? error.message : 'Audio generation failed' });
+    res.end();
+  }
+}
+
+// Handle non-streaming (with or without voice cloning)
+async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string) {
+  const audioChunks: Buffer[] = [];
+
+  let referenceAudioBase64: string | undefined;
+  if (voiceSampleUrl) {
+    console.log('Downloading voice sample for cloning...');
+    referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
+    console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkText = chunks[i];
+    console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+
+    const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+    console.log(`TTS job started with ID: ${jobId}`);
+
+    const output = await pollJobStatus(jobId, apiKey);
+
+    const audioData = base64ToBuffer(output.audio_base64);
+    audioChunks.push(audioData);
+    console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+  }
+
+  const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+  const durationRounded = Math.round(durationSeconds);
+
+  console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+  const credentials = getSupabaseCredentials();
+  if (!credentials) {
+    return res.status(500).json({ error: 'Supabase credentials not configured' });
+  }
+
+  const supabase = createClient(credentials.url, credentials.key);
+  const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('generated-assets')
+    .upload(fileName, finalAudio, {
+      contentType: 'audio/wav',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error('Upload error:', uploadError);
+    throw new Error('Failed to upload audio');
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('generated-assets')
+    .getPublicUrl(fileName);
+
+  return res.json({
+    success: true,
+    audioUrl: urlData.publicUrl,
+    duration: durationRounded,
+    wordCount,
+    size: finalAudio.length
+  });
+}
 
 export default router;

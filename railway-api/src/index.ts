@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import rewriteScriptRouter from './routes/rewrite-script';
 import generateAudioRouter from './routes/generate-audio';
 import generateImagesRouter from './routes/generate-images';
+import getYoutubeTranscriptRouter from './routes/get-youtube-transcript';
+import generateCaptionsRouter from './routes/generate-captions';
 
 dotenv.config();
 
@@ -27,6 +29,8 @@ app.get('/health', (req, res) => {
 app.use('/rewrite-script', rewriteScriptRouter);
 app.use('/generate-audio', generateAudioRouter);
 app.use('/generate-images', generateImagesRouter);
+app.use('/get-youtube-transcript', getYoutubeTranscriptRouter);
+app.use('/generate-captions', generateCaptionsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

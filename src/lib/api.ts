@@ -89,16 +89,36 @@ export interface GeneratedAssets {
 }
 
 export async function getYouTubeTranscript(url: string): Promise<TranscriptResult> {
-  const { data, error } = await supabase.functions.invoke('get-youtube-transcript', {
-    body: { url }
-  });
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  if (error) {
-    console.error('Transcript error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
   }
 
-  return data;
+  try {
+    const response = await fetch(`${renderUrl}/get-youtube-transcript`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Transcript error:', response.status, errorText);
+      return { success: false, error: `Failed to fetch transcript: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Transcript error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to fetch transcript' };
+  }
 }
 
 export async function rewriteScript(transcript: string, template: string, title: string): Promise<ScriptResult> {
@@ -399,56 +419,80 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
   console.log('Voice sample URL:', voiceSampleUrl);
   console.log('Script length:', script.length, 'chars');
 
-  const { data, error } = await supabase.functions.invoke('generate-audio', {
-    body: { script, voiceSampleUrl, projectId }
-  });
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  if (error) {
-    console.error('Audio generation error:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
+  }
 
-    // Provide more helpful error messages
-    let errorMessage = error.message;
-    if (errorMessage.includes('Voice sample not accessible')) {
-      errorMessage = 'Cannot access your voice sample. Please try re-uploading it in Settings.';
-    } else if (errorMessage.includes('TTS job failed')) {
-      errorMessage = 'Voice cloning failed. This may be due to an issue with the voice sample or the TTS service. Try a different voice sample or contact support.';
-    } else if (errorMessage.includes('timed out')) {
-      errorMessage = 'Audio generation timed out. The script might be too long, or the service is experiencing delays. Try again in a moment.';
+  try {
+    const response = await fetch(`${renderUrl}/generate-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ script, voiceSampleUrl, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Audio generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate audio: ${response.status}` };
     }
 
-    return { success: false, error: errorMessage };
-  }
+    const data = await response.json();
 
-  if (data?.error) {
-    console.error('Audio generation returned error:', data.error);
-    return { success: false, error: data.error };
-  }
+    if (data?.error) {
+      console.error('Audio generation returned error:', data.error);
 
-  console.log('Audio generated successfully:', data);
-  return data;
+      // Provide more helpful error messages
+      let errorMessage = data.error;
+      if (errorMessage.includes('Voice sample not accessible')) {
+        errorMessage = 'Cannot access your voice sample. Please try re-uploading it in Settings.';
+      } else if (errorMessage.includes('TTS job failed')) {
+        errorMessage = 'Voice cloning failed. This may be due to an issue with the voice sample or the TTS service. Try a different voice sample or contact support.';
+      } else if (errorMessage.includes('timed out')) {
+        errorMessage = 'Audio generation timed out. The script might be too long, or the service is experiencing delays. Try again in a moment.';
+      }
+
+      return { success: false, error: errorMessage };
+    }
+
+    console.log('Audio generated successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('Audio generation error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate audio' };
+  }
 }
 
 export async function generateAudioStreaming(
-  script: string, 
-  voiceSampleUrl: string, 
+  script: string,
+  voiceSampleUrl: string,
   projectId: string,
   onProgress: (progress: number) => void
 ): Promise<AudioResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  
-  const response = await fetch(`${supabaseUrl}/functions/v1/generate-audio`, {
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
+  }
+
+  const response = await fetch(`${renderUrl}/generate-audio`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
-      'apikey': supabaseKey,
     },
-    body: JSON.stringify({ 
-      script, 
-      voiceSampleUrl, 
-      projectId, 
+    body: JSON.stringify({
+      script,
+      voiceSampleUrl,
+      projectId,
       stream: true
     })
   });
@@ -546,16 +590,36 @@ export async function generateImages(
   aspectRatio: string = "16:9",
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const { data, error } = await supabase.functions.invoke('generate-images', {
-    body: { prompts, quality, aspectRatio, projectId }
-  });
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  if (error) {
-    console.error('Image generation error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
   }
 
-  return data;
+  try {
+    const response = await fetch(`${renderUrl}/generate-images`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompts, quality, aspectRatio, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Image generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate images: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Image generation error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate images' };
+  }
 }
 
 export async function generateImagesStreaming(
@@ -565,15 +629,19 @@ export async function generateImagesStreaming(
   onProgress: (completed: number, total: number, message: string) => void,
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/generate-images`, {
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
+  }
+
+  const response = await fetch(`${renderUrl}/generate-images`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
-      'apikey': supabaseKey,
     },
     body: JSON.stringify({ prompts, quality, aspectRatio, stream: true, projectId })
   });
@@ -643,16 +711,36 @@ export async function generateImagesStreaming(
 }
 
 export async function generateCaptions(audioUrl: string, projectId: string): Promise<CaptionsResult> {
-  const { data, error } = await supabase.functions.invoke('generate-captions', {
-    body: { audioUrl, projectId }
-  });
+  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
 
-  if (error) {
-    console.error('Captions error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+    };
   }
 
-  return data;
+  try {
+    const response = await fetch(`${renderUrl}/generate-captions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ audioUrl, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Captions error:', response.status, errorText);
+      return { success: false, error: `Failed to generate captions: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Captions error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate captions' };
+  }
 }
 
 export interface VideoResult {
