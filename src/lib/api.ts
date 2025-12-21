@@ -140,7 +140,8 @@ export async function rewriteScriptStreaming(
   title: string,
   aiModel: string,
   wordCount: number,
-  onProgress: (progress: number, wordCount: number) => void
+  onProgress: (progress: number, wordCount: number) => void,
+  onToken?: (token: string) => void // NEW: Real-time token streaming callback
 ): Promise<ScriptResult> {
   const CHUNK_SIZE = 30000; // Railway has no timeout limit - can generate full scripts in one call!
 
@@ -187,7 +188,8 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
           const overallProgress = chunkStartProgress + (chunkProgress / 100) * (chunkEndProgress - chunkStartProgress);
           const overallWords = totalWordsGenerated + chunkWords;
           onProgress(Math.round(overallProgress), overallWords);
-        }
+        },
+        onToken // Pass through token callback
       );
 
       if (!chunkResult.success) {
@@ -218,7 +220,7 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
   }
 
   // For scripts <= 5000 words, use single-chunk generation
-  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress);
+  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken);
 }
 
 /**
@@ -231,7 +233,8 @@ async function generateSingleChunk(
   title: string,
   aiModel: string,
   wordCount: number,
-  onProgress: (progress: number, wordCount: number) => void
+  onProgress: (progress: number, wordCount: number) => void,
+  onToken?: (token: string) => void // NEW: Real-time token streaming
 ): Promise<ScriptResult> {
   // Use Render API for script generation (no timeout limits!)
   const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
@@ -324,6 +327,11 @@ async function generateSingleChunk(
               if (parsed.type === 'progress') {
                 lastWordCount = parsed.wordCount;
                 onProgress(parsed.progress, parsed.wordCount);
+              } else if (parsed.type === 'token') {
+                // NEW: Stream tokens in real-time for better UX
+                if (onToken && parsed.text) {
+                  onToken(parsed.text);
+                }
               } else if (parsed.type === 'complete') {
                 lastScript = parsed.script;
                 lastWordCount = parsed.wordCount;

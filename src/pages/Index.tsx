@@ -51,6 +51,7 @@ const Index = () => {
   // Step-by-step state
   const [pendingScript, setPendingScript] = useState("");
   const [confirmedScript, setConfirmedScript] = useState("");
+  const [streamingScriptPreview, setStreamingScriptPreview] = useState(""); // NEW: Real-time streaming preview
   const [projectId, setProjectId] = useState("");
   const [videoTitle, setVideoTitle] = useState("History Documentary");
   const [pendingAudioUrl, setPendingAudioUrl] = useState("");
@@ -157,15 +158,31 @@ const Index = () => {
       updateStep("transcript", "completed");
 
       updateStep("script", "active", "0%");
+      setStreamingScriptPreview(""); // Reset preview
 
       const scriptResult = await rewriteScriptStreaming(
-        transcript, 
-        currentTemplate.template, 
+        transcript,
+        currentTemplate.template,
         transcriptResult.title || "History Documentary",
         settings.aiModel,
         settings.wordCount,
         (progress, wordCount) => {
-          updateStep("script", "active", `${progress}% (${wordCount.toLocaleString()} words)`);
+          // Show progress percentage and word count
+          const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
+
+          // If we have streaming preview, show last ~150 chars
+          if (streamingScriptPreview.length > 0) {
+            const preview = streamingScriptPreview.length > 150
+              ? "..." + streamingScriptPreview.slice(-150)
+              : streamingScriptPreview;
+            updateStep("script", "active", `${progressText}\n"${preview}"`);
+          } else {
+            updateStep("script", "active", progressText);
+          }
+        },
+        (token) => {
+          // NEW: Accumulate tokens for real-time preview
+          setStreamingScriptPreview(prev => prev + token);
         }
       );
       
