@@ -51,7 +51,6 @@ const Index = () => {
   // Step-by-step state
   const [pendingScript, setPendingScript] = useState("");
   const [confirmedScript, setConfirmedScript] = useState("");
-  const streamingScriptPreviewRef = useRef(""); // FIX: Use ref to avoid closure bug
   const [projectId, setProjectId] = useState("");
   const [videoTitle, setVideoTitle] = useState("History Documentary");
   const [pendingAudioUrl, setPendingAudioUrl] = useState("");
@@ -158,7 +157,6 @@ const Index = () => {
       updateStep("transcript", "completed");
 
       updateStep("script", "active", "0%");
-      streamingScriptPreviewRef.current = ""; // Reset preview
 
       const scriptResult = await rewriteScriptStreaming(
         transcript,
@@ -167,23 +165,9 @@ const Index = () => {
         settings.aiModel,
         settings.wordCount,
         (progress, wordCount) => {
-          // Show progress percentage and word count
+          // Show only progress percentage and word count (no script preview)
           const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
-
-          // FIX: Use ref.current to access latest streaming preview (avoids closure bug)
-          const currentPreview = streamingScriptPreviewRef.current;
-          if (currentPreview.length > 0) {
-            const preview = currentPreview.length > 150
-              ? "..." + currentPreview.slice(-150)
-              : currentPreview;
-            updateStep("script", "active", `${progressText}\n"${preview}"`);
-          } else {
-            updateStep("script", "active", progressText);
-          }
-        },
-        (token) => {
-          // FIX: Accumulate tokens in ref (not state) to avoid closure bug
-          streamingScriptPreviewRef.current += token;
+          updateStep("script", "active", progressText);
         }
       );
       
