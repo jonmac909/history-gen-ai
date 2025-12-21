@@ -1,7 +1,7 @@
 {
   "name": "historygen-api",
   "version": "1.0.0",
-  "description": "Railway API server for HistoryVidGen - handles long-running script generation",
+  "description": "Render API server for HistoryVidGen - handles long-running script generation",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "railway",
+    "render",
     "express",
     "typescript"
   ],

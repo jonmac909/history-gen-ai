@@ -139,7 +139,7 @@ CRITICAL RULES:
     console.log(`Target word count: ${targetWords}`);
 
     if (stream) {
-      // Streaming mode - NO TIMEOUT LIMITS on Railway!
+      // Streaming mode - NO TIMEOUT LIMITS on Render!
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

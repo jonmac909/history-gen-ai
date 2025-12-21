@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - All long-running operations now on Render (no timeout limits)
   - Updated frontend to use Render API for all migrated functions
   - Hybrid architecture: Render for processing, Supabase for storage
-- **2025-12-20:** Migrated script generation API from Railway to Render
+- **2025-12-20:** Migrated script generation API to Render
   - Deployed v2.0-HONEST-PROGRESS with real progress updates
   - Fixed audio generation chunk validation (skips invalid chunks)
 - **2025-12-18:** Fixed RunPod handler bugs and hardened error handling
@@ -54,9 +54,9 @@ npm run test:coverage   # Run tests with coverage
 npm run test:ui         # Run tests with UI
 ```
 
-### Render API (`railway-api/` directory)
+### Render API (`render-api/` directory)
 ```bash
-cd railway-api
+cd render-api
 npm install             # Install dependencies
 npm run dev             # Start dev server with hot reload
 npm run build           # Compile TypeScript
@@ -88,7 +88,7 @@ Multi-step generation pipeline with review/approval at each stage:
 
 Each step uses streaming APIs for real-time progress updates (percentages shown in `ProcessingModal.tsx`).
 
-### Render API (`railway-api/`)
+### Render API (`render-api/`)
 
 **Purpose:** Handles all long-running operations without timeout limits (Supabase Edge Functions have 2-minute limits).
 
@@ -179,7 +179,7 @@ NODE_ENV=production
 ### Render deployment issues
 - **Build fails with "tsc: not found"**: Move TypeScript to `dependencies` in package.json
 - **Build command**: Use `npm install --include=dev && npm run build` to install devDependencies for build
-- **Image push hanging**: This was a Railway infrastructure bug - shouldn't happen on Render
+- **Image push hanging**: No longer an issue on Render
 
 ### RunPod workers crashing (exit code 1 or 2)
 - Check worker logs in RunPod dashboard (click on crashed worker for full traceback)
@@ -214,10 +214,8 @@ NODE_ENV=production
 VITE_SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<key>
 VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
-VITE_RAILWAY_API_URL=https://history-gen-ai.onrender.com
+VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 ```
-
-Note: `VITE_RAILWAY_API_URL` points to Render (not Railway) - variable name kept for backwards compatibility.
 
 ### Supabase Secrets (Function environment variables)
 - `RUNPOD_API_KEY`: RunPod API key for TTS endpoint
@@ -238,7 +236,7 @@ Note: `VITE_RAILWAY_API_URL` points to Render (not Railway) - variable name kept
 
 ### Render API
 - Auto-deploys on push to `main` branch
-- Root directory: `railway-api`
+- Root directory: `render-api`
 - Build command: `npm install --include=dev && npm run build`
 - Start command: `npm start`
 - Environment variables set in Render dashboard

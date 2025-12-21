@@ -89,12 +89,12 @@ export interface GeneratedAssets {
 }
 
 export async function getYouTubeTranscript(url: string): Promise<TranscriptResult> {
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -143,7 +143,7 @@ export async function rewriteScriptStreaming(
   onProgress: (progress: number, wordCount: number) => void,
   onToken?: (token: string) => void // NEW: Real-time token streaming callback
 ): Promise<ScriptResult> {
-  const CHUNK_SIZE = 30000; // Railway has no timeout limit - can generate full scripts in one call!
+  const CHUNK_SIZE = 30000; // Render has no timeout limit - can generate full scripts in one call!
 
   // For large scripts, split into chunks to avoid Supabase 5-minute timeout
   if (wordCount > CHUNK_SIZE) {
@@ -237,12 +237,12 @@ async function generateSingleChunk(
   onToken?: (token: string) => void // NEW: Real-time token streaming
 ): Promise<ScriptResult> {
   // Use Render API for script generation (no timeout limits!)
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -427,12 +427,12 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
   console.log('Voice sample URL:', voiceSampleUrl);
   console.log('Script length:', script.length, 'chars');
 
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -483,12 +483,12 @@ export async function generateAudioStreaming(
   projectId: string,
   onProgress: (progress: number) => void
 ): Promise<AudioResult> {
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -598,12 +598,12 @@ export async function generateImages(
   aspectRatio: string = "16:9",
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -637,12 +637,12 @@ export async function generateImagesStreaming(
   onProgress: (completed: number, total: number, message: string) => void,
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
@@ -719,12 +719,12 @@ export async function generateImagesStreaming(
 }
 
 export async function generateCaptions(audioUrl: string, projectId: string): Promise<CaptionsResult> {
-  const renderUrl = import.meta.env.VITE_RAILWAY_API_URL;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
     return {
       success: false,
-      error: 'Render API URL not configured. Please set VITE_RAILWAY_API_URL in .env'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
