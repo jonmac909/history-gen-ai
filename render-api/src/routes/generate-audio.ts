@@ -407,15 +407,32 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
 
 // Main route handler
 router.post('/', async (req: Request, res: Response) => {
-  try {
-    const { script, voiceSampleUrl, projectId, stream } = req.body;
+  const { script, voiceSampleUrl, projectId, stream } = req.body;
 
+  // Helper to send SSE error events when streaming
+  const sendStreamError = (error: string) => {
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+    }
+    res.write(`data: ${JSON.stringify({ type: 'error', error })}\n\n`);
+    res.end();
+  };
+
+  try {
     if (!script) {
+      if (stream) {
+        return sendStreamError('Script is required');
+      }
       return res.status(400).json({ error: 'Script is required' });
     }
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     if (!RUNPOD_API_KEY) {
+      if (stream) {
+        return sendStreamError('RUNPOD_API_KEY not configured');
+      }
       return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
     }
 
@@ -447,7 +464,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     if (chunks.length === 0) {
-      return res.status(400).json({ error: 'No valid text chunks after validation. Script may contain only special characters or be too short.' });
+      const errorMsg = 'No valid text chunks after validation. Script may contain only special characters or be too short.';
+      if (stream) {
+        return sendStreamError(errorMsg);
+      }
+      return res.status(400).json({ error: errorMsg });
     }
 
     logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
@@ -466,9 +487,12 @@ router.post('/', async (req: Request, res: Response) => {
 
   } catch (error) {
     logger.error('Error generating audio:', error);
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Audio generation failed'
-    });
+    const errorMsg = error instanceof Error ? error.message : 'Audio generation failed';
+
+    if (stream) {
+      return sendStreamError(errorMsg);
+    }
+    return res.status(500).json({ error: errorMsg });
   }
 });
 
