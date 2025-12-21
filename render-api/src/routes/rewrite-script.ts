@@ -171,16 +171,18 @@ CRITICAL RULES:
 
           if (iteration === 1) {
             // First iteration: start fresh
+            const wordLimit = Math.min(wordsPerIteration, targetWords);
             messages = [{
               role: 'user',
-              content: `Create a ${Math.min(wordsPerIteration, targetWords)}-word historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${Math.min(wordsPerIteration, targetWords)} words of pure narration.`
+              content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nIMPORTANT: Write EXACTLY ${wordLimit} words of pure narration. Do not exceed ${wordLimit} words. Stop writing when you reach ${wordLimit} words.`
             }];
           } else {
             // Continuation iterations
+            const wordLimit = Math.min(wordsPerIteration, wordsRemaining);
             messages = [
               {
                 role: 'user',
-                content: `Create a ${Math.min(wordsPerIteration, wordsRemaining)}-word historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${Math.min(wordsPerIteration, wordsRemaining)} words of pure narration.`
+                content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${wordLimit} words of pure narration.`
               },
               {
                 role: 'assistant',
@@ -188,7 +190,7 @@ CRITICAL RULES:
               },
               {
                 role: 'user',
-                content: `Continue the script. Write exactly ${Math.min(wordsPerIteration, wordsRemaining)} more words. Continue seamlessly from where you left off - do not repeat any content.`
+                content: `Continue the script. IMPORTANT: Write EXACTLY ${wordLimit} more words - no more, no less. Do not exceed ${wordLimit} words. Continue seamlessly from where you left off - do not repeat any content. Stop writing when you reach ${wordLimit} words.`
               }
             ];
           }
@@ -371,15 +373,17 @@ CRITICAL RULES:
         let messages: { role: 'user' | 'assistant'; content: string }[];
 
         if (iteration === 1) {
+          const wordLimit = Math.min(wordsPerIteration, targetWords);
           messages = [{
             role: 'user',
-            content: `Create a ${Math.min(wordsPerIteration, targetWords)}-word historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${Math.min(wordsPerIteration, targetWords)} words of pure narration.`
+            content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nIMPORTANT: Write EXACTLY ${wordLimit} words of pure narration. Do not exceed ${wordLimit} words. Stop writing when you reach ${wordLimit} words.`
           }];
         } else {
+          const wordLimit = Math.min(wordsPerIteration, wordsRemaining);
           messages = [
             {
               role: 'user',
-              content: `Create a ${Math.min(wordsPerIteration, wordsRemaining)}-word historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${Math.min(wordsPerIteration, wordsRemaining)} words of pure narration.`
+              content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${wordLimit} words of pure narration.`
             },
             {
               role: 'assistant',
@@ -387,7 +391,7 @@ CRITICAL RULES:
             },
             {
               role: 'user',
-              content: `Continue the script. Write exactly ${Math.min(wordsPerIteration, wordsRemaining)} more words. Continue seamlessly from where you left off - do not repeat any content.`
+              content: `Continue the script. IMPORTANT: Write EXACTLY ${wordLimit} more words - no more, no less. Do not exceed ${wordLimit} words. Continue seamlessly from where you left off - do not repeat any content. Stop writing when you reach ${wordLimit} words.`
             }
           ];
         }
