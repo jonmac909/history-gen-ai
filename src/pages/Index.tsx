@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ const Index = () => {
   // Step-by-step state
   const [pendingScript, setPendingScript] = useState("");
   const [confirmedScript, setConfirmedScript] = useState("");
-  const [streamingScriptPreview, setStreamingScriptPreview] = useState(""); // NEW: Real-time streaming preview
+  const streamingScriptPreviewRef = useRef(""); // FIX: Use ref to avoid closure bug
   const [projectId, setProjectId] = useState("");
   const [videoTitle, setVideoTitle] = useState("History Documentary");
   const [pendingAudioUrl, setPendingAudioUrl] = useState("");
@@ -158,7 +158,7 @@ const Index = () => {
       updateStep("transcript", "completed");
 
       updateStep("script", "active", "0%");
-      setStreamingScriptPreview(""); // Reset preview
+      streamingScriptPreviewRef.current = ""; // Reset preview
 
       const scriptResult = await rewriteScriptStreaming(
         transcript,
@@ -170,19 +170,20 @@ const Index = () => {
           // Show progress percentage and word count
           const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
 
-          // If we have streaming preview, show last ~150 chars
-          if (streamingScriptPreview.length > 0) {
-            const preview = streamingScriptPreview.length > 150
-              ? "..." + streamingScriptPreview.slice(-150)
-              : streamingScriptPreview;
+          // FIX: Use ref.current to access latest streaming preview (avoids closure bug)
+          const currentPreview = streamingScriptPreviewRef.current;
+          if (currentPreview.length > 0) {
+            const preview = currentPreview.length > 150
+              ? "..." + currentPreview.slice(-150)
+              : currentPreview;
             updateStep("script", "active", `${progressText}\n"${preview}"`);
           } else {
             updateStep("script", "active", progressText);
           }
         },
         (token) => {
-          // NEW: Accumulate tokens for real-time preview
-          setStreamingScriptPreview(prev => prev + token);
+          // FIX: Accumulate tokens in ref (not state) to avoid closure bug
+          streamingScriptPreviewRef.current += token;
         }
       );
       
