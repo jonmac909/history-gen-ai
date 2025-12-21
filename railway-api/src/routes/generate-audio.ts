@@ -577,7 +577,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
-    sendEvent({ type: 'progress', progress: 85, message: 'Uploading audio file...' });
+    sendEvent({ type: 'progress', progress: 90, message: 'Uploading audio file...' });
 
     const credentials = getSupabaseCredentials();
     if (!credentials) {
@@ -598,7 +598,8 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
-      sendEvent({ type: 'error', error: 'Failed to upload audio' });
+      const errorMsg = `Failed to upload audio: ${uploadError.message || JSON.stringify(uploadError)}`;
+      sendEvent({ type: 'error', error: errorMsg });
       res.end();
       return;
     }
@@ -729,7 +730,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
 
     console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
-    sendEvent({ type: 'progress', progress: 90, message: 'Uploading audio...' });
+    sendEvent({ type: 'progress', progress: 95, message: 'Uploading audio...' });
 
     const credentials = getSupabaseCredentials();
     if (!credentials) {
@@ -750,7 +751,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
-      throw new Error('Failed to upload audio');
+      throw new Error(`Failed to upload audio: ${uploadError.message || JSON.stringify(uploadError)}`);
     }
 
     const { data: urlData } = supabase.storage
@@ -875,7 +876,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
 
   if (uploadError) {
     console.error('Upload error:', uploadError);
-    throw new Error('Failed to upload audio');
+    throw new Error(`Failed to upload audio: ${uploadError.message || JSON.stringify(uploadError)}`);
   }
 
   const { data: urlData } = supabase.storage
