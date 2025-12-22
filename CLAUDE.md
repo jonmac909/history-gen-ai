@@ -84,11 +84,10 @@ Multi-step generation with user review at each stage:
 5. **Image Generation** (streaming, parallel) → Final Results
 
 **UI Features:**
-- `ImagesPreviewModal`: Click thumbnails to open full-size lightbox (arrow keys, click arrows to navigate)
-  - Lightbox rendered via `createPortal` outside Dialog to prevent event conflicts
-  - **Critical:** Uses capture-phase `window.addEventListener('click', handler, true)` for click handling
-  - Radix Dialog intercepts pointer events globally, so React `onClick` handlers don't work on portals
-  - Same pattern as keyboard events: native event listeners bypass Radix's event interception
+- `ImagesPreviewModal`: Click thumbnails to open full-size lightbox
+  - Close with ESC key or click outside the image
+  - Lightbox rendered via `createPortal` outside Dialog
+  - Uses capture-phase `window.addEventListener` to bypass Radix Dialog's event interception
   - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
 - `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
