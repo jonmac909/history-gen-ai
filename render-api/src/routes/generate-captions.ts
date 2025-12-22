@@ -282,18 +282,28 @@ router.post('/', async (req: Request, res: Response) => {
     const allSegments: Array<{ text: string; start: number; end: number }> = [];
     let timeOffset = 0;
 
+    // Send initial progress
+    sendEvent({
+      type: 'progress',
+      progress: 5,
+      message: `Starting transcription (${numChunks} chunk${numChunks > 1 ? 's' : ''})...`,
+      chunksProcessed: 0,
+      totalChunks: numChunks
+    });
+
     for (let i = 0; i < numChunks; i++) {
       const startByte = i * chunkSizeBytes;
       const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
       const chunkPcm = pcmData.slice(startByte, endByte);
 
-      // Send progress update before transcribing
-      const progress = Math.round(((i + 1) / numChunks) * 100);
+      // Send progress update BEFORE transcribing (show which chunk we're working on)
+      // Progress: 5% start, 5-90% for chunks, 90-100% for finalization
+      const progressStart = 5 + Math.round((i / numChunks) * 85);
       sendEvent({
         type: 'progress',
-        progress,
-        message: `Transcribing chunk ${i + 1}/${numChunks}...`,
-        chunksProcessed: i + 1,
+        progress: progressStart,
+        message: `Transcribing${numChunks > 1 ? ` chunk ${i + 1}/${numChunks}` : ''}...`,
+        chunksProcessed: i,
         totalChunks: numChunks
       });
 
@@ -314,6 +324,16 @@ router.post('/', async (req: Request, res: Response) => {
 
       // Update time offset for next chunk
       timeOffset += duration;
+
+      // Send progress update AFTER transcribing
+      const progressEnd = 5 + Math.round(((i + 1) / numChunks) * 85);
+      sendEvent({
+        type: 'progress',
+        progress: progressEnd,
+        message: `Transcribed${numChunks > 1 ? ` chunk ${i + 1}/${numChunks}` : ''}`,
+        chunksProcessed: i + 1,
+        totalChunks: numChunks
+      });
     }
 
     console.log('Total segments from all chunks:', allSegments.length);
