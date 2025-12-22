@@ -719,134 +719,176 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    console.log(`\n=== Processing ${actualSegmentCount} segments IN PARALLEL ===`);
+    const MAX_CONCURRENT_SEGMENTS = 3; // Memory-safe: limits peak RAM usage on Render
+    console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
-    // Track completed segments for progress reporting
-    let completedSegments = 0;
-    const totalSegments = actualSegmentCount;
+    const allSegmentResults: Array<{
+      index: number;
+      audioUrl: string;
+      duration: number;
+      size: number;
+      text: string;
+      audioBuffer: Buffer;
+      durationSeconds: number;
+    }> = [];
 
-    // Process all segments in parallel
-    const segmentPromises = segments.map(async (segmentText, segIdx) => {
+    let nextSegmentIndex = 0;
+    const activeSegments = new Map<number, Promise<void>>();
+
+    // Helper to process a single segment
+    const processSegment = async (segIdx: number): Promise<void> => {
+      const segmentText = segments[segIdx];
       const segmentNumber = segIdx + 1;
 
       console.log(`\n--- Segment ${segmentNumber}/${actualSegmentCount} STARTED ---`);
       console.log(`Text: "${segmentText.substring(0, 100)}..."`);
 
-      // Split this segment into TTS chunks
-      const rawChunks = splitIntoChunks(segmentText, MAX_TTS_CHUNK_LENGTH);
-      const chunks: string[] = [];
-      let skippedChunks = 0;
+      try {
+        // Split this segment into TTS chunks
+        const rawChunks = splitIntoChunks(segmentText, MAX_TTS_CHUNK_LENGTH);
+        const chunks: string[] = [];
+        let skippedChunks = 0;
 
-      for (const chunk of rawChunks) {
-        if (validateTTSInput(chunk)) {
-          chunks.push(chunk);
-        } else {
-          skippedChunks++;
-          // Log why validation failed
-          const reasons: string[] = [];
-          if (!chunk) reasons.push('empty');
-          else if (chunk.trim().length < MIN_TEXT_LENGTH) reasons.push(`too short (${chunk.trim().length} chars)`);
-          else if (chunk.length > MAX_TEXT_LENGTH) reasons.push(`too long (${chunk.length} chars)`);
-          else if (/[^\x00-\x7F]/.test(chunk)) reasons.push('contains non-ASCII');
-          else if (!/[a-zA-Z0-9]/.test(chunk)) reasons.push('no alphanumeric chars');
-          console.log(`  SKIPPED chunk in segment ${segmentNumber}: ${reasons.join(', ')} - "${chunk.substring(0, 50)}..."`);
+        for (const chunk of rawChunks) {
+          if (validateTTSInput(chunk)) {
+            chunks.push(chunk);
+          } else {
+            skippedChunks++;
+            const reasons: string[] = [];
+            if (!chunk) reasons.push('empty');
+            else if (chunk.trim().length < MIN_TEXT_LENGTH) reasons.push(`too short (${chunk.trim().length} chars)`);
+            else if (chunk.length > MAX_TEXT_LENGTH) reasons.push(`too long (${chunk.length} chars)`);
+            else if (/[^\x00-\x7F]/.test(chunk)) reasons.push('contains non-ASCII');
+            else if (!/[a-zA-Z0-9]/.test(chunk)) reasons.push('no alphanumeric chars');
+            console.log(`  SKIPPED chunk in segment ${segmentNumber}: ${reasons.join(', ')} - "${chunk.substring(0, 50)}..."`);
+          }
         }
-      }
 
-      if (chunks.length === 0) {
-        console.log(`  WARNING: Segment ${segmentNumber} has no valid chunks (${rawChunks.length} raw, ${skippedChunks} skipped)`);
-        return null; // Skip this segment
-      }
+        if (chunks.length === 0) {
+          console.log(`  WARNING: Segment ${segmentNumber} has no valid chunks (${rawChunks.length} raw, ${skippedChunks} skipped)`);
+          return;
+        }
 
-      console.log(`  Segment ${segmentNumber}: ${chunks.length}/${rawChunks.length} chunks valid (${skippedChunks} skipped)`);
+        console.log(`  Segment ${segmentNumber}: ${chunks.length}/${rawChunks.length} chunks valid (${skippedChunks} skipped)`);
 
-      const audioChunks: Buffer[] = [];
+        const audioChunks: Buffer[] = [];
 
-      // Process each chunk in this segment sequentially (avoid memory issues within single worker)
-      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-        const chunkText = chunks[chunkIdx];
+        // Process each chunk in this segment sequentially
+        for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+          const chunkText = chunks[chunkIdx];
 
-        // Calculate progress based on completed segments
-        const baseProgress = 10 + Math.round((completedSegments / totalSegments) * 75);
-        const chunkProgress = baseProgress + Math.round(
-          ((chunkIdx + 1) / chunks.length) * (75 / totalSegments)
-        );
+          const completed = allSegmentResults.length;
+          const baseProgress = 10 + Math.round((completed / actualSegmentCount) * 75);
+          const chunkProgress = baseProgress + Math.round(
+            ((chunkIdx + 1) / chunks.length) * (75 / actualSegmentCount)
+          );
 
+          sendEvent({
+            type: 'progress',
+            progress: Math.min(chunkProgress, 85),
+            message: `Segment ${segmentNumber}: chunk ${chunkIdx + 1}/${chunks.length}...`
+          });
+
+          try {
+            const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
+            audioChunks.push(audioData);
+            console.log(`  Segment ${segmentNumber} - Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
+          } catch (err) {
+            logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber} after all retries: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          }
+        }
+
+        if (audioChunks.length === 0) {
+          logger.warn(`All chunks failed for segment ${segmentNumber}, skipping`);
+          return;
+        }
+
+        // Concatenate this segment's chunks into one WAV
+        const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+        const durationRounded = Math.round(durationSeconds * 10) / 10;
+
+        console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
+
+        // Upload this segment
+        const fileName = `${actualProjectId}/voiceover-segment-${segmentNumber}.wav`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('generated-assets')
+          .upload(fileName, segmentAudio, {
+            contentType: 'audio/wav',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          logger.error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
+          throw new Error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('generated-assets')
+          .getPublicUrl(fileName);
+
+        console.log(`Segment ${segmentNumber} COMPLETED: ${urlData.publicUrl}`);
+
+        // Store result
+        allSegmentResults.push({
+          index: segmentNumber,
+          audioUrl: urlData.publicUrl,
+          duration: durationRounded,
+          size: segmentAudio.length,
+          text: segmentText,
+          audioBuffer: segmentAudio,
+          durationSeconds,
+        });
+
+        // Send progress update
+        const completed = allSegmentResults.length;
+        const batchNum = Math.ceil(completed / MAX_CONCURRENT_SEGMENTS);
         sendEvent({
           type: 'progress',
-          progress: Math.min(chunkProgress, 85), // Cap at 85%
-          message: `Segment ${segmentNumber}: chunk ${chunkIdx + 1}/${chunks.length}...`
+          progress: 10 + Math.round((completed / actualSegmentCount) * 75),
+          message: `Batch ${batchNum}: ${completed}/${actualSegmentCount} segments done`
         });
 
-        try {
-          // Use retry logic with exponential backoff
-          const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
-          audioChunks.push(audioData);
-          console.log(`  Segment ${segmentNumber} - Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
-        } catch (err) {
-          logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber} after all retries: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
+      } catch (err) {
+        logger.error(`Segment ${segmentNumber} failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
+    };
 
-      if (audioChunks.length === 0) {
-        logger.warn(`All chunks failed for segment ${segmentNumber}, skipping`);
-        return null;
-      }
+    // Helper to start next segment
+    const startNextSegment = async (): Promise<void> => {
+      if (nextSegmentIndex >= actualSegmentCount) return;
 
-      // Concatenate this segment's chunks into one WAV
-      const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
-      const durationRounded = Math.round(durationSeconds * 10) / 10; // Round to 1 decimal
+      const segIdx = nextSegmentIndex;
+      nextSegmentIndex++;
 
-      console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
-
-      // Upload this segment
-      const fileName = `${actualProjectId}/voiceover-segment-${segmentNumber}.wav`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('generated-assets')
-        .upload(fileName, segmentAudio, {
-          contentType: 'audio/wav',
-          upsert: true,
-        });
-
-      if (uploadError) {
-        logger.error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
-        throw new Error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('generated-assets')
-        .getPublicUrl(fileName);
-
-      console.log(`Segment ${segmentNumber} COMPLETED: ${urlData.publicUrl}`);
-
-      // Increment completed counter
-      completedSegments++;
-      const overallProgress = 10 + Math.round((completedSegments / totalSegments) * 75);
-      sendEvent({
-        type: 'progress',
-        progress: Math.min(overallProgress, 85),
-        message: `Completed ${completedSegments}/${totalSegments} segments...`
+      const promise = processSegment(segIdx).finally(() => {
+        activeSegments.delete(segIdx);
       });
 
-      return {
-        index: segmentNumber,
-        audioUrl: urlData.publicUrl,
-        duration: durationRounded,
-        size: segmentAudio.length,
-        text: segmentText,
-        audioBuffer: segmentAudio, // Include buffer for concatenation
-        durationSeconds, // Exact duration for total calculation
-      };
-    });
+      activeSegments.set(segIdx, promise);
+    };
 
-    // Wait for all segments to complete
-    const segmentResultsWithNulls = await Promise.all(segmentPromises);
+    // Fill initial window with segments
+    const initialBatch = Math.min(MAX_CONCURRENT_SEGMENTS, actualSegmentCount);
+    console.log(`Starting initial batch of ${initialBatch} segments...`);
+    for (let i = 0; i < initialBatch; i++) {
+      await startNextSegment();
+    }
 
-    // Filter out failed segments and sort by index
-    const segmentResults = segmentResultsWithNulls
-      .filter((result): result is NonNullable<typeof result> => result !== null)
-      .sort((a, b) => a.index - b.index);
+    // Process remaining segments as active ones complete
+    while (activeSegments.size > 0) {
+      // Wait for any segment to complete
+      await Promise.race(Array.from(activeSegments.values()));
+
+      // Start next segment if available
+      if (nextSegmentIndex < actualSegmentCount) {
+        await startNextSegment();
+      }
+    }
+
+    // Sort results by segment index
+    const segmentResults = allSegmentResults.sort((a, b) => a.index - b.index);
 
     if (segmentResults.length === 0) {
       throw new Error('All segments failed to generate');
