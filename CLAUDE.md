@@ -86,9 +86,10 @@ Multi-step generation with user review at each stage:
 **UI Features:**
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox (arrow keys, click arrows to navigate)
   - Lightbox rendered via `createPortal` outside Dialog to prevent event conflicts
-  - Uses functional state updates to avoid navigation skip bugs
+  - **Critical:** Uses capture-phase `window.addEventListener('click', handler, true)` for click handling
+  - Radix Dialog intercepts pointer events globally, so React `onClick` handlers don't work on portals
+  - Same pattern as keyboard events: native event listeners bypass Radix's event interception
   - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
-  - SVG icons use `pointer-events-none` so only button elements handle clicks (prevents double-firing)
 - `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 
