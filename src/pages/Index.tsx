@@ -758,6 +758,8 @@ const Index = () => {
         <AudioSegmentsPreviewModal
           isOpen={viewState === "review-audio"}
           segments={pendingAudioSegments}
+          combinedAudioUrl={pendingAudioUrl}
+          totalDuration={pendingAudioDuration}
           onConfirmAll={handleAudioConfirm}
           onRegenerate={handleSegmentRegenerate}
           onCancel={handleCancel}

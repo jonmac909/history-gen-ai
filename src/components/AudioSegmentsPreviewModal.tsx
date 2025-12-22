@@ -14,6 +14,8 @@ import { AudioSegment } from "@/lib/api";
 interface AudioSegmentsPreviewModalProps {
   isOpen: boolean;
   segments: AudioSegment[];
+  combinedAudioUrl?: string;
+  totalDuration?: number;
   onConfirmAll: () => void;
   onRegenerate: (segmentIndex: number) => Promise<void>;
   onCancel: () => void;
@@ -172,12 +174,56 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
 export function AudioSegmentsPreviewModal({
   isOpen,
   segments,
+  combinedAudioUrl,
+  totalDuration: propTotalDuration,
   onConfirmAll,
   onRegenerate,
   onCancel,
   regeneratingIndex,
 }: AudioSegmentsPreviewModalProps) {
-  const totalDuration = segments.reduce((sum, seg) => sum + seg.duration, 0);
+  const [isPlayingAll, setIsPlayingAll] = useState(false);
+  const [allCurrentTime, setAllCurrentTime] = useState(0);
+  const [isLoadingAll, setIsLoadingAll] = useState(true);
+  const combinedAudioRef = useRef<HTMLAudioElement>(null);
+
+  const calculatedDuration = segments.reduce((sum, seg) => sum + seg.duration, 0);
+  const totalDuration = propTotalDuration || calculatedDuration;
+
+  // Reset combined audio state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setIsPlayingAll(false);
+      setAllCurrentTime(0);
+      setIsLoadingAll(true);
+    }
+  }, [isOpen]);
+
+  const togglePlayAll = () => {
+    if (!combinedAudioRef.current) return;
+
+    if (isPlayingAll) {
+      combinedAudioRef.current.pause();
+      setIsPlayingAll(false);
+    } else {
+      combinedAudioRef.current.play()
+        .then(() => setIsPlayingAll(true))
+        .catch((err) => console.error('Failed to play combined audio:', err));
+    }
+  };
+
+  const handleAllTimeUpdate = () => {
+    if (combinedAudioRef.current) {
+      setAllCurrentTime(combinedAudioRef.current.currentTime);
+    }
+  };
+
+  const handleAllSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (combinedAudioRef.current) {
+      const newTime = parseFloat(e.target.value);
+      combinedAudioRef.current.currentTime = newTime;
+      setAllCurrentTime(newTime);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
@@ -194,6 +240,68 @@ export function AudioSegmentsPreviewModal({
         </DialogHeader>
 
         <div className="py-4 space-y-4">
+          {/* Combined Audio Player - Play All */}
+          {combinedAudioUrl && (
+            <div className="border-2 border-primary/30 rounded-lg p-4 space-y-3 bg-primary/5">
+              <audio
+                ref={combinedAudioRef}
+                src={combinedAudioUrl}
+                preload="auto"
+                onTimeUpdate={handleAllTimeUpdate}
+                onCanPlay={() => setIsLoadingAll(false)}
+                onEnded={() => { setIsPlayingAll(false); setAllCurrentTime(0); }}
+                onError={() => setIsLoadingAll(false)}
+              />
+
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-lg text-primary">Play All Segments</span>
+                <span className="text-sm text-muted-foreground">{formatTime(totalDuration)}</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="w-12 h-12 rounded-full p-0 flex-shrink-0"
+                  onClick={togglePlayAll}
+                  disabled={isLoadingAll}
+                >
+                  {isLoadingAll ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : isPlayingAll ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5 ml-0.5" />
+                  )}
+                </Button>
+
+                <div className="flex-1 space-y-1">
+                  <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="absolute h-full bg-primary rounded-full transition-all"
+                      style={{ width: `${totalDuration ? (allCurrentTime / totalDuration) * 100 : 0}%` }}
+                    />
+                    <input
+                      type="range"
+                      min={0}
+                      max={totalDuration || 100}
+                      step={0.1}
+                      value={allCurrentTime}
+                      onChange={handleAllSeek}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{formatTime(allCurrentTime)}</span>
+                    <span>{formatTime(totalDuration)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Segments */}
+          <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">Individual Segments (click to regenerate)</div>
           {segments.map((segment) => (
             <AudioSegmentCard
               key={segment.index}
