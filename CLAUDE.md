@@ -4,172 +4,164 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio, creates captions, and produces AI images with timing-based filenames for video editing.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
-- Backend: Supabase Edge Functions (Deno)
-- Storage: Supabase Storage (audio, scripts, captions, images)
+- Backend API: Express + TypeScript on Render (long-running operations)
+- Quick Functions: Supabase Edge Functions (Deno)
+- Storage: Supabase Storage
 - TTS: RunPod serverless with ChatterboxTurboTTS voice cloning
 - Image Generation: RunPod serverless with Z-Image-Turbo
-- Deployment: Netlify (frontend), Supabase (backend), RunPod (AI workers)
+- Deployment: Netlify (frontend), Render (API), Supabase (storage + quick functions)
 
 ## Development Commands
 
+### Frontend
 ```bash
 npm i                    # Install dependencies
 npm run dev              # Start dev server (http://localhost:8080)
 npm run build            # Production build
 npm run lint             # Run ESLint
+npm test                 # Run tests in watch mode
+npm run test:run         # Run tests once (for CI)
+npm run test:coverage    # Run tests with coverage
+```
 
-# Supabase function deployment (requires SUPABASE_ACCESS_TOKEN)
-npx supabase functions deploy <function-name>
+### Render API (`render-api/`)
+```bash
+cd render-api
+npm install              # Install dependencies
+npm run dev              # Start dev server with hot reload
+npm run build            # Compile TypeScript
+npm start                # Start production server
+npm run typecheck        # Type check without building
+```
 
-# Alternative: Deploy via Supabase Dashboard if Docker issues
-# https://supabase.com/dashboard/project/udqfdeoullsxttqguupz/functions
-
-# RunPod monitoring
-npm run monitor:runpod          # View RunPod logs
-npm run monitor:runpod:watch    # Watch logs in real-time
-npm run monitor:runpod:errors   # Show errors only
+### Supabase Functions
+```bash
+export SUPABASE_ACCESS_TOKEN='your-token'
+npx supabase functions deploy <function-name> --project-ref udqfdeoullsxttqguupz
 ```
 
 ## Architecture
 
-### Generation Pipeline (`src/pages/Index.tsx`)
+### Hybrid Backend Design
 
-Multi-step pipeline with user review at each stage:
+Long-running operations run on **Render** (no timeout limits). Quick operations remain on **Supabase Edge Functions** (2-minute limit).
 
-1. **Transcript Fetch** → User reviews script
-2. **Script Generation** (streaming) → User reviews audio
-3. **Audio Generation** (voice cloning) → User reviews captions
-4. **Captions Generation** → AI generates scene descriptions
-5. **Image Prompts** (Claude analyzes script + SRT timing) → Images generated
-6. **Image Generation** (streaming, parallel jobs) → Final results
+**Render API Routes** (`render-api/src/routes/`):
+| Route | Purpose |
+|-------|---------|
+| `/rewrite-script` | Streaming script generation with Claude API |
+| `/generate-audio` | Voice cloning TTS, splits into 6 segments, returns combined + individual URLs |
+| `/generate-audio/segment` | Regenerate a single audio segment |
+| `/generate-images` | Parallel RunPod Z-Image jobs with streaming progress |
+| `/generate-captions` | Whisper transcription with WAV chunking |
+| `/get-youtube-transcript` | YouTube transcript via Supadata API |
 
-### Supabase Edge Functions (`supabase/functions/`)
-
+**Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
 |----------|---------|
-| `get-youtube-transcript` | Fetches YouTube captions |
-| `rewrite-script` | Streams script generation with word count progress |
-| `generate-audio` | Voice cloning TTS via RunPod, splits text into 180-char chunks |
-| `generate-captions` | Creates SRT files from audio using Whisper |
-| `generate-image-prompts` | Uses Claude API to create visual scene descriptions synchronized with SRT timing |
-| `generate-images` | Parallel RunPod jobs for Z-Image, uploads to Supabase with timing-based filenames |
-| `generate-video` | Creates EDL/CSV timeline files |
-| `download-images-zip` | Packages generated images into downloadable ZIP |
-| `get-elevenlabs-voices` | Lists available ElevenLabs voices (alternative TTS) |
+| `generate-image-prompts` | Claude AI scene descriptions from script + SRT |
+| `generate-video` | EDL/CSV timeline files |
+| `download-images-zip` | Package images into ZIP |
+| `get-elevenlabs-voices` | List available voices |
 
-### Frontend API Layer (`src/lib/api.ts`)
+### Frontend Pipeline (`src/pages/Index.tsx`)
 
-All Supabase function calls go through `src/lib/api.ts`. Key exports:
-- `getYouTubeTranscript()` - Fetch transcript
-- `rewriteScriptStreaming()` - Stream script with progress callbacks
-- `generateAudioStreaming()` - Stream audio generation with progress
-- `generateImagePrompts()` - Get AI scene descriptions with timing
-- `generateImagesStreaming()` - Parallel image generation with progress
-- `generateCaptions()` - Create SRT from audio
+Multi-step generation with user review at each stage:
+1. **Transcript Fetch** → Review Script
+2. **Script Generation** (streaming) → Review Audio
+3. **Audio Generation** (6 segments with voice cloning) → Review Captions
+4. **Captions Generation** → Review Images
+5. **Image Generation** (streaming, parallel) → Final Results
 
-### Image Generation Flow
+### Audio Generation Architecture
 
-1. `generate-image-prompts` receives script + SRT content
-2. Claude AI analyzes narration and generates visual scene descriptions
-3. Returns `ImagePromptWithTiming[]` with `startTime`/`endTime` in HH-MM-SS format
-4. `generate-images` receives prompts with timing info
-5. Creates parallel RunPod jobs for Z-Image-Turbo
-6. Images uploaded to `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
+**Critical: Uses sequential processing to avoid RunPod memory issues.**
+
+- Script split into 6 equal segments by word count
+- Each segment processed sequentially (NOT parallel)
+- Voice sample (5-10MB base64) sent with each TTS job
+- Individual segment WAVs uploaded, then concatenated into combined file
+- Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
+
+Key constants in `render-api/src/routes/generate-audio.ts`:
+- `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
+- `DEFAULT_SEGMENT_COUNT = 6` segments
+- Sequential processing prevents "Ran out of memory (>2GB)" errors
 
 ### RunPod Endpoints
 
-**ChatterboxTurboTTS** (`chatterbox/` directory, separate repo `jonmac909/chatterbox`):
-- Endpoint ID: `eitsgz3gndkh3s`
-- Input: `{ text, reference_audio_base64 }` (voice sample required for cloning)
-- 180 character limit per chunk
-- Requires 5+ second voice samples
+**ChatterboxTurboTTS** (Endpoint: `eitsgz3gndkh3s`):
+- Input: `{ text, reference_audio_base64 }`
+- 500 char limit per chunk, 5+ second voice samples required
+- GitHub repo: `jonmac909/chatterbox`
 
-**Z-Image-Turbo** (`z-image-runpod/` directory):
-- Model: Z-Image-Turbo (6B params)
+**Z-Image-Turbo**:
 - Input: `{ prompt, quality: "basic"|"high", aspectRatio: "16:9"|"1:1"|"9:16" }`
-- Output: `{ image_base64, width, height, steps }`
-- Default resolution: 1792×1008 (16:9, both dimensions divisible by 16)
-- Uses `guidance_scale=0.0` (no negative prompts supported)
-- Requires A6000 GPU (48GB VRAM)
-
-**Claude API** (used in `generate-image-prompts`):
-- Model: `claude-sonnet-4-20250514`
-- Generates visual scene descriptions from script + SRT timing
-
-## Key Constraints
-
-### Z-Image-Turbo
-- All dimensions must be divisible by 16
-- Negative prompts are ignored (`guidance_scale=0.0`)
-- For restrictions, use positive framing in style prompt instead
-
-### ChatterboxTurboTTS
-- 180 character max per chunk (text auto-split)
-- Voice samples must be 5+ seconds
-- PyTorch/torchvision versions must match exactly (see chatterbox repo)
+- Dimensions must be divisible by 16
+- Uses `guidance_scale=0.0` (no negative prompts)
 
 ## Configuration
 
-**Environment Variables (`.env`):**
+### Frontend Environment (`.env`)
 ```
 VITE_SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<key>
 VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
+VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 ```
 
-**Supabase Secrets:**
-- `RUNPOD_API_KEY` - RunPod API key
-- `RUNPOD_ENDPOINT_ID` - TTS endpoint (default: `eitsgz3gndkh3s`)
-- `RUNPOD_ZIMAGE_ENDPOINT_ID` - Z-Image endpoint
-- `ANTHROPIC_API_KEY` - For `generate-image-prompts` function
+### Render API Environment
+```
+ANTHROPIC_API_KEY=<claude-api-key>
+SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+RUNPOD_API_KEY=<runpod-key>
+RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
+OPENAI_API_KEY=<openai-key-for-whisper>
+SUPADATA_API_KEY=<supadata-key-for-youtube>
+```
 
-**Storage Buckets:**
-- `voice-samples` - User uploaded voice samples (must be PUBLIC)
-- `generated-assets` - All generated content (audio, scripts, captions, images)
-
-## Common Issues
-
-### RunPod workers crashing
-- **Exit code 2:** Python import errors or missing dependencies
-- **Exit code 1:** Runtime errors like PyTorch/torchvision version mismatch
-- Check worker logs in RunPod dashboard for full traceback
-- After fixes, push to GitHub - RunPod auto-rebuilds (5-10 min)
-
-### Image generation fails
-- Verify `RUNPOD_ZIMAGE_ENDPOINT_ID` is set in Supabase secrets
-- Check dimensions are divisible by 16 if using custom sizes
-- A6000 GPU required (48GB VRAM)
-
-### Audio stuck at 15%
-- Workers at capacity → increase max workers in RunPod
-- Endpoint ID mismatch → verify in `generate-audio/index.ts`
-
-### Frontend not updating
-- Clear cache: `Cmd+Shift+R` or Incognito
-- Check Netlify build status
+### Storage Buckets
+- `voice-samples`: User uploaded voice samples (PUBLIC)
+- `generated-assets`: All generated content
 
 ## Deployment
 
 **Frontend:** Auto-deploys to Netlify on push to `main`
 
-**Supabase Functions:**
-- CLI: `npx supabase functions deploy <name>`
-- Or manually via Dashboard
+**Render API:** Auto-deploys on push to `main`
+- Root directory: `render-api`
+- Build: `npm install --include=dev && npm run build`
+- Start: `npm start`
+- **Memory tier: 2GB required** for long scripts (500+ audio chunks)
 
-**RunPod:**
-- TTS: GitHub integration watches `jonmac909/chatterbox`
-- Z-Image: Build from `z-image-runpod/`, push to Docker Hub, create serverless endpoint
+**RunPod:** GitHub integration auto-rebuilds `jonmac909/chatterbox` (5-10 min)
+
+## Common Issues
+
+### Audio generation "Failed to generate audio"
+- Check if `audioUrl` is being returned (backend must concatenate segments)
+- Verify `RUNPOD_API_KEY` is set on Render
+
+### Audio stuck at 15% or memory errors
+- DO NOT parallelize audio generation (causes memory issues)
+- Workers at capacity → increase max workers in RunPod
+
+### RunPod workers crashing
+- Exit code 2: Python import errors
+- Exit code 1: PyTorch/torchvision version mismatch
+- Check worker logs, push fix to GitHub, wait 5-10 min for rebuild
+
+### Frontend not updating after deploy
+- Clear cache: `Cmd+Shift+R` or Incognito
+- Check Netlify build status
 
 ## File Naming Conventions
 
-Generated images use timing-based filenames for video editing:
-```
-{projectId}/images/image_001_00-00-00_to_00-00-45.png
-{projectId}/images/image_002_00-00-45_to_00-01-30.png
-```
-
-Format: `image_{index}_{startTime}_to_{endTime}.png` where times are HH-MM-SS.
+Generated images: `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
+Audio segments: `{projectId}/voiceover-segment-{1-6}.wav`
+Combined audio: `{projectId}/voiceover.wav`

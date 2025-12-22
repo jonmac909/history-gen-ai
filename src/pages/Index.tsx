@@ -255,21 +255,26 @@ const Index = () => {
 
       updateStep("audio", "completed", "100%");
 
-      // Handle new 6-segment format
-      if (audioRes.segments && audioRes.segments.length > 0) {
+      // Handle audio response - prefer combined audioUrl for captions
+      if (audioRes.audioUrl) {
+        // Use combined audio URL for playback and captions
+        setPendingAudioUrl(audioRes.audioUrl);
+        setPendingAudioDuration(audioRes.duration || audioRes.totalDuration || 0);
+        setPendingAudioSize(audioRes.size || 0);
+        // Store segments for individual regeneration if available
+        if (audioRes.segments && audioRes.segments.length > 0) {
+          setPendingAudioSegments(audioRes.segments);
+        } else {
+          setPendingAudioSegments([]);
+        }
+      } else if (audioRes.segments && audioRes.segments.length > 0) {
+        // Fallback: no combined URL, use first segment (shouldn't happen with new backend)
+        console.warn("No combined audioUrl, falling back to first segment");
         setPendingAudioSegments(audioRes.segments);
         setPendingAudioDuration(audioRes.totalDuration || 0);
-        // Calculate total size from all segments
         const totalSize = audioRes.segments.reduce((sum, seg) => sum + seg.size, 0);
         setPendingAudioSize(totalSize);
-        // Use first segment URL as fallback for legacy code
         setPendingAudioUrl(audioRes.segments[0].audioUrl);
-      } else if (audioRes.audioUrl) {
-        // Legacy single-file response
-        setPendingAudioUrl(audioRes.audioUrl);
-        setPendingAudioDuration(audioRes.duration || 0);
-        setPendingAudioSize(audioRes.size || 0);
-        setPendingAudioSegments([]);
       } else {
         throw new Error("No audio generated");
       }
