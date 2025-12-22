@@ -49,8 +49,20 @@ function splitSegmentIntoChunks(segment: { text: string; start: number; end: num
   return chunks;
 }
 
-// Create a WAV header for a chunk of PCM data
-function createWavHeader(dataSize: number): Uint8Array {
+// Audio format parameters (will be set from actual WAV file)
+interface AudioFormat {
+  sampleRate: number;
+  channels: number;
+  bitsPerSample: number;
+}
+
+// Create a WAV header for a chunk of PCM data with actual audio parameters
+function createWavHeader(dataSize: number, format: AudioFormat): Uint8Array {
+  const { sampleRate, channels, bitsPerSample } = format;
+  const bytesPerSample = bitsPerSample / 8;
+  const byteRate = sampleRate * channels * bytesPerSample;
+  const blockAlign = channels * bytesPerSample;
+
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
 
@@ -72,11 +84,11 @@ function createWavHeader(dataSize: number): Uint8Array {
   view.setUint8(15, 0x20); // (space)
   view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
   view.setUint16(20, 1, true);  // AudioFormat (1 for PCM)
-  view.setUint16(22, NUM_CHANNELS, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, BYTES_PER_SECOND, true); // ByteRate
-  view.setUint16(32, NUM_CHANNELS * BYTES_PER_SAMPLE, true); // BlockAlign
-  view.setUint16(34, BITS_PER_SAMPLE, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true); // ByteRate
+  view.setUint16(32, blockAlign, true); // BlockAlign
+  view.setUint16(34, bitsPerSample, true);
 
   // "data" sub-chunk
   view.setUint8(36, 0x64); // d
@@ -150,9 +162,9 @@ function extractPcmFromWav(wavData: Uint8Array): { pcmData: Uint8Array; sampleRa
   };
 }
 
-// Create a WAV file from PCM data
-function createWavFromPcm(pcmData: Uint8Array): Uint8Array {
-  const header = createWavHeader(pcmData.length);
+// Create a WAV file from PCM data with correct format
+function createWavFromPcm(pcmData: Uint8Array, format: AudioFormat): Uint8Array {
+  const header = createWavHeader(pcmData.length, format);
   const wavData = new Uint8Array(header.length + pcmData.length);
   wavData.set(header, 0);
   wavData.set(pcmData, header.length);
@@ -255,6 +267,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Extract PCM data from WAV with proper parsing
     const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData);
+    const audioFormat: AudioFormat = { sampleRate, channels, bitsPerSample };
     const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
     const totalDuration = pcmData.length / bytesPerSecond;
     console.log('Total audio duration:', totalDuration.toFixed(2), 's');
@@ -284,8 +297,8 @@ router.post('/', async (req: Request, res: Response) => {
         totalChunks: numChunks
       });
 
-      // Create WAV from chunk PCM
-      const chunkWav = createWavFromPcm(chunkPcm);
+      // Create WAV from chunk PCM with correct format (must match original audio!)
+      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
 
       // Transcribe the chunk
       const { segments, duration } = await transcribeChunk(chunkWav, openaiApiKey, i);

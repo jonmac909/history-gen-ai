@@ -99,6 +99,11 @@ Key constants in `render-api/src/routes/generate-audio.ts`:
 - `DEFAULT_SEGMENT_COUNT = 6` segments
 - Sequential processing prevents "Ran out of memory (>2GB)" errors
 
+**Text Normalization:**
+- `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
+- Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
+- Wrong order will strip quotes entirely instead of converting them
+
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
 - Frontend calls `onRegenerate(segmentIndex)` to regenerate specific segment
@@ -160,9 +165,11 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - Verify `RUNPOD_API_KEY` is set on Render
 - Frontend expects both `audioUrl` (combined) AND `segments[]` array
 
-### Captions too short / using wrong audio
+### Captions too short / wrong duration
 - Captions must use combined `audioUrl`, not `segments[0].audioUrl`
 - Check `pendingAudioUrl` is set from `audioRes.audioUrl`, not first segment
+- WAV parsing must find actual 'data' chunk (not assume 44-byte header)
+- See `extractPcmFromWav()` in `generate-captions.ts` - must parse WAV properly
 
 ### Audio preview too short
 - `AudioSegmentsPreviewModal` needs `combinedAudioUrl` and `totalDuration` props
