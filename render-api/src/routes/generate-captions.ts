@@ -88,10 +88,66 @@ function createWavHeader(dataSize: number): Uint8Array {
   return new Uint8Array(header);
 }
 
-// Extract PCM data from WAV file (skip header)
-function extractPcmFromWav(wavData: Uint8Array): Uint8Array {
-  // WAV header is 44 bytes
-  return wavData.slice(44);
+// Find a chunk in WAV data by its fourcc identifier
+function findWavChunk(wavData: Uint8Array, fourcc: string): number {
+  const needle = new TextEncoder().encode(fourcc);
+  for (let i = 0; i <= wavData.length - 4; i++) {
+    if (wavData[i] === needle[0] && wavData[i+1] === needle[1] &&
+        wavData[i+2] === needle[2] && wavData[i+3] === needle[3]) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Extract PCM data from WAV file by finding the actual 'data' chunk
+function extractPcmFromWav(wavData: Uint8Array): { pcmData: Uint8Array; sampleRate: number; channels: number; bitsPerSample: number } {
+  // Find fmt chunk to get audio parameters
+  const fmtIdx = findWavChunk(wavData, 'fmt ');
+  if (fmtIdx === -1) {
+    console.warn('No fmt chunk found, using defaults');
+    // Fallback to old behavior
+    return {
+      pcmData: wavData.slice(44),
+      sampleRate: SAMPLE_RATE,
+      channels: NUM_CHANNELS,
+      bitsPerSample: BITS_PER_SAMPLE
+    };
+  }
+
+  // Parse fmt chunk (starts 8 bytes after 'fmt ')
+  const fmtDataStart = fmtIdx + 8;
+  const view = new DataView(wavData.buffer, wavData.byteOffset, wavData.byteLength);
+  const channels = view.getUint16(fmtDataStart + 2, true);
+  const sampleRate = view.getUint32(fmtDataStart + 4, true);
+  const bitsPerSample = view.getUint16(fmtDataStart + 14, true);
+
+  // Find data chunk
+  const dataIdx = findWavChunk(wavData, 'data');
+  if (dataIdx === -1) {
+    console.warn('No data chunk found, using offset 44');
+    return {
+      pcmData: wavData.slice(44),
+      sampleRate,
+      channels,
+      bitsPerSample
+    };
+  }
+
+  // Read data chunk size and extract PCM
+  const dataSize = view.getUint32(dataIdx + 4, true);
+  const dataStart = dataIdx + 8;
+  const dataEnd = Math.min(wavData.length, dataStart + dataSize);
+
+  console.log(`WAV parsing: fmt@${fmtIdx}, data@${dataIdx}, dataSize=${dataSize}, actual=${dataEnd - dataStart}`);
+  console.log(`WAV format: ${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit`);
+
+  return {
+    pcmData: wavData.slice(dataStart, dataEnd),
+    sampleRate,
+    channels,
+    bitsPerSample
+  };
 }
 
 // Create a WAV file from PCM data
@@ -197,15 +253,17 @@ router.post('/', async (req: Request, res: Response) => {
     const audioData = new Uint8Array(audioArrayBuffer);
     console.log('Audio size:', audioData.length, 'bytes');
 
-    // Extract PCM data from WAV
-    const pcmData = extractPcmFromWav(audioData);
-    const totalDuration = pcmData.length / BYTES_PER_SECOND;
-    console.log('Total audio duration:', totalDuration, 's');
+    // Extract PCM data from WAV with proper parsing
+    const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData);
+    const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
+    const totalDuration = pcmData.length / bytesPerSecond;
+    console.log('Total audio duration:', totalDuration.toFixed(2), 's');
 
-    // Calculate chunk size in bytes (based on duration)
-    const chunkSizeBytes = MAX_CHUNK_DURATION * BYTES_PER_SECOND;
+    // Calculate chunk size in bytes using actual audio parameters
+    const maxChunkDuration = Math.floor(MAX_CHUNK_BYTES / bytesPerSecond);
+    const chunkSizeBytes = maxChunkDuration * bytesPerSecond;
     const numChunks = Math.ceil(pcmData.length / chunkSizeBytes);
-    console.log(`Splitting into ${numChunks} chunks of ~${MAX_CHUNK_DURATION}s each`);
+    console.log(`Splitting into ${numChunks} chunks of ~${maxChunkDuration}s each`);
 
     // Process each chunk and collect segments
     const allSegments: Array<{ text: string; start: number; end: number }> = [];
