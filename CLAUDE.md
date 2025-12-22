@@ -113,6 +113,7 @@ Key constants in `render-api/src/routes/generate-audio.ts`:
 
 **ChatterboxTurboTTS** (Endpoint: `eitsgz3gndkh3s`):
 - Input: `{ text, reference_audio_base64 }`
+- Output: 24000Hz mono 16-bit WAV (not 44100Hz!)
 - 500 char limit per chunk, 5+ second voice samples required
 - GitHub repo: `jonmac909/chatterbox`
 
@@ -169,7 +170,10 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - Captions must use combined `audioUrl`, not `segments[0].audioUrl`
 - Check `pendingAudioUrl` is set from `audioRes.audioUrl`, not first segment
 - WAV parsing must find actual 'data' chunk (not assume 44-byte header)
-- See `extractPcmFromWav()` in `generate-captions.ts` - must parse WAV properly
+- **Sample rate mismatch**: Chatterbox outputs 24000Hz, not 44100Hz
+  - `createWavFromPcm()` must use actual audio format, not hardcoded values
+  - Wrong sample rate causes Whisper to transcribe at wrong speed
+- See `extractPcmFromWav()` and `createWavFromPcm()` in `generate-captions.ts`
 
 ### Audio preview too short
 - `AudioSegmentsPreviewModal` needs `combinedAudioUrl` and `totalDuration` props
