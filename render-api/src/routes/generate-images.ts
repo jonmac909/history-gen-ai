@@ -250,7 +250,7 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const MAX_CONCURRENT_JOBS = 4; // Match RunPod worker count
+  const MAX_CONCURRENT_JOBS = 10; // Use all 10 RunPod workers for maximum speed
   const POLL_INTERVAL = 2000; // 2 seconds
   const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
 

@@ -17,7 +17,7 @@ HistoryGen AI generates AI-powered historical video content from YouTube URLs. I
 
 **Live URLs:**
 - Frontend: https://historygenai.netlify.app
-- Railway API: (will be generated after deployment)
+- Railway API: https://history-gen-ai-production-f1d4.up.railway.app
 - Supabase: https://udqfdeoullsxttqguupz.supabase.co
 
 ## Development Commands
@@ -113,8 +113,8 @@ Multi-step generation with user review at each stage:
 
 **Critical: Uses rolling concurrency window with streaming concatenation for maximum speed.**
 
-- Script split into 6 equal segments by word count
-- **All 6 segments processed in parallel** (utilizing 8GB Railway instance)
+- Script split into **10 equal segments** by word count (utilizes all 10 RunPod workers)
+- **All 10 segments processed in parallel** (utilizing 8GB Railway instance)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
@@ -122,30 +122,30 @@ Multi-step generation with user review at each stage:
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
 **Performance:**
-- 20,000 word script = 6 segments × ~40 chunks each
-- **Full parallel (6): 3-5 minutes** (all segments process simultaneously)
+- 20,000 word script = **10 segments × ~24 chunks each** (vs 6 segments × 40 chunks)
+- **Full parallel (10): 2-3 minutes** (all segments process simultaneously with all RunPod workers)
 - Sequential (1): ~20 minutes
-- Railway usage-based billing: only charged for actual processing time (~5 min/day)
+- Railway usage-based billing: only charged for actual processing time (~3 min/day)
 
-**Memory footprint (6 concurrent segments on 8GB Railway instance):**
-- 6 active segments × 60MB (chunk arrays) = 360MB
+**Memory footprint (10 concurrent segments on 8GB Railway instance):**
+- 10 active segments × 36MB (chunk arrays, fewer chunks per segment) = 360MB
 - 2-3 completed WAVs awaiting upload = ~110MB
 - Segments uploaded immediately after completion
 - At end: **Streaming concatenation** (1 segment at a time):
   - Pre-allocate combined WAV buffer (334MB)
-  - Download segment 1, extract PCM, copy to combined, clear (55MB temp)
-  - Download segment 2, extract PCM, copy to combined, clear (55MB temp)
-  - ... repeat for all 6 segments
+  - Download segment 1, extract PCM, copy to combined, clear (33MB temp)
+  - Download segment 2, extract PCM, copy to combined, clear (33MB temp)
+  - ... repeat for all 10 segments
   - Only 1 segment buffer in memory at a time!
 - Node.js overhead = ~300MB
-- **Peak during processing: ~825MB** (6 active)
-- **Peak during concatenation: ~389MB** (334MB combined + 55MB current segment)
-- **Total peak: ~825MB** ✓ Plenty of headroom on 8GB instance
+- **Peak during processing: ~770MB** (10 active)
+- **Peak during concatenation: ~367MB** (334MB combined + 33MB current segment)
+- **Total peak: ~770MB** ✓ Plenty of headroom on 8GB instance
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
-- `DEFAULT_SEGMENT_COUNT = 6` segments
-- `MAX_CONCURRENT_SEGMENTS = 6` (full parallel processing on Railway 8GB)
+- `DEFAULT_SEGMENT_COUNT = 10` segments (use all RunPod workers)
+- `MAX_CONCURRENT_SEGMENTS = 10` (full parallel processing on Railway 8GB)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
@@ -182,24 +182,25 @@ Multi-step generation with user review at each stage:
 
 ### Image Generation Architecture
 
-**Uses rolling concurrency window for optimal worker utilization.**
+**Uses rolling concurrency window for maximum speed - utilizes all 10 RunPod workers.**
 
-- **4 concurrent jobs maximum** (matches RunPod worker count)
+- **10 concurrent jobs maximum** (uses all available RunPod workers)
 - Jobs submitted as workers become available (not all at once)
 - Keeps workers 100% busy without queue buildup
 - Progress updates after each job completion (predictable UX)
 
 **Performance:**
-- 30 images with 4 workers: ~8 batches (4+4+4+4+4+4+4+2)
+- 30 images with 10 workers: **~3 batches** (10+10+10)
 - Each image takes ~30-60 seconds
-- Total time: ~4-8 minutes (same as parallel, better UX)
+- **Total time: ~2-3 minutes** (vs 4-8 min with 4 workers)
 - Poll interval: 2 seconds (faster than audio for quick image jobs)
+- **60% faster than before!**
 
 **Benefits over submit-all-at-once:**
 - Jobs start processing immediately (no queue wait)
 - Early failure detection (stop submitting if first batch fails)
 - Better progress reporting (batch completion is predictable)
-- Less RunPod queue pressure (max 4 jobs in flight)
+- Less RunPod queue pressure (max 10 jobs in flight vs 30)
 
 ## Configuration
 
@@ -289,11 +290,11 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use full parallel processing (6 concurrent on 8GB Railway instance)
-- If all RunPod workers busy → increase max workers in RunPod dashboard
-- Memory usage: 6 segments × 60MB + overhead ≈ 825MB peak (plenty of headroom on 8GB)
-- Streaming concatenation keeps concatenation peak at ~389MB
-- Railway charges only for actual usage time (~5 min/day = ~$0.42/month)
+- Segments use full parallel processing (10 concurrent utilizing all RunPod workers on 8GB Railway instance)
+- If all RunPod workers busy → increase max workers in RunPod dashboard (currently limited to 10 total across all endpoints)
+- Memory usage: 10 segments × 36MB + overhead ≈ 770MB peak (plenty of headroom on 8GB)
+- Streaming concatenation keeps concatenation peak at ~367MB
+- Railway charges only for actual usage time (~3 min/day = ~$0.30/month)
 
 ### Audio timeouts on long scripts
 - 5-minute timeout per TTS job should handle most cases

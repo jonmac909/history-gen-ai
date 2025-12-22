@@ -98,7 +98,7 @@ function normalizeText(text: string): string {
 }
 
 // Split script into N equal segments by word count
-const DEFAULT_SEGMENT_COUNT = 6;
+const DEFAULT_SEGMENT_COUNT = 10; // Use all 10 RunPod workers for maximum speed
 
 function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_COUNT): string[] {
   const words = text.split(/\s+/).filter(Boolean);
@@ -719,7 +719,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 6; // Process all segments in parallel (8GB Railway instance)
+    const MAX_CONCURRENT_SEGMENTS = 10; // Use all 10 RunPod workers for maximum speed
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{
