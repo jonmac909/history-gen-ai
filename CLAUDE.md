@@ -83,6 +83,13 @@ Multi-step generation with user review at each stage:
 4. **Captions Generation** → Review Images
 5. **Image Generation** (streaming, parallel) → Final Results
 
+**UI Features:**
+- `ImagesPreviewModal`: Click thumbnails to open full-size lightbox (arrow keys, click arrows to navigate)
+  - Lightbox rendered via `createPortal` outside Dialog to prevent event conflicts
+  - Uses functional state updates to avoid navigation skip bugs
+- `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players
+- Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
+
 ### Audio Generation Architecture
 
 **Critical: Uses sequential processing to avoid RunPod memory issues.**
@@ -171,8 +178,9 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - Check `pendingAudioUrl` is set from `audioRes.audioUrl`, not first segment
 - WAV parsing must find actual 'data' chunk (not assume 44-byte header)
 - **Sample rate mismatch**: Chatterbox outputs 24000Hz, not 44100Hz
-  - `createWavFromPcm()` must use actual audio format, not hardcoded values
-  - Wrong sample rate causes Whisper to transcribe at wrong speed
+  - `createWavFromPcm()` must use actual audio format from `extractPcmFromWav()`
+  - Hardcoded 44100Hz causes Whisper to transcribe at wrong speed (1.84x faster)
+- Progress should start at 5%, not 100% (was bug when only 1 chunk)
 - See `extractPcmFromWav()` and `createWavFromPcm()` in `generate-captions.ts`
 
 ### Audio preview too short
@@ -205,3 +213,11 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 Generated images: `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
 Audio segments: `{projectId}/voiceover-segment-{1-6}.wav`
 Combined audio: `{projectId}/voiceover.wav`
+
+## Default Settings
+
+New projects initialize with:
+- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.mp3` (set in `src/pages/Index.tsx`)
+- Script template: `template-a`
+- AI model: `claude-sonnet-4-5`
+- Word count: 1000, Image count: 10, Speed: 1x
