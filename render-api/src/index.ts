@@ -10,7 +10,7 @@ import generateCaptionsRouter from './routes/generate-captions';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Middleware
 app.use(cors({
@@ -54,7 +54,8 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - let the error handler deal with it
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 HistoryVidGen API running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
 });
