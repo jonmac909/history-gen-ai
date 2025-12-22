@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
+import { allocateWorkersForImages } from '../utils/runpod.js';
 
 const router = Router();
 
@@ -193,6 +194,14 @@ router.post('/', async (req: Request, res: Response) => {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ error: 'Supabase configuration missing' });
+    }
+
+    // Allocate all 10 workers to image endpoint before generation starts
+    try {
+      await allocateWorkersForImages(runpodApiKey);
+    } catch (err) {
+      console.warn('Failed to allocate workers, continuing with current allocation:', err);
+      // Don't fail the request if worker allocation fails - continue with whatever is configured
     }
 
     const { prompts, quality, aspectRatio = "16:9", stream = false, projectId }: GenerateImagesRequest = req.body;

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
+import { allocateWorkersForAudio } from '../utils/runpod.js';
 
 const router = Router();
 
@@ -491,6 +492,14 @@ router.post('/', async (req: Request, res: Response) => {
         return sendStreamError('RUNPOD_API_KEY not configured');
       }
       return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
+    }
+
+    // Allocate all 10 workers to audio endpoint before generation starts
+    try {
+      await allocateWorkersForAudio(RUNPOD_API_KEY);
+    } catch (err) {
+      logger.warn('Failed to allocate workers, continuing with current allocation:', err);
+      // Don't fail the request if worker allocation fails - continue with whatever is configured
     }
 
     // Clean script

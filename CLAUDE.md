@@ -180,6 +180,21 @@ Multi-step generation with user review at each stage:
 - Dimensions must be divisible by 16
 - Uses `guidance_scale=0.0` (no negative prompts)
 
+**Dynamic Worker Allocation** (10 workers total across both endpoints):
+- RunPod enforces a **global 10-worker limit** across all endpoints
+- Audio and images run **sequentially** (never overlap in the pipeline)
+- API automatically reallocates workers before each stage:
+  - **Before audio:** ChatterboxTTS = 10 workers, Z-Image = 0 workers
+  - **Before images:** ChatterboxTTS = 0 workers, Z-Image = 10 workers
+- Uses RunPod REST API: `POST /v1/endpoints/{id}/update` with `workersMax`
+- Graceful fallback: if allocation fails, continues with current configuration
+- **Result:** Each stage gets all 10 workers for maximum speed
+
+**Implementation** (`render-api/src/utils/runpod.ts`):
+- `allocateWorkersForAudio()` - called before audio generation
+- `allocateWorkersForImages()` - called before image generation
+- Both update both endpoints in parallel for faster allocation
+
 ### Image Generation Architecture
 
 **Uses rolling concurrency window for maximum speed - utilizes all 10 RunPod workers.**
