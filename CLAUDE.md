@@ -76,7 +76,7 @@ Long-running operations run on **Render** (no timeout limits). Quick operations 
 | `/rewrite-script` | Streaming script generation with Claude API |
 | `/generate-audio` | Voice cloning TTS, splits into 6 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
-| `/generate-images` | Parallel RunPod Z-Image jobs with streaming progress |
+| `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
 
@@ -164,6 +164,27 @@ Multi-step generation with user review at each stage:
 - Input: `{ prompt, quality: "basic"|"high", aspectRatio: "16:9"|"1:1"|"9:16" }`
 - Dimensions must be divisible by 16
 - Uses `guidance_scale=0.0` (no negative prompts)
+
+### Image Generation Architecture
+
+**Uses rolling concurrency window for optimal worker utilization.**
+
+- **4 concurrent jobs maximum** (matches RunPod worker count)
+- Jobs submitted as workers become available (not all at once)
+- Keeps workers 100% busy without queue buildup
+- Progress updates after each job completion (predictable UX)
+
+**Performance:**
+- 30 images with 4 workers: ~8 batches (4+4+4+4+4+4+4+2)
+- Each image takes ~30-60 seconds
+- Total time: ~4-8 minutes (same as parallel, better UX)
+- Poll interval: 2 seconds (faster than audio for quick image jobs)
+
+**Benefits over submit-all-at-once:**
+- Jobs start processing immediately (no queue wait)
+- Early failure detection (stop submitting if first batch fails)
+- Better progress reporting (batch completion is predictable)
+- Less RunPod queue pressure (max 4 jobs in flight)
 
 ## Configuration
 

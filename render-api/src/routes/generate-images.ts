@@ -229,7 +229,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Handle streaming image generation
+// Handle streaming image generation with rolling concurrency window
 async function handleStreamingImages(
   req: Request,
   res: Response,
@@ -250,98 +250,167 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
+  const MAX_CONCURRENT_JOBS = 4; // Match RunPod worker count
+  const POLL_INTERVAL = 2000; // 2 seconds
+  const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
+
   try {
-    // Step 1: Create ALL RunPod jobs in parallel
+    console.log(`\n=== Generating ${total} images with rolling concurrency (max ${MAX_CONCURRENT_JOBS} concurrent) ===`);
+
     sendEvent({
       type: 'progress',
       completed: 0,
       total,
-      message: `Creating ${total} image jobs...`
+      message: `Starting image generation (${MAX_CONCURRENT_JOBS} workers)...`
     });
 
-    const createPromises = normalizedPrompts.map(async (item, index) => {
-      try {
-        const jobId = await startImageJob(runpodApiKey, item.prompt, quality, aspectRatio);
-        return { index, jobId, filename: item.filename, error: null };
-      } catch (err) {
-        console.error(`Failed to create job for prompt ${index}:`, err);
-        return { index, jobId: null, filename: item.filename, error: err instanceof Error ? err.message : 'Failed to create job' };
-      }
-    });
-
-    const createResults = await Promise.all(createPromises);
-
-    const jobs: JobStatus[] = createResults.map(r => ({
-      jobId: r.jobId || '',
-      index: r.index,
-      state: r.jobId ? 'pending' : 'fail',
-      error: r.error || undefined,
-      filename: r.filename
-    }));
-
-    console.log(`Created ${jobs.filter(j => j.state === 'pending').length}/${total} jobs`);
-
-    // Step 2: Poll ALL jobs in parallel
-    const maxPollingTime = 5 * 60 * 1000; // 5 minutes
-    const pollInterval = 3000; // 3 seconds
+    const allResults: JobStatus[] = [];
+    let nextPromptIndex = 0;
+    const activeJobs = new Map<string, { index: number; filename: string; startTime: number }>();
     const startTime = Date.now();
 
-    while (Date.now() - startTime < maxPollingTime) {
-      const pendingJobs = jobs.filter(j => j.state === 'pending');
+    // Helper to start next job
+    const startNextJob = async (): Promise<void> => {
+      if (nextPromptIndex >= normalizedPrompts.length) return;
 
-      if (pendingJobs.length === 0) {
-        console.log('All jobs completed');
-        break;
+      const promptData = normalizedPrompts[nextPromptIndex];
+      const index = nextPromptIndex;
+      nextPromptIndex++;
+
+      try {
+        const jobId = await startImageJob(runpodApiKey, promptData.prompt, quality, aspectRatio);
+        activeJobs.set(jobId, { index, filename: promptData.filename, startTime: Date.now() });
+        console.log(`Started job ${index + 1}/${total} (${activeJobs.size} active): ${promptData.filename}`);
+      } catch (err) {
+        console.error(`Failed to create job ${index + 1}:`, err);
+        allResults.push({
+          jobId: '',
+          index,
+          state: 'fail',
+          error: err instanceof Error ? err.message : 'Failed to create job',
+          filename: promptData.filename
+        });
       }
+    };
 
-      const checkPromises = pendingJobs.map(async (job) => {
-        const status = await checkJobStatus(runpodApiKey, job.jobId, supabaseUrl, supabaseKey, job.filename, projectId);
-        return { job, status };
-      });
+    // Fill initial window with jobs
+    const initialBatch = Math.min(MAX_CONCURRENT_JOBS, normalizedPrompts.length);
+    console.log(`Starting initial batch of ${initialBatch} jobs...`);
+    await Promise.all(Array.from({ length: initialBatch }, () => startNextJob()));
 
-      const results = await Promise.all(checkPromises);
+    // Poll active jobs and start new ones as they complete
+    while (activeJobs.size > 0 && Date.now() - startTime < MAX_POLLING_TIME) {
+      const jobIds = Array.from(activeJobs.keys());
 
-      for (const { job, status } of results) {
+      // Check all active jobs in parallel
+      const checkResults = await Promise.all(
+        jobIds.map(async (jobId) => {
+          const jobData = activeJobs.get(jobId)!;
+          const status = await checkJobStatus(
+            runpodApiKey,
+            jobId,
+            supabaseUrl,
+            supabaseKey,
+            jobData.filename,
+            projectId
+          );
+          return { jobId, jobData, status };
+        })
+      );
+
+      // Process completed jobs
+      for (const { jobId, jobData, status } of checkResults) {
         if (status.state === 'success') {
-          job.state = 'success';
-          job.imageUrl = status.imageUrl;
-          console.log(`Job ${job.index + 1}/${total} completed (${job.filename}): ${status.imageUrl}`);
+          const duration = ((Date.now() - jobData.startTime) / 1000).toFixed(1);
+          console.log(`✓ Job ${jobData.index + 1}/${total} completed in ${duration}s: ${jobData.filename}`);
+
+          allResults.push({
+            jobId,
+            index: jobData.index,
+            state: 'success',
+            imageUrl: status.imageUrl,
+            filename: jobData.filename
+          });
+
+          activeJobs.delete(jobId);
+
+          // Start next job in the queue
+          await startNextJob();
+
+          // Send progress update
+          const completed = allResults.length;
+          const batchNum = Math.floor(completed / MAX_CONCURRENT_JOBS) + 1;
+          sendEvent({
+            type: 'progress',
+            completed,
+            total,
+            message: `Batch ${batchNum}: ${completed}/${total} images done`
+          });
+
         } else if (status.state === 'fail') {
-          job.state = 'fail';
-          job.error = status.error;
-          console.log(`Job ${job.index + 1}/${total} failed: ${status.error}`);
+          console.error(`✗ Job ${jobData.index + 1}/${total} failed: ${status.error}`);
+
+          allResults.push({
+            jobId,
+            index: jobData.index,
+            state: 'fail',
+            error: status.error,
+            filename: jobData.filename
+          });
+
+          activeJobs.delete(jobId);
+
+          // Start next job even if this one failed
+          await startNextJob();
+
+          // Send progress update
+          const completed = allResults.length;
+          sendEvent({
+            type: 'progress',
+            completed,
+            total,
+            message: `${completed}/${total} images processed (${allResults.filter(r => r.state === 'fail').length} failed)`
+          });
         }
       }
 
-      const completed = jobs.filter(j => j.state !== 'pending').length;
-
-      sendEvent({
-        type: 'progress',
-        completed,
-        total,
-        message: `${completed}/${total} images done`
-      });
-
-      if (pendingJobs.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      // Wait before next poll if there are still active jobs
+      if (activeJobs.size > 0) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       }
     }
 
-    // Collect results
-    const sortedJobs = [...jobs].sort((a, b) => a.index - b.index);
-    const allImages = sortedJobs
-      .filter(j => j.state === 'success' && j.imageUrl)
-      .map(j => j.imageUrl!);
+    // Timeout check
+    if (activeJobs.size > 0) {
+      console.warn(`Timeout: ${activeJobs.size} jobs still pending after ${MAX_POLLING_TIME / 1000}s`);
+      for (const [jobId, jobData] of activeJobs) {
+        allResults.push({
+          jobId,
+          index: jobData.index,
+          state: 'fail',
+          error: 'Job timed out',
+          filename: jobData.filename
+        });
+      }
+    }
 
-    const failedCount = jobs.filter(j => j.state === 'fail').length;
+    // Sort results by original index
+    const sortedResults = [...allResults].sort((a, b) => a.index - b.index);
+    const successfulImages = sortedResults
+      .filter(r => r.state === 'success' && r.imageUrl)
+      .map(r => r.imageUrl!);
 
-    console.log(`Z-Image generation complete: ${allImages.length} images, ${failedCount} failed`);
+    const failedCount = sortedResults.filter(r => r.state === 'fail').length;
+
+    console.log(`\n=== Image generation complete ===`);
+    console.log(`Success: ${successfulImages.length}/${total}`);
+    console.log(`Failed: ${failedCount}/${total}`);
 
     sendEvent({
       type: 'complete',
       success: true,
-      images: allImages,
-      total: allImages.length,
+      images: successfulImages,
+      total: successfulImages.length,
       failed: failedCount
     });
 
