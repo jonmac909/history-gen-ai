@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 interface ImagesPreviewModalProps {
@@ -30,100 +30,37 @@ export function ImagesPreviewModal({
   regeneratingIndex
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const lastNavTime = useRef(0);
-  const NAV_DEBOUNCE_MS = 150;
 
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
-  const closeButtonRef = useRef<HTMLDivElement>(null);
-  const prevButtonRef = useRef<HTMLDivElement>(null);
-  const nextButtonRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
   const openLightbox = (index: number) => setLightboxIndex(index);
   const closeLightbox = () => setLightboxIndex(null);
 
-  // Debounced navigation to prevent double-firing
-  const goToPrevious = useCallback(() => {
-    const now = Date.now();
-    if (now - lastNavTime.current < NAV_DEBOUNCE_MS) return;
-    lastNavTime.current = now;
-
-    setLightboxIndex(prev => {
-      if (prev !== null && prev > 0) {
-        return prev - 1;
-      }
-      return prev;
-    });
-  }, []);
-
-  const goToNext = useCallback(() => {
-    const now = Date.now();
-    if (now - lastNavTime.current < NAV_DEBOUNCE_MS) return;
-    lastNavTime.current = now;
-
-    setLightboxIndex(prev => {
-      if (prev !== null && prev < images.length - 1) {
-        return prev + 1;
-      }
-      return prev;
-    });
-  }, [images.length]);
-
-  // Keyboard navigation for lightbox
+  // Keyboard: ESC to close lightbox
   useEffect(() => {
     if (lightboxIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent default and stop propagation to avoid Dialog handling these
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         closeLightbox();
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        goToPrevious();
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        goToNext();
       }
     };
 
     // Use capture phase to intercept before Dialog
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [lightboxIndex, goToPrevious, goToNext]);
+  }, [lightboxIndex]);
 
-  // Click handling for lightbox - use capture phase to intercept before Radix Dialog
+  // Click handling: background click closes, image click does nothing
   useEffect(() => {
     if (lightboxIndex === null) return;
 
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
-
-      // Check which element was clicked and handle accordingly
-      if (closeButtonRef.current?.contains(target)) {
-        e.preventDefault();
-        e.stopPropagation();
-        closeLightbox();
-        return;
-      }
-
-      if (prevButtonRef.current?.contains(target)) {
-        e.preventDefault();
-        e.stopPropagation();
-        goToPrevious();
-        return;
-      }
-
-      if (nextButtonRef.current?.contains(target)) {
-        e.preventDefault();
-        e.stopPropagation();
-        goToNext();
-        return;
-      }
 
       // If clicked on image, do nothing (don't close)
       if (imageRef.current?.contains(target)) {
@@ -132,7 +69,7 @@ export function ImagesPreviewModal({
         return;
       }
 
-      // If clicked on overlay background (not any button/image), close
+      // If clicked on overlay background, close
       if (overlayRef.current?.contains(target)) {
         e.preventDefault();
         e.stopPropagation();
@@ -143,7 +80,7 @@ export function ImagesPreviewModal({
     // Use capture phase to intercept before Radix Dialog's event handlers
     window.addEventListener('click', handleClick, true);
     return () => window.removeEventListener('click', handleClick, true);
-  }, [lightboxIndex, goToPrevious, goToNext]);
+  }, [lightboxIndex]);
 
   return (
     <>
@@ -232,58 +169,28 @@ export function ImagesPreviewModal({
       </DialogContent>
     </Dialog>
 
-    {/* Lightbox overlay - rendered via portal OUTSIDE the Dialog to avoid event conflicts */}
-    {/* Click handling is done via capture-phase window event listener to bypass Radix Dialog */}
+    {/* Lightbox overlay - click background or press ESC to close */}
     {lightboxIndex !== null && createPortal(
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+        className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center cursor-pointer"
       >
-        {/* Close button */}
-        <div
-          ref={closeButtonRef}
-          role="button"
-          tabIndex={0}
-          className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10 cursor-pointer"
-        >
-          <X className="w-8 h-8" />
-        </div>
-
         {/* Image counter */}
-        <div className="absolute top-4 left-4 text-white/70 text-lg font-medium">
+        <div className="absolute top-4 left-4 text-white/70 text-lg font-medium pointer-events-none">
           {lightboxIndex + 1} / {images.length}
         </div>
 
-        {/* Previous button */}
-        {lightboxIndex > 0 && (
-          <div
-            ref={prevButtonRef}
-            role="button"
-            tabIndex={0}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2 cursor-pointer"
-          >
-            <ChevronLeft className="w-12 h-12" />
-          </div>
-        )}
-
-        {/* Next button */}
-        {lightboxIndex < images.length - 1 && (
-          <div
-            ref={nextButtonRef}
-            role="button"
-            tabIndex={0}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2 cursor-pointer"
-          >
-            <ChevronRight className="w-12 h-12" />
-          </div>
-        )}
+        {/* Hint text */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm pointer-events-none">
+          Press ESC or click outside to close
+        </div>
 
         {/* Full-size image */}
         <img
           ref={imageRef}
           src={images[lightboxIndex]}
           alt={`Full size image ${lightboxIndex + 1}`}
-          className="max-w-[90vw] max-h-[90vh] object-contain"
+          className="max-w-[90vw] max-h-[90vh] object-contain cursor-default"
         />
       </div>,
       document.body
