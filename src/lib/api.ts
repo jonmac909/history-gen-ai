@@ -52,10 +52,9 @@ export interface AudioResult {
   audioBase64?: string;
   duration?: number;
   size?: number;
-  error?: string;
-  // New: segments array for 6-segment audio generation
   segments?: AudioSegment[];
   totalDuration?: number;
+  error?: string;
 }
 
 export interface CaptionsResult {
@@ -573,22 +572,20 @@ export async function generateAudioStreaming(
               if (parsed.type === 'progress') {
                 onProgress(parsed.progress, parsed.message);
               } else if (parsed.type === 'complete') {
-                // Handle new 6-segment format
-                if (parsed.segments) {
-                  result = {
-                    success: true,
-                    segments: parsed.segments,
-                    totalDuration: parsed.totalDuration,
-                  };
-                } else {
-                  // Fallback for legacy single-file response
-                  result = {
-                    success: true,
-                    audioUrl: parsed.audioUrl,
-                    duration: parsed.duration,
-                    size: parsed.size
-                  };
-                }
+                // Parse segments if present
+                const segments = parsed.segments && Array.isArray(parsed.segments)
+                  ? parsed.segments as AudioSegment[]
+                  : undefined;
+
+                result = {
+                  success: true,
+                  // Prefer combined audioUrl, fallback to first segment URL
+                  audioUrl: parsed.audioUrl || segments?.[0]?.audioUrl,
+                  duration: parsed.duration ?? parsed.totalDuration ?? (segments?.reduce((sum, seg) => sum + seg.duration, 0)),
+                  size: parsed.size ?? (segments?.reduce((sum, seg) => sum + seg.size, 0)),
+                  segments: segments,
+                  totalDuration: parsed.totalDuration,
+                };
                 onProgress(100, 'Complete!');
               } else if (parsed.type === 'error' || parsed.error) {
                 result = {

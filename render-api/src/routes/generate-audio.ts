@@ -658,6 +658,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     console.log(`\n=== Processing ${actualSegmentCount} segments ===`);
 
     const segmentResults: AudioSegmentResult[] = [];
+    const segmentAudioBuffers: Buffer[] = []; // Store raw audio for final concatenation
     let totalDuration = 0;
 
     // Process each segment
@@ -735,6 +736,9 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       const durationRounded = Math.round(durationSeconds * 10) / 10; // Round to 1 decimal
       totalDuration += durationSeconds;
 
+      // Store raw audio for final concatenation
+      segmentAudioBuffers.push(segmentAudio);
+
       console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
 
       // Upload this segment
@@ -771,15 +775,44 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       throw new Error('All segments failed to generate');
     }
 
+    sendEvent({ type: 'progress', progress: 90, message: 'Combining audio segments...' });
+
+    // Concatenate all segments into one combined file
+    const { wav: combinedAudio, durationSeconds: combinedDuration } = concatenateWavFiles(segmentAudioBuffers);
+    const combinedFileName = `${actualProjectId}/voiceover.wav`;
+
+    console.log(`\n=== Uploading combined audio ===`);
+    console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
+
+    const { error: combinedUploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(combinedFileName, combinedAudio, {
+        contentType: 'audio/wav',
+        upsert: true,
+      });
+
+    if (combinedUploadError) {
+      logger.error(`Failed to upload combined audio: ${combinedUploadError.message}`);
+      throw new Error(`Failed to upload combined audio: ${combinedUploadError.message}`);
+    }
+
+    const { data: combinedUrlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(combinedFileName);
+
     sendEvent({ type: 'progress', progress: 95, message: 'Finalizing...' });
 
     console.log(`\n=== All ${segmentResults.length} segments complete ===`);
+    console.log(`Combined audio URL: ${combinedUrlData.publicUrl}`);
     console.log(`Total duration: ${Math.round(totalDuration)}s`);
 
     sendEvent({
       type: 'complete',
       success: true,
-      segments: segmentResults,
+      audioUrl: combinedUrlData.publicUrl, // Combined audio for playback
+      duration: Math.round(combinedDuration),
+      size: combinedAudio.length,
+      segments: segmentResults, // Individual segments for regeneration
       totalDuration: Math.round(totalDuration),
       wordCount,
     });
