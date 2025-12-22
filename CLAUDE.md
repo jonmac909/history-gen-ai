@@ -221,3 +221,10 @@ New projects initialize with:
 - Script template: `template-a`
 - AI model: `claude-sonnet-4-5`
 - Word count: 1000, Image count: 10, Speed: 1x
+
+## Security
+
+**SSRF Protection** (`render-api/src/routes/generate-audio.ts`):
+- Voice sample URLs validated against allowlist
+- Allowed domains: `supabase.co`, `supabase.com`, `historygenai.netlify.app`
+- Blocks localhost, private IPs, non-HTTPS
