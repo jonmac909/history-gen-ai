@@ -18,7 +18,7 @@ test('verify streaming script tokens display in UI', async ({ page }) => {
   console.log('✓ Entered YouTube URL:', testUrl);
 
   // Click Generate button
-  await page.click('button:has-text("Generate Video")');
+  await page.click('button:has-text("Generate")');
 
   console.log('✓ Clicked Generate button');
 
