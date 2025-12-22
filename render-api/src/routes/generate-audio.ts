@@ -494,10 +494,16 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
 
   const sendEvent = (data: any) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
+
+  // Keep connection alive with heartbeat every 15 seconds
+  const heartbeatInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
 
   try {
     sendEvent({ type: 'progress', progress: 5, message: `Starting Chatterbox TTS (${chunks.length} chunks, default voice)...` });
@@ -634,6 +640,8 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
     console.error('Audio error:', error);
     sendEvent({ type: 'error', error: error instanceof Error ? error.message : 'Audio generation failed' });
     res.end();
+  } finally {
+    clearInterval(heartbeatInterval);
   }
 }
 
@@ -642,10 +650,16 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
 
   const sendEvent = (data: any) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
+
+  // Keep connection alive with heartbeat every 15 seconds
+  const heartbeatInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
 
   try {
     sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${chunks.length} chunks)...` });
@@ -782,6 +796,8 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
     console.error('Audio error:', error);
     sendEvent({ type: 'error', error: error instanceof Error ? error.message : 'Audio generation failed' });
     res.end();
+  } finally {
+    clearInterval(heartbeatInterval);
   }
 }
 
