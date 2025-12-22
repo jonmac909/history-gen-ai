@@ -22,7 +22,18 @@ app.use(express.json({ limit: '50mb' }));
 
 // Health check
 app.get('/health', (req, res) => {
+  console.log('Health check requested');
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  console.log('Root endpoint requested');
+  res.json({
+    message: 'HistoryVidGen API',
+    status: 'running',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Routes
@@ -54,8 +65,17 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - let the error handler deal with it
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 HistoryVidGen API running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
+  console.log(`✅ Server successfully bound and ready for connections`);
+});
+
+server.on('error', (error: any) => {
+  console.error('❌ Server error:', error);
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  }
+  process.exit(1);
 });
