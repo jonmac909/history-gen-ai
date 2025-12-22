@@ -170,30 +170,17 @@ export function ImagesPreviewModal({
     {lightboxIndex !== null && createPortal(
       <div
         className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
-        onMouseDown={(e) => {
-          // Prevent Dialog from detecting this as an outside click
-          e.stopPropagation();
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          closeLightbox();
-        }}
+        onClick={closeLightbox}
       >
         {/* Close button */}
         <button
           className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
           onClick={(e) => {
-            e.preventDefault();
             e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
             closeLightbox();
           }}
         >
-          <X className="w-8 h-8" />
+          <X className="w-8 h-8 pointer-events-none" />
         </button>
 
         {/* Image counter */}
@@ -205,18 +192,12 @@ export function ImagesPreviewModal({
         {lightboxIndex > 0 && (
           <button
             className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
             onClick={(e) => {
-              e.preventDefault();
               e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
               goToPrevious();
             }}
           >
-            <ChevronLeft className="w-12 h-12" />
+            <ChevronLeft className="w-12 h-12 pointer-events-none" />
           </button>
         )}
 
@@ -224,18 +205,12 @@ export function ImagesPreviewModal({
         {lightboxIndex < images.length - 1 && (
           <button
             className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
             onClick={(e) => {
-              e.preventDefault();
               e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
               goToNext();
             }}
           >
-            <ChevronRight className="w-12 h-12" />
+            <ChevronRight className="w-12 h-12 pointer-events-none" />
           </button>
         )}
 
@@ -244,7 +219,6 @@ export function ImagesPreviewModal({
           src={images[lightboxIndex]}
           alt={`Full size image ${lightboxIndex + 1}`}
           className="max-w-[90vw] max-h-[90vh] object-contain"
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         />
       </div>,
