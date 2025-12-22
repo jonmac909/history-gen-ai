@@ -16,6 +16,14 @@ export interface ScriptResult {
   error?: string;
 }
 
+export interface AudioSegment {
+  index: number;
+  audioUrl: string;
+  duration: number;
+  size: number;
+  text: string;
+}
+
 export interface AudioResult {
   success: boolean;
   audioUrl?: string;
@@ -23,6 +31,9 @@ export interface AudioResult {
   duration?: number;
   size?: number;
   error?: string;
+  // New: segments array for 6-segment audio generation
+  segments?: AudioSegment[];
+  totalDuration?: number;
 }
 
 export interface CaptionsResult {
@@ -271,25 +282,23 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
 }
 
 export async function generateAudioStreaming(
-  script: string, 
-  voiceSampleUrl: string, 
+  script: string,
+  voiceSampleUrl: string,
   projectId: string,
-  onProgress: (progress: number) => void
+  onProgress: (progress: number, message?: string) => void
 ): Promise<AudioResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  
-  const response = await fetch(`${supabaseUrl}/functions/v1/generate-audio`, {
+  // Use Render API for audio generation (no timeout limits, supports 6 segments)
+  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai.onrender.com';
+
+  const response = await fetch(`${renderApiUrl}/generate-audio`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
-      'apikey': supabaseKey,
     },
-    body: JSON.stringify({ 
-      script, 
-      voiceSampleUrl, 
-      projectId, 
+    body: JSON.stringify({
+      script,
+      voiceSampleUrl,
+      projectId,
       stream: true
     })
   });
@@ -315,29 +324,42 @@ export async function generateAudioStreaming(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      
+
       // Process complete SSE events
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
 
       for (const event of events) {
         if (!event.trim()) continue;
-        
+
+        // Skip keepalive comments
+        if (event.startsWith(':')) continue;
+
         const dataMatch = event.match(/^data: (.+)$/m);
         if (dataMatch) {
           try {
             const parsed = JSON.parse(dataMatch[1]);
-            
+
             if (parsed.type === 'progress') {
-              onProgress(parsed.progress);
+              onProgress(parsed.progress, parsed.message);
             } else if (parsed.type === 'complete') {
-              result = {
-                success: true,
-                audioUrl: parsed.audioUrl,
-                duration: parsed.duration,
-                size: parsed.size
-              };
-              onProgress(100);
+              // Handle new 6-segment format
+              if (parsed.segments) {
+                result = {
+                  success: true,
+                  segments: parsed.segments,
+                  totalDuration: parsed.totalDuration,
+                };
+              } else {
+                // Fallback for legacy single-file response
+                result = {
+                  success: true,
+                  audioUrl: parsed.audioUrl,
+                  duration: parsed.duration,
+                  size: parsed.size
+                };
+              }
+              onProgress(100, 'Complete!');
             } else if (parsed.type === 'error' || parsed.error) {
               result = {
                 success: false,
@@ -352,13 +374,61 @@ export async function generateAudioStreaming(
     }
   } catch (streamError) {
     console.error('Stream reading error:', streamError);
-    return { 
-      success: false, 
-      error: streamError instanceof Error ? streamError.message : 'Stream reading failed' 
+    return {
+      success: false,
+      error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
     };
   }
 
   return result;
+}
+
+// Regenerate a single audio segment
+export async function regenerateAudioSegment(
+  segmentText: string,
+  segmentIndex: number,
+  voiceSampleUrl: string,
+  projectId: string
+): Promise<{ success: boolean; segment?: AudioSegment; error?: string }> {
+  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai.onrender.com';
+
+  try {
+    const response = await fetch(`${renderApiUrl}/generate-audio/segment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        segmentText,
+        segmentIndex,
+        voiceSampleUrl,
+        projectId
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Segment regeneration error:', response.status, errorText);
+      return { success: false, error: `Failed to regenerate segment: ${response.status}` };
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      return { success: false, error: data.error };
+    }
+
+    return {
+      success: true,
+      segment: data.segment
+    };
+  } catch (error) {
+    console.error('Segment regeneration error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Segment regeneration failed'
+    };
+  }
 }
 
 export async function generateImagePrompts(

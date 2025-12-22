@@ -9,17 +9,20 @@ import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/componen
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { AudioPreviewModal } from "@/components/AudioPreviewModal";
+import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModal";
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
   generateAudioStreaming,
+  regenerateAudioSegment,
   generateImagesStreaming,
   generateImagePrompts,
   generateCaptions,
   saveScriptToStorage,
   type ImagePromptWithTiming,
+  type AudioSegment,
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 
@@ -56,6 +59,9 @@ const Index = () => {
   const [pendingAudioUrl, setPendingAudioUrl] = useState("");
   const [pendingAudioDuration, setPendingAudioDuration] = useState<number>(0);
   const [pendingAudioSize, setPendingAudioSize] = useState<number>(0);
+  // New: Audio segments state
+  const [pendingAudioSegments, setPendingAudioSegments] = useState<AudioSegment[]>([]);
+  const [regeneratingSegmentIndex, setRegeneratingSegmentIndex] = useState<number | null>(null);
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
@@ -190,12 +196,12 @@ const Index = () => {
     }
   };
 
-  // Step 2: After script confirmed, generate audio
+  // Step 2: After script confirmed, generate audio (6 segments)
   const handleScriptConfirm = async (script: string) => {
     setConfirmedScript(script);
 
     const steps: GenerationStep[] = [
-      { id: "audio", label: "Generating Audio with Chatterbox", status: "pending" },
+      { id: "audio", label: "Generating Audio with Chatterbox (6 segments)", status: "pending" },
     ];
 
     setProcessingSteps(steps);
@@ -209,20 +215,35 @@ const Index = () => {
         script,
         settings.voiceSampleUrl!,
         projectId,
-        (progress) => {
-          updateStep("audio", "active", `${progress}%`);
+        (progress, message) => {
+          updateStep("audio", "active", message || `${progress}%`);
         }
       );
 
-      if (!audioRes.success || !audioRes.audioUrl) {
+      if (!audioRes.success) {
         throw new Error(audioRes.error || "Failed to generate audio");
       }
 
       updateStep("audio", "completed", "100%");
-      
-      setPendingAudioUrl(audioRes.audioUrl);
-      setPendingAudioDuration(audioRes.duration || 0);
-      setPendingAudioSize(audioRes.size || 0);
+
+      // Handle new 6-segment format
+      if (audioRes.segments && audioRes.segments.length > 0) {
+        setPendingAudioSegments(audioRes.segments);
+        setPendingAudioDuration(audioRes.totalDuration || 0);
+        // Calculate total size from all segments
+        const totalSize = audioRes.segments.reduce((sum, seg) => sum + seg.size, 0);
+        setPendingAudioSize(totalSize);
+        // Use first segment URL as fallback for legacy code
+        setPendingAudioUrl(audioRes.segments[0].audioUrl);
+      } else if (audioRes.audioUrl) {
+        // Legacy single-file response
+        setPendingAudioUrl(audioRes.audioUrl);
+        setPendingAudioDuration(audioRes.duration || 0);
+        setPendingAudioSize(audioRes.size || 0);
+        setPendingAudioSegments([]);
+      } else {
+        throw new Error("No audio generated");
+      }
 
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-audio");
@@ -238,9 +259,73 @@ const Index = () => {
     }
   };
 
-  // Regenerate audio
+  // Regenerate audio (all segments)
   const handleAudioRegenerate = () => {
     handleScriptConfirm(confirmedScript);
+  };
+
+  // Regenerate a single audio segment
+  const handleSegmentRegenerate = async (segmentIndex: number) => {
+    const segment = pendingAudioSegments.find(s => s.index === segmentIndex);
+    if (!segment) {
+      toast({
+        title: "Error",
+        description: "Segment not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRegeneratingSegmentIndex(segmentIndex);
+
+    try {
+      console.log(`Regenerating segment ${segmentIndex}...`);
+
+      const result = await regenerateAudioSegment(
+        segment.text,
+        segmentIndex,
+        settings.voiceSampleUrl!,
+        projectId
+      );
+
+      if (!result.success || !result.segment) {
+        throw new Error(result.error || "Failed to regenerate segment");
+      }
+
+      // Update the segment in the array
+      setPendingAudioSegments(prev => {
+        const newSegments = [...prev];
+        const idx = newSegments.findIndex(s => s.index === segmentIndex);
+        if (idx !== -1) {
+          newSegments[idx] = result.segment!;
+        }
+        return newSegments;
+      });
+
+      // Recalculate totals
+      const newTotalDuration = pendingAudioSegments.reduce((sum, seg) => {
+        if (seg.index === segmentIndex) {
+          return sum + result.segment!.duration;
+        }
+        return sum + seg.duration;
+      }, 0);
+      setPendingAudioDuration(newTotalDuration);
+
+      toast({
+        title: "Segment Regenerated",
+        description: `Segment ${segmentIndex} has been regenerated successfully.`,
+      });
+
+    } catch (error) {
+      console.error("Segment regeneration error:", error);
+      toast({
+        title: "Regeneration Failed",
+        description: error instanceof Error ? error.message : "Failed to regenerate segment",
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingSegmentIndex(null);
+    }
   };
 
   // Step 3: After audio confirmed, generate captions
@@ -462,6 +547,8 @@ const Index = () => {
     setPendingAudioUrl("");
     setPendingAudioDuration(0);
     setPendingAudioSize(0);
+    setPendingAudioSegments([]);
+    setRegeneratingSegmentIndex(null);
     setPendingSrtContent("");
     setPendingSrtUrl("");
     setPendingImages([]);
@@ -587,15 +674,26 @@ const Index = () => {
         onCancel={handleCancel}
       />
 
-      {/* Audio Preview Modal */}
-      <AudioPreviewModal
-        isOpen={viewState === "review-audio"}
-        audioUrl={pendingAudioUrl}
-        duration={pendingAudioDuration}
-        onConfirm={handleAudioConfirm}
-        onRegenerate={handleAudioRegenerate}
-        onCancel={handleCancel}
-      />
+      {/* Audio Preview Modal - Show segments modal if we have segments, otherwise legacy single audio */}
+      {pendingAudioSegments.length > 0 ? (
+        <AudioSegmentsPreviewModal
+          isOpen={viewState === "review-audio"}
+          segments={pendingAudioSegments}
+          onConfirmAll={handleAudioConfirm}
+          onRegenerate={handleSegmentRegenerate}
+          onCancel={handleCancel}
+          regeneratingIndex={regeneratingSegmentIndex}
+        />
+      ) : (
+        <AudioPreviewModal
+          isOpen={viewState === "review-audio"}
+          audioUrl={pendingAudioUrl}
+          duration={pendingAudioDuration}
+          onConfirm={handleAudioConfirm}
+          onRegenerate={handleAudioRegenerate}
+          onCancel={handleCancel}
+        />
+      )}
 
       {/* Captions Preview Modal */}
       <CaptionsPreviewModal
