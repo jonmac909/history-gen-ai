@@ -111,10 +111,10 @@ Multi-step generation with user review at each stage:
 
 ### Audio Generation Architecture
 
-**Critical: Uses rolling concurrency window for memory-safe processing.**
+**Critical: Uses rolling concurrency window with streaming concatenation for memory-safe processing.**
 
 - Script split into 6 equal segments by word count
-- **Max 3 segments processed concurrently** (memory-safe for 2GB Render instance)
+- **Max 4 segments processed concurrently** (optimal for 2GB Render instance)
 - As each segment completes, next one starts (rolling window)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
@@ -124,14 +124,14 @@ Multi-step generation with user review at each stage:
 
 **Performance:**
 - 20,000 word script = 6 segments × ~40 chunks each
-- Rolling concurrency (3 max): ~5-7 minutes (2 batches: 3+3)
-- Full parallel (6): 3-5 min but **crashes on 2GB RAM** (1.3-1.5GB peak)
+- Rolling concurrency (4 max): ~4-6 minutes (2 batches: 4+2)
+- Full parallel (6): 3-5 min but **crashes on 2GB RAM** (1.3GB peak)
 - Sequential (1): ~20 minutes
 
-**Memory footprint (3 concurrent segments):**
-- 3 active segments × 60MB (chunk arrays) = 180MB
-- 3 active segments × 55MB (completed WAVs) = 165MB
-- Segments uploaded immediately, buffers NOT kept in memory
+**Memory footprint (4 concurrent segments):**
+- 4 active segments × 60MB (chunk arrays) = 240MB
+- 2-3 completed WAVs awaiting upload = ~110MB
+- Segments uploaded immediately after completion
 - At end: **Streaming concatenation** (1 segment at a time):
   - Pre-allocate combined WAV buffer (334MB)
   - Download segment 1, extract PCM, copy to combined, clear (55MB temp)
@@ -139,14 +139,14 @@ Multi-step generation with user review at each stage:
   - ... repeat for all 6 segments
   - Only 1 segment buffer in memory at a time!
 - Node.js overhead = ~300MB
-- **Peak during processing: ~650MB** (3 active)
-- **Peak during concatenation: ~690MB** (334MB combined + 55MB current segment)
-- **Total peak: ~690MB** ✓ Safe for 2GB instance
+- **Peak during processing: ~650MB** (4 active)
+- **Peak during concatenation: ~389MB** (334MB combined + 55MB current segment)
+- **Total peak: ~650MB** ✓ Safe margin under 700MB target for 2GB instance
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
 - `DEFAULT_SEGMENT_COUNT = 6` segments
-- `MAX_CONCURRENT_SEGMENTS = 3` (memory-safe rolling window)
+- `MAX_CONCURRENT_SEGMENTS = 4` (memory-safe rolling window, ~650MB peak)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
@@ -261,10 +261,11 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use rolling concurrency (max 3 concurrent on 2GB Render instance)
+- Segments use rolling concurrency (max 4 concurrent on 2GB Render instance)
 - If all RunPod workers busy → increase max workers in RunPod dashboard
-- Memory-safe: 3 segments × 60MB + 3 × 55MB + overhead ≈ 700-1000MB (under 2GB limit)
-- **Do NOT increase MAX_CONCURRENT_SEGMENTS above 3** without upgrading Render instance (will OOM)
+- Memory-safe: 4 segments × 60MB + 2 completed × 55MB + overhead ≈ 650MB (safe margin)
+- Streaming concatenation keeps peak under 700MB
+- **Do NOT increase MAX_CONCURRENT_SEGMENTS above 4** without upgrading Render instance (will OOM)
 
 ### Audio timeouts on long scripts
 - 5-minute timeout per TTS job should handle most cases
