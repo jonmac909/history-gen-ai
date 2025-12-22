@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface ImagesPreviewModalProps {
   isOpen: boolean;
@@ -33,33 +34,53 @@ export function ImagesPreviewModal({
   const openLightbox = (index: number) => setLightboxIndex(index);
   const closeLightbox = () => setLightboxIndex(null);
 
+  // Use functional updates to avoid stale closure issues
   const goToPrevious = useCallback(() => {
-    if (lightboxIndex !== null && lightboxIndex > 0) {
-      setLightboxIndex(lightboxIndex - 1);
-    }
-  }, [lightboxIndex]);
+    setLightboxIndex(prev => {
+      if (prev !== null && prev > 0) {
+        return prev - 1;
+      }
+      return prev;
+    });
+  }, []);
 
   const goToNext = useCallback(() => {
-    if (lightboxIndex !== null && lightboxIndex < images.length - 1) {
-      setLightboxIndex(lightboxIndex + 1);
-    }
-  }, [lightboxIndex, images.length]);
+    setLightboxIndex(prev => {
+      if (prev !== null && prev < images.length - 1) {
+        return prev + 1;
+      }
+      return prev;
+    });
+  }, [images.length]);
 
   // Keyboard navigation for lightbox
   useEffect(() => {
     if (lightboxIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') goToPrevious();
-      if (e.key === 'ArrowRight') goToNext();
+      // Prevent default and stop propagation to avoid Dialog handling these
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeLightbox();
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goToPrevious();
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goToNext();
+      }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Use capture phase to intercept before Dialog
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [lightboxIndex, goToPrevious, goToNext]);
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
         <DialogHeader>
@@ -129,61 +150,66 @@ export function ImagesPreviewModal({
           </Button>
         </DialogFooter>
       </DialogContent>
-
-      {/* Lightbox overlay for full-size image viewing */}
-      {lightboxIndex !== null && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
-          onClick={closeLightbox}
-        >
-          {/* Close button */}
-          <button
-            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10"
-            onClick={closeLightbox}
-          >
-            <X className="w-8 h-8" />
-          </button>
-
-          {/* Image counter */}
-          <div className="absolute top-4 left-4 text-white/70 text-lg font-medium">
-            {lightboxIndex + 1} / {images.length}
-          </div>
-
-          {/* Previous button */}
-          {lightboxIndex > 0 && (
-            <button
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                goToPrevious();
-              }}
-            >
-              <ChevronLeft className="w-12 h-12" />
-            </button>
-          )}
-
-          {/* Next button */}
-          {lightboxIndex < images.length - 1 && (
-            <button
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                goToNext();
-              }}
-            >
-              <ChevronRight className="w-12 h-12" />
-            </button>
-          )}
-
-          {/* Full-size image */}
-          <img
-            src={images[lightboxIndex]}
-            alt={`Full size image ${lightboxIndex + 1}`}
-            className="max-w-[90vw] max-h-[90vh] object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
     </Dialog>
+
+    {/* Lightbox overlay - rendered via portal OUTSIDE the Dialog to avoid event conflicts */}
+    {lightboxIndex !== null && createPortal(
+      <div
+        className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+        onClick={closeLightbox}
+      >
+        {/* Close button */}
+        <button
+          className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            closeLightbox();
+          }}
+        >
+          <X className="w-8 h-8" />
+        </button>
+
+        {/* Image counter */}
+        <div className="absolute top-4 left-4 text-white/70 text-lg font-medium">
+          {lightboxIndex + 1} / {images.length}
+        </div>
+
+        {/* Previous button */}
+        {lightboxIndex > 0 && (
+          <button
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
+            onClick={(e) => {
+              e.stopPropagation();
+              goToPrevious();
+            }}
+          >
+            <ChevronLeft className="w-12 h-12" />
+          </button>
+        )}
+
+        {/* Next button */}
+        {lightboxIndex < images.length - 1 && (
+          <button
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
+            onClick={(e) => {
+              e.stopPropagation();
+              goToNext();
+            }}
+          >
+            <ChevronRight className="w-12 h-12" />
+          </button>
+        )}
+
+        {/* Full-size image */}
+        <img
+          src={images[lightboxIndex]}
+          alt={`Full size image ${lightboxIndex + 1}`}
+          className="max-w-[90vw] max-h-[90vh] object-contain"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>,
+      document.body
+    )}
+  </>
   );
 }
