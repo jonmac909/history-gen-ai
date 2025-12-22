@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
-import { allocateWorkersForAudio } from '../utils/runpod.js';
+import { allocateWorkersForAudio } from '../utils/runpod';
 
 const router = Router();
 
