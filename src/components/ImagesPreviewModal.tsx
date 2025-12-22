@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn } from "lucide-react";
+import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,25 +11,38 @@ import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+interface ImagePrompt {
+  index: number;
+  prompt: string;
+  sceneDescription: string;
+}
+
 interface ImagesPreviewModalProps {
   isOpen: boolean;
   images: string[];
+  prompts?: ImagePrompt[];
   onConfirm: () => void;
   onCancel: () => void;
-  onRegenerate?: (index: number) => void;
+  onBack?: () => void;
+  onRegenerate?: (index: number, editedPrompt?: string) => void;
   regeneratingIndex?: number;
 }
 
 export function ImagesPreviewModal({
   isOpen,
   images,
+  prompts,
   onConfirm,
   onCancel,
+  onBack,
   onRegenerate,
   regeneratingIndex
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [imageVersions, setImageVersions] = useState<Record<number, number>>({});
+  const [imageKeys, setImageKeys] = useState<Record<number, number>>({});
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editedPrompt, setEditedPrompt] = useState("");
+  const prevImagesRef = useRef<string[]>([]);
 
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -38,24 +51,36 @@ export function ImagesPreviewModal({
   const openLightbox = (index: number) => setLightboxIndex(index);
   const closeLightbox = () => setLightboxIndex(null);
 
-  // Track image URL changes to bust cache
+  // Track image URL changes to bust cache - compare with previous URLs
   useEffect(() => {
-    const newVersions: Record<number, number> = {};
+    const newKeys = { ...imageKeys };
+    let hasChanges = false;
+
     images.forEach((url, idx) => {
-      // Increment version when URL changes
-      newVersions[idx] = (imageVersions[idx] || 0) + (images[idx] !== url ? 1 : 0);
+      // If URL changed from previous render, increment the key
+      if (prevImagesRef.current[idx] !== url) {
+        newKeys[idx] = Date.now();
+        hasChanges = true;
+      } else if (!(idx in newKeys)) {
+        // Initialize key for new indices
+        newKeys[idx] = Date.now();
+        hasChanges = true;
+      }
     });
-    // Only update if images array changed length or URLs changed
-    if (Object.keys(imageVersions).length !== images.length) {
-      setImageVersions(images.reduce((acc, _, idx) => ({ ...acc, [idx]: Date.now() }), {}));
+
+    if (hasChanges) {
+      setImageKeys(newKeys);
     }
+
+    // Store current images for next comparison
+    prevImagesRef.current = [...images];
   }, [images]);
 
   // Add cache buster to image URL
   const getImageUrl = (url: string, index: number) => {
-    const version = imageVersions[index] || 0;
+    const key = imageKeys[index] || Date.now();
     const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}v=${version}`;
+    return `${url}${separator}v=${key}`;
   };
 
   // Keyboard: ESC to close lightbox
@@ -102,6 +127,28 @@ export function ImagesPreviewModal({
     return () => window.removeEventListener('click', handleClick, true);
   }, [lightboxIndex]);
 
+  const handleEditClick = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    const prompt = prompts?.[index];
+    if (prompt) {
+      setEditedPrompt(prompt.sceneDescription);
+      setEditingIndex(index);
+    }
+  };
+
+  const handleSaveAndRegenerate = () => {
+    if (editingIndex !== null && onRegenerate) {
+      onRegenerate(editingIndex, editedPrompt);
+      setEditingIndex(null);
+      setEditedPrompt("");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditedPrompt("");
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
@@ -129,15 +176,55 @@ export function ImagesPreviewModal({
             </span>
           </DialogTitle>
           <DialogDescription>
-            Review the generated images for your video.
+            Review the generated images. Click edit to modify the prompt and regenerate.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Prompt editing panel */}
+        {editingIndex !== null && prompts && (
+          <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Edit Prompt for Image {editingIndex + 1}</span>
+              <Button size="sm" variant="ghost" onClick={handleCancelEdit}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <textarea
+              value={editedPrompt}
+              onChange={(e) => setEditedPrompt(e.target.value)}
+              className="w-full min-h-[100px] p-3 text-sm bg-background border rounded resize-y"
+              placeholder="Describe the visual scene..."
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveAndRegenerate}
+                disabled={regeneratingIndex === editingIndex}
+              >
+                {regeneratingIndex === editingIndex ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Regenerating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Save & Regenerate
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-y-auto max-h-[60vh] py-4 pr-2">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {images.map((imageUrl, index) => (
               <div
-                key={`${index}-${imageVersions[index] || 0}`}
+                key={`${index}-${imageKeys[index] || 0}`}
                 className="relative aspect-video rounded-lg overflow-hidden border border-border bg-muted/30 group cursor-pointer"
                 onClick={() => openLightbox(index)}
               >
@@ -153,14 +240,27 @@ export function ImagesPreviewModal({
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                   <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-70 transition-opacity" />
                 </div>
-                {onRegenerate && (
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                {/* Action buttons on hover */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1">
+                  {prompts && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 w-8 p-0"
+                      onClick={(e) => handleEditClick(e, index)}
+                      disabled={regeneratingIndex === index}
+                      title="Edit prompt"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {onRegenerate && (
                     <Button
                       size="sm"
                       variant="secondary"
                       className="h-8 w-8 p-0"
                       onClick={(e) => {
-                        e.stopPropagation(); // Don't open lightbox when clicking regenerate
+                        e.stopPropagation();
                         onRegenerate(index);
                       }}
                       disabled={regeneratingIndex === index}
@@ -168,14 +268,20 @@ export function ImagesPreviewModal({
                     >
                       <RefreshCw className={`w-4 h-4 ${regeneratingIndex === index ? 'animate-spin' : ''}`} />
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {onBack && (
+            <Button variant="outline" onClick={onBack} className="mr-auto">
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          )}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel

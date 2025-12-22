@@ -506,8 +506,8 @@ const Index = () => {
     }
   };
 
-  // Regenerate a single image
-  const handleRegenerateImage = async (index: number) => {
+  // Regenerate a single image (optionally with edited prompt)
+  const handleRegenerateImage = async (index: number, editedSceneDescription?: string) => {
     if (!imagePrompts[index]) {
       toast({
         title: "Error",
@@ -520,10 +520,26 @@ const Index = () => {
     setRegeneratingImageIndex(index);
 
     try {
-      console.log(`Regenerating image ${index + 1}...`);
+      // If edited prompt provided, update the imagePrompts state first
+      let promptToUse = imagePrompts[index];
+      if (editedSceneDescription) {
+        promptToUse = {
+          ...imagePrompts[index],
+          sceneDescription: editedSceneDescription,
+          prompt: imagePrompts[index].prompt.replace(imagePrompts[index].sceneDescription, editedSceneDescription)
+        };
+        // Update the prompts state with the edited version
+        setImagePrompts(prev => {
+          const newPrompts = [...prev];
+          newPrompts[index] = promptToUse;
+          return newPrompts;
+        });
+      }
+
+      console.log(`Regenerating image ${index + 1}${editedSceneDescription ? ' with edited prompt' : ''}...`);
 
       const imageResult = await generateImagesStreaming(
-        [imagePrompts[index]], // Regenerate just this one prompt with timing
+        [promptToUse], // Regenerate just this one prompt with timing
         settings.quality,
         "16:9",
         () => {}, // No progress callback needed for single image
@@ -634,6 +650,23 @@ const Index = () => {
       title: "Generation Cancelled",
       description: "Process was cancelled.",
     });
+  };
+
+  // Back navigation handlers
+  const handleBackToScript = () => {
+    setViewState("review-script");
+  };
+
+  const handleBackToAudio = () => {
+    setViewState("review-audio");
+  };
+
+  const handleBackToCaptions = () => {
+    setViewState("review-captions");
+  };
+
+  const handleBackToPrompts = () => {
+    setViewState("review-prompts");
   };
 
   const handleNewProject = () => {
@@ -793,6 +826,7 @@ const Index = () => {
           onConfirmAll={handleAudioConfirm}
           onRegenerate={handleSegmentRegenerate}
           onCancel={handleCancel}
+          onBack={handleBackToScript}
           regeneratingIndex={regeneratingSegmentIndex}
         />
       ) : (
@@ -812,6 +846,7 @@ const Index = () => {
         srtContent={pendingSrtContent}
         onConfirm={handleCaptionsConfirm}
         onCancel={handleCancel}
+        onBack={handleBackToAudio}
       />
 
       {/* Image Prompts Preview Modal */}
@@ -820,14 +855,17 @@ const Index = () => {
         prompts={imagePrompts}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancel}
+        onBack={handleBackToCaptions}
       />
 
       {/* Images Preview Modal */}
       <ImagesPreviewModal
         isOpen={viewState === "review-images"}
         images={pendingImages}
+        prompts={imagePrompts}
         onConfirm={handleImagesConfirm}
         onCancel={handleCancel}
+        onBack={handleBackToPrompts}
         onRegenerate={handleRegenerateImage}
         regeneratingIndex={regeneratingImageIndex}
       />

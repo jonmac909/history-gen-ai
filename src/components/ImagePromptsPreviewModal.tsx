@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ interface ImagePromptsPreviewModalProps {
   prompts: ImagePrompt[];
   onConfirm: (editedPrompts: ImagePrompt[]) => void;
   onCancel: () => void;
+  onBack?: () => void;
 }
 
 function formatTimecode(time: string): string {
@@ -118,7 +119,8 @@ export function ImagePromptsPreviewModal({
   isOpen,
   prompts,
   onConfirm,
-  onCancel
+  onCancel,
+  onBack
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
 
@@ -175,6 +177,12 @@ export function ImagePromptsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {onBack && (
+            <Button variant="outline" onClick={onBack} className="mr-auto">
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          )}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel

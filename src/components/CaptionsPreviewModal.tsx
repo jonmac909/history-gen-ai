@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, FileText } from "lucide-react";
+import { Check, X, Edit3, FileText, ChevronLeft } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +17,15 @@ interface CaptionsPreviewModalProps {
   srtContent: string;
   onConfirm: (srtContent: string) => void;
   onCancel: () => void;
+  onBack?: () => void;
 }
 
-export function CaptionsPreviewModal({ 
-  isOpen, 
-  srtContent, 
-  onConfirm, 
-  onCancel 
+export function CaptionsPreviewModal({
+  isOpen,
+  srtContent,
+  onConfirm,
+  onCancel,
+  onBack
 }: CaptionsPreviewModalProps) {
   const [editedSrt, setEditedSrt] = useState(srtContent);
   const [isEditing, setIsEditing] = useState(false);
@@ -76,20 +78,25 @@ export function CaptionsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {onBack && (
+            <Button variant="outline" onClick={onBack} className="mr-auto">
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setIsEditing(!isEditing)}
-            className="mr-auto"
           >
             <Edit3 className="w-4 h-4 mr-2" />
             {isEditing ? "Preview" : "Edit"}
           </Button>
-          
+
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
-          
+
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />
             Confirm & Generate Images
