@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.download-images-zip]
 verify_jwt = false
+
+[functions.generate-image-prompts]
+verify_jwt = false
+
+[functions.generate-video]
+verify_jwt = false
