@@ -539,9 +539,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
 
-    // Voice cloning support - now generates 6 separate segments
+    // Voice cloning support - now generates 10 separate segments
     if (voiceSampleUrl && stream) {
-      logger.info('Using streaming mode with voice cloning (6 segments)');
+      logger.info('Using streaming mode with voice cloning (10 segments)');
       return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
     }
 
@@ -673,7 +673,7 @@ interface AudioSegmentResult {
   text: string;
 }
 
-// Handle streaming with voice cloning - generates 6 separate segments
+// Handle streaming with voice cloning - generates 10 separate segments
 async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -700,7 +700,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     console.log(`  - First 200 chars: "${script.substring(0, 200)}..."`);
     console.log(`========================================\n`);
 
-    // Split script into 6 segments
+    // Split script into 10 segments (uses all 10 RunPod workers)
     const segments = splitIntoSegments(script, DEFAULT_SEGMENT_COUNT);
     const actualSegmentCount = segments.length;
 

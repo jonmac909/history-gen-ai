@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (10 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
@@ -74,9 +74,9 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | Route | Purpose |
 |-------|---------|
 | `/rewrite-script` | Streaming script generation with Claude API |
-| `/generate-audio` | Voice cloning TTS, splits into 6 segments, returns combined + individual URLs |
+| `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
-| `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
+| `/generate-images` | RunPod Z-Image with rolling concurrency (10 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
 
@@ -93,7 +93,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 Multi-step generation with user review at each stage:
 1. **Transcript Fetch** → Review Script
 2. **Script Generation** (streaming) → Review Audio
-3. **Audio Generation** (6 segments with voice cloning) → Review Captions
+3. **Audio Generation** (10 segments with voice cloning) → Review Captions
 4. **Captions Generation** → Review Images
 5. **Image Generation** (streaming, parallel) → Final Results
 

@@ -225,12 +225,12 @@ const Index = () => {
     }
   };
 
-  // Step 2: After script confirmed, generate audio (6 segments)
+  // Step 2: After script confirmed, generate audio (10 segments)
   const handleScriptConfirm = async (script: string) => {
     setConfirmedScript(script);
 
     const steps: GenerationStep[] = [
-      { id: "audio", label: "Generating Audio with Chatterbox (6 segments)", status: "pending" },
+      { id: "audio", label: "Generating Audio with Chatterbox (10 segments)", status: "pending" },
     ];
 
     setProcessingSteps(steps);
