@@ -728,7 +728,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       duration: number;
       size: number;
       text: string;
-      audioBuffer: Buffer;
+      audioBuffer: Buffer | null; // null until we re-download for concatenation
       durationSeconds: number;
     }> = [];
 
@@ -830,14 +830,14 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
         console.log(`Segment ${segmentNumber} COMPLETED: ${urlData.publicUrl}`);
 
-        // Store result
+        // Store result (WITHOUT buffer to save memory - we'll re-download later)
         allSegmentResults.push({
           index: segmentNumber,
           audioUrl: urlData.publicUrl,
           duration: durationRounded,
           size: segmentAudio.length,
           text: segmentText,
-          audioBuffer: segmentAudio,
+          audioBuffer: null as any, // Placeholder - will download later
           durationSeconds,
         });
 
@@ -894,8 +894,30 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       throw new Error('All segments failed to generate');
     }
 
-    // Extract buffers and calculate total duration
-    const segmentAudioBuffers = segmentResults.map(r => r.audioBuffer);
+    sendEvent({ type: 'progress', progress: 88, message: 'Downloading segments for concatenation...' });
+
+    // Re-download all segment WAVs from Supabase (we didn't keep them in memory)
+    console.log(`\n=== Downloading ${segmentResults.length} segments from storage for concatenation ===`);
+    const segmentAudioBuffers: Buffer[] = [];
+
+    for (const result of segmentResults) {
+      const fileName = `${actualProjectId}/voiceover-segment-${result.index}.wav`;
+      console.log(`Downloading ${fileName}...`);
+
+      const { data, error } = await supabase.storage
+        .from('generated-assets')
+        .download(fileName);
+
+      if (error || !data) {
+        throw new Error(`Failed to download segment ${result.index} for concatenation: ${error?.message}`);
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      segmentAudioBuffers.push(buffer);
+      console.log(`Downloaded segment ${result.index}: ${buffer.length} bytes`);
+    }
+
     const totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
 
     sendEvent({ type: 'progress', progress: 90, message: 'Combining audio segments...' });

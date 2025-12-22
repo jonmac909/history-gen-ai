@@ -129,11 +129,15 @@ Multi-step generation with user review at each stage:
 - Sequential (1): ~20 minutes
 
 **Memory footprint (3 concurrent segments):**
-- 3 segments × 60MB (chunk arrays) = 180MB
-- 3 segments × 55MB (completed WAVs) = 165MB
-- Combined WAV (at end) = 337MB
+- 3 active segments × 60MB (chunk arrays) = 180MB
+- 3 active segments × 55MB (completed WAVs) = 165MB
+- Segments uploaded immediately, buffers NOT kept in memory
+- At end: Re-download all 6 segments (6 × 55MB = 330MB)
+- Concatenate into combined WAV (334MB)
 - Node.js overhead = ~300MB
-- **Total peak: ~700-1000MB** ✓ Safe for 2GB instance
+- **Peak during processing: ~650MB** (3 active)
+- **Peak during concatenation: ~970MB** (6 downloaded + 1 combined)
+- **Total peak: ~970MB** ✓ Safe for 2GB instance
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
