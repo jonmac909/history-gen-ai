@@ -86,10 +86,12 @@ function validateTTSInput(text: string): boolean {
 function normalizeText(text: string): string {
   return text
     .normalize("NFKD")
-    .replace(/[^\x00-\x7F]/g, "")
+    // IMPORTANT: Convert smart quotes/dashes BEFORE removing non-ASCII
     .replace(/[""]/g, '"')
     .replace(/['']/g, "'")
     .replace(/[–—]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/[^\x00-\x7F]/g, "") // Remove remaining non-ASCII AFTER conversions
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -412,6 +414,10 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
 router.post('/', async (req: Request, res: Response) => {
   const { script, voiceSampleUrl, projectId, stream } = req.body;
 
+  // Log raw input immediately
+  const rawWordCount = script ? script.split(/\s+/).filter(Boolean).length : 0;
+  console.log(`\n[AUDIO REQUEST] Raw script: ${script?.length || 0} chars, ${rawWordCount} words, stream=${stream}, voiceSampleUrl=${voiceSampleUrl ? 'YES' : 'NO'}`);
+
   // Helper to send SSE error events when streaming
   const sendStreamError = (error: string) => {
     if (!res.headersSent) {
@@ -634,9 +640,26 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
   }, 15000);
 
   try {
+    // Log input script stats for debugging
+    const inputWordCount = script.split(/\s+/).filter(Boolean).length;
+    console.log(`\n========================================`);
+    console.log(`INPUT SCRIPT STATS:`);
+    console.log(`  - Characters: ${script.length}`);
+    console.log(`  - Words: ${inputWordCount}`);
+    console.log(`  - Expected duration: ~${Math.round(inputWordCount / 150)} minutes`);
+    console.log(`  - First 200 chars: "${script.substring(0, 200)}..."`);
+    console.log(`========================================\n`);
+
     // Split script into 6 segments
     const segments = splitIntoSegments(script, DEFAULT_SEGMENT_COUNT);
     const actualSegmentCount = segments.length;
+
+    // Log segment breakdown
+    console.log(`SEGMENT BREAKDOWN:`);
+    segments.forEach((seg, i) => {
+      const segWords = seg.split(/\s+/).filter(Boolean).length;
+      console.log(`  Segment ${i + 1}: ${segWords} words, ${seg.length} chars`);
+    });
 
     sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${actualSegmentCount} segments)...` });
 
@@ -682,21 +705,30 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       // Split this segment into TTS chunks
       const rawChunks = splitIntoChunks(segmentText, MAX_TTS_CHUNK_LENGTH);
       const chunks: string[] = [];
+      let skippedChunks = 0;
 
       for (const chunk of rawChunks) {
         if (validateTTSInput(chunk)) {
           chunks.push(chunk);
         } else {
-          logger.warn(`Skipping invalid chunk in segment ${segmentNumber}: "${chunk.substring(0, 30)}..."`);
+          skippedChunks++;
+          // Log why validation failed
+          const reasons: string[] = [];
+          if (!chunk) reasons.push('empty');
+          else if (chunk.trim().length < MIN_TEXT_LENGTH) reasons.push(`too short (${chunk.trim().length} chars)`);
+          else if (chunk.length > MAX_TEXT_LENGTH) reasons.push(`too long (${chunk.length} chars)`);
+          else if (/[^\x00-\x7F]/.test(chunk)) reasons.push('contains non-ASCII');
+          else if (!/[a-zA-Z0-9]/.test(chunk)) reasons.push('no alphanumeric chars');
+          console.log(`  SKIPPED chunk in segment ${segmentNumber}: ${reasons.join(', ')} - "${chunk.substring(0, 50)}..."`);
         }
       }
 
       if (chunks.length === 0) {
-        logger.warn(`Segment ${segmentNumber} has no valid chunks, skipping`);
+        console.log(`  WARNING: Segment ${segmentNumber} has no valid chunks (${rawChunks.length} raw, ${skippedChunks} skipped)`);
         continue;
       }
 
-      console.log(`Segment ${segmentNumber}: ${chunks.length} chunks`);
+      console.log(`  Segment ${segmentNumber}: ${chunks.length}/${rawChunks.length} chunks valid (${skippedChunks} skipped)`);
 
       const audioChunks: Buffer[] = [];
 

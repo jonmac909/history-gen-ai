@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments), creates captions, and produces AI images with timing-based filenames.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
@@ -14,6 +14,11 @@ HistoryGen AI generates AI-powered historical video content from YouTube URLs. I
 - TTS: RunPod serverless with ChatterboxTurboTTS voice cloning
 - Image Generation: RunPod serverless with Z-Image-Turbo
 - Deployment: Netlify (frontend), Render (API), Supabase (storage + quick functions)
+
+**Live URLs:**
+- Frontend: https://historygenai.netlify.app
+- Render API: https://history-gen-ai.onrender.com
+- Supabase: https://udqfdeoullsxttqguupz.supabase.co
 
 ## Development Commands
 
@@ -26,6 +31,7 @@ npm run lint             # Run ESLint
 npm test                 # Run tests in watch mode
 npm run test:run         # Run tests once (for CI)
 npm run test:coverage    # Run tests with coverage
+npx playwright test      # Run E2E tests (CI runs on push/PR)
 ```
 
 ### Render API (`render-api/`)
@@ -86,11 +92,17 @@ Multi-step generation with user review at each stage:
 - Voice sample (5-10MB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
+- Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
 Key constants in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
 - `DEFAULT_SEGMENT_COUNT = 6` segments
 - Sequential processing prevents "Ran out of memory (>2GB)" errors
+
+**Individual Segment Regeneration:**
+- POST `/generate-audio/segment` regenerates a single segment
+- Frontend calls `onRegenerate(segmentIndex)` to regenerate specific segment
+- Combined audio must be re-concatenated after any regeneration
 
 ### RunPod Endpoints
 
@@ -146,10 +158,27 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 ### Audio generation "Failed to generate audio"
 - Check if `audioUrl` is being returned (backend must concatenate segments)
 - Verify `RUNPOD_API_KEY` is set on Render
+- Frontend expects both `audioUrl` (combined) AND `segments[]` array
+
+### Captions too short / using wrong audio
+- Captions must use combined `audioUrl`, not `segments[0].audioUrl`
+- Check `pendingAudioUrl` is set from `audioRes.audioUrl`, not first segment
+
+### Audio preview too short
+- `AudioSegmentsPreviewModal` needs `combinedAudioUrl` and `totalDuration` props
+- Modal should show "Play All" player for combined audio
 
 ### Audio stuck at 15% or memory errors
 - DO NOT parallelize audio generation (causes memory issues)
 - Workers at capacity → increase max workers in RunPod
+
+### Image generation 401 Unauthorized
+- Add function to `supabase/config.toml` with `verify_jwt = false`
+- Redeploy with `--no-verify-jwt` flag
+
+### Image generation 500 Internal Server Error
+- Check Claude model ID is valid: `claude-sonnet-4-20250514`
+- NOT `claude-sonnet-4-5-20250514` (wrong format)
 
 ### RunPod workers crashing
 - Exit code 2: Python import errors
