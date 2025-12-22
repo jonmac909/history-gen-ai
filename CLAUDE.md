@@ -8,16 +8,16 @@ HistoryGen AI generates AI-powered historical video content from YouTube URLs. I
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
-- Backend API: Express + TypeScript on Render (long-running operations)
+- Backend API: Express + TypeScript on Railway (long-running operations, usage-based pricing)
 - Quick Functions: Supabase Edge Functions (Deno)
 - Storage: Supabase Storage
 - TTS: RunPod serverless with ChatterboxTurboTTS voice cloning
 - Image Generation: RunPod serverless with Z-Image-Turbo
-- Deployment: Netlify (frontend), Render (API), Supabase (storage + quick functions)
+- Deployment: Netlify (frontend), Railway (API), Supabase (storage + quick functions)
 
 **Live URLs:**
 - Frontend: https://historygenai.netlify.app
-- Render API: https://history-gen-ai.onrender.com
+- Railway API: (will be generated after deployment)
 - Supabase: https://udqfdeoullsxttqguupz.supabase.co
 
 ## Development Commands
@@ -39,7 +39,7 @@ npm run monitor:runpod:watch        # Continuous monitoring
 npm run monitor:runpod:errors       # Show errors only
 ```
 
-### Render API (`render-api/`)
+### Railway API (`render-api/`)
 ```bash
 cd render-api
 npm install              # Install dependencies
@@ -59,10 +59,10 @@ npx supabase functions deploy <function-name> --project-ref udqfdeoullsxttqguupz
 
 ### Hybrid Backend Design
 
-Long-running operations run on **Render** (no timeout limits). Quick operations remain on **Supabase Edge Functions** (2-minute limit).
+Long-running operations run on **Railway** (usage-based pricing, no timeout limits, up to 8GB RAM). Quick operations remain on **Supabase Edge Functions** (2-minute limit).
 
 **Frontend API Client** (`src/lib/api.ts`):
-- Uses dual API pattern: Render API for streaming/long operations, Supabase for quick operations
+- Uses dual API pattern: Railway API for streaming/long operations, Supabase for quick operations
 - All streaming endpoints use Server-Sent Events (SSE) format
 - Event types: `progress`, `token` (real-time script streaming), `complete`, `error`
 - Dynamic timeouts based on content size (e.g., 150 words/min for scripts)
@@ -70,7 +70,7 @@ Long-running operations run on **Render** (no timeout limits). Quick operations 
 - No automatic retries (errors returned to user immediately)
 - Graceful degradation: returns partial results if stream interrupted (500+ word threshold)
 
-**Render API Routes** (`render-api/src/routes/`):
+**Railway API Routes** (`render-api/src/routes/`):
 | Route | Purpose |
 |-------|---------|
 | `/rewrite-script` | Streaming script generation with Claude API |
@@ -111,11 +111,10 @@ Multi-step generation with user review at each stage:
 
 ### Audio Generation Architecture
 
-**Critical: Uses rolling concurrency window with streaming concatenation for memory-safe processing.**
+**Critical: Uses rolling concurrency window with streaming concatenation for maximum speed.**
 
 - Script split into 6 equal segments by word count
-- **Max 4 segments processed concurrently** (optimal for 2GB Render instance)
-- As each segment completes, next one starts (rolling window)
+- **All 6 segments processed in parallel** (utilizing 8GB Railway instance)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
@@ -124,12 +123,12 @@ Multi-step generation with user review at each stage:
 
 **Performance:**
 - 20,000 word script = 6 segments × ~40 chunks each
-- Rolling concurrency (4 max): ~4-6 minutes (2 batches: 4+2)
-- Full parallel (6): 3-5 min but **crashes on 2GB RAM** (1.3GB peak)
+- **Full parallel (6): 3-5 minutes** (all segments process simultaneously)
 - Sequential (1): ~20 minutes
+- Railway usage-based billing: only charged for actual processing time (~5 min/day)
 
-**Memory footprint (4 concurrent segments):**
-- 4 active segments × 60MB (chunk arrays) = 240MB
+**Memory footprint (6 concurrent segments on 8GB Railway instance):**
+- 6 active segments × 60MB (chunk arrays) = 360MB
 - 2-3 completed WAVs awaiting upload = ~110MB
 - Segments uploaded immediately after completion
 - At end: **Streaming concatenation** (1 segment at a time):
@@ -139,14 +138,14 @@ Multi-step generation with user review at each stage:
   - ... repeat for all 6 segments
   - Only 1 segment buffer in memory at a time!
 - Node.js overhead = ~300MB
-- **Peak during processing: ~650MB** (4 active)
+- **Peak during processing: ~825MB** (6 active)
 - **Peak during concatenation: ~389MB** (334MB combined + 55MB current segment)
-- **Total peak: ~650MB** ✓ Safe margin under 700MB target for 2GB instance
+- **Total peak: ~825MB** ✓ Plenty of headroom on 8GB instance
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
 - `DEFAULT_SEGMENT_COUNT = 6` segments
-- `MAX_CONCURRENT_SEGMENTS = 4` (memory-safe rolling window, ~650MB peak)
+- `MAX_CONCURRENT_SEGMENTS = 6` (full parallel processing on Railway 8GB)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
@@ -209,19 +208,24 @@ Multi-step generation with user review at each stage:
 VITE_SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<key>
 VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
-VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
+VITE_RENDER_API_URL=<railway-production-url>
 ```
 
-### Render API Environment
+### Railway API Environment Variables
+Set these in Railway dashboard → Variables:
 ```
 ANTHROPIC_API_KEY=<claude-api-key>
 SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
+RUNPOD_ENDPOINT_ID=eitsgz3gndkh3s
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
+PORT=10000
 ```
+
+**Note:** Railway auto-injects `PORT` variable, but you can set it manually to 10000 for consistency.
 
 ### Storage Buckets
 - `voice-samples`: User uploaded voice samples (PUBLIC)
@@ -229,15 +233,39 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 
 ## Deployment
 
-**Frontend:** Auto-deploys to Netlify on push to `main`
+### Railway API Deployment
 
-**Render API:** Auto-deploys on push to `main`
-- Root directory: `render-api`
-- Build: `npm install --include=dev && npm run build`
-- Start: `npm start`
-- **Memory tier: 2GB required** for long scripts (500+ audio chunks)
+**Initial Setup:**
+1. Go to [Railway](https://railway.com) and sign up/login
+2. Create new project → Deploy from GitHub repo
+3. Select repository: `jonmac909/history-gen-ai`
+4. Set root directory: `render-api`
+5. Railway auto-detects Node.js and uses `railway.json` config
 
-**RunPod:** GitHub integration auto-rebuilds `jonmac909/chatterbox` (5-10 min)
+**Environment Variables:**
+In Railway dashboard → Variables, add all variables from the "Railway API Environment Variables" section above.
+
+**Build Settings (auto-detected from `package.json`):**
+- Build Command: `npm run build` (runs `npm install --include=dev && tsc`)
+- Start Command: `npm start` (runs `node dist/index.js`)
+- Node Version: >=18 (detected from `engines` field)
+
+**Cost Optimization:**
+- Hobby Plan: $5/month (includes $5 credits)
+- Usage: ~$0.42/month for once-daily generation (10 min/day)
+- **Effective cost: ~$5/month** (vs $44/month on Render)
+- Up to 8GB RAM / 8 vCPU available (no memory limits!)
+
+**Auto-deploys:** Push to `main` branch triggers automatic Railway deployment
+
+### Frontend Deployment
+
+**Netlify:** Auto-deploys to Netlify on push to `main`
+- Update `VITE_RENDER_API_URL` to Railway production URL after first deploy
+
+### RunPod Workers
+
+**ChatterboxTurboTTS:** GitHub integration auto-rebuilds `jonmac909/chatterbox` (5-10 min)
 
 ## Common Issues
 
@@ -261,11 +289,11 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use rolling concurrency (max 4 concurrent on 2GB Render instance)
+- Segments use full parallel processing (6 concurrent on 8GB Railway instance)
 - If all RunPod workers busy → increase max workers in RunPod dashboard
-- Memory-safe: 4 segments × 60MB + 2 completed × 55MB + overhead ≈ 650MB (safe margin)
-- Streaming concatenation keeps peak under 700MB
-- **Do NOT increase MAX_CONCURRENT_SEGMENTS above 4** without upgrading Render instance (will OOM)
+- Memory usage: 6 segments × 60MB + overhead ≈ 825MB peak (plenty of headroom on 8GB)
+- Streaming concatenation keeps concatenation peak at ~389MB
+- Railway charges only for actual usage time (~5 min/day = ~$0.42/month)
 
 ### Audio timeouts on long scripts
 - 5-minute timeout per TTS job should handle most cases
