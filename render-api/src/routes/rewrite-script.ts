@@ -216,10 +216,8 @@ CRITICAL RULES:
 
           let result;
           try {
-            const useCaching = iteration > 1;
-            if (useCaching) {
-              console.log(`💾 Using prompt cache for iteration ${iteration} (90% cost reduction + faster!)`);
-            }
+            const useCaching = true; // Always use caching for faster response
+            console.log(`💾 Using prompt cache for iteration ${iteration} (90% cost reduction + faster!)`);
 
             // Track tokens for incremental progress updates
             let iterationTokens = '';

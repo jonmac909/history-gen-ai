@@ -201,12 +201,13 @@ function createWavFromPcm(pcmData: Uint8Array, format: AudioFormat): Uint8Array 
 }
 
 // Transcribe a single audio chunk
-async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chunkIndex: number): Promise<{ segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
+async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
   const formData = new FormData();
   formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
   formData.append('model', 'whisper-1');
   formData.append('response_format', 'verbose_json');
   formData.append('timestamp_granularities[]', 'segment');
+  formData.append('language', 'en'); // Speed optimization: skip language detection
 
   console.log(`Transcribing chunk ${chunkIndex + 1}, size: ${audioData.length} bytes`);
 
@@ -229,6 +230,7 @@ async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chun
   console.log(`Chunk ${chunkIndex + 1} transcribed, duration: ${result.duration}s, segments: ${result.segments?.length || 0}`);
 
   return {
+    chunkIndex,
     segments: result.segments || [],
     duration: result.duration || 0,
   };
@@ -309,7 +311,6 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Process each chunk and collect segments
     const allSegments: Array<{ text: string; start: number; end: number }> = [];
-    let timeOffset = 0;
 
     // Send initial progress
     sendEvent({
@@ -320,49 +321,63 @@ router.post('/', async (req: Request, res: Response) => {
       totalChunks: numChunks
     });
 
+    // Prepare all chunks upfront
+    const preparedChunks: { chunkIndex: number; wavData: Uint8Array; expectedDuration: number }[] = [];
     for (let i = 0; i < numChunks; i++) {
       const startByte = i * chunkSizeBytes;
       const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
       const chunkPcm = pcmData.slice(startByte, endByte);
+      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
+      const expectedDuration = chunkPcm.length / bytesPerSecond;
+      preparedChunks.push({ chunkIndex: i, wavData: chunkWav, expectedDuration });
+    }
 
-      // Send progress update BEFORE transcribing (show which chunk we're working on)
-      // Progress: 5% start, 5-90% for chunks, 90-100% for finalization
-      const progressStart = 5 + Math.round((i / numChunks) * 85);
+    // Process chunks in parallel (max 3 concurrent to avoid rate limits)
+    const MAX_PARALLEL_CHUNKS = 3;
+    const chunkResults: { chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }[] = [];
+    let completedChunks = 0;
+
+    for (let batchStart = 0; batchStart < preparedChunks.length; batchStart += MAX_PARALLEL_CHUNKS) {
+      const batch = preparedChunks.slice(batchStart, batchStart + MAX_PARALLEL_CHUNKS);
+
       sendEvent({
         type: 'progress',
-        progress: progressStart,
-        message: `Transcribing${numChunks > 1 ? ` chunk ${i + 1}/${numChunks}` : ''}...`,
-        chunksProcessed: i,
+        progress: 5 + Math.round((completedChunks / numChunks) * 85),
+        message: `Transcribing${numChunks > 1 ? ` chunks ${batchStart + 1}-${Math.min(batchStart + batch.length, numChunks)}/${numChunks}` : ''}...`,
+        chunksProcessed: completedChunks,
         totalChunks: numChunks
       });
 
-      // Create WAV from chunk PCM with correct format (must match original audio!)
-      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
+      // Process batch in parallel
+      const batchResults = await Promise.all(
+        batch.map(chunk => transcribeChunk(chunk.wavData, openaiApiKey, chunk.chunkIndex))
+      );
 
-      // Transcribe the chunk
-      const { segments, duration } = await transcribeChunk(chunkWav, openaiApiKey, i);
+      chunkResults.push(...batchResults);
+      completedChunks += batch.length;
 
-      // Adjust timestamps and add to all segments
-      for (const seg of segments) {
+      sendEvent({
+        type: 'progress',
+        progress: 5 + Math.round((completedChunks / numChunks) * 85),
+        message: `Transcribed${numChunks > 1 ? ` ${completedChunks}/${numChunks} chunks` : ''}`,
+        chunksProcessed: completedChunks,
+        totalChunks: numChunks
+      });
+    }
+
+    // Sort results by chunk index and merge with proper time offsets
+    chunkResults.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+    let timeOffset = 0;
+    for (const result of chunkResults) {
+      for (const seg of result.segments) {
         allSegments.push({
           text: seg.text.trim(),
           start: seg.start + timeOffset,
           end: seg.end + timeOffset,
         });
       }
-
-      // Update time offset for next chunk
-      timeOffset += duration;
-
-      // Send progress update AFTER transcribing
-      const progressEnd = 5 + Math.round(((i + 1) / numChunks) * 85);
-      sendEvent({
-        type: 'progress',
-        progress: progressEnd,
-        message: `Transcribed${numChunks > 1 ? ` chunk ${i + 1}/${numChunks}` : ''}`,
-        chunksProcessed: i + 1,
-        totalChunks: numChunks
-      });
+      timeOffset += result.duration;
     }
 
     console.log('Total segments from all chunks:', allSegments.length);
