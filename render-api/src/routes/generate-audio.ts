@@ -719,28 +719,17 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    console.log(`\n=== Processing ${actualSegmentCount} segments ===`);
+    console.log(`\n=== Processing ${actualSegmentCount} segments IN PARALLEL ===`);
 
-    const segmentResults: AudioSegmentResult[] = [];
-    const segmentAudioBuffers: Buffer[] = []; // Store raw audio for final concatenation
-    let totalDuration = 0;
+    // Track completed segments for progress reporting
+    let completedSegments = 0;
+    const totalSegments = actualSegmentCount;
 
-    // Process each segment
-    for (let segIdx = 0; segIdx < actualSegmentCount; segIdx++) {
-      const segmentText = segments[segIdx];
+    // Process all segments in parallel
+    const segmentPromises = segments.map(async (segmentText, segIdx) => {
       const segmentNumber = segIdx + 1;
 
-      // Calculate progress: 10% start, 10-85% for segments, 85-100% for final steps
-      const segmentStartProgress = 10 + Math.round((segIdx / actualSegmentCount) * 75);
-      const segmentEndProgress = 10 + Math.round(((segIdx + 1) / actualSegmentCount) * 75);
-
-      sendEvent({
-        type: 'progress',
-        progress: segmentStartProgress,
-        message: `Processing segment ${segmentNumber}/${actualSegmentCount}...`
-      });
-
-      console.log(`\n--- Segment ${segmentNumber}/${actualSegmentCount} ---`);
+      console.log(`\n--- Segment ${segmentNumber}/${actualSegmentCount} STARTED ---`);
       console.log(`Text: "${segmentText.substring(0, 100)}..."`);
 
       // Split this segment into TTS chunks
@@ -766,25 +755,26 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
       if (chunks.length === 0) {
         console.log(`  WARNING: Segment ${segmentNumber} has no valid chunks (${rawChunks.length} raw, ${skippedChunks} skipped)`);
-        continue;
+        return null; // Skip this segment
       }
 
       console.log(`  Segment ${segmentNumber}: ${chunks.length}/${rawChunks.length} chunks valid (${skippedChunks} skipped)`);
 
       const audioChunks: Buffer[] = [];
 
-      // Process each chunk in this segment sequentially
+      // Process each chunk in this segment sequentially (avoid memory issues within single worker)
       for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
         const chunkText = chunks[chunkIdx];
 
-        // Calculate sub-progress within this segment
-        const chunkProgress = segmentStartProgress + Math.round(
-          ((chunkIdx + 1) / chunks.length) * (segmentEndProgress - segmentStartProgress)
+        // Calculate progress based on completed segments
+        const baseProgress = 10 + Math.round((completedSegments / totalSegments) * 75);
+        const chunkProgress = baseProgress + Math.round(
+          ((chunkIdx + 1) / chunks.length) * (75 / totalSegments)
         );
 
         sendEvent({
           type: 'progress',
-          progress: chunkProgress,
+          progress: Math.min(chunkProgress, 85), // Cap at 85%
           message: `Segment ${segmentNumber}: chunk ${chunkIdx + 1}/${chunks.length}...`
         });
 
@@ -792,7 +782,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
           // Use retry logic with exponential backoff
           const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
           audioChunks.push(audioData);
-          console.log(`  Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
+          console.log(`  Segment ${segmentNumber} - Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
         } catch (err) {
           logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber} after all retries: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
@@ -800,16 +790,12 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
       if (audioChunks.length === 0) {
         logger.warn(`All chunks failed for segment ${segmentNumber}, skipping`);
-        continue;
+        return null;
       }
 
       // Concatenate this segment's chunks into one WAV
       const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
       const durationRounded = Math.round(durationSeconds * 10) / 10; // Round to 1 decimal
-      totalDuration += durationSeconds;
-
-      // Store raw audio for final concatenation
-      segmentAudioBuffers.push(segmentAudio);
 
       console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
 
@@ -832,20 +818,43 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
         .from('generated-assets')
         .getPublicUrl(fileName);
 
-      segmentResults.push({
+      console.log(`Segment ${segmentNumber} COMPLETED: ${urlData.publicUrl}`);
+
+      // Increment completed counter
+      completedSegments++;
+      const overallProgress = 10 + Math.round((completedSegments / totalSegments) * 75);
+      sendEvent({
+        type: 'progress',
+        progress: Math.min(overallProgress, 85),
+        message: `Completed ${completedSegments}/${totalSegments} segments...`
+      });
+
+      return {
         index: segmentNumber,
         audioUrl: urlData.publicUrl,
         duration: durationRounded,
         size: segmentAudio.length,
         text: segmentText,
-      });
+        audioBuffer: segmentAudio, // Include buffer for concatenation
+        durationSeconds, // Exact duration for total calculation
+      };
+    });
 
-      console.log(`Segment ${segmentNumber} uploaded: ${urlData.publicUrl}`);
-    }
+    // Wait for all segments to complete
+    const segmentResultsWithNulls = await Promise.all(segmentPromises);
+
+    // Filter out failed segments and sort by index
+    const segmentResults = segmentResultsWithNulls
+      .filter((result): result is NonNullable<typeof result> => result !== null)
+      .sort((a, b) => a.index - b.index);
 
     if (segmentResults.length === 0) {
       throw new Error('All segments failed to generate');
     }
+
+    // Extract buffers and calculate total duration
+    const segmentAudioBuffers = segmentResults.map(r => r.audioBuffer);
+    const totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
 
     sendEvent({ type: 'progress', progress: 90, message: 'Combining audio segments...' });
 
@@ -878,13 +887,22 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     console.log(`Combined audio URL: ${combinedUrlData.publicUrl}`);
     console.log(`Total duration: ${Math.round(totalDuration)}s`);
 
+    // Clean up segment results for client (remove internal fields)
+    const cleanedSegments: AudioSegmentResult[] = segmentResults.map(r => ({
+      index: r.index,
+      audioUrl: r.audioUrl,
+      duration: r.duration,
+      size: r.size,
+      text: r.text,
+    }));
+
     sendEvent({
       type: 'complete',
       success: true,
       audioUrl: combinedUrlData.publicUrl, // Combined audio for playback
       duration: Math.round(combinedDuration),
       size: combinedAudio.length,
-      segments: segmentResults, // Individual segments for regeneration
+      segments: cleanedSegments, // Individual segments for regeneration
       totalDuration: Math.round(totalDuration),
       wordCount,
     });

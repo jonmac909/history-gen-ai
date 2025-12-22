@@ -28,10 +28,15 @@ npm i                    # Install dependencies
 npm run dev              # Start dev server (http://localhost:8080)
 npm run build            # Production build
 npm run lint             # Run ESLint
-npm test                 # Run tests in watch mode
-npm run test:run         # Run tests once (for CI)
-npm run test:coverage    # Run tests with coverage
+npm run preview          # Preview production build
 npx playwright test      # Run E2E tests (CI runs on push/PR)
+```
+
+**RunPod Monitoring:**
+```bash
+npm run monitor:runpod              # One-time log fetch
+npm run monitor:runpod:watch        # Continuous monitoring
+npm run monitor:runpod:errors       # Show errors only
 ```
 
 ### Render API (`render-api/`)
@@ -55,6 +60,15 @@ npx supabase functions deploy <function-name> --project-ref udqfdeoullsxttqguupz
 ### Hybrid Backend Design
 
 Long-running operations run on **Render** (no timeout limits). Quick operations remain on **Supabase Edge Functions** (2-minute limit).
+
+**Frontend API Client** (`src/lib/api.ts`):
+- Uses dual API pattern: Render API for streaming/long operations, Supabase for quick operations
+- All streaming endpoints use Server-Sent Events (SSE) format
+- Event types: `progress`, `token` (real-time script streaming), `complete`, `error`
+- Dynamic timeouts based on content size (e.g., 150 words/min for scripts)
+- 10-minute grace period between SSE events for voice cloning
+- No automatic retries (errors returned to user immediately)
+- Graceful degradation: returns partial results if stream interrupted (500+ word threshold)
 
 **Render API Routes** (`render-api/src/routes/`):
 | Route | Purpose |
@@ -87,26 +101,46 @@ Multi-step generation with user review at each stage:
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox
   - Close with ESC key or click outside the image
   - Lightbox rendered via `createPortal` outside Dialog
-  - Uses capture-phase `window.addEventListener` to bypass Radix Dialog's event interception
+  - **Critical pattern**: Uses capture-phase `window.addEventListener` to bypass Radix Dialog's event interception
+    - `window.addEventListener('keydown', handler, { capture: true })` for ESC key
+    - `window.addEventListener('click', handler, { capture: true })` for background clicks
+    - Capture phase runs BEFORE Radix Dialog's bubble-phase handlers, preventing Dialog from blocking events
   - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
-- `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players
+- `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players with regeneration
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 
 ### Audio Generation Architecture
 
-**Critical: Uses sequential processing to avoid RunPod memory issues.**
+**Critical: Uses parallel segment processing for speed, sequential chunk processing for stability.**
 
 - Script split into 6 equal segments by word count
-- Each segment processed sequentially (NOT parallel)
-- Voice sample (5-10MB base64) sent with each TTS job
+- **6 segments processed in PARALLEL** (uses up to 6 RunPod workers simultaneously)
+- Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
+- Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
-Key constants in `render-api/src/routes/generate-audio.ts`:
+**Performance:**
+- 20,000 word script = 6 segments × ~40 chunks each
+- Parallel processing: ~3-5 minutes (limited by longest segment)
+- Sequential would be: ~20 minutes (6× slower)
+- Memory footprint: ~36MB for 6 concurrent segments (well within 2GB Render limit)
+
+**Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
-- `DEFAULT_SEGMENT_COUNT = 6` segments
-- Sequential processing prevents "Ran out of memory (>2GB)" errors
+- `DEFAULT_SEGMENT_COUNT = 6` segments (processed in parallel)
+- `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
+- `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
+- `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
+- Parallel segments utilize multiple RunPod workers (up to 6 concurrent jobs)
+
+**Polling & Retry Logic:**
+- 5-minute timeout per TTS job (300 attempts, increased from 2 min for slow workers)
+- Adaptive polling: starts at 250ms, increases to 1s max after 3 attempts
+- Uses RunPod's `delayTime` hint when available (capped at 1.5s)
+- Exponential backoff retry for failed chunks (3 attempts max)
+- Continues processing if individual chunks fail (skips instead of failing entire job)
 
 **Text Normalization:**
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
@@ -189,9 +223,16 @@ SUPADATA_API_KEY=<supadata-key-for-youtube>
 - `AudioSegmentsPreviewModal` needs `combinedAudioUrl` and `totalDuration` props
 - Modal should show "Play All" player for combined audio
 
-### Audio stuck at 15% or memory errors
-- DO NOT parallelize audio generation (causes memory issues)
-- Workers at capacity → increase max workers in RunPod
+### Audio generation slow or workers at capacity
+- Segments process in parallel (up to 6 concurrent workers)
+- If all workers busy → increase max workers in RunPod dashboard
+- Memory is safe: 6 segments × 40 chunks × 150KB ≈ 36MB (well under 2GB limit)
+
+### Audio timeouts on long scripts
+- 5-minute timeout per TTS job should handle most cases
+- For very long scripts (1000+ words), processing time increases linearly
+- Check RunPod worker logs: `npm run monitor:runpod:errors`
+- If retry attempts exhausted, individual chunks are skipped (not fatal)
 
 ### Image generation 401 Unauthorized
 - Add function to `supabase/config.toml` with `verify_jwt = false`
