@@ -163,8 +163,9 @@ export function ImagePromptsPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 max-h-[60vh] py-4">
-          <div className="space-y-3 pr-4">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ScrollArea className="h-full max-h-[60vh]">
+            <div className="space-y-3 pr-4 py-4">
             {editedPrompts.map((prompt) => (
               <PromptCard
                 key={prompt.index}
@@ -172,8 +173,9 @@ export function ImagePromptsPreviewModal({
                 onUpdate={handleUpdatePrompt}
               />
             ))}
-          </div>
-        </ScrollArea>
+            </div>
+          </ScrollArea>
+        </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
           <Button variant="outline" onClick={onCancel}>
