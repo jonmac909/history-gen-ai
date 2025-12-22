@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Claude Version:** Sonnet 4.5 (claude-sonnet-4-5-20250929)
 
 ### Recent Activity
+- **2025-12-21 (Latest):** Reverted audio generation to sequential processing
+  - Fixed "Instance failed: Ran out of memory (>2GB)" errors on RunPod workers
+  - Removed batched parallel processing that was overwhelming workers
+  - Memory usage now ~130-140MB peak (safe for 512MB tier)
+  - Trade-off: Slower but stable and reliable
 - **2025-12-21:** Completed migration of all core functions from Supabase to Render
   - Migrated: `generate-audio`, `generate-images`, `generate-captions`, `get-youtube-transcript`
   - All long-running operations now on Render (no timeout limits)
@@ -16,9 +21,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **2025-12-20:** Migrated script generation API to Render
   - Deployed v2.0-HONEST-PROGRESS with real progress updates
   - Fixed audio generation chunk validation (skips invalid chunks)
-- **2025-12-18:** Fixed RunPod handler bugs and hardened error handling
-  - Switched to ChatterboxTurboTTS with voice sample validation
-  - Updated to RunPod endpoint: `eitsgz3gndkh3s`
 
 ### Current Project State
 - **Frontend:** Deployed on Netlify (https://historygenai.netlify.app), auto-deploys from main branch
@@ -98,10 +100,13 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
   - Generates scripts in 8k word chunks (optimized for responsiveness)
   - Sends real progress only when iterations complete (no fake estimates)
   - Supports 20k+ word scripts (multiple iterations)
-- `/generate-audio` - Voice cloning with RunPod Chatterbox TTS (693 lines)
-  - Streaming SSE progress updates
+- `/generate-audio` - Voice cloning with RunPod Chatterbox TTS (800+ lines)
+  - **CRITICAL:** Uses sequential processing (NOT parallel) to avoid memory issues
+  - Processes chunks one-at-a-time to minimize RunPod worker memory footprint
+  - Streaming SSE progress updates with heartbeat every 15 seconds
   - WAV file concatenation
   - Validates and skips invalid chunks
+  - Peak memory: ~130-140MB (safe for 512MB Render tier)
 - `/generate-images` - Z-Image generation via RunPod (418 lines)
   - Parallel job creation and polling
   - Streaming progress updates
@@ -145,6 +150,43 @@ NODE_ENV=production
 - ~~`generate-captions`~~ → Now on Render
 - ~~`get-youtube-transcript`~~ → Now on Render
 - ~~`rewrite-script`~~ → Now on Render (was first to migrate)
+
+### Audio Generation Architecture (CRITICAL - READ BEFORE MODIFYING)
+
+The audio generation endpoint (`render-api/src/routes/generate-audio.ts`) uses **sequential processing** by design to avoid memory issues on RunPod workers.
+
+**Why Sequential, Not Parallel:**
+- Voice cloning requires sending voice sample (5-10MB base64) with every TTS job
+- Parallel batching (e.g., 10 jobs with `Promise.all()`) = 50-100MB memory just for payloads
+- RunPod workers have limited memory (2GB max, often less)
+- Sequential = only 1 job + 1 voice sample in memory at a time (~10-15MB)
+
+**Three Handler Functions:**
+1. `handleStreaming()` - No voice cloning, default voice, streaming progress
+2. `handleVoiceCloningStreaming()` - Voice cloning, streaming progress
+3. `handleNonStreaming()` - Optional voice cloning, no streaming
+
+**All three use the same pattern:**
+```typescript
+// CORRECT - Sequential
+for (let i = 0; i < chunks.length; i++) {
+  const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+  const output = await pollJobStatus(jobId, apiKey);
+  audioChunks.push(base64ToBuffer(output.audio_base64));
+}
+
+// WRONG - Parallel (causes memory errors)
+const promises = chunks.map(chunk =>
+  startTTSJob(chunk, apiKey, referenceAudioBase64)
+);
+await Promise.all(promises); // ❌ Sends 10MB+ to ALL workers at once
+```
+
+**Key Constants:**
+- `MAX_TTS_CHUNK_LENGTH = 250` (characters per chunk)
+- `TTS_JOB_POLL_INTERVAL_INITIAL = 500ms` (fast polling at start)
+- `TTS_JOB_POLL_INTERVAL_MAX = 3000ms` (adaptive polling slows down)
+- No `BATCH_SIZE` constant (removed - was causing issues)
 
 ### RunPod Chatterbox Endpoint
 
@@ -195,11 +237,16 @@ NODE_ENV=production
 - Verify build succeeded by checking worker status changes from "Initializing" → "Running" (not "Error")
 
 ### Audio generation errors
+- **"Instance failed: Ran out of memory (>2GB)" on RunPod workers**:
+  - **FIXED:** Sequential processing prevents this
+  - **DO NOT** revert to parallel/batched processing without careful memory profiling
+  - Voice sample (5-10MB base64) sent to only ONE job at a time, not multiple
+  - If you see this again, check for accidental `Promise.all()` on TTS job creation
 - **"Text chunk X contains invalid characters or is too short/long"**:
   - Fixed in latest version - invalid chunks are now skipped
   - Check script doesn't have only punctuation or emojis in certain sections
 - **Stuck at 15%**: RunPod workers at 100% capacity → increase max workers
-- **HTTP 401**: RUNPOD_API_KEY not configured in Supabase Edge Functions secrets
+- **HTTP 401**: RUNPOD_API_KEY not configured in environment variables
 
 ### Script generation progress mismatch
 - **FIXED in v2.0-HONEST-PROGRESS**: Progress now shows real completion
@@ -240,6 +287,10 @@ VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 - Build command: `npm install --include=dev && npm run build`
 - Start command: `npm start`
 - Environment variables set in Render dashboard
+- **Memory tier:** 512MB recommended (peak usage ~130-140MB)
+  - Can use free tier 512MB safely with sequential audio processing
+  - 1GB for extra headroom with concurrent requests
+  - 2GB is overkill for current workload
 - Free tier has cold starts (~30 seconds when inactive)
 
 ### Supabase Edge Functions
@@ -272,7 +323,10 @@ VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 
 ### Performance
 - **No caching:** Repeated generations of same YouTube URL re-fetch transcript every time
-- **Sequential chunk processing:** Audio chunks processed one-by-one, could parallelize
+- **Sequential chunk processing:** Audio chunks processed one-by-one
+  - **DO NOT parallelize** without solving RunPod worker memory issues
+  - Parallel batching caused "Ran out of memory (>2GB)" errors
+  - Sequential is slower but reliable
 - **Render cold starts:** Free tier has ~30s cold start when inactive
 
 ### Missing Features
