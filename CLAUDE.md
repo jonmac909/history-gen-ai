@@ -8,10 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Claude Version:** Sonnet 4.5 (claude-sonnet-4-5-20250929)
 
 ### Recent Activity
-- **2025-12-21 (Latest):** Reverted audio generation to sequential processing
+- **2025-12-22 (Latest):** Speed optimizations for audio generation
+  - Doubled chunk size (250→500 chars) - cuts total TTS jobs in half
+  - Faster polling (250ms initial, 1000ms max instead of 500ms/3000ms)
+  - Added delayTime hint usage for smarter RunPod polling
+  - Reduced verbose logging for less overhead
+  - **Expected ~2.5-3x faster** for long scripts (still sequential for stability)
+- **2025-12-21:** Reverted audio generation to sequential processing
   - Fixed "Instance failed: Ran out of memory (>2GB)" errors on RunPod workers
   - Removed batched parallel processing that was overwhelming workers
-  - Memory usage now ~130-140MB peak (safe for 512MB tier)
   - Trade-off: Slower but stable and reliable
 - **2025-12-21:** Completed migration of all core functions from Supabase to Render
   - Migrated: `generate-audio`, `generate-images`, `generate-captions`, `get-youtube-transcript`
@@ -103,10 +108,11 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
 - `/generate-audio` - Voice cloning with RunPod Chatterbox TTS (800+ lines)
   - **CRITICAL:** Uses sequential processing (NOT parallel) to avoid memory issues
   - Processes chunks one-at-a-time to minimize RunPod worker memory footprint
+  - 500-char chunks (doubled from 250 for 2x fewer API calls)
+  - Fast polling with RunPod delayTime optimization
   - Streaming SSE progress updates with heartbeat every 15 seconds
-  - WAV file concatenation
-  - Validates and skips invalid chunks
-  - Peak memory: ~130-140MB (safe for 512MB Render tier)
+  - WAV file concatenation with validation
+  - **Requires 2GB Render tier** for long scripts (559+ chunks)
 - `/generate-images` - Z-Image generation via RunPod (418 lines)
   - Parallel job creation and polling
   - Streaming progress updates
@@ -182,11 +188,12 @@ const promises = chunks.map(chunk =>
 await Promise.all(promises); // ❌ Sends 10MB+ to ALL workers at once
 ```
 
-**Key Constants:**
-- `MAX_TTS_CHUNK_LENGTH = 250` (characters per chunk)
-- `TTS_JOB_POLL_INTERVAL_INITIAL = 500ms` (fast polling at start)
-- `TTS_JOB_POLL_INTERVAL_MAX = 3000ms` (adaptive polling slows down)
-- No `BATCH_SIZE` constant (removed - was causing issues)
+**Key Constants (Speed Optimized 2025-12-22):**
+- `MAX_TTS_CHUNK_LENGTH = 500` (doubled from 250 - cuts chunks in half for faster processing)
+- `TTS_JOB_POLL_INTERVAL_INITIAL = 250ms` (faster initial polling)
+- `TTS_JOB_POLL_INTERVAL_MAX = 1000ms` (1 second max for faster job detection)
+- Uses RunPod `delayTime` hint for smarter polling intervals
+- No `BATCH_SIZE` constant (parallel processing causes memory issues even with 2GB RAM)
 
 ### RunPod Chatterbox Endpoint
 

@@ -14,12 +14,12 @@ const logger = {
 };
 
 // TTS Configuration Constants
-const MAX_TTS_CHUNK_LENGTH = 250; // Increased from 180 for fewer chunks = faster generation
+const MAX_TTS_CHUNK_LENGTH = 500; // Max chars per chunk (RunPod handler limit is 500) - fewer chunks = faster
 const MIN_TEXT_LENGTH = 5;
-const MAX_TEXT_LENGTH = 400;
+const MAX_TEXT_LENGTH = 500; // Match chunk length
 const MAX_VOICE_SAMPLE_SIZE = 10 * 1024 * 1024;
-const TTS_JOB_POLL_INTERVAL_INITIAL = 500; // Start with fast polling
-const TTS_JOB_POLL_INTERVAL_MAX = 3000; // Max 3 seconds between polls
+const TTS_JOB_POLL_INTERVAL_INITIAL = 250; // Fast initial polling (250ms)
+const TTS_JOB_POLL_INTERVAL_MAX = 1000; // Max 1 second between polls for faster detection
 const TTS_JOB_TIMEOUT = 120000;
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY = 1000;
@@ -251,19 +251,14 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
   }
 }
 
-// Poll job status with adaptive polling (starts fast, slows down)
+// Poll job status with adaptive polling and delayTime optimization
 async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_base64: string; sample_rate: number }> {
   const maxAttempts = 120;
-  let pollInterval = TTS_JOB_POLL_INTERVAL_INITIAL; // Start at 500ms
+  let pollInterval = TTS_JOB_POLL_INTERVAL_INITIAL;
 
-  console.log(`\n=== Polling Job Status ===`);
-  console.log(`Job ID: ${jobId}`);
+  logger.debug(`Polling job ${jobId}`);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (attempt % 5 === 0 || attempt < 3) {
-      console.log(`Polling attempt ${attempt + 1}/${maxAttempts} (interval: ${pollInterval}ms)...`);
-    }
-
     const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
       method: 'GET',
       headers: {
@@ -273,48 +268,42 @@ async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_bas
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Failed to poll job status: HTTP ${response.status}`);
-      console.error(`Error response: ${errorText}`);
+      logger.error(`Poll failed: HTTP ${response.status} - ${errorText}`);
       throw new Error(`Failed to poll job status: ${response.status}`);
     }
 
     const result = await response.json() as any;
-    console.log(`Job status: ${result.status}`);
 
     if (result.status === 'COMPLETED') {
-      console.log(`Job completed successfully!`);
       if (!result.output?.audio_base64) {
-        console.error('Missing audio_base64 in output:', result.output);
+        logger.error('Missing audio_base64 in output:', result.output);
         throw new Error('No audio_base64 in completed job output');
       }
-      console.log(`Audio output received: ${result.output.audio_base64.length} chars base64`);
-      console.log(`Sample rate: ${result.output.sample_rate || 'N/A'}`);
-      console.log(`=== Job Completed ===\n`);
+      logger.debug(`Job ${jobId} completed: ${result.output.audio_base64.length} chars`);
       return result.output;
     }
 
     if (result.status === 'FAILED') {
-      console.error(`\n!!! TTS Job FAILED !!!`);
-      console.error(`Job ID: ${jobId}`);
-      console.error(`Error: ${result.error || 'Unknown error'}`);
-      console.error(`Full result:`, JSON.stringify(result, null, 2));
+      logger.error(`TTS job ${jobId} failed: ${result.error || 'Unknown error'}`);
       throw new Error(`TTS job failed: ${result.error || 'Unknown error'}`);
     }
 
-    if (result.delayTime) {
-      console.log(`Estimated delay: ${result.delayTime}ms`);
+    // Use delayTime hint from RunPod if available (smarter polling)
+    let sleepTime = pollInterval;
+    if (result.delayTime && result.delayTime > pollInterval) {
+      // Use RunPod's estimate, capped at 1.5 seconds
+      sleepTime = Math.min(result.delayTime, 1500);
     }
 
-    // Adaptive polling: increase interval after first 5 attempts
-    if (attempt >= 5) {
-      pollInterval = Math.min(pollInterval * 1.2, TTS_JOB_POLL_INTERVAL_MAX);
+    // Adaptive polling: gradually increase interval after first 3 attempts
+    if (attempt >= 3) {
+      pollInterval = Math.min(pollInterval * 1.15, TTS_JOB_POLL_INTERVAL_MAX);
     }
 
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    await new Promise(resolve => setTimeout(resolve, sleepTime));
   }
 
-  console.error(`\n!!! Job Timeout !!!`);
-  console.error(`Job ID: ${jobId} timed out after max attempts`);
+  logger.error(`Job ${jobId} timed out after ${maxAttempts} attempts`);
   throw new Error('TTS job timed out after 2 minutes');
 }
 
