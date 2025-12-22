@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2 } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,18 @@ export function ScriptReviewModal({
 
   const handleConfirm = () => {
     onConfirm(editedScript);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([editedScript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'script.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Show loading if script is empty
@@ -90,20 +102,25 @@ export function ScriptReviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setIsEditing(!isEditing)}
-            className="mr-auto"
-          >
-            <Edit3 className="w-4 h-4 mr-2" />
-            {isEditing ? "Preview" : "Edit"}
-          </Button>
-          
+          <div className="flex gap-2 mr-auto">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(!isEditing)}
+            >
+              <Edit3 className="w-4 h-4 mr-2" />
+              {isEditing ? "Preview" : "Edit"}
+            </Button>
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+          </div>
+
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
-          
+
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />
             Confirm & Generate Audio

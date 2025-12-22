@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, FileText, ChevronLeft } from "lucide-react";
+import { Check, X, Edit3, FileText, ChevronLeft, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +44,18 @@ export function CaptionsPreviewModal({
     onConfirm(editedSrt);
   };
 
+  const handleDownload = () => {
+    const blob = new Blob([editedSrt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'captions.srt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
@@ -78,19 +90,25 @@ export function CaptionsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {onBack && (
-            <Button variant="outline" onClick={onBack} className="mr-auto">
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Back
+          <div className="flex gap-2 mr-auto">
+            {onBack && (
+              <Button variant="outline" onClick={onBack}>
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(!isEditing)}
+            >
+              <Edit3 className="w-4 h-4 mr-2" />
+              {isEditing ? "Preview" : "Edit"}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => setIsEditing(!isEditing)}
-          >
-            <Edit3 className="w-4 h-4 mr-2" />
-            {isEditing ? "Preview" : "Edit"}
-          </Button>
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+          </div>
 
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />

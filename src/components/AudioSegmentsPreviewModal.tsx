@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft } from "lucide-react";
+import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -326,6 +326,17 @@ export function AudioSegmentsPreviewModal({
     onRegenerate(segmentIndex, editedText);
   };
 
+  const handleDownloadAudio = () => {
+    if (combinedAudioUrl) {
+      const a = document.createElement('a');
+      a.href = combinedAudioUrl;
+      a.download = 'voiceover.wav';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -426,12 +437,20 @@ export function AudioSegmentsPreviewModal({
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
-          {onBack && (
-            <Button variant="outline" onClick={onBack} className="w-full sm:w-auto sm:mr-auto">
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-          )}
+          <div className="flex gap-2 w-full sm:w-auto sm:mr-auto">
+            {onBack && (
+              <Button variant="outline" onClick={onBack} className="flex-1 sm:flex-none">
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            {combinedAudioUrl && (
+              <Button variant="outline" onClick={handleDownloadAudio} className="flex-1 sm:flex-none">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
+            )}
+          </div>
           <Button variant="outline" onClick={onCancel} className="w-full sm:w-auto">
             <X className="w-4 h-4 mr-2" />
             Cancel

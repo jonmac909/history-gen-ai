@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -139,6 +139,25 @@ export function ImagePromptsPreviewModal({
     onConfirm(editedPrompts);
   };
 
+  const handleDownload = () => {
+    const data = editedPrompts.map(p => ({
+      index: p.index,
+      startTime: p.startTime,
+      endTime: p.endTime,
+      sceneDescription: p.sceneDescription,
+      prompt: p.prompt
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'image-prompts.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const editedCount = editedPrompts.filter((p, i) =>
     p.sceneDescription !== prompts[i]?.sceneDescription
   ).length;
@@ -177,12 +196,18 @@ export function ImagePromptsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {onBack && (
-            <Button variant="outline" onClick={onBack} className="mr-auto">
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Back
+          <div className="flex gap-2 mr-auto">
+            {onBack && (
+              <Button variant="outline" onClick={onBack}>
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="w-4 h-4 mr-2" />
+              Download
             </Button>
-          )}
+          </div>
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel

@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft } from "lucide-react";
+import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -149,6 +149,22 @@ export function ImagesPreviewModal({
     setEditedPrompt("");
   };
 
+  const handleDownloadAll = async () => {
+    // Download each image sequentially
+    for (let i = 0; i < images.length; i++) {
+      const url = images[i];
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `image-${String(i + 1).padStart(3, '0')}.png`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
@@ -276,12 +292,18 @@ export function ImagesPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {onBack && (
-            <Button variant="outline" onClick={onBack} className="mr-auto">
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Back
+          <div className="flex gap-2 mr-auto">
+            {onBack && (
+              <Button variant="outline" onClick={onBack}>
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleDownloadAll}>
+              <Download className="w-4 h-4 mr-2" />
+              Download All
             </Button>
-          )}
+          </div>
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Cancel
