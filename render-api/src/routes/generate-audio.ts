@@ -711,9 +711,9 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       console.log(`  Segment ${i + 1}: ${segWords} words, ${seg.length} chars`);
     });
 
-    sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${actualSegmentCount} segments)...` });
+    sendEvent({ type: 'progress', progress: 5 });
 
-    sendEvent({ type: 'progress', progress: 8, message: 'Downloading voice sample...' });
+    sendEvent({ type: 'progress', progress: 8 });
 
     const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
@@ -794,8 +794,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
           sendEvent({
             type: 'progress',
-            progress: Math.min(chunkProgress, 85),
-            message: `Segment ${segmentNumber}: chunk ${chunkIdx + 1}/${chunks.length}...`
+            progress: Math.min(chunkProgress, 85)
           });
 
           try {
@@ -852,11 +851,9 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
         // Send progress update
         const completed = allSegmentResults.length;
-        const batchNum = Math.ceil(completed / MAX_CONCURRENT_SEGMENTS);
         sendEvent({
           type: 'progress',
-          progress: 10 + Math.round((completed / actualSegmentCount) * 75),
-          message: `Batch ${batchNum}: ${completed}/${actualSegmentCount} segments done`
+          progress: 10 + Math.round((completed / actualSegmentCount) * 75)
         });
 
       } catch (err) {
@@ -903,7 +900,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       throw new Error('All segments failed to generate');
     }
 
-    sendEvent({ type: 'progress', progress: 88, message: 'Streaming concatenation (memory-safe)...' });
+    sendEvent({ type: 'progress', progress: 88 });
 
     // True streaming concatenation: process ONE segment at a time
     console.log(`\n=== Streaming concatenation of ${segmentResults.length} segments ===`);
@@ -960,7 +957,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
     console.log(`Estimated total PCM size: ${totalPcmSize} bytes from ${segmentResults.length} segments`);
 
-    sendEvent({ type: 'progress', progress: 90, message: 'Building combined WAV...' });
+    sendEvent({ type: 'progress', progress: 90 });
 
     // Step 2: Allocate output buffer
     const combinedAudio = Buffer.alloc(headerSize + totalPcmSize);
@@ -1024,7 +1021,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
 
     const combinedFileName = `${actualProjectId}/voiceover.wav`;
-    sendEvent({ type: 'progress', progress: 95, message: 'Uploading combined audio...' });
+    sendEvent({ type: 'progress', progress: 95 });
 
     console.log(`\n=== Uploading combined audio ===`);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
@@ -1045,7 +1042,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       .from('generated-assets')
       .getPublicUrl(combinedFileName);
 
-    sendEvent({ type: 'progress', progress: 95, message: 'Finalizing...' });
+    sendEvent({ type: 'progress', progress: 98 });
 
     console.log(`\n=== All ${segmentResults.length} segments complete ===`);
     console.log(`Combined audio URL: ${combinedUrlData.publicUrl}`);

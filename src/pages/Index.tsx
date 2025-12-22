@@ -244,8 +244,8 @@ const Index = () => {
         script,
         settings.voiceSampleUrl!,
         projectId,
-        (progress, message) => {
-          updateStep("audio", "active", message || `${progress}%`);
+        (progress) => {
+          updateStep("audio", "active", `${progress}%`);
         }
       );
 
