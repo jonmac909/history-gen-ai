@@ -165,7 +165,7 @@ serve(async (req) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: `You are an expert at creating visual scene descriptions for AI image generation.
 Your task is to analyze documentary narration and create vivid, specific visual scene descriptions that can be used as prompts for an AI image generator.
