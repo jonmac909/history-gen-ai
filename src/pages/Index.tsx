@@ -36,7 +36,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
-    voiceSampleUrl: null,
+    voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
     speed: 1,
     imageCount: 10,
     wordCount: 1000,
