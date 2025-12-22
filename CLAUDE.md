@@ -94,8 +94,9 @@ Multi-step generation with user review at each stage:
 1. **Transcript Fetch** → Review Script
 2. **Script Generation** (streaming) → Review Audio
 3. **Audio Generation** (6 segments with voice cloning) → Review Captions
-4. **Captions Generation** → Review Images
-5. **Image Generation** (streaming, parallel) → Final Results
+4. **Captions Generation** → Review Image Prompts
+5. **Image Prompts Review** (editable scene descriptions) → Generate Images
+6. **Image Generation** (streaming, parallel) → Final Results
 
 **UI Features:**
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox
@@ -107,6 +108,7 @@ Multi-step generation with user review at each stage:
     - Capture phase runs BEFORE Radix Dialog's bubble-phase handlers, preventing Dialog from blocking events
   - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
 - `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players with regeneration
+- `ImagePromptsPreviewModal`: Review/edit AI-generated scene descriptions before image generation
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 
 ### Audio Generation Architecture
@@ -181,6 +183,28 @@ Multi-step generation with user review at each stage:
 - Early failure detection (stop submitting if first batch fails)
 - Better progress reporting (batch completion is predictable)
 - Less RunPod queue pressure (max 4 jobs in flight)
+
+### Captions Generation Architecture
+
+**Uses parallel Whisper processing for faster transcription.**
+
+- Audio split into ~227s chunks (20MB max for Whisper API)
+- **Parallel processing**: Up to 3 chunks transcribed concurrently
+- Language hint (`en`) skips language detection (~5-10% faster)
+- Results sorted by chunk index and merged with proper time offsets
+- Caption segments: 5-7 words max, 3 words min per line
+
+**Key constants** in `render-api/src/routes/generate-captions.ts`:
+- `MAX_CHUNK_BYTES = 20 * 1024 * 1024` (20MB per Whisper chunk)
+- `MAX_PARALLEL_CHUNKS = 3` (concurrent Whisper API calls)
+
+### Script Rewriting Architecture
+
+**Uses Claude with prompt caching for faster iterations.**
+
+- Prompt caching enabled on ALL iterations (not just 2+) for 5-10% speed improvement
+- Streaming tokens via SSE for real-time display
+- Model: `claude-sonnet-4-5` (configurable)
 
 ## Configuration
 
