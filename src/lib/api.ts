@@ -646,7 +646,7 @@ export async function regenerateAudioSegment(
   voiceSampleUrl: string,
   projectId: string
 ): Promise<{ success: boolean; segment?: AudioSegment; error?: string }> {
-  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai.onrender.com';
+  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai-production-f1d4.up.railway.app';
 
   try {
     const response = await fetch(`${renderApiUrl}/generate-audio/segment`, {
