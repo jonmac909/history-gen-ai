@@ -41,7 +41,7 @@ function getSupabaseCredentials(): { url: string; key: string } | null {
   return { url, key };
 }
 
-// SSRF protection: Validate that URL is from trusted Supabase storage
+// SSRF protection: Validate that URL is from trusted sources
 function validateVoiceSampleUrl(url: string): { valid: boolean; error?: string } {
   try {
     const parsedUrl = new URL(url);
@@ -50,14 +50,15 @@ function validateVoiceSampleUrl(url: string): { valid: boolean; error?: string }
       return { valid: false, error: 'Voice sample URL must use HTTPS protocol' };
     }
 
-    const allowedDomains = ['supabase.co', 'supabase.com'];
+    // Allow Supabase storage and our own Netlify domain
+    const allowedDomains = ['supabase.co', 'supabase.com', 'historygenai.netlify.app'];
     const hostname = parsedUrl.hostname;
     const isAllowed = allowedDomains.some(domain =>
       hostname === domain || hostname.endsWith(`.${domain}`)
     );
 
     if (!isAllowed) {
-      return { valid: false, error: 'Voice sample URL must be from Supabase storage' };
+      return { valid: false, error: 'Voice sample URL must be from Supabase storage or app domain' };
     }
 
     if (hostname === 'localhost' || hostname === '127.0.0.1' ||
