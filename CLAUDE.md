@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (10 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
@@ -74,9 +74,9 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | Route | Purpose |
 |-------|---------|
 | `/rewrite-script` | Streaming script generation with Claude API |
-| `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
+| `/generate-audio` | Voice cloning TTS, splits into 6 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
-| `/generate-images` | RunPod Z-Image with rolling concurrency (10 workers max) |
+| `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
 
@@ -93,7 +93,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 Multi-step generation with user review at each stage:
 1. **Transcript Fetch** → Review Script
 2. **Script Generation** (streaming) → Review Audio
-3. **Audio Generation** (10 segments with voice cloning) → Review Captions
+3. **Audio Generation** (6 segments with voice cloning) → Review Captions
 4. **Captions Generation** → Review Images
 5. **Image Generation** (streaming, parallel) → Final Results
 
@@ -111,41 +111,20 @@ Multi-step generation with user review at each stage:
 
 ### Audio Generation Architecture
 
-**Critical: Uses rolling concurrency window with streaming concatenation for maximum speed.**
+**Critical: Uses parallel processing with 6 segments to match RunPod worker allocation.**
 
-- Script split into **10 equal segments** by word count (utilizes all 10 RunPod workers)
-- **All 10 segments processed in parallel** (utilizing 8GB Railway instance)
+- Script split into **6 equal segments** by word count
+- **All 6 segments processed in parallel** (utilizing 6 RunPod workers)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
-**Performance:**
-- 20,000 word script = **10 segments × ~24 chunks each** (vs 6 segments × 40 chunks)
-- **Full parallel (10): 2-3 minutes** (all segments process simultaneously with all RunPod workers)
-- Sequential (1): ~20 minutes
-- Railway usage-based billing: only charged for actual processing time (~3 min/day)
-
-**Memory footprint (10 concurrent segments on 8GB Railway instance):**
-- 10 active segments × 36MB (chunk arrays, fewer chunks per segment) = 360MB
-- 2-3 completed WAVs awaiting upload = ~110MB
-- Segments uploaded immediately after completion
-- At end: **Streaming concatenation** (1 segment at a time):
-  - Pre-allocate combined WAV buffer (334MB)
-  - Download segment 1, extract PCM, copy to combined, clear (33MB temp)
-  - Download segment 2, extract PCM, copy to combined, clear (33MB temp)
-  - ... repeat for all 10 segments
-  - Only 1 segment buffer in memory at a time!
-- Node.js overhead = ~300MB
-- **Peak during processing: ~770MB** (10 active)
-- **Peak during concatenation: ~367MB** (334MB combined + 33MB current segment)
-- **Total peak: ~770MB** ✓ Plenty of headroom on 8GB instance
-
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
-- `DEFAULT_SEGMENT_COUNT = 10` segments (use all RunPod workers)
-- `MAX_CONCURRENT_SEGMENTS = 10` (full parallel processing on Railway 8GB)
+- `DEFAULT_SEGMENT_COUNT = 6` segments (match RunPod max workers for audio)
+- `MAX_CONCURRENT_SEGMENTS = 6` (parallel processing)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
@@ -180,42 +159,28 @@ Multi-step generation with user review at each stage:
 - Dimensions must be divisible by 16
 - Uses `guidance_scale=0.0` (no negative prompts)
 
-**Dynamic Worker Allocation** (10 workers total across both endpoints):
+**RunPod Worker Allocation** (10 workers total across both endpoints):
 - RunPod enforces a **global 10-worker limit** across all endpoints
-- Audio and images run **sequentially** (never overlap in the pipeline)
-- API automatically reallocates workers before each stage:
-  - **Before audio:** ChatterboxTTS = 10 workers, Z-Image = 0 workers
-  - **Before images:** ChatterboxTTS = 0 workers, Z-Image = 10 workers
-- Uses RunPod REST API: `POST /v1/endpoints/{id}/update` with `workersMax`
-- Graceful fallback: if allocation fails, continues with current configuration
-- **Result:** Each stage gets all 10 workers for maximum speed
-
-**Implementation** (`render-api/src/utils/runpod.ts`):
-- `allocateWorkersForAudio()` - called before audio generation
-- `allocateWorkersForImages()` - called before image generation
-- Both update both endpoints in parallel for faster allocation
+- Fixed allocation: **6 workers for audio (ChatterboxTTS), 4 workers for images (Z-Image)**
+- Set in RunPod dashboard endpoint settings
 
 ### Image Generation Architecture
 
-**Uses rolling concurrency window for maximum speed - utilizes all 10 RunPod workers.**
+**Uses rolling concurrency window with 4 workers for parallel image generation.**
 
-- **10 concurrent jobs maximum** (uses all available RunPod workers)
+- **4 concurrent jobs maximum** (matches RunPod Z-Image worker allocation)
 - Jobs submitted as workers become available (not all at once)
 - Keeps workers 100% busy without queue buildup
 - Progress updates after each job completion (predictable UX)
 
-**Performance:**
-- 30 images with 10 workers: **~3 batches** (10+10+10)
-- Each image takes ~30-60 seconds
-- **Total time: ~2-3 minutes** (vs 4-8 min with 4 workers)
-- Poll interval: 2 seconds (faster than audio for quick image jobs)
-- **60% faster than before!**
+**Key constant** in `render-api/src/routes/generate-images.ts`:
+- `MAX_CONCURRENT_JOBS = 4` (match RunPod max workers for image endpoint)
 
-**Benefits over submit-all-at-once:**
+**Benefits of rolling concurrency:**
 - Jobs start processing immediately (no queue wait)
 - Early failure detection (stop submitting if first batch fails)
 - Better progress reporting (batch completion is predictable)
-- Less RunPod queue pressure (max 10 jobs in flight vs 30)
+- Less RunPod queue pressure (max 4 jobs in flight)
 
 ## Configuration
 
@@ -287,7 +252,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 
 ### Audio generation "Failed to generate audio"
 - Check if `audioUrl` is being returned (backend must concatenate segments)
-- Verify `RUNPOD_API_KEY` is set on Render
+- Verify `RUNPOD_API_KEY` is set on Railway
 - Frontend expects both `audioUrl` (combined) AND `segments[]` array
 
 ### Captions too short / wrong duration
@@ -305,11 +270,9 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use full parallel processing (10 concurrent utilizing all RunPod workers on 8GB Railway instance)
-- If all RunPod workers busy → increase max workers in RunPod dashboard (currently limited to 10 total across all endpoints)
-- Memory usage: 10 segments × 36MB + overhead ≈ 770MB peak (plenty of headroom on 8GB)
-- Streaming concatenation keeps concatenation peak at ~367MB
-- Railway charges only for actual usage time (~3 min/day = ~$0.30/month)
+- Segments use parallel processing (6 concurrent segments matching 6 RunPod workers)
+- If all RunPod workers busy → check worker allocation in RunPod dashboard (6 audio + 4 images = 10 total)
+- Railway charges only for actual usage time
 
 ### Audio timeouts on long scripts
 - 5-minute timeout per TTS job should handle most cases

@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
-import { allocateWorkersForAudio } from '../utils/runpod';
 
 const router = Router();
 
@@ -99,7 +98,7 @@ function normalizeText(text: string): string {
 }
 
 // Split script into N equal segments by word count
-const DEFAULT_SEGMENT_COUNT = 10; // Use all 10 RunPod workers for maximum speed
+const DEFAULT_SEGMENT_COUNT = 6; // Match RunPod max workers for audio endpoint
 
 function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_COUNT): string[] {
   const words = text.split(/\s+/).filter(Boolean);
@@ -494,14 +493,6 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
     }
 
-    // Allocate all 10 workers to audio endpoint before generation starts
-    try {
-      await allocateWorkersForAudio(RUNPOD_API_KEY);
-    } catch (err) {
-      logger.warn('Failed to allocate workers, continuing with current allocation:', err);
-      // Don't fail the request if worker allocation fails - continue with whatever is configured
-    }
-
     // Clean script
     let cleanScript = script
       .replace(/\[SCENE \d+\]/g, '')
@@ -728,7 +719,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 10; // Use all 10 RunPod workers for maximum speed
+    const MAX_CONCURRENT_SEGMENTS = 6; // Match RunPod max workers for audio endpoint
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{

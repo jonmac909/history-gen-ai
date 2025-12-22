@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
-import { allocateWorkersForImages } from '../utils/runpod';
 
 const router = Router();
 
@@ -196,14 +195,6 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Supabase configuration missing' });
     }
 
-    // Allocate all 10 workers to image endpoint before generation starts
-    try {
-      await allocateWorkersForImages(runpodApiKey);
-    } catch (err) {
-      console.warn('Failed to allocate workers, continuing with current allocation:', err);
-      // Don't fail the request if worker allocation fails - continue with whatever is configured
-    }
-
     const { prompts, quality, aspectRatio = "16:9", stream = false, projectId }: GenerateImagesRequest = req.body;
 
     if (!prompts || prompts.length === 0) {
@@ -259,7 +250,7 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const MAX_CONCURRENT_JOBS = 10; // Use all 10 RunPod workers for maximum speed
+  const MAX_CONCURRENT_JOBS = 4; // Match RunPod max workers for image endpoint
   const POLL_INTERVAL = 2000; // 2 seconds
   const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
 
