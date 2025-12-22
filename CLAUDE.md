@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Session Status
 
-**Last Updated:** 2025-12-21
+**Last Updated:** 2025-12-22
 **Claude Version:** Sonnet 4.5 (claude-sonnet-4-5-20250929)
 
 ### Recent Activity
@@ -294,10 +294,10 @@ VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 - Build command: `npm install --include=dev && npm run build`
 - Start command: `npm start`
 - Environment variables set in Render dashboard
-- **Memory tier:** 512MB recommended (peak usage ~130-140MB)
-  - Can use free tier 512MB safely with sequential audio processing
-  - 1GB for extra headroom with concurrent requests
-  - 2GB is overkill for current workload
+- **Memory tier:** 2GB recommended for production
+  - Long scripts (500+ chunks) require 2GB for WAV concatenation
+  - 512MB causes OOM crashes during audio concatenation phase
+  - Audio chunks accumulate in memory before final concatenation
 - Free tier has cold starts (~30 seconds when inactive)
 
 ### Supabase Edge Functions
