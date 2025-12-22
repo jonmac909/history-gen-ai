@@ -30,6 +30,7 @@ export function ImagesPreviewModal({
   regeneratingIndex
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [imageVersions, setImageVersions] = useState<Record<number, number>>({});
 
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -37,6 +38,26 @@ export function ImagesPreviewModal({
 
   const openLightbox = (index: number) => setLightboxIndex(index);
   const closeLightbox = () => setLightboxIndex(null);
+
+  // Track image URL changes to bust cache
+  useEffect(() => {
+    const newVersions: Record<number, number> = {};
+    images.forEach((url, idx) => {
+      // Increment version when URL changes
+      newVersions[idx] = (imageVersions[idx] || 0) + (images[idx] !== url ? 1 : 0);
+    });
+    // Only update if images array changed length or URLs changed
+    if (Object.keys(imageVersions).length !== images.length) {
+      setImageVersions(images.reduce((acc, _, idx) => ({ ...acc, [idx]: Date.now() }), {}));
+    }
+  }, [images]);
+
+  // Add cache buster to image URL
+  const getImageUrl = (url: string, index: number) => {
+    const version = imageVersions[index] || 0;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}v=${version}`;
+  };
 
   // Keyboard: ESC to close lightbox
   useEffect(() => {
@@ -113,16 +134,16 @@ export function ImagesPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 py-4">
+        <ScrollArea className="flex-1 min-h-0 max-h-[60vh] py-4">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pr-4">
             {images.map((imageUrl, index) => (
               <div
-                key={index}
+                key={`${index}-${imageVersions[index] || 0}`}
                 className="relative aspect-video rounded-lg overflow-hidden border border-border bg-muted/30 group cursor-pointer"
                 onClick={() => openLightbox(index)}
               >
                 <img
-                  src={imageUrl}
+                  src={getImageUrl(imageUrl, index)}
                   alt={`Generated image ${index + 1}`}
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />
@@ -188,7 +209,7 @@ export function ImagesPreviewModal({
         {/* Full-size image */}
         <img
           ref={imageRef}
-          src={images[lightboxIndex]}
+          src={getImageUrl(images[lightboxIndex], lightboxIndex)}
           alt={`Full size image ${lightboxIndex + 1}`}
           className="max-w-[90vw] max-h-[90vh] object-contain cursor-default"
         />

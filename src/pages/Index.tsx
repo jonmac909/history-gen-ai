@@ -12,6 +12,7 @@ import { AudioPreviewModal } from "@/components/AudioPreviewModal";
 import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModal";
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
+import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
@@ -27,7 +28,7 @@ import {
 import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-images" | "results";
+type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -411,20 +412,18 @@ const Index = () => {
     }
   };
 
-  // Step 4: After captions confirmed, generate images
+  // Step 4: After captions confirmed, generate image prompts for review
   const handleCaptionsConfirm = async (srt: string) => {
     setPendingSrtContent(srt);
 
     const steps: GenerationStep[] = [
       { id: "prompts", label: "Generating Scene Descriptions", status: "pending" },
-      { id: "images", label: "Generating Images", status: "pending" },
     ];
 
     setProcessingSteps(steps);
     setViewState("processing");
 
     try {
-      // Step 1: Use AI to generate proper visual scene descriptions from script + SRT timing
       updateStep("prompts", "active", "Analyzing script...");
 
       const promptResult = await generateImagePrompts(
@@ -432,7 +431,7 @@ const Index = () => {
         srt,
         settings.imageCount,
         imageStylePrompt,
-        pendingAudioDuration // Pass actual audio duration to ensure images cover full audio
+        pendingAudioDuration
       );
 
       if (!promptResult.success || !promptResult.prompts) {
@@ -443,11 +442,36 @@ const Index = () => {
       setImagePrompts(promptResult.prompts);
       updateStep("prompts", "completed", `${promptResult.prompts.length} scenes`);
 
-      // Step 2: Generate images from the AI prompts with timing-based filenames
-      updateStep("images", "active", `0/${promptResult.prompts.length}`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-prompts");
+
+    } catch (error) {
+      console.error("Image prompt generation error:", error);
+      toast({
+        title: "Prompt Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("create");
+    }
+  };
+
+  // Step 5: After prompts reviewed/edited, generate images
+  const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[]) => {
+    setImagePrompts(editedPrompts);
+
+    const steps: GenerationStep[] = [
+      { id: "images", label: "Generating Images", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("images", "active", `0/${editedPrompts.length}`);
 
       const imageResult = await generateImagesStreaming(
-        promptResult.prompts,
+        editedPrompts,
         settings.quality,
         "16:9",
         (completed, total) => {
@@ -787,6 +811,14 @@ const Index = () => {
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent}
         onConfirm={handleCaptionsConfirm}
+        onCancel={handleCancel}
+      />
+
+      {/* Image Prompts Preview Modal */}
+      <ImagePromptsPreviewModal
+        isOpen={viewState === "review-prompts"}
+        prompts={imagePrompts}
+        onConfirm={handlePromptsConfirm}
         onCancel={handleCancel}
       />
 

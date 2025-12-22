@@ -26,10 +26,19 @@ function formatSrtTime(seconds: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
 }
 
-// Split segment text into smaller chunks while preserving punctuation
-function splitSegmentIntoChunks(segment: { text: string; start: number; end: number }, maxWords: number = 8): { text: string; start: number; end: number }[] {
+// Split segment text into smaller chunks with 5-7 words max, 3 words min per line
+function splitSegmentIntoChunks(segment: { text: string; start: number; end: number }): { text: string; start: number; end: number }[] {
   const words = segment.text.split(/\s+/).filter(w => w.length > 0);
-  if (words.length <= maxWords) {
+  const maxWords = 6; // Target 5-7 words, using 6 as sweet spot
+  const minWords = 3;
+
+  // If segment is already within limits, return as-is
+  if (words.length <= maxWords && words.length >= minWords) {
+    return [segment];
+  }
+
+  // If too few words, return as-is (can't split further)
+  if (words.length < minWords) {
     return [segment];
   }
 
@@ -37,13 +46,33 @@ function splitSegmentIntoChunks(segment: { text: string; start: number; end: num
   const totalDuration = segment.end - segment.start;
   const durationPerWord = totalDuration / words.length;
 
-  for (let i = 0; i < words.length; i += maxWords) {
-    const chunkWords = words.slice(i, i + maxWords);
+  let i = 0;
+  while (i < words.length) {
+    const remaining = words.length - i;
+
+    // Determine chunk size: aim for 5-6 words, but ensure last chunk has at least 3
+    let chunkSize = maxWords;
+
+    // If remaining words would leave a too-small last chunk, adjust
+    if (remaining > maxWords && remaining < maxWords + minWords) {
+      // Split evenly to avoid small last chunk
+      chunkSize = Math.ceil(remaining / 2);
+    } else if (remaining <= maxWords) {
+      // Take all remaining
+      chunkSize = remaining;
+    }
+
+    // Ensure minimum chunk size
+    chunkSize = Math.max(chunkSize, Math.min(minWords, remaining));
+
+    const chunkWords = words.slice(i, i + chunkSize);
     chunks.push({
       text: chunkWords.join(' '),
       start: segment.start + (i * durationPerWord),
-      end: segment.start + ((i + chunkWords.length) * durationPerWord),
+      end: segment.start + ((i + chunkSize) * durationPerWord),
     });
+
+    i += chunkSize;
   }
 
   return chunks;
@@ -338,10 +367,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log('Total segments from all chunks:', allSegments.length);
 
-    // Split segments into smaller chunks for captions
+    // Split segments into smaller chunks for captions (5-7 words max, 3 min)
     const allChunks: { text: string; start: number; end: number }[] = [];
     for (const seg of allSegments) {
-      const chunks = splitSegmentIntoChunks(seg, 8);
+      const chunks = splitSegmentIntoChunks(seg);
       allChunks.push(...chunks);
     }
     console.log('Generated', allChunks.length, 'caption segments');
