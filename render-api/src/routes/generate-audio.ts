@@ -894,37 +894,128 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       throw new Error('All segments failed to generate');
     }
 
-    sendEvent({ type: 'progress', progress: 88, message: 'Downloading segments for concatenation...' });
+    sendEvent({ type: 'progress', progress: 88, message: 'Streaming concatenation (memory-safe)...' });
 
-    // Re-download all segment WAVs from Supabase (we didn't keep them in memory)
-    console.log(`\n=== Downloading ${segmentResults.length} segments from storage for concatenation ===`);
-    const segmentAudioBuffers: Buffer[] = [];
+    // True streaming concatenation: process ONE segment at a time
+    console.log(`\n=== Streaming concatenation of ${segmentResults.length} segments ===`);
 
-    for (const result of segmentResults) {
+    // Helper to extract WAV metadata and data
+    const extractWavData = (wav: Buffer) => {
+      const findChunk = (bytes: Buffer, fourcc: string) => {
+        const needle = Buffer.from(fourcc, 'ascii');
+        for (let i = 0; i <= bytes.length - 4; i++) {
+          if (bytes.slice(i, i + 4).equals(needle)) return i;
+        }
+        return -1;
+      };
+
+      const fmtIdx = findChunk(wav, 'fmt ');
+      const dataIdx = findChunk(wav, 'data');
+      if (fmtIdx === -1 || dataIdx === -1) throw new Error('Invalid WAV format');
+
+      const fmtDataStart = fmtIdx + 8;
+      const sampleRate = wav.readUInt32LE(fmtDataStart + 4);
+      const byteRate = wav.readUInt32LE(fmtDataStart + 8);
+      const channels = wav.readUInt16LE(fmtDataStart + 2);
+      const bitsPerSample = wav.readUInt16LE(fmtDataStart + 14);
+
+      const dataSize = wav.readUInt32LE(dataIdx + 4);
+      const dataStart = dataIdx + 8;
+      const data = wav.slice(dataStart, Math.min(wav.length, dataStart + dataSize));
+
+      return { header: wav.slice(0, dataStart), data, dataIdx, sampleRate, byteRate, channels, bitsPerSample };
+    };
+
+    // Step 1: Download first segment to get header and calculate total size
+    console.log(`Step 1: Downloading first segment for header info...`);
+    const firstFileName = `${actualProjectId}/voiceover-segment-${segmentResults[0].index}.wav`;
+    const { data: firstData, error: firstError } = await supabase.storage
+      .from('generated-assets')
+      .download(firstFileName);
+
+    if (firstError || !firstData) {
+      throw new Error(`Failed to download first segment: ${firstError?.message}`);
+    }
+
+    const firstBuffer = Buffer.from(await firstData.arrayBuffer());
+    const firstExtracted = extractWavData(firstBuffer);
+
+    // Calculate total PCM size (first segment + estimate for remaining based on file sizes)
+    let totalPcmSize = firstExtracted.data.length;
+    const headerSize = firstExtracted.header.length;
+
+    for (let i = 1; i < segmentResults.length; i++) {
+      // Estimate PCM size as (total file size - header overhead ~100 bytes)
+      totalPcmSize += Math.max(0, segmentResults[i].size - 100);
+    }
+
+    console.log(`Estimated total PCM size: ${totalPcmSize} bytes from ${segmentResults.length} segments`);
+
+    sendEvent({ type: 'progress', progress: 90, message: 'Building combined WAV...' });
+
+    // Step 2: Allocate output buffer
+    const combinedAudio = Buffer.alloc(headerSize + totalPcmSize);
+
+    // Copy header from first segment
+    firstExtracted.header.copy(combinedAudio, 0);
+
+    // Update size fields
+    const dataIdxInCombined = firstExtracted.dataIdx;
+    combinedAudio.writeUInt32LE(combinedAudio.length - 8, 4); // RIFF size
+    combinedAudio.writeUInt32LE(totalPcmSize, dataIdxInCombined + 4); // data size
+
+    // Step 3: Copy first segment's PCM data
+    let offset = headerSize;
+    firstExtracted.data.copy(combinedAudio, offset);
+    offset += firstExtracted.data.length;
+    console.log(`Segment 1: copied ${firstExtracted.data.length} bytes, offset now ${offset}`);
+
+    // Clear first buffer (help GC)
+    firstBuffer.fill(0);
+
+    // Step 4: Stream remaining segments one at a time
+    for (let i = 1; i < segmentResults.length; i++) {
+      const result = segmentResults[i];
       const fileName = `${actualProjectId}/voiceover-segment-${result.index}.wav`;
-      console.log(`Downloading ${fileName}...`);
+
+      console.log(`Streaming segment ${i + 1}/${segmentResults.length}: ${fileName}...`);
 
       const { data, error } = await supabase.storage
         .from('generated-assets')
         .download(fileName);
 
       if (error || !data) {
-        throw new Error(`Failed to download segment ${result.index} for concatenation: ${error?.message}`);
+        throw new Error(`Failed to download segment ${result.index}: ${error?.message}`);
       }
 
-      const arrayBuffer = await data.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      segmentAudioBuffers.push(buffer);
-      console.log(`Downloaded segment ${result.index}: ${buffer.length} bytes`);
+      const buffer = Buffer.from(await data.arrayBuffer());
+      const extracted = extractWavData(buffer);
+
+      // Copy just the PCM data
+      extracted.data.copy(combinedAudio, offset);
+      offset += extracted.data.length;
+
+      console.log(`Segment ${i + 1}: copied ${extracted.data.length} bytes, offset now ${offset}`);
+
+      // Clear buffer immediately (only holds 1 segment at a time)
+      buffer.fill(0);
+    }
+
+    // Adjust final size if estimate was off
+    const actualCombinedSize = offset;
+    if (actualCombinedSize !== combinedAudio.length) {
+      console.log(`Size adjustment: estimated ${combinedAudio.length}, actual ${actualCombinedSize}`);
+      combinedAudio.writeUInt32LE(actualCombinedSize - 8, 4);
+      combinedAudio.writeUInt32LE(actualCombinedSize - headerSize, dataIdxInCombined + 4);
     }
 
     const totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
+    const combinedDuration = firstExtracted.byteRate > 0 ? (actualCombinedSize - headerSize) / firstExtracted.byteRate : totalDuration;
 
-    sendEvent({ type: 'progress', progress: 90, message: 'Combining audio segments...' });
+    console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
 
-    // Concatenate all segments into one combined file
-    const { wav: combinedAudio, durationSeconds: combinedDuration } = concatenateWavFiles(segmentAudioBuffers);
     const combinedFileName = `${actualProjectId}/voiceover.wav`;
+    sendEvent({ type: 'progress', progress: 95, message: 'Uploading combined audio...' });
 
     console.log(`\n=== Uploading combined audio ===`);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
