@@ -8,7 +8,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
@@ -134,8 +133,8 @@ export function ImagesPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 max-h-[60vh] py-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pr-4">
+        <div className="overflow-y-auto max-h-[60vh] py-4 pr-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {images.map((imageUrl, index) => (
               <div
                 key={`${index}-${imageVersions[index] || 0}`}
@@ -174,7 +173,7 @@ export function ImagesPreviewModal({
               </div>
             ))}
           </div>
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
           <Button variant="outline" onClick={onCancel}>
