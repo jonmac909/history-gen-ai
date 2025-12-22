@@ -278,7 +278,7 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
 
 // Poll job status with adaptive polling and delayTime optimization
 async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_base64: string; sample_rate: number }> {
-  const maxAttempts = 120;
+  const maxAttempts = 300; // Increased from 120 to handle slower workers (5 min timeout)
   let pollInterval = TTS_JOB_POLL_INTERVAL_INITIAL;
 
   logger.debug(`Polling job ${jobId}`);
@@ -329,7 +329,54 @@ async function pollJobStatus(jobId: string, apiKey: string): Promise<{ audio_bas
   }
 
   logger.error(`Job ${jobId} timed out after ${maxAttempts} attempts`);
-  throw new Error('TTS job timed out after 2 minutes');
+  throw new Error('TTS job timed out after 5 minutes');
+}
+
+// Retry TTS chunk generation with exponential backoff
+async function generateTTSChunkWithRetry(
+  chunkText: string,
+  apiKey: string,
+  referenceAudioBase64: string | undefined,
+  chunkIndex: number,
+  totalChunks: number
+): Promise<Buffer> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < RETRY_MAX_ATTEMPTS; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = Math.min(
+          RETRY_INITIAL_DELAY * Math.pow(2, attempt - 1),
+          RETRY_MAX_DELAY
+        );
+        logger.info(`Retry attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS} for chunk ${chunkIndex + 1}/${totalChunks} after ${delay}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      logger.debug(`Starting TTS job for chunk ${chunkIndex + 1}/${totalChunks} (attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS})`);
+      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+      const output = await pollJobStatus(jobId, apiKey);
+      const audioData = base64ToBuffer(output.audio_base64);
+
+      if (attempt > 0) {
+        logger.info(`✓ Chunk ${chunkIndex + 1}/${totalChunks} succeeded on attempt ${attempt + 1}`);
+      }
+
+      return audioData;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      logger.warn(`Attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS} failed for chunk ${chunkIndex + 1}/${totalChunks}: ${lastError.message}`);
+
+      // Don't sleep on the last attempt
+      if (attempt === RETRY_MAX_ATTEMPTS - 1) {
+        break;
+      }
+    }
+  }
+
+  // All retries exhausted
+  logger.error(`✗ Chunk ${chunkIndex + 1}/${totalChunks} FAILED after ${RETRY_MAX_ATTEMPTS} attempts: ${lastError?.message}`);
+  throw lastError || new Error('TTS chunk generation failed after all retries');
 }
 
 // Convert base64 to buffer
@@ -539,19 +586,12 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
       sendEvent({ type: 'progress', progress, message: `Generating audio chunk ${i + 1}/${chunks.length}...` });
 
       try {
-        // Start the TTS job for this chunk (no voice reference in streaming mode)
-        const jobId = await startTTSJob(chunkText, apiKey);
-        console.log(`TTS job started: ${jobId}`);
-
-        // Poll for completion
-        const output = await pollJobStatus(jobId, apiKey);
-
-        // Decode and store this chunk's audio
-        const audioData = base64ToBuffer(output.audio_base64);
+        // Use retry logic with exponential backoff
+        const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, undefined, i, chunks.length);
         audioChunks.push(audioData);
         console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
       } catch (err) {
-        console.error(`Failed to process chunk ${i + 1}:`, err);
+        console.error(`Failed to process chunk ${i + 1} after all retries:`, err);
         logger.warn(`Skipping chunk ${i + 1} due to error: ${err instanceof Error ? err.message : 'Unknown error'}`);
         // Continue with next chunk instead of failing completely
       }
@@ -749,13 +789,12 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
         });
 
         try {
-          const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
-          const output = await pollJobStatus(jobId, apiKey);
-          const audioData = base64ToBuffer(output.audio_base64);
+          // Use retry logic with exponential backoff
+          const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
           audioChunks.push(audioData);
           console.log(`  Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
         } catch (err) {
-          logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber} after all retries: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       }
 
