@@ -87,6 +87,8 @@ Multi-step generation with user review at each stage:
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox (arrow keys, click arrows to navigate)
   - Lightbox rendered via `createPortal` outside Dialog to prevent event conflicts
   - Uses functional state updates to avoid navigation skip bugs
+  - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
+  - Lightbox buttons use `onMouseDown` + `stopImmediatePropagation` to prevent double-firing
 - `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 
