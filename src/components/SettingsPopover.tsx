@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
@@ -27,6 +29,7 @@ export interface GenerationSettings {
   imageCount: number;
   wordCount: number;
   quality: string;
+  customScript?: string;
 }
 
 
@@ -36,18 +39,26 @@ interface SettingsPopoverProps {
   scriptTemplates: ScriptTemplate[];
 }
 
-const scriptTemplateOptions = [
-  { value: "template-a", label: "Template A" },
-  { value: "template-b", label: "Template B" },
-  { value: "template-c", label: "Template C" },
-];
+const defaultTemplateLabels: Record<string, string> = {
+  "template-a": "Template A",
+  "template-b": "Template B",
+  "template-c": "Template C",
+  "template-d": "Template D",
+  "template-e": "Template E",
+};
 
-export function SettingsPopover({ 
-  settings, 
-  onSettingsChange, 
+export function SettingsPopover({
+  settings,
+  onSettingsChange,
   scriptTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Build template options from scriptTemplates with custom names or defaults
+  const scriptTemplateOptions = scriptTemplates.map((template) => ({
+    value: template.id,
+    label: template.name || defaultTemplateLabels[template.id] || template.id,
+  }));
 
   const updateSetting = <K extends keyof GenerationSettings>(
     key: K,
@@ -81,15 +92,42 @@ export function SettingsPopover({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 py-4 px-1">
+        <div className="space-y-5 py-4 px-1 max-h-[70vh] overflow-y-auto">
+          {/* Custom Script Input */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Paste Your Own Script (Optional):
+            </label>
+            <p className="text-xs text-muted-foreground text-center">
+              Skip YouTube fetch and AI rewriting - go straight to audio generation
+            </p>
+            <Textarea
+              placeholder="Paste your pre-written script here to skip the transcript and rewriting steps..."
+              value={settings.customScript || ""}
+              onChange={(e) => updateSetting("customScript", e.target.value)}
+              className="min-h-[120px] resize-y"
+            />
+            {settings.customScript && settings.customScript.trim().length > 0 && (
+              <p className="text-xs text-primary text-center">
+                ✓ Custom script ready ({settings.customScript.trim().split(/\s+/).length} words)
+              </p>
+            )}
+          </div>
+
           {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Select Your Script:
+              Select Your Script Template:
             </label>
+            <p className="text-xs text-muted-foreground text-center">
+              {settings.customScript && settings.customScript.trim().length > 0
+                ? "(Ignored when using custom script)"
+                : "For AI-generated scripts from YouTube"}
+            </p>
             <Select
               value={settings.scriptTemplate}
               onValueChange={(value) => updateSetting("scriptTemplate", value)}
+              disabled={!!(settings.customScript && settings.customScript.trim().length > 0)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a template" />
@@ -102,16 +140,6 @@ export function SettingsPopover({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          {/* AI Model - Fixed to Claude Sonnet 4.5 */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Model:
-            </label>
-            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
-              Claude Sonnet 4.5
-            </div>
           </div>
 
           {/* Voice Sample Upload */}
@@ -145,17 +173,6 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Image Model - Fixed to Z-Image */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Image Model:
-            </label>
-            <div className="px-3 py-2 bg-secondary/50 rounded-lg text-sm text-center">
-              Z-IMAGE
-            </div>
-          </div>
-
-
           {/* Image Count */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -172,12 +189,23 @@ export function SettingsPopover({
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
-                <span className="w-6 text-center font-medium">{settings.imageCount}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settings.imageCount}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    if (!isNaN(value) && value >= 1) {
+                      updateSetting("imageCount", value);
+                    }
+                  }}
+                  className="w-16 h-8 text-center font-medium px-2"
+                />
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.min(30, settings.imageCount + 1))}
+                  onClick={() => updateSetting("imageCount", settings.imageCount + 1)}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>

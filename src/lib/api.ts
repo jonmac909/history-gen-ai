@@ -1,5 +1,27 @@
 import { supabase } from "@/integrations/supabase/client";
 
+/**
+ * Calculate dynamic timeout based on target word count
+ * Formula: min(1800000, (targetWords / 150) * 60000)
+ * Assumes ~150 words/minute generation rate (conservative estimate)
+ * Caps at 30 minutes max to support very long script generation
+ *
+ * @param targetWords - The target word count for script generation
+ * @returns Timeout in milliseconds, capped at 1800000 (30 minutes)
+ */
+export function calculateDynamicTimeout(targetWords: number): number {
+  // Ensure minimum timeout of 2 minutes for any request
+  const MIN_TIMEOUT_MS = 120000;
+  // Cap at 30 minutes to support very long script generation
+  const MAX_TIMEOUT_MS = 1800000;
+
+  // Estimate generation time: ~150 words per minute
+  const estimatedMinutes = Math.ceil(targetWords / 150);
+  const timeoutMs = estimatedMinutes * 60000;
+
+  return Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeoutMs));
+}
+
 export interface TranscriptResult {
   success: boolean;
   videoId?: string;
@@ -78,16 +100,36 @@ export interface GeneratedAssets {
 }
 
 export async function getYouTubeTranscript(url: string): Promise<TranscriptResult> {
-  const { data, error } = await supabase.functions.invoke('get-youtube-transcript', {
-    body: { url }
-  });
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  if (error) {
-    console.error('Transcript error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
   }
 
-  return data;
+  try {
+    const response = await fetch(`${renderUrl}/get-youtube-transcript`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Transcript error:', response.status, errorText);
+      return { success: false, error: `Failed to fetch transcript: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Transcript error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to fetch transcript' };
+  }
 }
 
 export async function rewriteScript(transcript: string, template: string, title: string): Promise<ScriptResult> {
@@ -104,28 +146,137 @@ export async function rewriteScript(transcript: string, template: string, title:
 }
 
 export async function rewriteScriptStreaming(
-  transcript: string, 
-  template: string, 
+  transcript: string,
+  template: string,
   title: string,
   aiModel: string,
   wordCount: number,
-  onProgress: (progress: number, wordCount: number) => void
+  onProgress: (progress: number, wordCount: number) => void,
+  onToken?: (token: string) => void // NEW: Real-time token streaming callback
 ): Promise<ScriptResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  
+  const CHUNK_SIZE = 30000; // Render has no timeout limit - can generate full scripts in one call!
+
+  // For large scripts, split into chunks to avoid Supabase 5-minute timeout
+  if (wordCount > CHUNK_SIZE) {
+    if (import.meta.env.DEV) {
+      console.log(`[Script Generation] Chunking ${wordCount} words into ${Math.ceil(wordCount / CHUNK_SIZE)} chunks of ${CHUNK_SIZE} words`);
+    }
+
+    const numChunks = Math.ceil(wordCount / CHUNK_SIZE);
+    let fullScript = '';
+    let totalWordsGenerated = 0;
+
+    for (let i = 0; i < numChunks; i++) {
+      const chunkWordCount = Math.min(CHUNK_SIZE, wordCount - totalWordsGenerated);
+      const chunkStartProgress = (i / numChunks) * 100;
+      const chunkEndProgress = ((i + 1) / numChunks) * 100;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Script Generation] Generating chunk ${i + 1}/${numChunks}: ${chunkWordCount} words (${chunkStartProgress.toFixed(0)}% - ${chunkEndProgress.toFixed(0)}%)`);
+      }
+
+      // Modify template for continuation chunks
+      let chunkTemplate = template;
+      if (fullScript) {
+        chunkTemplate = `${template}
+
+CRITICAL: You are continuing an existing script. Here is what has been written so far:
+
+${fullScript}
+
+Continue the narrative seamlessly from where this left off. DO NOT repeat any content. DO NOT add headers, titles, or scene markers. Write as if this is a natural continuation of the existing script.`;
+      }
+
+      // Generate this chunk with progress mapping
+      const chunkResult = await generateSingleChunk(
+        transcript,
+        chunkTemplate,
+        title,
+        aiModel,
+        chunkWordCount,
+        (chunkProgress, chunkWords) => {
+          // Map chunk progress to overall progress
+          const overallProgress = chunkStartProgress + (chunkProgress / 100) * (chunkEndProgress - chunkStartProgress);
+          const overallWords = totalWordsGenerated + chunkWords;
+          onProgress(Math.round(overallProgress), overallWords);
+        },
+        onToken // Pass through token callback
+      );
+
+      if (!chunkResult.success) {
+        // If chunk failed but we have partial script, return what we have
+        if (fullScript && totalWordsGenerated > 500) {
+          return {
+            success: true,
+            script: fullScript,
+            wordCount: totalWordsGenerated
+          };
+        }
+        return chunkResult;
+      }
+
+      fullScript += (fullScript ? '\n\n' : '') + chunkResult.script;
+      totalWordsGenerated += chunkResult.wordCount || 0;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Script Generation] Chunk ${i + 1}/${numChunks} complete: ${chunkResult.wordCount} words generated (total: ${totalWordsGenerated})`);
+      }
+    }
+
+    return {
+      success: true,
+      script: fullScript,
+      wordCount: totalWordsGenerated
+    };
+  }
+
+  // For scripts <= 5000 words, use single-chunk generation
+  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken);
+}
+
+/**
+ * Internal function to generate a single chunk of script
+ * Handles the actual API call and streaming logic
+ */
+async function generateSingleChunk(
+  transcript: string,
+  template: string,
+  title: string,
+  aiModel: string,
+  wordCount: number,
+  onProgress: (progress: number, wordCount: number) => void,
+  onToken?: (token: string) => void // NEW: Real-time token streaming
+): Promise<ScriptResult> {
+  // Use Render API for script generation (no timeout limits!)
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
   // Add timeout and retry logic for long-running generations
   const controller = new AbortController();
-  const timeoutMs = 300000; // 5 minute timeout for entire operation
+  const timeoutMs = calculateDynamicTimeout(wordCount);
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+
+  // Log timeout configuration for development debugging
+  if (import.meta.env.DEV) {
+    console.log('[Script Generation] Using Render API (unlimited timeout):', {
+      targetWordCount: wordCount,
+      renderUrl,
+      overallTimeoutMs: timeoutMs,
+      overallTimeoutMinutes: (timeoutMs / 60000).toFixed(1),
+    });
+  }
+
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/rewrite-script`, {
+    const response = await fetch(`${renderUrl}/rewrite-script`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-        'apikey': supabaseKey,
       },
       body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true }),
       signal: controller.signal,
@@ -148,13 +299,21 @@ export async function rewriteScriptStreaming(
     let lastWordCount = 0;
     let lastScript = '';
     let lastEventTime = Date.now();
-    const eventTimeout = 120000; // 2 minute timeout between events
+    const eventTimeout = 600000; // 10 minute timeout between events (for very long API calls)
 
     try {
       while (true) {
         // Check if we've been waiting too long for an event
         if (Date.now() - lastEventTime > eventTimeout) {
-          console.warn('Event timeout - no data received for 2 minutes');
+          if (import.meta.env.DEV) {
+            console.warn('[Script Generation] Event timeout triggered - no data received for 10 minutes', {
+              lastEventTime: new Date(lastEventTime).toISOString(),
+              elapsedMs: Date.now() - lastEventTime,
+              lastWordCount,
+            });
+          } else {
+            console.warn('Event timeout - no data received for 10 minutes');
+          }
           break;
         }
 
@@ -179,6 +338,11 @@ export async function rewriteScriptStreaming(
               if (parsed.type === 'progress') {
                 lastWordCount = parsed.wordCount;
                 onProgress(parsed.progress, parsed.wordCount);
+              } else if (parsed.type === 'token') {
+                // NEW: Stream tokens in real-time for better UX
+                if (onToken && parsed.text) {
+                  onToken(parsed.text);
+                }
               } else if (parsed.type === 'complete') {
                 lastScript = parsed.script;
                 lastWordCount = parsed.wordCount;
@@ -215,9 +379,17 @@ export async function rewriteScriptStreaming(
       
       // Check if it's an abort error
       if (streamError instanceof Error && streamError.name === 'AbortError') {
-        return { 
-          success: false, 
-          error: 'Request timed out. For very long scripts (15k+ words), try generating in smaller batches.' 
+        if (import.meta.env.DEV) {
+          console.error('[Script Generation] Request aborted due to timeout', {
+            targetWordCount: wordCount,
+            timeoutMs,
+            lastWordCount,
+            hasPartialScript: !!lastScript,
+          });
+        }
+        return {
+          success: false,
+          error: 'Request timed out. Scripts up to 30,000 words are supported (up to 30 minutes generation time). For very long content, ensure stable internet connection.'
         };
       }
       
@@ -231,13 +403,28 @@ export async function rewriteScriptStreaming(
     if (!result.success && lastWordCount > 0) {
       // If we have a partial script, return it as success
       if (lastScript && lastWordCount > 500) {
+        if (import.meta.env.DEV) {
+          console.log('[Script Generation] Returning partial script after incomplete stream', {
+            wordCount: lastWordCount,
+            scriptLength: lastScript.length,
+          });
+        }
         return {
           success: true,
           script: lastScript,
           wordCount: lastWordCount
         };
       }
-      result.error = 'Script generation was interrupted. The connection may have timed out. Try a shorter word count (e.g., 5000-10000 words).';
+      result.error = 'Script generation was interrupted before completing. The connection may have been lost. Please try again.';
+    }
+
+    // Log successful completion in development mode
+    if (import.meta.env.DEV && result.success) {
+      console.log('[Script Generation] Stream completed successfully', {
+        targetWordCount: wordCount,
+        actualWordCount: result.wordCount,
+        scriptLength: result.script?.length,
+      });
     }
 
     return result;
@@ -251,34 +438,54 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
   console.log('Voice sample URL:', voiceSampleUrl);
   console.log('Script length:', script.length, 'chars');
 
-  const { data, error } = await supabase.functions.invoke('generate-audio', {
-    body: { script, voiceSampleUrl, projectId }
-  });
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  if (error) {
-    console.error('Audio generation error:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
 
-    // Provide more helpful error messages
-    let errorMessage = error.message;
-    if (errorMessage.includes('Voice sample not accessible')) {
-      errorMessage = 'Cannot access your voice sample. Please try re-uploading it in Settings.';
-    } else if (errorMessage.includes('TTS job failed')) {
-      errorMessage = 'Voice cloning failed. This may be due to an issue with the voice sample or the TTS service. Try a different voice sample or contact support.';
-    } else if (errorMessage.includes('timed out')) {
-      errorMessage = 'Audio generation timed out. The script might be too long, or the service is experiencing delays. Try again in a moment.';
+  try {
+    const response = await fetch(`${renderUrl}/generate-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ script, voiceSampleUrl, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Audio generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate audio: ${response.status}` };
     }
 
-    return { success: false, error: errorMessage };
-  }
+    const data = await response.json();
 
-  if (data?.error) {
-    console.error('Audio generation returned error:', data.error);
-    return { success: false, error: data.error };
-  }
+    if (data?.error) {
+      console.error('Audio generation returned error:', data.error);
 
-  console.log('Audio generated successfully:', data);
-  return data;
+      // Provide more helpful error messages
+      let errorMessage = data.error;
+      if (errorMessage.includes('Voice sample not accessible')) {
+        errorMessage = 'Cannot access your voice sample. Please try re-uploading it in Settings.';
+      } else if (errorMessage.includes('TTS job failed')) {
+        errorMessage = 'Voice cloning failed. This may be due to an issue with the voice sample or the TTS service. Try a different voice sample or contact support.';
+      } else if (errorMessage.includes('timed out')) {
+        errorMessage = 'Audio generation timed out. The script might be too long, or the service is experiencing delays. Try again in a moment.';
+      }
+
+      return { success: false, error: errorMessage };
+    }
+
+    console.log('Audio generated successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('Audio generation error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate audio' };
+  }
 }
 
 export async function generateAudioStreaming(
@@ -287,100 +494,152 @@ export async function generateAudioStreaming(
   projectId: string,
   onProgress: (progress: number, message?: string) => void
 ): Promise<AudioResult> {
-  // Use Render API for audio generation (no timeout limits, supports 6 segments)
-  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai.onrender.com';
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  const response = await fetch(`${renderApiUrl}/generate-audio`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      script,
-      voiceSampleUrl,
-      projectId,
-      stream: true
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Audio streaming error:', response.status, errorText);
-    return { success: false, error: `Failed to generate audio: ${response.status}` };
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    return { success: false, error: 'No response body' };
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let result: AudioResult = { success: false, error: 'No response received' };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // Process complete SSE events
-      const events = buffer.split('\n\n');
-      buffer = events.pop() || '';
-
-      for (const event of events) {
-        if (!event.trim()) continue;
-
-        // Skip keepalive comments
-        if (event.startsWith(':')) continue;
-
-        const dataMatch = event.match(/^data: (.+)$/m);
-        if (dataMatch) {
-          try {
-            const parsed = JSON.parse(dataMatch[1]);
-
-            if (parsed.type === 'progress') {
-              onProgress(parsed.progress, parsed.message);
-            } else if (parsed.type === 'complete') {
-              // Handle new 6-segment format
-              if (parsed.segments) {
-                result = {
-                  success: true,
-                  segments: parsed.segments,
-                  totalDuration: parsed.totalDuration,
-                };
-              } else {
-                // Fallback for legacy single-file response
-                result = {
-                  success: true,
-                  audioUrl: parsed.audioUrl,
-                  duration: parsed.duration,
-                  size: parsed.size
-                };
-              }
-              onProgress(100, 'Complete!');
-            } else if (parsed.type === 'error' || parsed.error) {
-              result = {
-                success: false,
-                error: parsed.error || 'Audio generation failed'
-              };
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
-      }
-    }
-  } catch (streamError) {
-    console.error('Stream reading error:', streamError);
+  if (!renderUrl) {
     return {
       success: false,
-      error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
     };
   }
 
-  return result;
+  // Add timeout for very large audio generations with voice cloning (60 minutes max)
+  const controller = new AbortController();
+  const AUDIO_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (voice cloning takes longer)
+  const timeoutId = setTimeout(() => controller.abort(), AUDIO_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        script,
+        voiceSampleUrl,
+        projectId,
+        stream: true
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Audio streaming error:', response.status, errorText);
+      return { success: false, error: `Failed to generate audio: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: AudioResult = { success: false, error: 'No response received' };
+    let lastEventTime = Date.now();
+    const EVENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes between events (voice cloning takes longer)
+
+    try {
+      while (true) {
+        // Check if we've been waiting too long for an event
+        if (Date.now() - lastEventTime > EVENT_TIMEOUT_MS) {
+          console.error('[Audio Generation] Event timeout - no data received for 10 minutes');
+          result.error = 'Audio generation timed out - no progress received for 10 minutes. Please try again.';
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastEventTime = Date.now(); // Reset timeout on each chunk
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          // Skip keepalive comments
+          if (event.startsWith(':')) continue;
+
+          const dataMatch = event.match(/^data: (.+)$/m);
+          if (dataMatch) {
+            try {
+              const parsed = JSON.parse(dataMatch[1]);
+
+              if (parsed.type === 'progress') {
+                onProgress(parsed.progress, parsed.message);
+              } else if (parsed.type === 'complete') {
+                // Handle new 6-segment format
+                if (parsed.segments) {
+                  result = {
+                    success: true,
+                    segments: parsed.segments,
+                    totalDuration: parsed.totalDuration,
+                  };
+                } else {
+                  // Fallback for legacy single-file response
+                  result = {
+                    success: true,
+                    audioUrl: parsed.audioUrl,
+                    duration: parsed.duration,
+                    size: parsed.size
+                  };
+                }
+                onProgress(100, 'Complete!');
+              } else if (parsed.type === 'error' || parsed.error) {
+                result = {
+                  success: false,
+                  error: parsed.error || 'Audio generation failed'
+                };
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+    } catch (streamError) {
+      console.error('Stream reading error:', streamError);
+
+      // Check if it's an abort error from timeout
+      if (streamError instanceof Error && streamError.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Audio generation timed out after 60 minutes. This may happen with very long scripts or large voice samples. Please try again with a shorter script or smaller voice sample.'
+        };
+      }
+
+      return {
+        success: false,
+        error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
+      };
+    } finally {
+      // Always clear the timeout to prevent memory leaks
+      clearTimeout(timeoutId);
+    }
+
+    return result;
+  } catch (error) {
+    // Outer catch for fetch errors
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Audio generation timed out after 60 minutes. This may happen with very long scripts. Please try again or contact support.'
+      };
+    }
+
+    console.error('Audio generation fetch error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start audio generation'
+    };
+  }
 }
 
 // Regenerate a single audio segment
@@ -435,12 +694,16 @@ export async function generateImagePrompts(
   script: string,
   srtContent: string,
   imageCount: number,
-  stylePrompt: string
+  stylePrompt: string,
+  audioDuration?: number
 ): Promise<ImagePromptsResult> {
   console.log('Generating AI-powered image prompts from script and captions...');
+  if (audioDuration) {
+    console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
+  }
 
   const { data, error } = await supabase.functions.invoke('generate-image-prompts', {
-    body: { script, srtContent, imageCount, stylePrompt }
+    body: { script, srtContent, imageCount, stylePrompt, audioDuration }
   });
 
   if (error) {
@@ -457,16 +720,36 @@ export async function generateImages(
   aspectRatio: string = "16:9",
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const { data, error } = await supabase.functions.invoke('generate-images', {
-    body: { prompts, quality, aspectRatio, projectId }
-  });
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  if (error) {
-    console.error('Image generation error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
   }
 
-  return data;
+  try {
+    const response = await fetch(`${renderUrl}/generate-images`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompts, quality, aspectRatio, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Image generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate images: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Image generation error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate images' };
+  }
 }
 
 export async function generateImagesStreaming(
@@ -476,15 +759,19 @@ export async function generateImagesStreaming(
   onProgress: (completed: number, total: number, message: string) => void,
   projectId?: string
 ): Promise<ImageGenerationResult> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/generate-images`, {
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  const response = await fetch(`${renderUrl}/generate-images`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
-      'apikey': supabaseKey,
     },
     body: JSON.stringify({ prompts, quality, aspectRatio, stream: true, projectId })
   });
@@ -553,17 +840,130 @@ export async function generateImagesStreaming(
   return result;
 }
 
-export async function generateCaptions(audioUrl: string, projectId: string): Promise<CaptionsResult> {
-  const { data, error } = await supabase.functions.invoke('generate-captions', {
-    body: { audioUrl, projectId }
-  });
+export async function generateCaptions(
+  audioUrl: string,
+  projectId: string,
+  onProgress?: (progress: number) => void
+): Promise<CaptionsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
-  if (error) {
-    console.error('Captions error:', error);
-    return { success: false, error: error.message };
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
   }
 
-  return data;
+  // Use streaming if onProgress callback is provided
+  if (onProgress) {
+    return generateCaptionsStreaming(audioUrl, projectId, onProgress);
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-captions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ audioUrl, projectId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Captions error:', response.status, errorText);
+      return { success: false, error: `Failed to generate captions: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Captions error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate captions' };
+  }
+}
+
+async function generateCaptionsStreaming(
+  audioUrl: string,
+  projectId: string,
+  onProgress: (progress: number) => void
+): Promise<CaptionsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-captions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audioUrl,
+        projectId,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Captions streaming error:', response.status, errorText);
+      return { success: false, error: `Failed to generate captions: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: CaptionsResult = { success: false, error: 'No response received' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+
+            if (parsed.type === 'progress') {
+              onProgress(parsed.progress);
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: true,
+                captionsUrl: parsed.captionsUrl,
+                srtContent: parsed.srtContent,
+                segmentCount: parsed.segmentCount,
+                audioDuration: parsed.audioDuration
+              };
+              onProgress(100);
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'Caption generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Captions streaming error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate captions' };
+  }
 }
 
 export interface VideoResult {

@@ -4,31 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Session Status
 
-**Last Updated:** 2025-12-18
+**Last Updated:** 2025-12-22
 **Claude Version:** Sonnet 4.5 (claude-sonnet-4-5-20250929)
-**Authentication:** Claude account (switched from API key)
 
 ### Recent Activity
-- **2025-12-18:** Fixed RunPod handler bugs and hardened error handling
-  - Switched to ChatterboxTurboTTS (was using wrong class name)
-  - Added voice sample validation (5+ seconds required)
-  - Added GPU OOM handling with graceful errors
-  - Added comprehensive input validation and error messages
-  - Updated to new RunPod endpoint: `eitsgz3gndkh3s`
-- Switched from API key authentication to Claude account authentication for Claude Code
-- Confirmed using latest Claude Sonnet 4.5 model
-- Project state: Stable, all systems operational
+- **2025-12-22 (Latest):** Speed optimizations for audio generation
+  - Doubled chunk size (250→500 chars) - cuts total TTS jobs in half
+  - Faster polling (250ms initial, 1000ms max instead of 500ms/3000ms)
+  - Added delayTime hint usage for smarter RunPod polling
+  - Reduced verbose logging for less overhead
+  - **Expected ~2.5-3x faster** for long scripts (still sequential for stability)
+- **2025-12-21:** Reverted audio generation to sequential processing
+  - Fixed "Instance failed: Ran out of memory (>2GB)" errors on RunPod workers
+  - Removed batched parallel processing that was overwhelming workers
+  - Trade-off: Slower but stable and reliable
+- **2025-12-21:** Completed migration of all core functions from Supabase to Render
+  - Migrated: `generate-audio`, `generate-images`, `generate-captions`, `get-youtube-transcript`
+  - All long-running operations now on Render (no timeout limits)
+  - Updated frontend to use Render API for all migrated functions
+  - Hybrid architecture: Render for processing, Supabase for storage
+- **2025-12-20:** Migrated script generation API to Render
+  - Deployed v2.0-HONEST-PROGRESS with real progress updates
+  - Fixed audio generation chunk validation (skips invalid chunks)
 
 ### Current Project State
-- **Frontend:** Deployed on Netlify, auto-deploys from main branch
-- **Backend:** Supabase Edge Functions operational
+- **Frontend:** Deployed on Netlify (https://historygenai.netlify.app), auto-deploys from main branch
+- **Render API:** Deployed at https://history-gen-ai.onrender.com
+  - Handles: script generation, audio, images, captions, YouTube transcripts
+  - No timeout limits (eliminates 2-minute Supabase Edge Function limit)
+- **Supabase:** Storage + quick functions (image prompts, video timeline, zip downloads)
 - **TTS System:** RunPod endpoint `eitsgz3gndkh3s` with ChatterboxTurboTTS voice cloning
-- **Voice Cloning:** Functional with hardened error handling (requires 5+ second voice samples)
-
-### Next Steps
-- Monitor voice cloning quality and performance
-- Consider addressing technical debt items (see Known Issues section below)
-- Optional: Update Deno std library versions in Supabase functions
 
 ## Project Overview
 
@@ -36,23 +41,41 @@ HistoryGen AI is a full-stack application that generates AI-powered historical v
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
-- Backend: Supabase Edge Functions (Deno)
-- Storage: Supabase Storage (for audio, scripts, captions, images)
+- Backend API: Express + TypeScript on Render (all long-running operations)
+- Storage: Supabase Storage (voice samples, audio, images, captions, scripts)
+- Quick Functions: Supabase Edge Functions (image prompts, video timeline, zip downloads)
 - TTS: RunPod serverless endpoint running Chatterbox TTS with voice cloning
-- Deployment: Netlify (frontend), Supabase (backend)
+- Deployment: Netlify (frontend), Render (backend API), Supabase (storage + quick functions)
 
 ## Development Commands
 
+### Frontend
 ```bash
-# Frontend development
 npm i                    # Install dependencies
 npm run dev             # Start dev server (http://localhost:8080)
 npm run build           # Production build
 npm run lint            # Run ESLint
+npm test                # Run tests in watch mode
+npm run test:run        # Run tests once (for CI)
+npm run test:coverage   # Run tests with coverage
+npm run test:ui         # Run tests with UI
+```
 
-# Supabase functions (requires Docker for CLI deployment)
+### Render API (`render-api/` directory)
+```bash
+cd render-api
+npm install             # Install dependencies
+npm run dev             # Start dev server with hot reload
+npm run build           # Compile TypeScript
+npm start               # Start production server
+npm run typecheck       # Type check without building
+```
+
+### Supabase Functions
+```bash
+# Deploy with CLI (requires Docker)
 export SUPABASE_ACCESS_TOKEN='your-token'
-npx supabase functions deploy <function-name>
+npx supabase functions deploy <function-name> --project-ref udqfdeoullsxttqguupz
 
 # Or deploy via Supabase Dashboard (recommended if Docker issues):
 # https://supabase.com/dashboard/project/udqfdeoullsxttqguupz/functions
@@ -72,23 +95,105 @@ Multi-step generation pipeline with review/approval at each stage:
 
 Each step uses streaming APIs for real-time progress updates (percentages shown in `ProcessingModal.tsx`).
 
+### Render API (`render-api/`)
+
+**Purpose:** Handles all long-running operations without timeout limits (Supabase Edge Functions have 2-minute limits).
+
+**Key Routes:**
+- `/rewrite-script` - Streaming script generation with honest progress updates
+  - Uses Claude API with 16k token limit per call
+  - Generates scripts in 8k word chunks (optimized for responsiveness)
+  - Sends real progress only when iterations complete (no fake estimates)
+  - Supports 20k+ word scripts (multiple iterations)
+- `/generate-audio` - Voice cloning with RunPod Chatterbox TTS (800+ lines)
+  - **CRITICAL:** Uses sequential processing (NOT parallel) to avoid memory issues
+  - Processes chunks one-at-a-time to minimize RunPod worker memory footprint
+  - 500-char chunks (doubled from 250 for 2x fewer API calls)
+  - Fast polling with RunPod delayTime optimization
+  - Streaming SSE progress updates with heartbeat every 15 seconds
+  - WAV file concatenation with validation
+  - **Requires 2GB Render tier** for long scripts (559+ chunks)
+- `/generate-images` - Z-Image generation via RunPod (418 lines)
+  - Parallel job creation and polling
+  - Streaming progress updates
+  - Supports timed prompts with custom filenames
+- `/generate-captions` - Whisper transcription with SRT formatting (264 lines)
+  - WAV chunking for 25MB limit
+  - Supabase storage integration
+- `/get-youtube-transcript` - YouTube transcript fetching via Supadata API (110 lines)
+
+**Environment Variables:**
+```
+ANTHROPIC_API_KEY=<claude-api-key>
+SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-key>
+RUNPOD_API_KEY=<runpod-key>
+RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint-id>
+OPENAI_API_KEY=<openai-key-for-whisper>
+SUPADATA_API_KEY=<supadata-key-for-youtube>
+NODE_ENV=production
+```
+
+**Important Notes:**
+- TypeScript must be in `dependencies` (not `devDependencies`) for Render builds
+- Build command on Render: `npm install --include=dev && npm run build`
+- All streaming endpoints use SSE (Server-Sent Events)
+- Unlimited timeout allows processing very long scripts and audio generation
+
 ### Supabase Edge Functions (`supabase/functions/`)
 
-**`generate-audio/index.ts`** (Main TTS function):
-- Receives: `{ script, voiceSampleUrl, projectId, stream: true }`
-- Downloads voice sample from Supabase storage
-- Converts to base64 for RunPod
-- Splits text into 180-char chunks (Chatterbox limitation)
-- Sends chunks sequentially to RunPod endpoint `ei3k5udz4c68b8`
-- Streams progress: 5% → 10% → 15-75% (per chunk) → 80% → 90% → 100%
-- Concatenates WAV audio, uploads to storage
-- Returns: `{ audioUrl, duration, size }`
+**NOTE:** Core functions migrated to Render. Remaining Supabase functions are quick operations that won't hit 2-minute timeout.
 
-**Other functions:**
-- `get-youtube-transcript`: Fetches YouTube captions
-- `rewrite-script`: Streams script generation with word count progress
-- `generate-images`: Streams image generation (DALL-E 3 via OpenAI)
-- `generate-captions`: Creates SRT files from audio
+**Still on Supabase:**
+- `generate-image-prompts`: Creates AI image prompts from script (quick operation)
+- `generate-video`: Creates EDL/CSV timeline files (quick operation)
+- `download-images-zip`: Packages images into downloadable zip (quick operation)
+- `get-elevenlabs-voices`: Fetches available ElevenLabs voices (quick API call)
+
+**Migrated to Render:**
+- ~~`generate-audio`~~ → Now on Render
+- ~~`generate-images`~~ → Now on Render
+- ~~`generate-captions`~~ → Now on Render
+- ~~`get-youtube-transcript`~~ → Now on Render
+- ~~`rewrite-script`~~ → Now on Render (was first to migrate)
+
+### Audio Generation Architecture (CRITICAL - READ BEFORE MODIFYING)
+
+The audio generation endpoint (`render-api/src/routes/generate-audio.ts`) uses **sequential processing** by design to avoid memory issues on RunPod workers.
+
+**Why Sequential, Not Parallel:**
+- Voice cloning requires sending voice sample (5-10MB base64) with every TTS job
+- Parallel batching (e.g., 10 jobs with `Promise.all()`) = 50-100MB memory just for payloads
+- RunPod workers have limited memory (2GB max, often less)
+- Sequential = only 1 job + 1 voice sample in memory at a time (~10-15MB)
+
+**Three Handler Functions:**
+1. `handleStreaming()` - No voice cloning, default voice, streaming progress
+2. `handleVoiceCloningStreaming()` - Voice cloning, streaming progress
+3. `handleNonStreaming()` - Optional voice cloning, no streaming
+
+**All three use the same pattern:**
+```typescript
+// CORRECT - Sequential
+for (let i = 0; i < chunks.length; i++) {
+  const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+  const output = await pollJobStatus(jobId, apiKey);
+  audioChunks.push(base64ToBuffer(output.audio_base64));
+}
+
+// WRONG - Parallel (causes memory errors)
+const promises = chunks.map(chunk =>
+  startTTSJob(chunk, apiKey, referenceAudioBase64)
+);
+await Promise.all(promises); // ❌ Sends 10MB+ to ALL workers at once
+```
+
+**Key Constants (Speed Optimized 2025-12-22):**
+- `MAX_TTS_CHUNK_LENGTH = 500` (doubled from 250 - cuts chunks in half for faster processing)
+- `TTS_JOB_POLL_INTERVAL_INITIAL = 250ms` (faster initial polling)
+- `TTS_JOB_POLL_INTERVAL_MAX = 1000ms` (1 second max for faster job detection)
+- Uses RunPod `delayTime` hint for smarter polling intervals
+- No `BATCH_SIZE` constant (parallel processing causes memory issues even with 2GB RAM)
 
 ### RunPod Chatterbox Endpoint
 
@@ -120,6 +225,11 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
 - Use Supabase Dashboard to manually update function code
 - Dashboard: Project → Edge Functions → Edit function → Deploy
 
+### Render deployment issues
+- **Build fails with "tsc: not found"**: Move TypeScript to `dependencies` in package.json
+- **Build command**: Use `npm install --include=dev && npm run build` to install devDependencies for build
+- **Image push hanging**: No longer an issue on Render
+
 ### RunPod workers crashing (exit code 1 or 2)
 - Check worker logs in RunPod dashboard (click on crashed worker for full traceback)
 - **Exit code 2:** Usually Python import errors or missing dependencies
@@ -133,41 +243,71 @@ Each step uses streaming APIs for real-time progress updates (percentages shown 
 - After fixing, push to GitHub - RunPod auto-rebuilds (5-10 min)
 - Verify build succeeded by checking worker status changes from "Initializing" → "Running" (not "Error")
 
-### Audio generation stuck at 15%
-- RunPod workers at 100% capacity → increase max workers
-- RunPod endpoint ID mismatch → verify in `generate-audio/index.ts` line 9
-- Workers initializing → wait for "Running" status
+### Audio generation errors
+- **"Instance failed: Ran out of memory (>2GB)" on RunPod workers**:
+  - **FIXED:** Sequential processing prevents this
+  - **DO NOT** revert to parallel/batched processing without careful memory profiling
+  - Voice sample (5-10MB base64) sent to only ONE job at a time, not multiple
+  - If you see this again, check for accidental `Promise.all()` on TTS job creation
+- **"Text chunk X contains invalid characters or is too short/long"**:
+  - Fixed in latest version - invalid chunks are now skipped
+  - Check script doesn't have only punctuation or emojis in certain sections
+- **Stuck at 15%**: RunPod workers at 100% capacity → increase max workers
+- **HTTP 401**: RUNPOD_API_KEY not configured in environment variables
+
+### Script generation progress mismatch
+- **FIXED in v2.0-HONEST-PROGRESS**: Progress now shows real completion
+- Old behavior: Fake estimates during API calls (misleading)
+- New behavior: Progress jumps when iterations complete (0% → 43% → 70% → 100%)
+- Expected silence during iterations (60-90 seconds with no updates)
 
 ## Configuration
 
-**Environment Variables** (`.env`):
+### Frontend Environment Variables (`.env`)
 ```
 VITE_SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<key>
 VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
+VITE_RENDER_API_URL=https://history-gen-ai.onrender.com
 ```
 
-**Supabase Secrets** (Function environment variables):
+### Supabase Secrets (Function environment variables)
 - `RUNPOD_API_KEY`: RunPod API key for TTS endpoint
 - `OPENAI_API_KEY`: For image generation
-- Other API keys as needed
+- `ANTHROPIC_API_KEY`: For script generation (Edge Functions only)
+- `SUPABASE_URL`: https://udqfdeoullsxttqguupz.supabase.co
+- `SUPABASE_SERVICE_ROLE_KEY`: For storage access
 
 **Current RunPod Endpoint:** `eitsgz3gndkh3s` (configurable via `RUNPOD_ENDPOINT_ID` env var or fallback in `generate-audio/index.ts` line 9)
 
 ## Deployment
 
-**Frontend (Netlify):**
+### Frontend (Netlify)
 - Auto-deploys on push to `main` branch
 - Build command: `npm run build`
 - Publish directory: `dist`
+- Environment variables set in Netlify dashboard
 
-**Backend (Supabase):**
-- Functions: Deploy via CLI or Dashboard
-- Storage: Buckets configured in Supabase dashboard
+### Render API
+- Auto-deploys on push to `main` branch
+- Root directory: `render-api`
+- Build command: `npm install --include=dev && npm run build`
+- Start command: `npm start`
+- Environment variables set in Render dashboard
+- **Memory tier:** 2GB recommended for production
+  - Long scripts (500+ chunks) require 2GB for WAV concatenation
+  - 512MB causes OOM crashes during audio concatenation phase
+  - Audio chunks accumulate in memory before final concatenation
+- Free tier has cold starts (~30 seconds when inactive)
+
+### Supabase Edge Functions
+- Deploy via CLI: `npx supabase functions deploy <name> --project-ref udqfdeoullsxttqguupz`
+- Or via Dashboard: https://supabase.com/dashboard/project/udqfdeoullsxttqguupz/functions
+- Storage buckets:
   - `voice-samples`: User uploaded voice samples
   - `generated-assets`: Generated audio, scripts, captions, images
 
-**RunPod:**
+### RunPod
 - GitHub integration: Watches `jonmac909/chatterbox` repo
 - Auto-rebuilds on push (5-10 min build time)
 - Manual rebuild via RunPod dashboard if needed
@@ -175,25 +315,26 @@ VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
 ## Known Issues & Technical Debt
 
 ### Version Management
-- **Outdated Deno std library:** All Supabase functions use `std@0.168.0` (from 2022). Should update to `std@0.224.0+`
-- **Weak TypeScript config:** Strict mode disabled (`strictNullChecks: false`, `noImplicitAny: false`)
+- **Outdated Deno std library:** Some Supabase functions use `std@0.168.0` (from 2022), `generate-audio` updated to `std@0.224.0`
 - **No version pinning:** Supabase functions use `@supabase/supabase-js@2` without specific version
 
 ### Security
-- **No SSRF protection:** Voice sample URLs not validated for malicious domains (should restrict to Supabase storage)
-- **Unsafe env var access:** Many places use `Deno.env.get('VAR')!` without null checks (will crash if missing)
-- **No rate limiting:** Edge Functions have no rate limiting implemented
+- **SSRF protection implemented** in `generate-audio` but not in other functions
+- **Unsafe env var access:** Some places use `Deno.env.get('VAR')!` without null checks
+- **No rate limiting:** Edge Functions and Render API have no rate limiting
 
 ### Code Quality
-- **Excessive logging:** 100+ console.log statements in production code
 - **Inconsistent error handling:** Some functions return error objects, others throw exceptions
-- **No tests:** Zero test coverage across entire codebase
-- **No retry logic:** External API failures (OpenAI, RunPod) have no automatic retry
+- **Limited test coverage:** Frontend has some tests, backend has zero tests
+- **No retry logic in Edge Functions:** External API failures have no automatic retry (Render API has retry)
 
 ### Performance
 - **No caching:** Repeated generations of same YouTube URL re-fetch transcript every time
-- **Sequential chunk processing:** Audio chunks processed one-by-one, could parallelize some operations
-- **Large timeouts:** 2-minute polling timeout for TTS may be insufficient for long scripts
+- **Sequential chunk processing:** Audio chunks processed one-by-one
+  - **DO NOT parallelize** without solving RunPod worker memory issues
+  - Parallel batching caused "Ran out of memory (>2GB)" errors
+  - Sequential is slower but reliable
+- **Render cold starts:** Free tier has ~30s cold start when inactive
 
 ### Missing Features
 - **No project persistence:** All generated content is ephemeral (lost on page refresh)

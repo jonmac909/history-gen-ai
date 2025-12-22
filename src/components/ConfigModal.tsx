@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Settings, FileText, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -15,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export interface ScriptTemplate {
   id: string;
   template: string;
+  name?: string;
 }
 
 export interface CartesiaVoice {
@@ -87,27 +89,39 @@ export function ConfigModal({
           {/* Script Templates Tab */}
           <TabsContent value="templates" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
-              Configure your 3 script templates for Claude to use when generating scripts.
+              Configure your 5 script templates for Claude to use when generating scripts.
             </p>
             
-            {templates.map((template, index) => (
-              <div key={template.id} className="space-y-3 p-4 border border-border rounded-lg">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary" />
-                  <span className="font-medium">Template {String.fromCharCode(65 + index)}</span>
+            {templates.map((template, index) => {
+              const defaultName = `Template ${String.fromCharCode(65 + index)}`;
+              return (
+                <div key={template.id} className="space-y-3 p-4 border border-border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="font-medium">{template.name || defaultName}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Template Name</Label>
+                    <Input
+                      value={template.name || ""}
+                      onChange={(e) => updateTemplate(template.id, "name", e.target.value)}
+                      placeholder={defaultName}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Template Content</Label>
+                    <Textarea
+                      value={template.template}
+                      onChange={(e) => updateTemplate(template.id, "template", e.target.value)}
+                      placeholder="Paste your full script template here..."
+                      className="min-h-[150px] font-mono text-sm"
+                    />
+                  </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label>Template Content</Label>
-                  <Textarea
-                    value={template.template}
-                    onChange={(e) => updateTemplate(template.id, "template", e.target.value)}
-                    placeholder="Paste your full script template here..."
-                    className="min-h-[150px] font-mono text-sm"
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </TabsContent>
 
           {/* Image Style Tab */}

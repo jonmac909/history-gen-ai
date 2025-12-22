@@ -1,73 +1,187 @@
-# Welcome to your Lovable project
+# HistoryVidGen
 
-## Project info
+A modern web application for generating history video assets from YouTube content. Transform any YouTube video into production-ready assets including AI-rewritten scripts, voice-cloned audio, auto-generated captions, and AI-generated images.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- **YouTube Transcript Extraction** - Automatically fetch transcripts from YouTube videos
+- **AI Script Rewriting** - Transform transcripts into engaging scripts using Claude AI models
+- **Voice Cloning Audio** - Generate voiceover audio with your cloned voice via Chatterbox TTS
+- **AI Image Generation** - Create scene images with AI-generated visual prompts
+- **Caption Generation** - Auto-generate SRT captions from audio
+- **Step-by-Step Workflow** - Review and edit each asset before proceeding
+- **Bulk Download** - Download all generated assets as a package
 
-There are several ways of editing your application.
+## Prerequisites
 
-**Use Lovable**
+- Node.js 18+
+- npm
+- Supabase project with Edge Functions deployed
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Setup
 
-Changes made via Lovable will be committed automatically to this repo.
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd HistoryVidGen
+   ```
 
-**Use your preferred IDE**
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+3. Copy environment template:
+   ```bash
+   cp .env.example .env
+   ```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+4. Configure environment variables in `.env`:
+   ```env
+   VITE_SUPABASE_PROJECT_ID="your-project-id"
+   VITE_SUPABASE_PUBLISHABLE_KEY="your-publishable-key"
+   VITE_SUPABASE_URL="https://your-project-id.supabase.co"
+   ```
 
-Follow these steps:
+5. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+6. Open http://localhost:8080 in your browser
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## Configuration
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Required Environment Variables
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+| Variable | Description |
+|----------|-------------|
+| `VITE_SUPABASE_PROJECT_ID` | Your Supabase project identifier |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase public API key (anon key) |
+| `VITE_SUPABASE_URL` | Supabase project endpoint URL |
+
+All client-side environment variables must use the `VITE_` prefix to be accessible in the browser.
+
+### Supabase Edge Functions
+
+This application requires the following Edge Functions deployed to your Supabase project:
+
+- `get-youtube-transcript` - Fetches YouTube video transcripts
+- `rewrite-script` - AI-powered script rewriting with streaming
+- `generate-audio` - Voice cloning audio generation via RunPod
+- `generate-captions` - SRT caption generation from audio
+- `generate-image-prompts` - AI scene description generation
+- `generate-images` - Image generation via RunPod
+- `generate-video` - Video timeline generation
+- `download-images-zip` - Bulk image download
+
+See `supabase/functions/README.md` for Edge Function configuration details.
+
+## Development
+
+### Available Scripts
+
+```bash
+# Start development server with hot reload
 npm run dev
+
+# Run unit tests in watch mode
+npm test
+
+# Run tests once (for CI)
+npm run test:run
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests with UI
+npm run test:ui
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+
+# Lint code
+npm run lint
 ```
 
-**Edit a file directly in GitHub**
+### Running Tests
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+The project uses Vitest for unit testing and React Testing Library for component tests:
 
-**Use GitHub Codespaces**
+```bash
+# Watch mode (recommended during development)
+npm test
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# Single run
+npm run test:run
 
-## What technologies are used for this project?
+# With coverage report
+npm run test:coverage
+```
 
-This project is built with:
+### Building for Production
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```bash
+npm run build
+```
 
-## How can I deploy this project?
+Production files are output to the `dist/` directory.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Architecture
 
-## Can I connect a custom domain to my Lovable project?
+```
+src/
+├── components/        # React UI components
+│   ├── ui/           # shadcn/ui components
+│   └── *.tsx         # Feature-specific components
+├── data/             # Static data (templates, etc.)
+├── hooks/            # Custom React hooks
+├── integrations/     # External service integrations
+│   └── supabase/     # Supabase client configuration
+├── lib/              # Utility functions and API client
+├── pages/            # Page components
+└── test/             # Test configuration and utilities
 
-Yes, you can!
+supabase/
+└── functions/        # Supabase Edge Functions
+```
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### Key Components
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- **Index.tsx** - Main application page with video generation workflow
+- **api.ts** - Client-side API functions for Supabase Edge Function calls
+- **ProcessingModal** - Step-by-step progress display
+- **ScriptReviewModal** - Script editing before audio generation
+- **AudioPreviewModal** - Audio review before caption generation
+- **ImagesPreviewModal** - Image review with regeneration capability
+
+## Tech Stack
+
+- **Frontend**: React 18, TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS
+- **UI Components**: shadcn/ui (Radix UI primitives)
+- **Backend**: Supabase Edge Functions (Deno)
+- **Testing**: Vitest, React Testing Library
+- **AI Models**: Claude (script writing), Chatterbox (TTS), RunPod (images)
+
+## Workflow
+
+1. **Input** - Paste a YouTube URL or enter a video title
+2. **Configure** - Set script template, AI model, voice sample, and preferences
+3. **Generate Script** - AI rewrites the transcript into your preferred format
+4. **Review Script** - Edit the generated script before proceeding
+5. **Generate Audio** - Create voice-cloned audio from the script
+6. **Review Audio** - Listen and optionally regenerate
+7. **Generate Captions** - Create SRT captions from the audio
+8. **Review Captions** - Edit timing and text if needed
+9. **Generate Images** - Create AI images for each scene
+10. **Review Images** - Regenerate individual images as needed
+11. **Download** - Get all assets packaged together
+
+## License
+
+Private project - All rights reserved.

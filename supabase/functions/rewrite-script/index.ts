@@ -3,13 +3,20 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Expose-Headers': 'X-Timeout-Ms, X-Max-Iterations, X-Keepalive-Interval-Ms',
 };
 
 // Claude Sonnet 4.5 has a max output of ~16k tokens per call
 const MAX_TOKENS_PER_CALL = 16000;
 
-// Timeout for each Claude API call (5 minutes - Claude needs time for large outputs)
-const API_CALL_TIMEOUT = 300000;
+// Timeout for each Claude API call (20 minutes - Claude needs time for very long outputs)
+const API_CALL_TIMEOUT = 1200000;
+
+// Maximum iterations for script generation
+const MAX_ITERATIONS = 10;
+
+// Keepalive ping interval (3 seconds)
+const KEEPALIVE_INTERVAL_MS = 3000;
 
 async function generateScriptChunk(
   apiKey: string,
@@ -89,7 +96,7 @@ CRITICAL RULES:
 - Use vivid descriptions and emotional storytelling
 - When continuing a script, seamlessly continue from where you left off`;
 
-    const targetWords = wordCount || 15000;
+    const targetWords = wordCount || 3000; // Frontend sends 3k chunks to avoid timeout
     console.log(`Target word count: ${targetWords}`);
 
     if (stream) {
@@ -102,12 +109,12 @@ CRITICAL RULES:
             let fullScript = '';
             let currentWordCount = 0;
             let iteration = 0;
-            const maxIterations = 10; // Safety limit
             
-            // For very long scripts, we need to be more aggressive with single-call output
-            const wordsPerIteration = Math.ceil(targetWords / 3); // Aim for ~3 iterations max
+            // Optimize for 5k chunks: aim for 3-4 iterations (1.5k words per iteration)
+            // This keeps each Claude API call under 2-3 minutes (well within Supabase 5-min limit)
+            const wordsPerIteration = Math.min(1500, Math.ceil(targetWords / 3));
             
-            while (currentWordCount < targetWords && iteration < maxIterations) {
+            while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
               iteration++;
               const wordsRemaining = targetWords - currentWordCount;
               console.log(`Iteration ${iteration}: Have ${currentWordCount} words, need ${wordsRemaining} more`);
@@ -185,7 +192,7 @@ Continue now:`
                   wordCount: estimatedTotal,
                   message: `Writing... ~${estimatedTotal}/${targetWords} words`
                 })}\n\n`));
-              }, 3000); // Ping every 3 seconds
+              }, KEEPALIVE_INTERVAL_MS);
               
               let result;
               try {
@@ -265,16 +272,23 @@ Continue now:`
       });
 
       return new Response(responseStream, {
-        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Timeout-Ms': API_CALL_TIMEOUT.toString(),
+          'X-Max-Iterations': MAX_ITERATIONS.toString(),
+          'X-Keepalive-Interval-Ms': KEEPALIVE_INTERVAL_MS.toString(),
+        }
       });
     } else {
       // Non-streaming mode with continuation loop
       let fullScript = '';
       let currentWordCount = 0;
       let iteration = 0;
-      const maxIterations = 10;
-      
-      while (currentWordCount < targetWords && iteration < maxIterations) {
+
+      while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
         iteration++;
         const wordsRemaining = targetWords - currentWordCount;
         console.log(`Iteration ${iteration}: Have ${currentWordCount} words, need ${wordsRemaining} more`);

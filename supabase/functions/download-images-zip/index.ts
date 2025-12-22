@@ -20,6 +20,36 @@ serve(async (req) => {
       );
     }
 
+    // SECURITY: Validate URL to prevent SSRF attacks
+    // Only allow Supabase storage URLs
+    const allowedDomains = [
+      'supabase.co',
+      'supabase.com',
+      // Add your specific Supabase project domain
+      'udqfdeoullsxttqguupz.supabase.co'
+    ];
+
+    let url;
+    try {
+      url = new URL(imageUrl);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid URL format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const isAllowed = allowedDomains.some(domain =>
+      url.hostname.endsWith(domain) || url.hostname === domain
+    );
+
+    if (!isAllowed) {
+      return new Response(
+        JSON.stringify({ error: "URL domain not allowed. Only Supabase storage URLs are permitted." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log("Fetching image:", imageUrl);
 
     // Fetch the single image

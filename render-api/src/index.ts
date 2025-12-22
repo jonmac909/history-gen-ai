@@ -1,0 +1,60 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import rewriteScriptRouter from './routes/rewrite-script';
+import generateAudioRouter from './routes/generate-audio';
+import generateImagesRouter from './routes/generate-images';
+import getYoutubeTranscriptRouter from './routes/get-youtube-transcript';
+import generateCaptionsRouter from './routes/generate-captions';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors({
+  origin: '*', // Configure this to your frontend domain in production
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json({ limit: '50mb' }));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Routes
+app.use('/rewrite-script', rewriteScriptRouter);
+app.use('/generate-audio', generateAudioRouter);
+app.use('/generate-images', generateImagesRouter);
+app.use('/get-youtube-transcript', getYoutubeTranscriptRouter);
+app.use('/generate-captions', generateCaptionsRouter);
+
+// Error handling
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
+  res.status(500).json({
+    error: err.message || 'Internal server error',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Prevent uncaught exceptions from crashing the server
+process.on('uncaughtException', (error) => {
+  console.error('🔴 Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit - let the error handler deal with it
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  // Don't exit - let the error handler deal with it
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 HistoryVidGen API running on port ${PORT}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+});

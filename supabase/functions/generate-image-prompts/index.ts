@@ -19,6 +19,7 @@ interface ImagePromptRequest {
   srtContent: string;
   imageCount: number;
   stylePrompt: string;
+  audioDuration?: number; // Optional audio duration in seconds
 }
 
 interface ImagePrompt {
@@ -84,11 +85,14 @@ function parseSrt(srtContent: string): SrtSegment[] {
 }
 
 // Group SRT segments into time windows for images
-function groupSegmentsForImages(segments: SrtSegment[], imageCount: number): { startSeconds: number; endSeconds: number; text: string }[] {
+function groupSegmentsForImages(segments: SrtSegment[], imageCount: number, audioDuration?: number): { startSeconds: number; endSeconds: number; text: string }[] {
   if (segments.length === 0) return [];
 
-  const totalDuration = segments[segments.length - 1].endSeconds;
+  // Use provided audio duration if available, otherwise fall back to last SRT segment end time
+  const totalDuration = audioDuration || segments[segments.length - 1].endSeconds;
   const windowDuration = totalDuration / imageCount;
+
+  console.log(`Distributing ${imageCount} images across ${totalDuration.toFixed(2)}s (audio duration: ${audioDuration?.toFixed(2) || 'N/A'}s, SRT end: ${segments[segments.length - 1].endSeconds.toFixed(2)}s)`);
 
   const windows: { startSeconds: number; endSeconds: number; text: string }[] = [];
 
@@ -119,7 +123,7 @@ serve(async (req) => {
   }
 
   try {
-    const { script, srtContent, imageCount, stylePrompt }: ImagePromptRequest = await req.json();
+    const { script, srtContent, imageCount, stylePrompt, audioDuration }: ImagePromptRequest = await req.json();
 
     if (!script || !srtContent) {
       return new Response(
@@ -137,10 +141,13 @@ serve(async (req) => {
     }
 
     console.log(`Generating ${imageCount} image prompts from script and SRT...`);
+    if (audioDuration) {
+      console.log(`Using provided audio duration: ${audioDuration.toFixed(2)}s`);
+    }
 
     // Parse SRT and group into time windows
     const segments = parseSrt(srtContent);
-    const windows = groupSegmentsForImages(segments, imageCount);
+    const windows = groupSegmentsForImages(segments, imageCount, audioDuration);
 
     console.log(`Parsed ${segments.length} SRT segments into ${windows.length} time windows`);
 

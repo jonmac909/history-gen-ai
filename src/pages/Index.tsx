@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,11 +95,38 @@ const Index = () => {
 
   // Step 1: Generate transcript and script
   const handleGenerate = async () => {
+    // Check if using custom script (skip YouTube fetch and AI rewriting)
+    const usingCustomScript = settings.customScript && settings.customScript.trim().length > 0;
+
+    if (usingCustomScript) {
+      // Using custom script - skip to audio generation
+      if (!settings.voiceSampleUrl) {
+        toast({
+          title: "Voice Sample Required",
+          description: "Please upload a voice sample for cloning in Settings.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Set up project with custom script
+      setSourceUrl("Custom Script");
+      const newProjectId = crypto.randomUUID();
+      setProjectId(newProjectId);
+      setVideoTitle("Custom Script");
+
+      // Go straight to script review with custom script
+      setPendingScript(settings.customScript!);
+      setViewState("review-script");
+      return;
+    }
+
+    // Normal flow - validate inputs for YouTube/AI generation
     if (!inputValue.trim()) {
       toast({
         title: inputMode === "url" ? "URL Required" : "Title Required",
-        description: inputMode === "url" 
-          ? "Please paste a YouTube URL to generate." 
+        description: inputMode === "url"
+          ? "Please paste a YouTube URL to generate."
           : "Please enter a video title to generate.",
         variant: "destructive",
       });
@@ -165,13 +192,15 @@ const Index = () => {
       updateStep("script", "active", "0%");
 
       const scriptResult = await rewriteScriptStreaming(
-        transcript, 
-        currentTemplate.template, 
+        transcript,
+        currentTemplate.template,
         transcriptResult.title || "History Documentary",
         settings.aiModel,
         settings.wordCount,
         (progress, wordCount) => {
-          updateStep("script", "active", `${progress}% (${wordCount.toLocaleString()} words)`);
+          // Show only progress percentage and word count (no script preview)
+          const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
+          updateStep("script", "active", progressText);
         }
       );
       
@@ -339,12 +368,19 @@ const Index = () => {
 
     try {
       updateStep("captions", "active");
-      const captionsRes = await generateCaptions(pendingAudioUrl, projectId);
-      
+      const captionsRes = await generateCaptions(
+        pendingAudioUrl,
+        projectId,
+        (progress) => {
+          // Update progress in real-time as chunks are transcribed
+          updateStep("captions", "active", `${progress}%`);
+        }
+      );
+
       if (!captionsRes.success || !captionsRes.srtContent) {
         throw new Error(captionsRes.error || "Failed to generate captions");
       }
-      
+
       updateStep("captions", "completed");
       
       setPendingSrtContent(captionsRes.srtContent);
@@ -384,7 +420,8 @@ const Index = () => {
         confirmedScript,
         srt,
         settings.imageCount,
-        imageStylePrompt
+        imageStylePrompt,
+        pendingAudioDuration // Pass actual audio duration to ensure images cover full audio
       );
 
       if (!promptResult.success || !promptResult.prompts) {
@@ -581,7 +618,7 @@ const Index = () => {
               <Scroll className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold text-foreground">
-              HistoryGen AI
+              HistoryVidGen
             </span>
           </div>
           
@@ -613,48 +650,85 @@ const Index = () => {
                 Create Your History AI Video
               </h1>
               <p className="text-lg text-muted-foreground">
-                From YouTube URL to full production ready assets in minutes.
+                {settings.customScript && settings.customScript.trim().length > 0
+                  ? "Using custom script - click Generate to start audio production"
+                  : "From YouTube URL to full production ready assets in minutes"}
               </p>
             </div>
 
-            <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
-              <button
-                onClick={toggleInputMode}
-                className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-xl hover:bg-secondary transition-colors cursor-pointer"
-              >
-                {inputMode === "url" ? (
-                  <Youtube className="w-5 h-5 text-red-500" />
-                ) : (
-                  <FileText className="w-5 h-5 text-primary" />
-                )}
-                <span className="text-sm font-medium text-muted-foreground">
-                  {inputMode === "url" ? "URL" : "Title"}
-                </span>
-              </button>
-              
-              <Input
-                type={inputMode === "url" ? "url" : "text"}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
-                className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
-              />
-              
-              <SettingsPopover 
-                settings={settings} 
-                onSettingsChange={setSettings}
-                scriptTemplates={scriptTemplates}
-              />
-              
-              <Button
-                onClick={handleGenerate}
-                disabled={viewState !== "create"}
-                className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Generate
-              </Button>
-            </div>
+            {settings.customScript && settings.customScript.trim().length > 0 ? (
+              // Custom script mode - simplified UI
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-foreground">
+                        Custom Script Ready
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {settings.customScript.trim().split(/\s+/).length} words
+                      </p>
+                    </div>
+                  </div>
+                  <SettingsPopover
+                    settings={settings}
+                    onSettingsChange={setSettings}
+                    scriptTemplates={scriptTemplates}
+                  />
+                </div>
+                <Button
+                  onClick={handleGenerate}
+                  disabled={viewState !== "create"}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
+                >
+                  <Mic className="w-5 h-5 mr-2" />
+                  Generate Audio from Custom Script
+                </Button>
+              </div>
+            ) : (
+              // Normal mode - YouTube URL input
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
+                <button
+                  onClick={toggleInputMode}
+                  className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-xl hover:bg-secondary transition-colors cursor-pointer"
+                >
+                  {inputMode === "url" ? (
+                    <Youtube className="w-5 h-5 text-red-500" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-primary" />
+                  )}
+                  <span className="text-sm font-medium text-muted-foreground">
+                    {inputMode === "url" ? "URL" : "Title"}
+                  </span>
+                </button>
+
+                <Input
+                  type={inputMode === "url" ? "url" : "text"}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
+                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
+                />
+
+                <SettingsPopover
+                  settings={settings}
+                  onSettingsChange={setSettings}
+                  scriptTemplates={scriptTemplates}
+                />
+
+                <Button
+                  onClick={handleGenerate}
+                  disabled={viewState !== "create"}
+                  className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate
+                </Button>
+              </div>
+            )}
           </div>
         </main>
       )}

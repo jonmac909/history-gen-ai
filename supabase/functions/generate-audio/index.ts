@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ENDPOINT_ID') || "ei3k5udz4c68b8";
+const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ENDPOINT_ID') || "eitsgz3gndkh3s";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
 // TTS Configuration Constants
@@ -243,16 +243,25 @@ serve(async (req) => {
     logger.debug(`Normalized text length: ${cleanScript.length} chars`);
 
     // Split into chunks for safety (Chatterbox crashes on long text)
-    const chunks = splitIntoChunks(cleanScript, 180);
-    logger.debug(`Split into ${chunks.length} chunks`);
+    const rawChunks = splitIntoChunks(cleanScript, 180);
+    logger.debug(`Split into ${rawChunks.length} chunks`);
 
-    // Validate each chunk
-    for (let i = 0; i < chunks.length; i++) {
-      if (!validateTTSInput(chunks[i])) {
-        logger.error(`Chunk ${i + 1} failed validation: "${chunks[i].substring(0, 50)}..."`);
-        return createErrorResponse(`Text chunk ${i + 1} contains invalid characters or is too short/long`, 400);
+    // Validate and filter chunks - skip invalid ones instead of failing
+    const chunks: string[] = [];
+    for (let i = 0; i < rawChunks.length; i++) {
+      if (!validateTTSInput(rawChunks[i])) {
+        logger.warn(`Skipping chunk ${i + 1} (invalid): "${rawChunks[i].substring(0, 50)}..."`);
+        continue; // Skip this chunk
       }
+      chunks.push(rawChunks[i]);
     }
+
+    if (chunks.length === 0) {
+      return createErrorResponse('No valid text chunks after validation. Script may contain only special characters or be too short.', 400);
+    }
+
+    logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
+
 
     // Voice cloning - now supports streaming!
     if (voiceSampleUrl) {
