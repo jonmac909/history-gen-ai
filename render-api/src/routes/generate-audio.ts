@@ -94,6 +94,28 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+// Split script into N equal segments by word count
+const DEFAULT_SEGMENT_COUNT = 6;
+
+function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_COUNT): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+
+  const wordsPerSegment = Math.ceil(words.length / segmentCount);
+  const segments: string[] = [];
+
+  for (let i = 0; i < segmentCount; i++) {
+    const start = i * wordsPerSegment;
+    const end = (i === segmentCount - 1) ? words.length : (i + 1) * wordsPerSegment;
+    const segmentWords = words.slice(start, end);
+    if (segmentWords.length > 0) {
+      segments.push(segmentWords.join(' '));
+    }
+  }
+
+  return segments;
+}
+
 // Split text into safe chunks at sentence boundaries
 function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH): string[] {
   const sentences = text.split(/(?<=[.!?])\s+/);
@@ -454,10 +476,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
 
-    // Voice cloning support
+    // Voice cloning support - now generates 6 separate segments
     if (voiceSampleUrl && stream) {
-      logger.info('Using streaming mode with voice cloning');
-      return handleVoiceCloningStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      logger.info('Using streaming mode with voice cloning (6 segments)');
+      return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
     }
 
     if (stream) {
@@ -586,8 +608,17 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
   }
 }
 
-// Handle streaming with voice cloning (SEQUENTIAL - Memory optimized)
-async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
+// Audio segment result type
+interface AudioSegmentResult {
+  index: number;
+  audioUrl: string;
+  duration: number;
+  size: number;
+  text: string;
+}
+
+// Handle streaming with voice cloning - generates 6 separate segments
+async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -603,64 +634,16 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
   }, 15000);
 
   try {
-    sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${chunks.length} chunks)...` });
+    // Split script into 6 segments
+    const segments = splitIntoSegments(script, DEFAULT_SEGMENT_COUNT);
+    const actualSegmentCount = segments.length;
 
-    sendEvent({ type: 'progress', progress: 10, message: 'Downloading voice sample...' });
+    sendEvent({ type: 'progress', progress: 5, message: `Starting voice cloning (${actualSegmentCount} segments)...` });
+
+    sendEvent({ type: 'progress', progress: 8, message: 'Downloading voice sample...' });
 
     const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
-
-    console.log(`\n=== Processing ${chunks.length} chunks sequentially ===`);
-    sendEvent({ type: 'progress', progress: 15, message: `Processing ${chunks.length} chunks with voice cloning...` });
-
-    const audioChunks: Buffer[] = [];
-
-    // Process each chunk sequentially with progress updates
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkText = chunks[i];
-      const chunkProgress = 15 + Math.round(((i + 1) / chunks.length) * 60);
-
-      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
-
-      sendEvent({
-        type: 'progress',
-        progress: chunkProgress,
-        message: `Generating audio chunk ${i + 1}/${chunks.length} with voice cloning...`
-      });
-
-      try {
-        // Start TTS job with voice cloning
-        const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
-        console.log(`TTS job started with ID: ${jobId}`);
-
-        // Poll for completion
-        const output = await pollJobStatus(jobId, apiKey);
-
-        // Decode audio
-        const audioData = base64ToBuffer(output.audio_base64);
-        audioChunks.push(audioData);
-        console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
-      } catch (err) {
-        console.error(`Failed to process chunk ${i + 1}:`, err);
-        logger.warn(`Skipping chunk ${i + 1} due to error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        // Continue with next chunk instead of failing completely
-      }
-    }
-
-    if (audioChunks.length === 0) {
-      throw new Error('All audio chunks failed to generate');
-    }
-
-    console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
-
-    sendEvent({ type: 'progress', progress: 80, message: 'Concatenating audio chunks...' });
-
-    const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
-    const durationRounded = Math.round(durationSeconds);
-
-    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
-
-    sendEvent({ type: 'progress', progress: 95, message: 'Uploading audio...' });
 
     const credentials = getSupabaseCredentials();
     if (!credentials) {
@@ -670,25 +653,136 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
     }
 
     const supabase = createClient(credentials.url, credentials.key);
-    const fileName = `${projectId || crypto.randomUUID()}/voiceover.wav`;
+    const actualProjectId = projectId || crypto.randomUUID();
 
-    const { error: uploadError } = await supabase.storage
-      .from('generated-assets')
-      .upload(fileName, finalAudio, {
-        contentType: 'audio/wav',
-        upsert: true,
+    console.log(`\n=== Processing ${actualSegmentCount} segments ===`);
+
+    const segmentResults: AudioSegmentResult[] = [];
+    let totalDuration = 0;
+
+    // Process each segment
+    for (let segIdx = 0; segIdx < actualSegmentCount; segIdx++) {
+      const segmentText = segments[segIdx];
+      const segmentNumber = segIdx + 1;
+
+      // Calculate progress: 10% start, 10-85% for segments, 85-100% for final steps
+      const segmentStartProgress = 10 + Math.round((segIdx / actualSegmentCount) * 75);
+      const segmentEndProgress = 10 + Math.round(((segIdx + 1) / actualSegmentCount) * 75);
+
+      sendEvent({
+        type: 'progress',
+        progress: segmentStartProgress,
+        message: `Processing segment ${segmentNumber}/${actualSegmentCount}...`
       });
 
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      throw new Error(`Failed to upload audio: ${uploadError.message || JSON.stringify(uploadError)}`);
+      console.log(`\n--- Segment ${segmentNumber}/${actualSegmentCount} ---`);
+      console.log(`Text: "${segmentText.substring(0, 100)}..."`);
+
+      // Split this segment into TTS chunks
+      const rawChunks = splitIntoChunks(segmentText, MAX_TTS_CHUNK_LENGTH);
+      const chunks: string[] = [];
+
+      for (const chunk of rawChunks) {
+        if (validateTTSInput(chunk)) {
+          chunks.push(chunk);
+        } else {
+          logger.warn(`Skipping invalid chunk in segment ${segmentNumber}: "${chunk.substring(0, 30)}..."`);
+        }
+      }
+
+      if (chunks.length === 0) {
+        logger.warn(`Segment ${segmentNumber} has no valid chunks, skipping`);
+        continue;
+      }
+
+      console.log(`Segment ${segmentNumber}: ${chunks.length} chunks`);
+
+      const audioChunks: Buffer[] = [];
+
+      // Process each chunk in this segment sequentially
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunkText = chunks[chunkIdx];
+
+        // Calculate sub-progress within this segment
+        const chunkProgress = segmentStartProgress + Math.round(
+          ((chunkIdx + 1) / chunks.length) * (segmentEndProgress - segmentStartProgress)
+        );
+
+        sendEvent({
+          type: 'progress',
+          progress: chunkProgress,
+          message: `Segment ${segmentNumber}: chunk ${chunkIdx + 1}/${chunks.length}...`
+        });
+
+        try {
+          const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+          const output = await pollJobStatus(jobId, apiKey);
+          const audioData = base64ToBuffer(output.audio_base64);
+          audioChunks.push(audioData);
+          console.log(`  Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
+        } catch (err) {
+          logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+
+      if (audioChunks.length === 0) {
+        logger.warn(`All chunks failed for segment ${segmentNumber}, skipping`);
+        continue;
+      }
+
+      // Concatenate this segment's chunks into one WAV
+      const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+      const durationRounded = Math.round(durationSeconds * 10) / 10; // Round to 1 decimal
+      totalDuration += durationSeconds;
+
+      console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
+
+      // Upload this segment
+      const fileName = `${actualProjectId}/voiceover-segment-${segmentNumber}.wav`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('generated-assets')
+        .upload(fileName, segmentAudio, {
+          contentType: 'audio/wav',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        logger.error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
+        throw new Error(`Failed to upload segment ${segmentNumber}: ${uploadError.message}`);
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('generated-assets')
+        .getPublicUrl(fileName);
+
+      segmentResults.push({
+        index: segmentNumber,
+        audioUrl: urlData.publicUrl,
+        duration: durationRounded,
+        size: segmentAudio.length,
+        text: segmentText,
+      });
+
+      console.log(`Segment ${segmentNumber} uploaded: ${urlData.publicUrl}`);
     }
 
-    const { data: urlData } = supabase.storage
-      .from('generated-assets')
-      .getPublicUrl(fileName);
+    if (segmentResults.length === 0) {
+      throw new Error('All segments failed to generate');
+    }
 
-    sendEvent({ type: 'complete', success: true, audioUrl: urlData.publicUrl, duration: durationRounded, wordCount, size: finalAudio.length });
+    sendEvent({ type: 'progress', progress: 95, message: 'Finalizing...' });
+
+    console.log(`\n=== All ${segmentResults.length} segments complete ===`);
+    console.log(`Total duration: ${Math.round(totalDuration)}s`);
+
+    sendEvent({
+      type: 'complete',
+      success: true,
+      segments: segmentResults,
+      totalDuration: Math.round(totalDuration),
+      wordCount,
+    });
     res.end();
 
   } catch (error) {
@@ -780,5 +874,125 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
     size: finalAudio.length
   });
 }
+
+// Regenerate a single segment
+router.post('/segment', async (req: Request, res: Response) => {
+  const { segmentText, segmentIndex, voiceSampleUrl, projectId } = req.body;
+
+  try {
+    if (!segmentText) {
+      return res.status(400).json({ error: 'segmentText is required' });
+    }
+    if (!segmentIndex || segmentIndex < 1 || segmentIndex > DEFAULT_SEGMENT_COUNT) {
+      return res.status(400).json({ error: `segmentIndex must be between 1 and ${DEFAULT_SEGMENT_COUNT}` });
+    }
+    if (!voiceSampleUrl) {
+      return res.status(400).json({ error: 'voiceSampleUrl is required' });
+    }
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+
+    const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+    if (!RUNPOD_API_KEY) {
+      return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
+    }
+
+    const credentials = getSupabaseCredentials();
+    if (!credentials) {
+      return res.status(500).json({ error: 'Supabase credentials not configured' });
+    }
+
+    logger.info(`Regenerating segment ${segmentIndex} for project ${projectId}`);
+
+    // Download voice sample
+    const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
+    console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
+
+    // Normalize and chunk the segment text
+    const normalizedText = normalizeText(segmentText);
+    const rawChunks = splitIntoChunks(normalizedText, MAX_TTS_CHUNK_LENGTH);
+    const chunks: string[] = [];
+
+    for (const chunk of rawChunks) {
+      if (validateTTSInput(chunk)) {
+        chunks.push(chunk);
+      }
+    }
+
+    if (chunks.length === 0) {
+      return res.status(400).json({ error: 'No valid text chunks in segment' });
+    }
+
+    console.log(`Segment ${segmentIndex}: processing ${chunks.length} chunks`);
+
+    const audioChunks: Buffer[] = [];
+
+    // Process each chunk sequentially
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkText = chunks[i];
+      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+
+      try {
+        const jobId = await startTTSJob(chunkText, RUNPOD_API_KEY, referenceAudioBase64);
+        const output = await pollJobStatus(jobId, RUNPOD_API_KEY);
+        const audioData = base64ToBuffer(output.audio_base64);
+        audioChunks.push(audioData);
+        console.log(`Chunk ${i + 1}/${chunks.length}: ${audioData.length} bytes`);
+      } catch (err) {
+        logger.warn(`Skipping chunk ${i + 1}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    if (audioChunks.length === 0) {
+      return res.status(500).json({ error: 'All chunks failed to generate' });
+    }
+
+    // Concatenate chunks into segment audio
+    const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    const durationRounded = Math.round(durationSeconds * 10) / 10;
+
+    console.log(`Segment ${segmentIndex} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
+
+    // Upload to Supabase
+    const supabase = createClient(credentials.url, credentials.key);
+    const fileName = `${projectId}/voiceover-segment-${segmentIndex}.wav`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(fileName, segmentAudio, {
+        contentType: 'audio/wav',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      logger.error(`Failed to upload segment: ${uploadError.message}`);
+      return res.status(500).json({ error: `Upload failed: ${uploadError.message}` });
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(fileName);
+
+    console.log(`Segment ${segmentIndex} regenerated: ${urlData.publicUrl}`);
+
+    return res.json({
+      success: true,
+      segment: {
+        index: segmentIndex,
+        audioUrl: urlData.publicUrl,
+        duration: durationRounded,
+        size: segmentAudio.length,
+        text: segmentText,
+      },
+    });
+
+  } catch (error) {
+    logger.error('Error regenerating segment:', error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Segment regeneration failed'
+    });
+  }
+});
 
 export default router;
