@@ -9,7 +9,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ImagePrompt {
   index: number;
@@ -163,9 +162,8 @@ export function ImagePromptsPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <ScrollArea className="h-full max-h-[60vh]">
-            <div className="space-y-3 pr-4 py-4">
+        <div className="overflow-y-auto max-h-[60vh] py-4 pr-2">
+          <div className="space-y-3">
             {editedPrompts.map((prompt) => (
               <PromptCard
                 key={prompt.index}
@@ -173,8 +171,7 @@ export function ImagePromptsPreviewModal({
                 onUpdate={handleUpdatePrompt}
               />
             ))}
-            </div>
-          </ScrollArea>
+          </div>
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
