@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 
 interface ImagesPreviewModalProps {
@@ -30,12 +30,18 @@ export function ImagesPreviewModal({
   regeneratingIndex
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lastNavTime = useRef(0);
+  const NAV_DEBOUNCE_MS = 150;
 
   const openLightbox = (index: number) => setLightboxIndex(index);
   const closeLightbox = () => setLightboxIndex(null);
 
-  // Use functional updates to avoid stale closure issues
+  // Debounced navigation to prevent double-firing
   const goToPrevious = useCallback(() => {
+    const now = Date.now();
+    if (now - lastNavTime.current < NAV_DEBOUNCE_MS) return;
+    lastNavTime.current = now;
+
     setLightboxIndex(prev => {
       if (prev !== null && prev > 0) {
         return prev - 1;
@@ -45,6 +51,10 @@ export function ImagesPreviewModal({
   }, []);
 
   const goToNext = useCallback(() => {
+    const now = Date.now();
+    if (now - lastNavTime.current < NAV_DEBOUNCE_MS) return;
+    lastNavTime.current = now;
+
     setLightboxIndex(prev => {
       if (prev !== null && prev < images.length - 1) {
         return prev + 1;
@@ -173,15 +183,23 @@ export function ImagesPreviewModal({
         onClick={closeLightbox}
       >
         {/* Close button */}
-        <button
-          className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10"
+        <div
+          role="button"
+          tabIndex={0}
+          className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10 cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
             closeLightbox();
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation();
+              closeLightbox();
+            }
+          }}
         >
-          <X className="w-8 h-8 pointer-events-none" />
-        </button>
+          <X className="w-8 h-8" />
+        </div>
 
         {/* Image counter */}
         <div className="absolute top-4 left-4 text-white/70 text-lg font-medium">
@@ -190,28 +208,32 @@ export function ImagesPreviewModal({
 
         {/* Previous button */}
         {lightboxIndex > 0 && (
-          <button
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
+          <div
+            role="button"
+            tabIndex={0}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               goToPrevious();
             }}
           >
-            <ChevronLeft className="w-12 h-12 pointer-events-none" />
-          </button>
+            <ChevronLeft className="w-12 h-12" />
+          </div>
         )}
 
         {/* Next button */}
         {lightboxIndex < images.length - 1 && (
-          <button
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
+          <div
+            role="button"
+            tabIndex={0}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               goToNext();
             }}
           >
-            <ChevronRight className="w-12 h-12 pointer-events-none" />
-          </button>
+            <ChevronRight className="w-12 h-12" />
+          </div>
         )}
 
         {/* Full-size image */}
