@@ -151,9 +151,9 @@ serve(async (req) => {
 
     console.log(`Parsed ${segments.length} SRT segments into ${windows.length} time windows`);
 
-    // Build context for Claude
+    // Build context for Claude - include full narration text for each window
     const windowDescriptions = windows.map((w, i) =>
-      `IMAGE ${i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration: "${w.text.substring(0, 500)}"`
+      `IMAGE ${i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration being spoken: "${w.text}"`
     ).join('\n\n');
 
     // Call Claude to generate visual scene descriptions
@@ -166,40 +166,51 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: `You are an expert at creating visual scene descriptions for AI image generation.
-Your task is to analyze documentary narration and create vivid, specific visual scene descriptions that can be used as prompts for an AI image generator.
+        max_tokens: 8192,
+        system: `You are an expert at creating visual scene descriptions for documentary video image generation.
 
-CRITICAL RULES:
-1. Each scene description must be a VISUAL description - what the viewer would SEE, not hear
+YOUR CRITICAL TASK: Create scene descriptions that DIRECTLY ILLUSTRATE what is being narrated. The image must visually represent the SPECIFIC content, people, places, events, or concepts mentioned in that segment's narration.
+
+MATCHING RULES (MOST IMPORTANT):
+1. READ the narration carefully - identify the KEY SUBJECT (person, place, event, object)
+2. Your scene MUST depict that specific subject - not a generic related scene
+3. If narration mentions "John Smith signing the document" → show John Smith signing a document
+4. If narration mentions "the Battle of Gettysburg" → show that specific battle scene
+5. If narration mentions "ancient Roman aqueducts" → show Roman aqueducts specifically
+6. NEVER create generic scenes that ignore what's actually being narrated
+
+VISUAL QUALITY RULES:
+1. Each scene must be a VISUAL description - what the viewer would SEE
 2. Include specific details: setting, lighting, objects, people, actions, atmosphere
-3. Describe historical scenes accurately based on the era and context
-4. Focus on a single, clear composition for each image
-5. Do NOT include any text, titles, or words that would appear in the image
-6. Make each scene distinct and visually interesting
-7. Include period-appropriate details (clothing, architecture, technology)
+3. Period-appropriate details (clothing, architecture, technology for the era)
+4. Focus on a single, clear composition
+5. Do NOT include any text, titles, or words in the image
+6. 50-100 words per description
 
-Output format: Return ONLY a JSON array with objects containing:
-- "index": number (1-based)
-- "sceneDescription": string (the visual scene description, 50-100 words)
+BAD EXAMPLE (too generic):
+Narration: "Benjamin Franklin flew his famous kite during a thunderstorm in 1752"
+Wrong: "A stormy sky with lightning bolts" (ignores the specific subject!)
+Correct: "Benjamin Franklin, an older man with spectacles and period colonial attire, stands in an open field holding a kite string during a thunderstorm, a metal key attached to the string, lightning illuminating the dark sky above, rain falling around him"
 
-Example output:
+Output format: Return ONLY a JSON array:
 [
-  {"index": 1, "sceneDescription": "A dimly lit colonial tavern interior at night, wooden beams overhead, men in 18th century coats gathered around a table with quill pens and parchment, candlelight casting warm shadows on their determined faces, period maps on the wall"},
-  {"index": 2, "sceneDescription": "A bustling harbor at dawn, tall-masted ships with unfurled sails, dock workers in period clothing loading wooden crates, seagulls in flight, morning mist rolling across the water"}
+  {"index": 1, "sceneDescription": "..."},
+  {"index": 2, "sceneDescription": "..."}
 ]`,
         messages: [
           {
             role: 'user',
-            content: `Create ${imageCount} visual scene descriptions for these documentary segments.
+            content: `Create ${imageCount} visual scene descriptions that DIRECTLY MATCH the narration content.
 
-FULL SCRIPT CONTEXT:
-${script.substring(0, 8000)}
+SCRIPT CONTEXT (for understanding the overall topic):
+${script.substring(0, 12000)}
 
-TIME-CODED SEGMENTS TO VISUALIZE:
+TIME-CODED SEGMENTS - CREATE A SCENE THAT ILLUSTRATES EACH NARRATION:
 ${windowDescriptions}
 
-Generate exactly ${imageCount} scene descriptions, one for each time window. Return ONLY the JSON array, no other text.`
+IMPORTANT: Each scene description must depict the SPECIFIC subject matter mentioned in that segment's narration. Do not create generic scenes.
+
+Generate exactly ${imageCount} scene descriptions. Return ONLY the JSON array.`
           }
         ],
       }),
