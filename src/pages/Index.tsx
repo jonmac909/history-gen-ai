@@ -299,7 +299,7 @@ const Index = () => {
   };
 
   // Regenerate a single audio segment
-  const handleSegmentRegenerate = async (segmentIndex: number) => {
+  const handleSegmentRegenerate = async (segmentIndex: number, editedText?: string) => {
     const segment = pendingAudioSegments.find(s => s.index === segmentIndex);
     if (!segment) {
       toast({
@@ -312,11 +312,14 @@ const Index = () => {
 
     setRegeneratingSegmentIndex(segmentIndex);
 
+    // Use edited text if provided, otherwise use original segment text
+    const textToUse = editedText || segment.text;
+
     try {
-      console.log(`Regenerating segment ${segmentIndex}...`);
+      console.log(`Regenerating segment ${segmentIndex}${editedText ? ' with edited text' : ''}...`);
 
       const result = await regenerateAudioSegment(
-        segment.text,
+        textToUse,
         segmentIndex,
         settings.voiceSampleUrl!,
         projectId
@@ -326,12 +329,15 @@ const Index = () => {
         throw new Error(result.error || "Failed to regenerate segment");
       }
 
-      // Update the segment in the array
+      // Update the segment in the array (include new text if it was edited)
       setPendingAudioSegments(prev => {
         const newSegments = [...prev];
         const idx = newSegments.findIndex(s => s.index === segmentIndex);
         if (idx !== -1) {
-          newSegments[idx] = result.segment!;
+          newSegments[idx] = {
+            ...result.segment!,
+            text: textToUse // Preserve the edited text in the segment
+          };
         }
         return newSegments;
       });

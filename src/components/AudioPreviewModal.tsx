@@ -19,18 +19,19 @@ interface AudioPreviewModalProps {
   onCancel: () => void;
 }
 
-export function AudioPreviewModal({ 
-  isOpen, 
+export function AudioPreviewModal({
+  isOpen,
   audioUrl,
   duration,
-  onConfirm, 
+  onConfirm,
   onRegenerate,
-  onCancel 
+  onCancel
 }: AudioPreviewModalProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [isLoading, setIsLoading] = useState(true);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // Reset state when modal opens with new audio
@@ -40,14 +41,15 @@ export function AudioPreviewModal({
       setCurrentTime(0);
       setIsLoading(true);
       setAudioDuration(duration || 0);
-      
+      setPlaybackRate(1);
+
       // Fallback: if audio doesn't load within 3 seconds but we have duration, show controls
       const timeout = setTimeout(() => {
         if (duration && duration > 0) {
           setIsLoading(false);
         }
       }, 3000);
-      
+
       return () => clearTimeout(timeout);
     }
   }, [isOpen, audioUrl, duration]);
@@ -95,6 +97,17 @@ export function AudioPreviewModal({
 
   const handleCanPlay = () => {
     setIsLoading(false);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  };
+
+  const togglePlaybackRate = () => {
+    const newRate = playbackRate === 1 ? 2 : 1;
+    setPlaybackRate(newRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newRate;
+    }
   };
 
   const handleSeek = (value: number[]) => {
@@ -165,26 +178,40 @@ export function AudioPreviewModal({
             </Button>
           </div>
 
-          {/* Progress Bar */}
+          {/* Progress Bar and Speed Control */}
           <div className="space-y-3 px-2">
-            <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
-              <div 
-                className="absolute h-full bg-primary rounded-full transition-all"
-                style={{ width: `${audioDuration ? (currentTime / audioDuration) * 100 : 0}%` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={audioDuration || 100}
-                step={0.1}
-                value={currentTime}
-                onChange={(e) => handleSeek([parseFloat(e.target.value)])}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-            </div>
-            <div className="flex justify-between text-sm font-medium text-muted-foreground">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(audioDuration)}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className="absolute h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${audioDuration ? (currentTime / audioDuration) * 100 : 0}%` }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={audioDuration || 100}
+                    step={0.1}
+                    value={currentTime}
+                    onChange={(e) => handleSeek([parseFloat(e.target.value)])}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+                <div className="flex justify-between text-sm font-medium text-muted-foreground">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(audioDuration)}</span>
+                </div>
+              </div>
+
+              {/* 2x Speed Button */}
+              <Button
+                size="sm"
+                variant={playbackRate === 2 ? "default" : "outline"}
+                className="h-10 px-3 text-sm flex-shrink-0"
+                onClick={togglePlaybackRate}
+              >
+                {playbackRate}x
+              </Button>
             </div>
           </div>
         </div>

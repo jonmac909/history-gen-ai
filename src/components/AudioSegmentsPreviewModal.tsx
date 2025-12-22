@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2 } from "lucide-react";
+import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ interface AudioSegmentsPreviewModalProps {
   combinedAudioUrl?: string;
   totalDuration?: number;
   onConfirmAll: () => void;
-  onRegenerate: (segmentIndex: number) => Promise<void>;
+  onRegenerate: (segmentIndex: number, editedText?: string) => Promise<void>;
   onCancel: () => void;
   regeneratingIndex: number | null;
 }
@@ -25,7 +25,9 @@ interface AudioSegmentsPreviewModalProps {
 interface AudioSegmentCardProps {
   segment: AudioSegment;
   isRegenerating: boolean;
-  onRegenerate: () => void;
+  onRegenerate: (editedText?: string) => void;
+  editedText: string;
+  onTextChange: (text: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -40,11 +42,15 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmentCardProps) {
+function AudioSegmentCard({ segment, isRegenerating, onRegenerate, editedText, onTextChange }: AudioSegmentCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [isExpanded, setIsExpanded] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  const hasTextChanged = editedText !== segment.text;
 
   // Reset when segment URL changes (after regeneration)
   useEffect(() => {
@@ -66,6 +72,14 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
     }
   };
 
+  const togglePlaybackRate = () => {
+    const newRate = playbackRate === 1 ? 2 : 1;
+    setPlaybackRate(newRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newRate;
+    }
+  };
+
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
@@ -74,6 +88,9 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
 
   const handleCanPlay = () => {
     setIsLoading(false);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
   };
 
   const handleEnded = () => {
@@ -87,6 +104,10 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
     }
+  };
+
+  const handleRegenerate = () => {
+    onRegenerate(hasTextChanged ? editedText : undefined);
   };
 
   return (
@@ -103,16 +124,20 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
 
       <div className="flex items-center justify-between">
         <span className="font-medium text-lg">Segment {segment.index}</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onRegenerate}
-          disabled={isRegenerating}
-          className="h-8 px-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRegenerating ? 'animate-spin' : ''}`} />
-          <span className="ml-1 text-sm">{isRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+            className="h-8 px-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+            <span className="ml-1 text-sm">
+              {isRegenerating ? 'Regenerating...' : hasTextChanged ? 'Regenerate (edited)' : 'Regenerate'}
+            </span>
+          </Button>
+        </div>
       </div>
 
       {/* Audio Player */}
@@ -155,12 +180,48 @@ function AudioSegmentCard({ segment, isRegenerating, onRegenerate }: AudioSegmen
             <span>{formatTime(segment.duration)}</span>
           </div>
         </div>
+
+        {/* 2x Speed Button */}
+        <Button
+          size="sm"
+          variant={playbackRate === 2 ? "default" : "outline"}
+          className="h-8 px-2 text-xs flex-shrink-0"
+          onClick={togglePlaybackRate}
+        >
+          {playbackRate}x
+        </Button>
       </div>
 
-      {/* Segment Text Preview */}
-      <p className="text-sm text-muted-foreground line-clamp-2 italic">
-        "{segment.text.substring(0, 150)}{segment.text.length > 150 ? '...' : ''}"
-      </p>
+      {/* Expandable Script Text */}
+      <div className="border rounded-md bg-muted/30">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between p-2 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+        >
+          <span className="font-medium">Script Text {hasTextChanged && <span className="text-yellow-500">(edited)</span>}</span>
+          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+
+        {isExpanded ? (
+          <div className="p-2 pt-0">
+            <textarea
+              value={editedText}
+              onChange={(e) => onTextChange(e.target.value)}
+              className="w-full min-h-[120px] p-2 text-sm bg-background border rounded resize-y"
+              placeholder="Edit the script text for this segment..."
+            />
+            {hasTextChanged && (
+              <p className="text-xs text-yellow-500 mt-1">
+                Text has been modified. Click "Regenerate (edited)" to create new audio.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="px-2 pb-2 text-sm text-muted-foreground line-clamp-2 italic">
+            "{editedText.substring(0, 150)}{editedText.length > 150 ? '...' : ''}"
+          </p>
+        )}
+      </div>
 
       {/* Segment Info */}
       <div className="flex gap-4 text-xs text-muted-foreground">
@@ -184,10 +245,21 @@ export function AudioSegmentsPreviewModal({
   const [isPlayingAll, setIsPlayingAll] = useState(false);
   const [allCurrentTime, setAllCurrentTime] = useState(0);
   const [isLoadingAll, setIsLoadingAll] = useState(true);
+  const [playbackRateAll, setPlaybackRateAll] = useState(1);
+  const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
   const combinedAudioRef = useRef<HTMLAudioElement>(null);
 
   const calculatedDuration = segments.reduce((sum, seg) => sum + seg.duration, 0);
   const totalDuration = propTotalDuration || calculatedDuration;
+
+  // Initialize edited texts when segments change
+  useEffect(() => {
+    const initialTexts: Record<number, string> = {};
+    segments.forEach(seg => {
+      initialTexts[seg.index] = seg.text;
+    });
+    setEditedTexts(initialTexts);
+  }, [segments]);
 
   // Reset combined audio state when modal opens
   useEffect(() => {
@@ -195,6 +267,7 @@ export function AudioSegmentsPreviewModal({
       setIsPlayingAll(false);
       setAllCurrentTime(0);
       setIsLoadingAll(true);
+      setPlaybackRateAll(1);
     }
   }, [isOpen]);
 
@@ -211,6 +284,14 @@ export function AudioSegmentsPreviewModal({
     }
   };
 
+  const togglePlaybackRateAll = () => {
+    const newRate = playbackRateAll === 1 ? 2 : 1;
+    setPlaybackRateAll(newRate);
+    if (combinedAudioRef.current) {
+      combinedAudioRef.current.playbackRate = newRate;
+    }
+  };
+
   const handleAllTimeUpdate = () => {
     if (combinedAudioRef.current) {
       setAllCurrentTime(combinedAudioRef.current.currentTime);
@@ -223,6 +304,24 @@ export function AudioSegmentsPreviewModal({
       combinedAudioRef.current.currentTime = newTime;
       setAllCurrentTime(newTime);
     }
+  };
+
+  const handleAllCanPlay = () => {
+    setIsLoadingAll(false);
+    if (combinedAudioRef.current) {
+      combinedAudioRef.current.playbackRate = playbackRateAll;
+    }
+  };
+
+  const handleTextChange = (segmentIndex: number, text: string) => {
+    setEditedTexts(prev => ({
+      ...prev,
+      [segmentIndex]: text
+    }));
+  };
+
+  const handleSegmentRegenerate = (segmentIndex: number, editedText?: string) => {
+    onRegenerate(segmentIndex, editedText);
   };
 
   return (
@@ -248,7 +347,7 @@ export function AudioSegmentsPreviewModal({
                 src={combinedAudioUrl}
                 preload="auto"
                 onTimeUpdate={handleAllTimeUpdate}
-                onCanPlay={() => setIsLoadingAll(false)}
+                onCanPlay={handleAllCanPlay}
                 onEnded={() => { setIsPlayingAll(false); setAllCurrentTime(0); }}
                 onError={() => setIsLoadingAll(false)}
               />
@@ -296,18 +395,30 @@ export function AudioSegmentsPreviewModal({
                     <span>{formatTime(totalDuration)}</span>
                   </div>
                 </div>
+
+                {/* 2x Speed Button */}
+                <Button
+                  size="sm"
+                  variant={playbackRateAll === 2 ? "default" : "outline"}
+                  className="h-10 px-3 text-sm flex-shrink-0"
+                  onClick={togglePlaybackRateAll}
+                >
+                  {playbackRateAll}x
+                </Button>
               </div>
             </div>
           )}
 
           {/* Individual Segments */}
-          <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">Individual Segments (click to regenerate)</div>
+          <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">Individual Segments (expand to edit script, then regenerate)</div>
           {segments.map((segment) => (
             <AudioSegmentCard
               key={segment.index}
               segment={segment}
               isRegenerating={regeneratingIndex === segment.index}
-              onRegenerate={() => onRegenerate(segment.index)}
+              onRegenerate={(editedText) => handleSegmentRegenerate(segment.index, editedText)}
+              editedText={editedTexts[segment.index] || segment.text}
+              onTextChange={(text) => handleTextChange(segment.index, text)}
             />
           ))}
         </div>
