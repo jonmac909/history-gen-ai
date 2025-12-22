@@ -82,7 +82,21 @@ export function ImagesPreviewModal({
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent
+        className="max-w-5xl max-h-[90vh] flex flex-col"
+        onPointerDownOutside={(e) => {
+          // Prevent Dialog from closing when clicking on the lightbox overlay
+          if (lightboxIndex !== null) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          // Prevent Dialog from closing when interacting with the lightbox
+          if (lightboxIndex !== null) {
+            e.preventDefault();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             <ImageIcon className="w-6 h-6 text-primary" />
@@ -156,13 +170,26 @@ export function ImagesPreviewModal({
     {lightboxIndex !== null && createPortal(
       <div
         className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
-        onClick={closeLightbox}
+        onMouseDown={(e) => {
+          // Prevent Dialog from detecting this as an outside click
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          closeLightbox();
+        }}
       >
         {/* Close button */}
         <button
           className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors z-10"
-          onClick={(e) => {
+          onMouseDown={(e) => {
+            e.preventDefault();
             e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
             closeLightbox();
           }}
         >
@@ -178,8 +205,14 @@ export function ImagesPreviewModal({
         {lightboxIndex > 0 && (
           <button
             className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-            onClick={(e) => {
+            onMouseDown={(e) => {
+              e.preventDefault();
               e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
               goToPrevious();
             }}
           >
@@ -191,8 +224,14 @@ export function ImagesPreviewModal({
         {lightboxIndex < images.length - 1 && (
           <button
             className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors p-2"
-            onClick={(e) => {
+            onMouseDown={(e) => {
+              e.preventDefault();
               e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
               goToNext();
             }}
           >
@@ -205,6 +244,7 @@ export function ImagesPreviewModal({
           src={images[lightboxIndex]}
           alt={`Full size image ${lightboxIndex + 1}`}
           className="max-w-[90vw] max-h-[90vh] object-contain"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         />
       </div>,
