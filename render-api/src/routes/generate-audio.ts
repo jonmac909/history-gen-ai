@@ -24,7 +24,6 @@ const TTS_JOB_TIMEOUT = 120000;
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY = 1000;
 const RETRY_MAX_DELAY = 10000;
-const BATCH_SIZE = 10; // Reduced batch size for voice cloning (large payloads + compute intensive)
 
 const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "eitsgz3gndkh3s";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
@@ -489,7 +488,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Handle streaming without voice cloning (PARALLEL OPTIMIZED - 5-10x faster!)
+// Handle streaming without voice cloning (SEQUENTIAL - Memory optimized)
 async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -508,90 +507,43 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
   try {
     sendEvent({ type: 'progress', progress: 5, message: `Starting Chatterbox TTS (${chunks.length} chunks, default voice)...` });
 
-    // OPTIMIZATION: Process jobs in BATCHES to avoid RunPod queue saturation
-    const totalChunks = chunks.length;
-    const numBatches = Math.ceil(totalChunks / BATCH_SIZE);
-    console.log(`\n=== Processing ${totalChunks} chunks in ${numBatches} batches of ${BATCH_SIZE} (no voice cloning) ===`);
-    sendEvent({ type: 'progress', progress: 10, message: `Processing ${totalChunks} chunks in ${numBatches} batches...` });
+    console.log(`\n=== Processing ${chunks.length} chunks sequentially (no voice cloning) ===`);
+    sendEvent({ type: 'progress', progress: 10, message: `Processing ${chunks.length} chunks...` });
 
-    const allAudioResults: { index: number; audioData: Buffer | null; error: string | null }[] = [];
-    let totalCompleted = 0;
+    const audioChunks: Buffer[] = [];
 
-    // Process chunks in batches
-    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
-      const batchStart = batchIndex * BATCH_SIZE;
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-      const batchChunks = chunks.slice(batchStart, batchEnd);
-      const batchSize = batchChunks.length;
+    // Process each chunk sequentially (no voice cloning in streaming mode)
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkText = chunks[i];
+      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
 
-      console.log(`\n--- Batch ${batchIndex + 1}/${numBatches}: Processing chunks ${batchStart + 1}-${batchEnd} (${batchSize} chunks) ---`);
+      const progress = 10 + Math.round(((i + 1) / chunks.length) * 65);
+      sendEvent({ type: 'progress', progress, message: `Generating audio chunk ${i + 1}/${chunks.length}...` });
 
-      // Step 1: Create jobs for this batch in parallel
-      const jobPromises = batchChunks.map(async (chunkText, batchLocalIndex) => {
-        const globalIndex = batchStart + batchLocalIndex;
-        try {
-          const jobId = await startTTSJob(chunkText, apiKey);
-          console.log(`Batch ${batchIndex + 1}: Job ${globalIndex + 1}/${totalChunks} created: ${jobId}`);
-          return { jobId, index: globalIndex, error: null };
-        } catch (err) {
-          console.error(`Batch ${batchIndex + 1}: Failed to create job ${globalIndex + 1}:`, err);
-          return { jobId: null, index: globalIndex, error: err instanceof Error ? err.message : 'Job creation failed' };
-        }
-      });
+      try {
+        // Start the TTS job for this chunk (no voice reference in streaming mode)
+        const jobId = await startTTSJob(chunkText, apiKey);
+        console.log(`TTS job started: ${jobId}`);
 
-      const jobResults = await Promise.all(jobPromises);
-      const validJobs = jobResults.filter(r => r.jobId !== null);
+        // Poll for completion
+        const output = await pollJobStatus(jobId, apiKey);
 
-      if (validJobs.length === 0) {
-        console.warn(`Batch ${batchIndex + 1}: All jobs failed to create, skipping batch`);
-        continue;
+        // Decode and store this chunk's audio
+        const audioData = base64ToBuffer(output.audio_base64);
+        audioChunks.push(audioData);
+        console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+      } catch (err) {
+        console.error(`Failed to process chunk ${i + 1}:`, err);
+        logger.warn(`Skipping chunk ${i + 1} due to error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        // Continue with next chunk instead of failing completely
       }
-
-      console.log(`Batch ${batchIndex + 1}: Created ${validJobs.length}/${batchSize} jobs successfully`);
-
-      // Step 2: Poll jobs for this batch in parallel
-      const pollPromises = validJobs.map(async ({ jobId, index }) => {
-        try {
-          const output = await pollJobStatus(jobId!, apiKey);
-          const audioData = base64ToBuffer(output.audio_base64);
-          console.log(`Batch ${batchIndex + 1}: Job ${index + 1}/${totalChunks} completed: ${audioData.length} bytes`);
-
-          // Update progress
-          totalCompleted++;
-          const progress = 10 + Math.round((totalCompleted / totalChunks) * 65);
-          sendEvent({ type: 'progress', progress, message: `Generated ${totalCompleted}/${totalChunks} chunks (batch ${batchIndex + 1}/${numBatches})...` });
-
-          return { index, audioData, error: null };
-        } catch (err) {
-          console.error(`Batch ${batchIndex + 1}: Failed to poll job ${index + 1}:`, err);
-          return { index, audioData: null, error: err instanceof Error ? err.message : 'Polling failed' };
-        }
-      });
-
-      const batchResults = await Promise.all(pollPromises);
-      allAudioResults.push(...batchResults);
-
-      console.log(`Batch ${batchIndex + 1}/${numBatches} complete: ${batchResults.filter(r => r.audioData !== null).length}/${batchSize} successful`);
-    }
-
-    // Sort all results by index to maintain correct order
-    allAudioResults.sort((a, b) => a.index - b.index);
-
-    // Extract audio chunks (skip failed ones)
-    const audioChunks = allAudioResults
-      .filter(r => r.audioData !== null)
-      .map(r => r.audioData!);
-
-    const failedCount = allAudioResults.filter(r => r.audioData === null).length;
-    if (failedCount > 0) {
-      console.warn(`Warning: ${failedCount}/${totalChunks} chunks failed during processing`);
     }
 
     if (audioChunks.length === 0) {
       throw new Error('All audio chunks failed to generate');
     }
 
-    console.log(`Successfully generated ${audioChunks.length}/${totalChunks} audio chunks`);
+    console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
     sendEvent({ type: 'progress', progress: 75, message: 'Concatenating audio chunks...' });
 
@@ -645,7 +597,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
   }
 }
 
-// Handle streaming with voice cloning (PARALLEL OPTIMIZED - 5-10x faster!)
+// Handle streaming with voice cloning (SEQUENTIAL - Memory optimized)
 async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -669,90 +621,48 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
     const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
 
-    // OPTIMIZATION: Process jobs in BATCHES to avoid RunPod queue saturation
-    const totalChunks = chunks.length;
-    const numBatches = Math.ceil(totalChunks / BATCH_SIZE);
-    console.log(`\n=== Processing ${totalChunks} chunks in ${numBatches} batches of ${BATCH_SIZE} ===`);
-    sendEvent({ type: 'progress', progress: 15, message: `Processing ${totalChunks} chunks in ${numBatches} batches...` });
+    console.log(`\n=== Processing ${chunks.length} chunks sequentially ===`);
+    sendEvent({ type: 'progress', progress: 15, message: `Processing ${chunks.length} chunks with voice cloning...` });
 
-    const allAudioResults: { index: number; audioData: Buffer | null; error: string | null }[] = [];
-    let totalCompleted = 0;
+    const audioChunks: Buffer[] = [];
 
-    // Process chunks in batches
-    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
-      const batchStart = batchIndex * BATCH_SIZE;
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-      const batchChunks = chunks.slice(batchStart, batchEnd);
-      const batchSize = batchChunks.length;
+    // Process each chunk sequentially with progress updates
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkText = chunks[i];
+      const chunkProgress = 15 + Math.round(((i + 1) / chunks.length) * 60);
 
-      console.log(`\n--- Batch ${batchIndex + 1}/${numBatches}: Processing chunks ${batchStart + 1}-${batchEnd} (${batchSize} chunks) ---`);
+      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
 
-      // Step 1: Create jobs for this batch in parallel
-      const jobPromises = batchChunks.map(async (chunkText, batchLocalIndex) => {
-        const globalIndex = batchStart + batchLocalIndex;
-        try {
-          const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
-          console.log(`Batch ${batchIndex + 1}: Job ${globalIndex + 1}/${totalChunks} created: ${jobId}`);
-          return { jobId, index: globalIndex, error: null };
-        } catch (err) {
-          console.error(`Batch ${batchIndex + 1}: Failed to create job ${globalIndex + 1}:`, err);
-          return { jobId: null, index: globalIndex, error: err instanceof Error ? err.message : 'Job creation failed' };
-        }
+      sendEvent({
+        type: 'progress',
+        progress: chunkProgress,
+        message: `Generating audio chunk ${i + 1}/${chunks.length} with voice cloning...`
       });
 
-      const jobResults = await Promise.all(jobPromises);
-      const validJobs = jobResults.filter(r => r.jobId !== null);
+      try {
+        // Start TTS job with voice cloning
+        const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+        console.log(`TTS job started with ID: ${jobId}`);
 
-      if (validJobs.length === 0) {
-        console.warn(`Batch ${batchIndex + 1}: All jobs failed to create, skipping batch`);
-        continue;
+        // Poll for completion
+        const output = await pollJobStatus(jobId, apiKey);
+
+        // Decode audio
+        const audioData = base64ToBuffer(output.audio_base64);
+        audioChunks.push(audioData);
+        console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+      } catch (err) {
+        console.error(`Failed to process chunk ${i + 1}:`, err);
+        logger.warn(`Skipping chunk ${i + 1} due to error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        // Continue with next chunk instead of failing completely
       }
-
-      console.log(`Batch ${batchIndex + 1}: Created ${validJobs.length}/${batchSize} jobs successfully`);
-
-      // Step 2: Poll jobs for this batch in parallel
-      const pollPromises = validJobs.map(async ({ jobId, index }) => {
-        try {
-          const output = await pollJobStatus(jobId!, apiKey);
-          const audioData = base64ToBuffer(output.audio_base64);
-          console.log(`Batch ${batchIndex + 1}: Job ${index + 1}/${totalChunks} completed: ${audioData.length} bytes`);
-
-          // Update progress
-          totalCompleted++;
-          const progress = 15 + Math.round((totalCompleted / totalChunks) * 60);
-          sendEvent({ type: 'progress', progress, message: `Generated ${totalCompleted}/${totalChunks} chunks (batch ${batchIndex + 1}/${numBatches})...` });
-
-          return { index, audioData, error: null };
-        } catch (err) {
-          console.error(`Batch ${batchIndex + 1}: Failed to poll job ${index + 1}:`, err);
-          return { index, audioData: null, error: err instanceof Error ? err.message : 'Polling failed' };
-        }
-      });
-
-      const batchResults = await Promise.all(pollPromises);
-      allAudioResults.push(...batchResults);
-
-      console.log(`Batch ${batchIndex + 1}/${numBatches} complete: ${batchResults.filter(r => r.audioData !== null).length}/${batchSize} successful`);
-    }
-
-    // Sort all results by index to maintain correct order
-    allAudioResults.sort((a, b) => a.index - b.index);
-
-    // Extract audio chunks (skip failed ones)
-    const audioChunks = allAudioResults
-      .filter(r => r.audioData !== null)
-      .map(r => r.audioData!);
-
-    const failedCount = allAudioResults.filter(r => r.audioData === null).length;
-    if (failedCount > 0) {
-      console.warn(`Warning: ${failedCount}/${totalChunks} chunks failed during processing`);
     }
 
     if (audioChunks.length === 0) {
       throw new Error('All audio chunks failed to generate');
     }
 
-    console.log(`Successfully generated ${audioChunks.length}/${totalChunks} audio chunks`);
+    console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
     sendEvent({ type: 'progress', progress: 80, message: 'Concatenating audio chunks...' });
 
@@ -801,7 +711,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, chunks: 
   }
 }
 
-// Handle non-streaming (with or without voice cloning) - PARALLEL OPTIMIZED
+// Handle non-streaming (with or without voice cloning) - SEQUENTIAL - Memory optimized
 async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string) {
   let referenceAudioBase64: string | undefined;
   if (voiceSampleUrl) {
@@ -810,82 +720,39 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
   }
 
-  // OPTIMIZATION: Process jobs in BATCHES to avoid RunPod queue saturation
-  const totalChunks = chunks.length;
-  const numBatches = Math.ceil(totalChunks / BATCH_SIZE);
-  console.log(`\n=== Processing ${totalChunks} chunks in ${numBatches} batches of ${BATCH_SIZE} ===`);
+  console.log(`\n=== Processing ${chunks.length} chunks sequentially ===`);
 
-  const allAudioResults: { index: number; audioData: Buffer | null; error: string | null }[] = [];
+  const audioChunks: Buffer[] = [];
 
-  // Process chunks in batches
-  for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
-    const batchStart = batchIndex * BATCH_SIZE;
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-    const batchChunks = chunks.slice(batchStart, batchEnd);
-    const batchSize = batchChunks.length;
+  // Process each chunk sequentially
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkText = chunks[i];
+    console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
 
-    console.log(`\n--- Batch ${batchIndex + 1}/${numBatches}: Processing chunks ${batchStart + 1}-${batchEnd} (${batchSize} chunks) ---`);
+    try {
+      // Start the TTS job with reference_audio_base64 for cloning (if provided)
+      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+      console.log(`TTS job started with ID: ${jobId}`);
 
-    // Step 1: Create jobs for this batch in parallel
-    const jobPromises = batchChunks.map(async (chunkText, batchLocalIndex) => {
-      const globalIndex = batchStart + batchLocalIndex;
-      try {
-        const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
-        console.log(`Batch ${batchIndex + 1}: Job ${globalIndex + 1}/${totalChunks} created: ${jobId}`);
-        return { jobId, index: globalIndex, error: null };
-      } catch (err) {
-        console.error(`Batch ${batchIndex + 1}: Failed to create job ${globalIndex + 1}:`, err);
-        return { jobId: null, index: globalIndex, error: err instanceof Error ? err.message : 'Job creation failed' };
-      }
-    });
+      // Poll for completion
+      const output = await pollJobStatus(jobId, apiKey);
 
-    const jobResults = await Promise.all(jobPromises);
-    const validJobs = jobResults.filter(r => r.jobId !== null);
-
-    if (validJobs.length === 0) {
-      console.warn(`Batch ${batchIndex + 1}: All jobs failed to create, skipping batch`);
-      continue;
+      // Decode audio
+      const audioData = base64ToBuffer(output.audio_base64);
+      audioChunks.push(audioData);
+      console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
+    } catch (err) {
+      console.error(`Failed to process chunk ${i + 1}:`, err);
+      logger.warn(`Skipping chunk ${i + 1} due to error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Continue with next chunk instead of failing completely
     }
-
-    console.log(`Batch ${batchIndex + 1}: Created ${validJobs.length}/${batchSize} jobs successfully`);
-
-    // Step 2: Poll jobs for this batch in parallel
-    const pollPromises = validJobs.map(async ({ jobId, index }) => {
-      try {
-        const output = await pollJobStatus(jobId!, apiKey);
-        const audioData = base64ToBuffer(output.audio_base64);
-        console.log(`Batch ${batchIndex + 1}: Job ${index + 1}/${totalChunks} completed: ${audioData.length} bytes`);
-        return { index, audioData, error: null };
-      } catch (err) {
-        console.error(`Batch ${batchIndex + 1}: Failed to poll job ${index + 1}:`, err);
-        return { index, audioData: null, error: err instanceof Error ? err.message : 'Polling failed' };
-      }
-    });
-
-    const batchResults = await Promise.all(pollPromises);
-    allAudioResults.push(...batchResults);
-
-    console.log(`Batch ${batchIndex + 1}/${numBatches} complete: ${batchResults.filter(r => r.audioData !== null).length}/${batchSize} successful`);
-  }
-
-  // Sort all results by index to maintain correct order
-  allAudioResults.sort((a, b) => a.index - b.index);
-
-  // Extract audio chunks (skip failed ones)
-  const audioChunks = allAudioResults
-    .filter(r => r.audioData !== null)
-    .map(r => r.audioData!);
-
-  const failedCount = allAudioResults.filter(r => r.audioData === null).length;
-  if (failedCount > 0) {
-    console.warn(`Warning: ${failedCount}/${totalChunks} chunks failed during processing`);
   }
 
   if (audioChunks.length === 0) {
     return res.status(500).json({ success: false, error: 'All audio chunks failed to generate' });
   }
 
-  console.log(`Successfully generated ${audioChunks.length}/${totalChunks} audio chunks`);
+  console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
   const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
   const durationRounded = Math.round(durationSeconds);
