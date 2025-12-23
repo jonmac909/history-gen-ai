@@ -982,6 +982,7 @@ const Index = () => {
         <ProjectResults
           sourceUrl={sourceUrl}
           onNewProject={handleNewProject}
+          onBack={handleBackToPrompts}
           assets={generatedAssets}
           srtContent={srtContent}
         />

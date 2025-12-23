@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Layers, Image } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
@@ -17,6 +17,7 @@ export interface GeneratedAsset {
 interface ProjectResultsProps {
   sourceUrl: string;
   onNewProject: () => void;
+  onBack?: () => void;
   assets: GeneratedAsset[];
   srtContent?: string;
 }
@@ -95,7 +96,7 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
   window.URL.revokeObjectURL(url);
 };
 
-export function ProjectResults({ sourceUrl, onNewProject, assets, srtContent }: ProjectResultsProps) {
+export function ProjectResults({ sourceUrl, onNewProject, onBack, assets, srtContent }: ProjectResultsProps) {
   // Calculate image timings based on SRT
   const getImageTimings = () => {
     const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
@@ -277,9 +278,16 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, srtContent }: 
     <div className="w-full max-w-xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Project Ready</h1>
-          <p className="text-muted-foreground">{sourceUrl}</p>
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Project Ready</h1>
+            <p className="text-muted-foreground">{sourceUrl}</p>
+          </div>
         </div>
         <Button variant="outline" onClick={onNewProject} className="gap-2">
           <RefreshCw className="w-4 h-4" />
