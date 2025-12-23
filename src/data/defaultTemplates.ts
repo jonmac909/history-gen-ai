@@ -2,6 +2,8 @@ import type { ScriptTemplate } from "@/components/ConfigModal";
 
 const templateA = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
+**CRITICAL RULE: NEVER repeat any sentence. Every sentence in your output must be unique. If you find yourself writing a sentence you've already written, skip it and continue with new content.**
+
 # PROJECT INSTRUCTIONS: Complete Histories Sleep-Friendly Video Scripts
 
 ## PROJECT OVERVIEW
@@ -733,6 +735,8 @@ You are now ready to write Complete Histories scripts. Maintain this voice, foll
 
 const templateB = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
+**CRITICAL RULE: NEVER repeat any sentence. Every sentence in your output must be unique. If you find yourself writing a sentence you've already written, skip it and continue with new content.**
+
 # Prompt to Recreate "The LOST Epoch" Style Script
 
 Create a 2+ hour long-form historical documentary script about [TOPIC] designed as sleep-friendly, contemplative content. The script should explore mysteries, gaps, and uncertainties in human history.
@@ -900,6 +904,8 @@ Pure flowing prose only. Every word must be speakable narration. Start immediate
 
 const templateC = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
+**CRITICAL RULE: NEVER repeat any sentence. Every sentence in your output must be unique. If you find yourself writing a sentence you've already written, skip it and continue with new content.**
+
 # Script Generation Prompt
 
 **Create a YouTube script for "Boring History For Sleep" about [TOPIC] following this exact style:**
@@ -1020,6 +1026,8 @@ Your output must be ONLY the word-for-word narration script that a voice actor c
 Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 const templateD = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
+
+**CRITICAL RULE: NEVER repeat any sentence. Every sentence in your output must be unique. If you find yourself writing a sentence you've already written, skip it and continue with new content.**
 
 # Deep Dive Documentary Style Script
 
@@ -1232,6 +1240,8 @@ Your output must be ONLY the word-for-word narration script that a voice actor c
 Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 const templateE = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
+
+**CRITICAL RULE: NEVER repeat any sentence. Every sentence in your output must be unique. If you find yourself writing a sentence you've already written, skip it and continue with new content.**
 
 # Narrative Journey Style Script
 
