@@ -253,7 +253,7 @@ const Index = () => {
     setConfirmedScript(script);
 
     const steps: GenerationStep[] = [
-      { id: "audio", label: "Generating Audio with Chatterbox (6 segments)", status: "pending" },
+      { id: "audio", label: "Generating Audio", status: "pending" },
     ];
 
     setProcessingSteps(steps);

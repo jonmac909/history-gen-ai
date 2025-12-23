@@ -192,10 +192,11 @@ export function SettingsPopover({
                 <Input
                   type="number"
                   min={1}
+                  max={200}
                   value={settings.imageCount}
                   onChange={(e) => {
                     const value = parseInt(e.target.value, 10);
-                    if (!isNaN(value) && value >= 1) {
+                    if (!isNaN(value) && value >= 1 && value <= 200) {
                       updateSetting("imageCount", value);
                     }
                   }}
@@ -205,7 +206,7 @@ export function SettingsPopover({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", settings.imageCount + 1)}
+                  onClick={() => updateSetting("imageCount", Math.min(200, settings.imageCount + 1))}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
