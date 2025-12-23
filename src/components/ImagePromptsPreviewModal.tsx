@@ -254,9 +254,8 @@ export function ImagePromptsPreviewModal({
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
           <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" onClick={onBack}>
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back
+              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             <Button variant="outline" onClick={handleDownload}>
@@ -270,9 +269,8 @@ export function ImagePromptsPreviewModal({
           </Button>
 
           {onForward && (
-            <Button variant="outline" onClick={onForward}>
-              Skip
-              <ChevronRight className="w-4 h-4 ml-2" />
+            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+              <ChevronRight className="w-5 h-5" />
             </Button>
           )}
 

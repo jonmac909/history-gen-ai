@@ -441,9 +441,8 @@ export function AudioSegmentsPreviewModal({
         <DialogFooter className="flex-col sm:flex-row gap-2">
           <div className="flex gap-2 w-full sm:w-auto sm:mr-auto">
             {onBack && (
-              <Button variant="outline" onClick={onBack} className="flex-1 sm:flex-none">
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back
+              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {combinedAudioUrl && (
@@ -459,9 +458,8 @@ export function AudioSegmentsPreviewModal({
           </Button>
 
           {onForward && (
-            <Button variant="outline" onClick={onForward} className="w-full sm:w-auto">
-              Skip
-              <ChevronRight className="w-4 h-4 ml-2" />
+            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+              <ChevronRight className="w-5 h-5" />
             </Button>
           )}
 

@@ -124,9 +124,8 @@ export function ScriptReviewModal({
           </Button>
 
           {onForward && (
-            <Button variant="outline" onClick={onForward}>
-              Skip
-              <ChevronRight className="w-4 h-4 ml-2" />
+            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+              <ChevronRight className="w-5 h-5" />
             </Button>
           )}
 
