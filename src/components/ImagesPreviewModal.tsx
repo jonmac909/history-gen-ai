@@ -21,6 +21,7 @@ interface ImagesPreviewModalProps {
   isOpen: boolean;
   images: string[];
   prompts?: ImagePrompt[];
+  script?: string;
   onConfirm: () => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -33,6 +34,7 @@ export function ImagesPreviewModal({
   isOpen,
   images,
   prompts,
+  script,
   onConfirm,
   onCancel,
   onBack,
@@ -181,6 +183,19 @@ export function ImagesPreviewModal({
     }
   };
 
+  const handleDownloadScript = () => {
+    if (!script) return;
+    const blob = new Blob([script], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'script.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
@@ -314,9 +329,15 @@ export function ImagesPreviewModal({
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
+            {script && (
+              <Button variant="outline" onClick={handleDownloadScript}>
+                <Download className="w-4 h-4 mr-2" />
+                Script
+              </Button>
+            )}
             <Button variant="outline" onClick={handleDownloadAll}>
               <Download className="w-4 h-4 mr-2" />
-              Download All
+              Images
             </Button>
           </div>
           <Button variant="outline" onClick={onCancel}>
