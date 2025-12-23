@@ -688,28 +688,17 @@ Adapt sensory details and daily life to the environment.
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
 Your output must be ONLY the word-for-word narration script that a voice actor can read directly.
 
-**DO NOT INCLUDE ANY OF THE FOLLOWING:**
-- NO titles, headlines, or headers of any kind
-- NO section markers (no #, ##, ---, Act 1, Scene 1, etc.)
-- NO formatting markup or code blocks
-- NO script notes, metadata, or timestamps
-- NO act labels or scene numbers
-- NO brackets with directions like [SCENE 1] or [Show map]
-- NO notes about the script (like "This section covers..." or "Here we explore...")
-- NO meta-commentary about the writing (like "The tone here is..." or "This paragraph establishes...")
-- NO introductory text like "Here is the script:" or "Script begins:"
+**FORBIDDEN - DO NOT INCLUDE:**
+- NO titles, headlines, headers, or section labels of any kind
+- NO formatting (no #, ##, ---, **, bullets, numbering)
+- NO script notes, timestamps, or act/scene markers
+- NO brackets like [SCENE 1] or [narrator speaks]
+- NO meta-commentary or introductions like "Here is the script:"
+- NO repeated sentences or phrases - each sentence must be unique
+- NEVER repeat the same idea twice in different words
 
 **YOUR OUTPUT MUST BE:**
-Pure prose text that reads as a continuous, flowing narration from start to finish. Every single word in your output should be spoken by the narrator. If you wouldn't say it out loud while narrating, don't include it.
-
-**CORRECT FORMAT EXAMPLE:**
-Good evening and welcome back. Tonight we're exploring the mysteries of ancient Rome.
-
-What was this civilization that rose from a small village to conquer the known world? Why has their story captivated us for two thousand years?
-
-The answer begins on seven hills overlooking the Tiber River, where the morning mist still clings to the water as it did three thousand years ago...
-
-(Continue with flowing prose paragraphs only - no headers or notes between them)
+Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.
 
 ## YOUR TASK FOR EACH NEW CIVILIZATION
 
@@ -897,18 +886,17 @@ Periodically step back to reflect on:
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
 Your output must be ONLY the word-for-word narration script that a voice actor can read directly.
 
-**DO NOT INCLUDE ANY OF THE FOLLOWING:**
-- NO titles, headlines, or headers of any kind
-- NO section markers (no #, ##, ---, Part 1, Section A, etc.)
-- NO formatting markup or code blocks
-- NO script notes, metadata, or timestamps
-- NO brackets with directions like [SCENE 1] or [Show map]
-- NO notes about the script (like "This section covers..." or "Here we explore...")
-- NO meta-commentary about the writing
-- NO introductory text like "Here is the script:" or "Script begins:"
+**FORBIDDEN - DO NOT INCLUDE:**
+- NO titles, headlines, headers, or section labels of any kind
+- NO formatting (no #, ##, ---, **, bullets, numbering)
+- NO script notes, timestamps, or act/scene markers
+- NO brackets like [SCENE 1] or [narrator speaks]
+- NO meta-commentary or introductions like "Here is the script:"
+- NO repeated sentences or phrases - each sentence must be unique
+- NEVER repeat the same idea twice in different words
 
 **YOUR OUTPUT MUST BE:**
-Pure prose text that reads as a continuous, flowing narration from start to finish. Every single word in your output should be spoken by the narrator. If you wouldn't say it out loud while narrating, don't include it.`;
+Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 const templateC = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
@@ -1019,18 +1007,17 @@ const templateC = `You are a creative scriptwriter. Your role is to faithfully r
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
 Your output must be ONLY the word-for-word narration script that a voice actor can read directly.
 
-**DO NOT INCLUDE ANY OF THE FOLLOWING:**
-- NO titles, headlines, or headers of any kind
-- NO section markers (no #, ##, ---, Subtopic 1, etc.)
-- NO formatting markup or code blocks
-- NO script notes, metadata, or timestamps
-- NO brackets with directions like [SCENE 1] or [Show map]
-- NO notes about the script (like "This section covers..." or "Here we explore...")
-- NO meta-commentary about the writing
-- NO introductory text like "Here is the script:" or "Script begins:"
+**FORBIDDEN - DO NOT INCLUDE:**
+- NO titles, headlines, headers, or section labels of any kind
+- NO formatting (no #, ##, ---, **, bullets, numbering)
+- NO script notes, timestamps, or act/scene markers
+- NO brackets like [SCENE 1] or [narrator speaks]
+- NO meta-commentary or introductions like "Here is the script:"
+- NO repeated sentences or phrases - each sentence must be unique
+- NEVER repeat the same idea twice in different words
 
 **YOUR OUTPUT MUST BE:**
-Pure prose text that reads as a continuous, flowing narration from start to finish. Every single word in your output should be spoken by the narrator. If you wouldn't say it out loud while narrating, don't include it.`;
+Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 const templateD = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
@@ -1232,18 +1219,17 @@ For each major event or phase:
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
 Your output must be ONLY the word-for-word narration script that a voice actor can read directly.
 
-**DO NOT INCLUDE ANY OF THE FOLLOWING:**
-- NO titles, headlines, or headers of any kind
-- NO section markers (no #, ##, ---, Part One, Section A, etc.)
-- NO formatting markup or code blocks
-- NO script notes, metadata, or timestamps
-- NO brackets with directions like [SCENE 1] or [Show map]
-- NO notes about the script (like "This section covers..." or "Here we explore...")
-- NO meta-commentary about the writing
-- NO introductory text like "Here is the script:" or "Script begins:"
+**FORBIDDEN - DO NOT INCLUDE:**
+- NO titles, headlines, headers, or section labels of any kind
+- NO formatting (no #, ##, ---, **, bullets, numbering)
+- NO script notes, timestamps, or act/scene markers
+- NO brackets like [SCENE 1] or [narrator speaks]
+- NO meta-commentary or introductions like "Here is the script:"
+- NO repeated sentences or phrases - each sentence must be unique
+- NEVER repeat the same idea twice in different words
 
 **YOUR OUTPUT MUST BE:**
-Pure prose text that reads as a continuous, flowing narration from start to finish. Every single word in your output should be spoken by the narrator. If you wouldn't say it out loud while narrating, don't include it.`;
+Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 const templateE = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 
@@ -1483,18 +1469,17 @@ For major moments, write full scenes:
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
 Your output must be ONLY the word-for-word narration script that a voice actor can read directly.
 
-**DO NOT INCLUDE ANY OF THE FOLLOWING:**
-- NO titles, headlines, or headers of any kind
-- NO section markers (no #, ##, ---, Act One, Scene 1, etc.)
-- NO formatting markup or code blocks
-- NO script notes, metadata, or timestamps
-- NO brackets with directions like [SCENE 1] or [Cold Open]
-- NO notes about the script (like "This section covers..." or "Here we explore...")
-- NO meta-commentary about the writing
-- NO introductory text like "Here is the script:" or "Script begins:"
+**FORBIDDEN - DO NOT INCLUDE:**
+- NO titles, headlines, headers, or section labels of any kind
+- NO formatting (no #, ##, ---, **, bullets, numbering)
+- NO script notes, timestamps, or act/scene markers
+- NO brackets like [SCENE 1] or [narrator speaks]
+- NO meta-commentary or introductions like "Here is the script:"
+- NO repeated sentences or phrases - each sentence must be unique
+- NEVER repeat the same idea twice in different words
 
 **YOUR OUTPUT MUST BE:**
-Pure prose text that reads as a continuous, flowing narration from start to finish. Every single word in your output should be spoken by the narrator. If you wouldn't say it out loud while narrating, don't include it.`;
+Pure flowing prose only. Every word must be speakable narration. Start immediately with the narration - no preamble.`;
 
 export const defaultTemplates: ScriptTemplate[] = [
   { id: "template-a", template: templateA },
