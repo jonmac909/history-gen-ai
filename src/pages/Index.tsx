@@ -538,8 +538,7 @@ const Index = () => {
       setPendingImages(imageResult.images || []);
 
       await new Promise(resolve => setTimeout(resolve, 300));
-      // Skip review modal and go directly to results
-      handleImagesConfirmWithImages(imageResult.images || []);
+      setViewState("review-images");
 
     } catch (error) {
       console.error("Image generation error:", error);
