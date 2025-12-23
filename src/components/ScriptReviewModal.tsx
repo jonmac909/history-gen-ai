@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2, Download, ChevronRight } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ interface ScriptReviewModalProps {
   script: string;
   onConfirm: (script: string) => void;
   onCancel: () => void;
+  onBack?: () => void;
   onForward?: () => void;
 }
 
@@ -25,6 +26,7 @@ export function ScriptReviewModal({
   script,
   onConfirm,
   onCancel,
+  onBack,
   onForward
 }: ScriptReviewModalProps) {
   const [editedScript, setEditedScript] = useState(script);
@@ -105,6 +107,11 @@ export function ScriptReviewModal({
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
           <div className="flex gap-2 mr-auto">
+            {onBack && (
+              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setIsEditing(!isEditing)}

@@ -704,6 +704,10 @@ const Index = () => {
   };
 
   // Back navigation handlers
+  const handleBackToCreate = () => {
+    setViewState("create");
+  };
+
   const handleBackToScript = () => {
     setViewState("review-script");
   };
@@ -1163,6 +1167,7 @@ const Index = () => {
         script={pendingScript}
         onConfirm={handleScriptConfirm}
         onCancel={handleCancelRequest}
+        onBack={handleBackToCreate}
         onForward={canGoForwardFromScript() ? handleForwardToAudio : undefined}
       />
 

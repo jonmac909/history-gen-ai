@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft, Download } from "lucide-react";
+import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ interface ImagesPreviewModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   onBack?: () => void;
+  onForward?: () => void;
   onRegenerate?: (index: number, editedPrompt?: string) => void;
   regeneratingIndex?: number;
 }
@@ -35,6 +36,7 @@ export function ImagesPreviewModal({
   onConfirm,
   onCancel,
   onBack,
+  onForward,
   onRegenerate,
   regeneratingIndex
 }: ImagesPreviewModalProps) {
@@ -321,6 +323,12 @@ export function ImagesPreviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onForward && (
+            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          )}
 
           <Button onClick={onConfirm}>
             <Check className="w-4 h-4 mr-2" />
