@@ -269,7 +269,8 @@ const Index = () => {
         projectId,
         (progress) => {
           updateStep("audio", "active", `${progress}%`);
-        }
+        },
+        settings.speed
       );
 
       if (!audioRes.success) {

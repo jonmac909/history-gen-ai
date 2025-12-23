@@ -2,6 +2,15 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import { Readable, PassThrough } from 'stream';
+import { promisify } from 'util';
+
+// Set FFmpeg path
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+}
 
 const router = Router();
 
@@ -458,13 +467,65 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
   return { wav: output, durationSeconds };
 }
 
+// Adjust audio speed using FFmpeg
+// speed < 1.0 = slower (longer duration), speed > 1.0 = faster (shorter duration)
+async function adjustAudioSpeed(wavBuffer: Buffer, speed: number): Promise<Buffer> {
+  // If speed is 1.0, no adjustment needed
+  if (speed === 1.0) {
+    return wavBuffer;
+  }
+
+  // Clamp speed to valid range (0.5-2.0 for atempo)
+  const clampedSpeed = Math.max(0.5, Math.min(2.0, speed));
+
+  logger.info(`Adjusting audio speed: ${clampedSpeed}x`);
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    // Create readable stream from buffer
+    const inputStream = new Readable();
+    inputStream.push(wavBuffer);
+    inputStream.push(null);
+
+    // Create output stream
+    const outputStream = new PassThrough();
+
+    outputStream.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    outputStream.on('end', () => {
+      const result = Buffer.concat(chunks);
+      logger.info(`Speed adjustment complete: ${wavBuffer.length} -> ${result.length} bytes`);
+      resolve(result);
+    });
+
+    outputStream.on('error', (err) => {
+      logger.error('Speed adjustment output error:', err);
+      reject(err);
+    });
+
+    // Use atempo filter for speed adjustment
+    ffmpeg(inputStream)
+      .inputFormat('wav')
+      .audioFilters(`atempo=${clampedSpeed}`)
+      .format('wav')
+      .on('error', (err) => {
+        logger.error('FFmpeg error:', err);
+        reject(err);
+      })
+      .pipe(outputStream);
+  });
+}
+
 // Main route handler
 router.post('/', async (req: Request, res: Response) => {
-  const { script, voiceSampleUrl, projectId, stream } = req.body;
+  const { script, voiceSampleUrl, projectId, stream, speed = 1.0 } = req.body;
 
   // Log raw input immediately
   const rawWordCount = script ? script.split(/\s+/).filter(Boolean).length : 0;
-  console.log(`\n[AUDIO REQUEST] Raw script: ${script?.length || 0} chars, ${rawWordCount} words, stream=${stream}, voiceSampleUrl=${voiceSampleUrl ? 'YES' : 'NO'}`);
+  console.log(`\n[AUDIO REQUEST] Raw script: ${script?.length || 0} chars, ${rawWordCount} words, stream=${stream}, speed=${speed}, voiceSampleUrl=${voiceSampleUrl ? 'YES' : 'NO'}`);
 
   // Helper to send SSE error events when streaming
   const sendStreamError = (error: string) => {
@@ -533,13 +594,13 @@ router.post('/', async (req: Request, res: Response) => {
     // Voice cloning support - now generates 10 separate segments
     if (voiceSampleUrl && stream) {
       logger.info('Using streaming mode with voice cloning (10 segments)');
-      return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed);
     }
 
     if (stream) {
-      return handleStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY);
+      return handleStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, speed);
     } else {
-      return handleNonStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl);
+      return handleNonStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed);
     }
 
   } catch (error) {
@@ -554,7 +615,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Handle streaming without voice cloning (SEQUENTIAL - Memory optimized)
-async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string) {
+async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, speed: number = 1.0) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -603,12 +664,22 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
-    sendEvent({ type: 'progress', progress: 75, message: 'Concatenating audio chunks...' });
+    sendEvent({ type: 'progress', progress: 70, message: 'Concatenating audio chunks...' });
 
-    const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    let { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+
+    console.log(`Concatenated audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+    // Apply speed adjustment if not 1.0
+    if (speed !== 1.0) {
+      sendEvent({ type: 'progress', progress: 80, message: `Adjusting speed to ${speed}x...` });
+      finalAudio = await adjustAudioSpeed(finalAudio, speed);
+      // Adjust duration based on speed (slower = longer, faster = shorter)
+      durationSeconds = durationSeconds / speed;
+    }
+
     const durationRounded = Math.round(durationSeconds);
-
-    console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+    console.log(`Final audio: ${finalAudio.length} bytes, ${durationRounded}s`);
 
     sendEvent({ type: 'progress', progress: 90, message: 'Uploading audio file...' });
 
@@ -665,7 +736,7 @@ interface AudioSegmentResult {
 }
 
 // Handle streaming with voice cloning - generates 10 separate segments
-async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string) {
+async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string, speed: number = 1.0) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1006,20 +1077,31 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       combinedAudio.writeUInt32LE(actualCombinedSize - headerSize, dataIdxInCombined + 4);
     }
 
-    const totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
-    const combinedDuration = firstExtracted.byteRate > 0 ? (actualCombinedSize - headerSize) / firstExtracted.byteRate : totalDuration;
+    let totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
+    let combinedDuration = firstExtracted.byteRate > 0 ? (actualCombinedSize - headerSize) / firstExtracted.byteRate : totalDuration;
 
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
+
+    // Apply speed adjustment if not 1.0
+    let finalAudio: Buffer = combinedAudio;
+    if (speed !== 1.0) {
+      sendEvent({ type: 'progress', progress: 92, message: `Adjusting speed to ${speed}x...` });
+      finalAudio = await adjustAudioSpeed(combinedAudio, speed);
+      // Adjust duration based on speed (slower = longer, faster = shorter)
+      combinedDuration = combinedDuration / speed;
+      totalDuration = totalDuration / speed;
+      console.log(`Speed-adjusted audio: ${finalAudio.length} bytes, ${Math.round(combinedDuration)}s`);
+    }
 
     const combinedFileName = `${actualProjectId}/voiceover.wav`;
     sendEvent({ type: 'progress', progress: 95 });
 
     console.log(`\n=== Uploading combined audio ===`);
-    console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
+    console.log(`Final audio: ${finalAudio.length} bytes, ${Math.round(combinedDuration)}s`);
 
     const { error: combinedUploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(combinedFileName, combinedAudio, {
+      .upload(combinedFileName, finalAudio, {
         contentType: 'audio/wav',
         upsert: true,
       });
@@ -1053,7 +1135,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       success: true,
       audioUrl: combinedUrlData.publicUrl, // Combined audio for playback
       duration: Math.round(combinedDuration),
-      size: combinedAudio.length,
+      size: finalAudio.length,
       segments: cleanedSegments, // Individual segments for regeneration
       totalDuration: Math.round(totalDuration),
       wordCount,
@@ -1070,7 +1152,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 }
 
 // Handle non-streaming (with or without voice cloning) - SEQUENTIAL - Memory optimized
-async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string) {
+async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string, speed: number = 1.0) {
   let referenceAudioBase64: string | undefined;
   if (voiceSampleUrl) {
     console.log('Downloading voice sample for cloning...');
@@ -1112,10 +1194,21 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
 
   console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
-  const { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
-  const durationRounded = Math.round(durationSeconds);
+  let { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
 
-  console.log(`Final audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+  console.log(`Concatenated audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+
+  // Apply speed adjustment if not 1.0
+  if (speed !== 1.0) {
+    console.log(`Adjusting speed to ${speed}x...`);
+    finalAudio = await adjustAudioSpeed(finalAudio, speed);
+    // Adjust duration based on speed (slower = longer, faster = shorter)
+    durationSeconds = durationSeconds / speed;
+    console.log(`Speed-adjusted audio: ${finalAudio.length} bytes, ${Math.round(durationSeconds)}s`);
+  }
+
+  const durationRounded = Math.round(durationSeconds);
+  console.log(`Final audio: ${finalAudio.length} bytes, ${durationRounded}s`);
 
   const credentials = getSupabaseCredentials();
   if (!credentials) {

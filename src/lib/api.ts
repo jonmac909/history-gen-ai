@@ -491,7 +491,8 @@ export async function generateAudioStreaming(
   script: string,
   voiceSampleUrl: string,
   projectId: string,
-  onProgress: (progress: number, message?: string) => void
+  onProgress: (progress: number, message?: string) => void,
+  speed: number = 1.0
 ): Promise<AudioResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -517,6 +518,7 @@ export async function generateAudioStreaming(
         script,
         voiceSampleUrl,
         projectId,
+        speed,
         stream: true
       }),
       signal: controller.signal
