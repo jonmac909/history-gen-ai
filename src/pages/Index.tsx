@@ -781,34 +781,6 @@ const Index = () => {
               </p>
             </div>
 
-            {/* Three entry mode buttons */}
-            <div className="flex gap-3 justify-center mb-6">
-              <Button
-                variant={entryMode === "script" ? "default" : "outline"}
-                onClick={() => setEntryMode("script")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Generate Script
-              </Button>
-              <Button
-                variant={entryMode === "captions" ? "default" : "outline"}
-                onClick={() => setEntryMode("captions")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Mic className="w-4 h-4 mr-2" />
-                Generate Captions
-              </Button>
-              <Button
-                variant={entryMode === "prompts" ? "default" : "outline"}
-                onClick={() => setEntryMode("prompts")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Image className="w-4 h-4 mr-2" />
-                Generate Image Prompts
-              </Button>
-            </div>
-
             {settings.customScript && settings.customScript.trim().length > 0 && entryMode === "script" ? (
               // Custom script mode - simplified UI
               <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
@@ -841,7 +813,7 @@ const Index = () => {
                   Generate Audio from Custom Script
                 </Button>
               </div>
-            ) : entryMode === "script" ? (
+            ) : (
               // Normal mode - YouTube URL input
               <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
                 <button
@@ -881,21 +853,35 @@ const Index = () => {
                   Generate
                 </Button>
               </div>
-            ) : entryMode === "captions" ? (
-              // Captions mode - placeholder for future audio upload
-              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                <p className="text-muted-foreground text-center">
-                  Coming soon: Upload your own audio file to generate captions.
-                </p>
-              </div>
-            ) : (
-              // Image prompts mode - placeholder for future script/caption upload
-              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                <p className="text-muted-foreground text-center">
-                  Coming soon: Upload your script and captions to generate image prompts.
-                </p>
-              </div>
             )}
+
+            {/* Three entry mode buttons - below the URL input */}
+            <div className="flex gap-3 justify-center">
+              <Button
+                variant={entryMode === "script" ? "default" : "outline"}
+                onClick={() => setEntryMode("script")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Generate Script
+              </Button>
+              <Button
+                variant={entryMode === "captions" ? "default" : "outline"}
+                onClick={() => setEntryMode("captions")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Mic className="w-4 h-4 mr-2" />
+                Generate Captions
+              </Button>
+              <Button
+                variant={entryMode === "prompts" ? "default" : "outline"}
+                onClick={() => setEntryMode("prompts")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Image className="w-4 h-4 mr-2" />
+                Generate Images
+              </Button>
+            </div>
           </div>
         </main>
       )}
