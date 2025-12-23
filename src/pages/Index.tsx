@@ -36,6 +36,7 @@ import {
   type AudioSegment,
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
+import { supabase } from "@/integrations/supabase/client";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
