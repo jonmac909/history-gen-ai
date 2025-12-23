@@ -39,6 +39,7 @@ import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
+type EntryMode = "script" | "captions" | "images";
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -79,6 +80,13 @@ const Index = () => {
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [entryMode, setEntryMode] = useState<EntryMode>("script");
+  const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
+  const [uploadedScript, setUploadedScript] = useState("");
+  const [uploadedCaptions, setUploadedCaptions] = useState("");
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const scriptFileInputRef = useRef<HTMLInputElement>(null);
+  const captionsFileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -724,6 +732,121 @@ const Index = () => {
   const canGoForwardFromCaptions = () => imagePrompts.length > 0;
   const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
+  // Handle audio file upload for "Generate Captions" mode
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedAudioFile(file);
+    }
+  };
+
+  // Handle script file upload for "Generate Images" mode
+  const handleScriptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const text = await file.text();
+      setUploadedScript(text);
+    }
+  };
+
+  // Handle captions file upload for "Generate Images" mode
+  const handleCaptionsFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const text = await file.text();
+      setUploadedCaptions(text);
+    }
+  };
+
+  // Generate captions from uploaded audio file
+  const handleGenerateCaptionsFromAudio = async () => {
+    if (!uploadedAudioFile) {
+      toast({ title: "No audio file", description: "Please upload an audio file first.", variant: "destructive" });
+      return;
+    }
+
+    setViewState("processing");
+    setProcessingSteps([{ id: "captions", label: "Generating captions...", status: "loading", progress: 5 }]);
+
+    try {
+      // Upload the audio file to Supabase storage
+      const projectId = crypto.randomUUID();
+      const audioFileName = `${projectId}/voiceover.wav`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("generated-assets")
+        .upload(audioFileName, uploadedAudioFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("generated-assets")
+        .getPublicUrl(audioFileName);
+
+      setPendingAudioUrl(publicUrl);
+
+      // Generate captions
+      const captionsResult = await generateCaptions(
+        publicUrl,
+        (progress) => {
+          setProcessingSteps([{ id: "captions", label: "Generating captions...", status: "loading", progress }]);
+        }
+      );
+
+      if (!captionsResult.srtContent) throw new Error("No captions generated");
+
+      setPendingSrtContent(captionsResult.srtContent);
+      if (captionsResult.srtUrl) setPendingSrtUrl(captionsResult.srtUrl);
+
+      setProcessingSteps([{ id: "captions", label: "Captions generated", status: "complete", progress: 100 }]);
+      setViewState("review-captions");
+
+    } catch (error) {
+      console.error("Error generating captions:", error);
+      toast({ title: "Error", description: error instanceof Error ? error.message : "Failed to generate captions", variant: "destructive" });
+      setViewState("create");
+    }
+  };
+
+  // Generate image prompts from uploaded script/captions
+  const handleGenerateImagePrompts = async () => {
+    if (!uploadedScript.trim()) {
+      toast({ title: "No script", description: "Please upload or paste a script first.", variant: "destructive" });
+      return;
+    }
+    if (!uploadedCaptions.trim()) {
+      toast({ title: "No captions", description: "Please upload or paste captions (SRT) first.", variant: "destructive" });
+      return;
+    }
+
+    setViewState("processing");
+    setProcessingSteps([{ id: "prompts", label: "Generating image prompts...", status: "loading", progress: 10 }]);
+    setPendingScript(uploadedScript);
+    setPendingSrtContent(uploadedCaptions);
+
+    try {
+      const promptsResult = await generateImagePrompts(
+        uploadedScript,
+        uploadedCaptions,
+        settings.imageCount,
+        imageStylePrompt
+      );
+
+      if (!promptsResult.prompts || promptsResult.prompts.length === 0) {
+        throw new Error("No image prompts generated");
+      }
+
+      setImagePrompts(promptsResult.prompts);
+      setProcessingSteps([{ id: "prompts", label: "Image prompts generated", status: "complete", progress: 100 }]);
+      setViewState("review-prompts");
+
+    } catch (error) {
+      console.error("Error generating image prompts:", error);
+      toast({ title: "Error", description: error instanceof Error ? error.message : "Failed to generate image prompts", variant: "destructive" });
+      setViewState("create");
+    }
+  };
+
   const handleNewProject = () => {
     setViewState("create");
     setInputValue("");
@@ -779,76 +902,215 @@ const Index = () => {
               </p>
             </div>
 
-            {settings.customScript && settings.customScript.trim().length > 0 ? (
-              // Custom script mode - simplified UI
-              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-primary" />
+            {/* Three entry mode buttons */}
+            <div className="flex gap-3 justify-center mb-2">
+              <Button
+                variant={entryMode === "script" ? "default" : "outline"}
+                onClick={() => setEntryMode("script")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Generate Script
+              </Button>
+              <Button
+                variant={entryMode === "captions" ? "default" : "outline"}
+                onClick={() => setEntryMode("captions")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Mic className="w-4 h-4 mr-2" />
+                Generate Captions
+              </Button>
+              <Button
+                variant={entryMode === "images" ? "default" : "outline"}
+                onClick={() => setEntryMode("images")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Image className="w-4 h-4 mr-2" />
+                Generate Images
+              </Button>
+            </div>
+
+            {/* Content based on entry mode */}
+            {entryMode === "script" && (
+              <>
+                {settings.customScript && settings.customScript.trim().length > 0 ? (
+                  // Custom script mode - simplified UI
+                  <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-foreground">
+                            Custom Script Ready
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {settings.customScript.trim().split(/\s+/).length} words
+                          </p>
+                        </div>
+                      </div>
+                      <SettingsPopover
+                        settings={settings}
+                        onSettingsChange={setSettings}
+                        scriptTemplates={scriptTemplates}
+                      />
                     </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-foreground">
-                        Custom Script Ready
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {settings.customScript.trim().split(/\s+/).length} words
-                      </p>
-                    </div>
+                    <Button
+                      onClick={handleGenerate}
+                      disabled={viewState !== "create"}
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
+                    >
+                      <Mic className="w-5 h-5 mr-2" />
+                      Generate Audio from Custom Script
+                    </Button>
                   </div>
-                  <SettingsPopover
-                    settings={settings}
-                    onSettingsChange={setSettings}
-                    scriptTemplates={scriptTemplates}
+                ) : (
+                  // Normal mode - YouTube URL input
+                  <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
+                    <button
+                      onClick={toggleInputMode}
+                      className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-xl hover:bg-secondary transition-colors cursor-pointer"
+                    >
+                      {inputMode === "url" ? (
+                        <Youtube className="w-5 h-5 text-red-500" />
+                      ) : (
+                        <FileText className="w-5 h-5 text-primary" />
+                      )}
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {inputMode === "url" ? "URL" : "Title"}
+                      </span>
+                    </button>
+
+                    <Input
+                      type={inputMode === "url" ? "url" : "text"}
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
+                      className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
+                    />
+
+                    <SettingsPopover
+                      settings={settings}
+                      onSettingsChange={setSettings}
+                      scriptTemplates={scriptTemplates}
+                    />
+
+                    <Button
+                      onClick={handleGenerate}
+                      disabled={viewState !== "create"}
+                      className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {entryMode === "captions" && (
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                <p className="text-muted-foreground text-sm">
+                  Upload an audio file to generate captions (SRT) from it.
+                </p>
+                <input
+                  ref={audioFileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleAudioFileChange}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => audioFileInputRef.current?.click()}
+                    className="flex-1"
+                  >
+                    <Mic className="w-4 h-4 mr-2" />
+                    {uploadedAudioFile ? uploadedAudioFile.name : "Choose Audio File"}
+                  </Button>
+                  <Button
+                    onClick={handleGenerateCaptionsFromAudio}
+                    disabled={!uploadedAudioFile || viewState !== "create"}
+                    className="shrink-0"
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate Captions
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {entryMode === "images" && (
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                <p className="text-muted-foreground text-sm">
+                  Upload or paste your script and captions (SRT) to generate image prompts.
+                </p>
+
+                {/* Script input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-left block">Script</label>
+                  <input
+                    ref={scriptFileInputRef}
+                    type="file"
+                    accept=".txt,.md"
+                    onChange={handleScriptFileChange}
+                    className="hidden"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => scriptFileInputRef.current?.click()}
+                    >
+                      Upload .txt
+                    </Button>
+                    <span className="text-xs text-muted-foreground self-center">or paste below</span>
+                  </div>
+                  <textarea
+                    value={uploadedScript}
+                    onChange={(e) => setUploadedScript(e.target.value)}
+                    placeholder="Paste your script here..."
+                    className="w-full h-32 p-3 text-sm border rounded-lg resize-none bg-background"
                   />
                 </div>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={viewState !== "create"}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
-                >
-                  <Mic className="w-5 h-5 mr-2" />
-                  Generate Audio from Custom Script
-                </Button>
-              </div>
-            ) : (
-              // Normal mode - YouTube URL input
-              <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
-                <button
-                  onClick={toggleInputMode}
-                  className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-xl hover:bg-secondary transition-colors cursor-pointer"
-                >
-                  {inputMode === "url" ? (
-                    <Youtube className="w-5 h-5 text-red-500" />
-                  ) : (
-                    <FileText className="w-5 h-5 text-primary" />
-                  )}
-                  <span className="text-sm font-medium text-muted-foreground">
-                    {inputMode === "url" ? "URL" : "Title"}
-                  </span>
-                </button>
 
-                <Input
-                  type={inputMode === "url" ? "url" : "text"}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
-                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
-                />
-
-                <SettingsPopover
-                  settings={settings}
-                  onSettingsChange={setSettings}
-                  scriptTemplates={scriptTemplates}
-                />
+                {/* Captions input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-left block">Captions (SRT)</label>
+                  <input
+                    ref={captionsFileInputRef}
+                    type="file"
+                    accept=".srt,.txt"
+                    onChange={handleCaptionsFileChange}
+                    className="hidden"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => captionsFileInputRef.current?.click()}
+                    >
+                      Upload .srt
+                    </Button>
+                    <span className="text-xs text-muted-foreground self-center">or paste below</span>
+                  </div>
+                  <textarea
+                    value={uploadedCaptions}
+                    onChange={(e) => setUploadedCaptions(e.target.value)}
+                    placeholder="Paste your SRT captions here..."
+                    className="w-full h-32 p-3 text-sm border rounded-lg resize-none bg-background font-mono"
+                  />
+                </div>
 
                 <Button
-                  onClick={handleGenerate}
-                  disabled={viewState !== "create"}
-                  className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
+                  onClick={handleGenerateImagePrompts}
+                  disabled={!uploadedScript.trim() || !uploadedCaptions.trim() || viewState !== "create"}
+                  className="w-full"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Generate
+                  Generate Image Prompts
                 </Button>
               </div>
             )}
