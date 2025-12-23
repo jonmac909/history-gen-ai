@@ -39,7 +39,6 @@ import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
-type EntryMode = "script" | "captions" | "prompts";
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -80,7 +79,6 @@ const Index = () => {
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
-  const [entryMode, setEntryMode] = useState<EntryMode>("script");
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -781,7 +779,7 @@ const Index = () => {
               </p>
             </div>
 
-            {settings.customScript && settings.customScript.trim().length > 0 && entryMode === "script" ? (
+            {settings.customScript && settings.customScript.trim().length > 0 ? (
               // Custom script mode - simplified UI
               <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -855,33 +853,6 @@ const Index = () => {
               </div>
             )}
 
-            {/* Three entry mode buttons - below the URL input */}
-            <div className="flex gap-3 justify-center">
-              <Button
-                variant={entryMode === "script" ? "default" : "outline"}
-                onClick={() => setEntryMode("script")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Generate Script
-              </Button>
-              <Button
-                variant={entryMode === "captions" ? "default" : "outline"}
-                onClick={() => setEntryMode("captions")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Mic className="w-4 h-4 mr-2" />
-                Generate Captions
-              </Button>
-              <Button
-                variant={entryMode === "prompts" ? "default" : "outline"}
-                onClick={() => setEntryMode("prompts")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Image className="w-4 h-4 mr-2" />
-                Generate Images
-              </Button>
-            </div>
           </div>
         </main>
       )}
