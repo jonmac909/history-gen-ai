@@ -86,8 +86,10 @@ const Index = () => {
   const [uploadedScript, setUploadedScript] = useState("");
   const [uploadedCaptions, setUploadedCaptions] = useState("");
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputImagesRef = useRef<HTMLInputElement>(null);
   const scriptFileInputRef = useRef<HTMLInputElement>(null);
   const captionsFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedAudioFileForImages, setUploadedAudioFileForImages] = useState<File | null>(null);
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -781,6 +783,14 @@ const Index = () => {
     }
   };
 
+  // Handle audio file upload for "Generate Images" mode
+  const handleAudioFileChangeForImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedAudioFileForImages(file);
+    }
+  };
+
   // Generate captions from uploaded audio file
   const handleGenerateCaptionsFromAudio = async () => {
     if (!uploadedAudioFile) {
@@ -840,6 +850,7 @@ const Index = () => {
     console.log("Captions length:", captionsText.length);
     console.log("Image count:", settings.imageCount);
     console.log("Style prompt length:", imageStylePrompt.length);
+    console.log("Audio file:", uploadedAudioFileForImages?.name);
 
     if (!scriptText) {
       toast({ title: "No script", description: "Please upload or paste a script first.", variant: "destructive" });
@@ -856,11 +867,57 @@ const Index = () => {
     setPendingSrtContent(captionsText);
 
     try {
+      let audioDuration: number | undefined;
+
+      // If audio file provided, upload it and get duration
+      if (uploadedAudioFileForImages) {
+        setProcessingSteps([{ id: "prompts", label: "Uploading audio file...", status: "loading", progress: 5 }]);
+
+        const newProjectId = projectId || crypto.randomUUID();
+        if (!projectId) setProjectId(newProjectId);
+
+        const audioFileName = `${newProjectId}/voiceover.wav`;
+        const { error: uploadError } = await supabase.storage
+          .from("generated-assets")
+          .upload(audioFileName, uploadedAudioFileForImages);
+
+        if (uploadError) {
+          console.error("Audio upload error:", uploadError);
+          // Continue without audio duration if upload fails
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from("generated-assets")
+            .getPublicUrl(audioFileName);
+
+          setPendingAudioUrl(publicUrl);
+
+          // Get audio duration using Audio element
+          audioDuration = await new Promise<number>((resolve) => {
+            const audio = new Audio(publicUrl);
+            audio.addEventListener('loadedmetadata', () => {
+              resolve(audio.duration);
+            });
+            audio.addEventListener('error', () => {
+              console.error("Failed to get audio duration");
+              resolve(0);
+            });
+          });
+
+          if (audioDuration > 0) {
+            setPendingAudioDuration(audioDuration);
+            console.log("Audio duration:", audioDuration);
+          }
+        }
+
+        setProcessingSteps([{ id: "prompts", label: "Generating image prompts...", status: "loading", progress: 10 }]);
+      }
+
       const promptsResult = await generateImagePrompts(
         scriptText,
         captionsText,
         settings.imageCount,
-        imageStylePrompt
+        imageStylePrompt,
+        audioDuration
       );
 
       if (!promptsResult.success) {
@@ -1137,6 +1194,29 @@ const Index = () => {
                     placeholder="Paste your SRT captions here..."
                     className="w-full h-32 p-3 text-sm border rounded-lg resize-none bg-background font-mono"
                   />
+                </div>
+
+                {/* Audio file input (optional) */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-left block">
+                    Audio File <span className="text-muted-foreground font-normal">(optional - for accurate timing)</span>
+                  </label>
+                  <input
+                    ref={audioFileInputImagesRef}
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleAudioFileChangeForImages}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => audioFileInputImagesRef.current?.click()}
+                    className="w-full justify-start"
+                  >
+                    <Mic className="w-4 h-4 mr-2" />
+                    {uploadedAudioFileForImages ? uploadedAudioFileForImages.name : "Choose Audio File"}
+                  </Button>
                 </div>
 
                 <Button
