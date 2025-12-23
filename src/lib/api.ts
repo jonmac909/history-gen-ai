@@ -695,6 +695,7 @@ export async function generateImagePrompts(
   audioDuration?: number
 ): Promise<ImagePromptsResult> {
   console.log('Generating AI-powered image prompts from script and captions...');
+  console.log(`Script length: ${script.length}, SRT length: ${srtContent.length}, imageCount: ${imageCount}`);
   if (audioDuration) {
     console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
   }
@@ -705,7 +706,14 @@ export async function generateImagePrompts(
 
   if (error) {
     console.error('Image prompt generation error:', error);
-    return { success: false, error: error.message };
+    // Try to get more details from the error
+    const errorMessage = error.message || 'Unknown error';
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    return { success: false, error: errorMessage };
+  }
+
+  if (!data) {
+    return { success: false, error: 'No data returned from image prompt generation' };
   }
 
   return data;

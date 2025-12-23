@@ -811,27 +811,39 @@ const Index = () => {
 
   // Generate image prompts from uploaded script/captions
   const handleGenerateImagePrompts = async () => {
-    if (!uploadedScript.trim()) {
+    const scriptText = uploadedScript.trim();
+    const captionsText = uploadedCaptions.trim();
+
+    console.log("Script length:", scriptText.length);
+    console.log("Captions length:", captionsText.length);
+    console.log("Image count:", settings.imageCount);
+    console.log("Style prompt length:", imageStylePrompt.length);
+
+    if (!scriptText) {
       toast({ title: "No script", description: "Please upload or paste a script first.", variant: "destructive" });
       return;
     }
-    if (!uploadedCaptions.trim()) {
+    if (!captionsText) {
       toast({ title: "No captions", description: "Please upload or paste captions (SRT) first.", variant: "destructive" });
       return;
     }
 
     setViewState("processing");
     setProcessingSteps([{ id: "prompts", label: "Generating image prompts...", status: "loading", progress: 10 }]);
-    setPendingScript(uploadedScript);
-    setPendingSrtContent(uploadedCaptions);
+    setPendingScript(scriptText);
+    setPendingSrtContent(captionsText);
 
     try {
       const promptsResult = await generateImagePrompts(
-        uploadedScript,
-        uploadedCaptions,
+        scriptText,
+        captionsText,
         settings.imageCount,
         imageStylePrompt
       );
+
+      if (!promptsResult.success) {
+        throw new Error(promptsResult.error || "Failed to generate image prompts");
+      }
 
       if (!promptsResult.prompts || promptsResult.prompts.length === 0) {
         throw new Error("No image prompts generated");
