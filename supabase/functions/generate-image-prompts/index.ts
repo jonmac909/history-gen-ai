@@ -167,32 +167,22 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8192,
-        system: `You are an expert at creating visual scene descriptions for documentary video image generation.
+        system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
-YOUR CRITICAL TASK: Create scene descriptions that DIRECTLY ILLUSTRATE what is being narrated. The image must visually represent the SPECIFIC content, people, places, events, or concepts mentioned in that segment's narration.
+YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
-MATCHING RULES (MOST IMPORTANT):
-1. READ the narration carefully - identify the KEY SUBJECT (person, place, event, object)
-2. Your scene MUST depict that specific subject - not a generic related scene
-3. If narration mentions "John Smith signing the document" → show John Smith signing a document
-4. If narration mentions "the Battle of Gettysburg" → show that specific battle scene
-5. If narration mentions "ancient Roman aqueducts" → show Roman aqueducts specifically
-6. NEVER create generic scenes that ignore what's actually being narrated
-
-VISUAL QUALITY RULES:
-1. Each scene must be a VISUAL description - what the viewer would SEE
-2. Include specific details: setting, lighting, objects, people, actions, atmosphere
-3. Period-appropriate details (clothing, architecture, technology for the era)
-4. Focus on a single, clear composition
-5. Do NOT include any text, titles, or words in the image
+RULES:
+1. READ the script context to understand the overall topic
+2. For each image segment, create a visual scene that illustrates the content
+3. If narration is sparse, use the script context to infer appropriate visuals
+4. For technical/abstract topics: visualize people using technology, historical contexts, symbolic representations, or documentary-style scenes
+5. Include specific details: setting, lighting, objects, people, actions, atmosphere
 6. 50-100 words per description
+7. Do NOT include any text, titles, or words in the image
 
-BAD EXAMPLE (too generic):
-Narration: "Benjamin Franklin flew his famous kite during a thunderstorm in 1752"
-Wrong: "A stormy sky with lightning bolts" (ignores the specific subject!)
-Correct: "Benjamin Franklin, an older man with spectacles and period colonial attire, stands in an open field holding a kite string during a thunderstorm, a metal key attached to the string, lightning illuminating the dark sky above, rain falling around him"
+CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
-Output format: Return ONLY a JSON array:
+Output format:
 [
   {"index": 1, "sceneDescription": "..."},
   {"index": 2, "sceneDescription": "..."}
@@ -200,17 +190,15 @@ Output format: Return ONLY a JSON array:
         messages: [
           {
             role: 'user',
-            content: `Create ${imageCount} visual scene descriptions that DIRECTLY MATCH the narration content.
+            content: `Generate exactly ${imageCount} visual scene descriptions. Return ONLY the JSON array, nothing else.
 
-SCRIPT CONTEXT (for understanding the overall topic):
+SCRIPT CONTEXT:
 ${script.substring(0, 12000)}
 
-TIME-CODED SEGMENTS - CREATE A SCENE THAT ILLUSTRATES EACH NARRATION:
+TIME-CODED SEGMENTS:
 ${windowDescriptions}
 
-IMPORTANT: Each scene description must depict the SPECIFIC subject matter mentioned in that segment's narration. Do not create generic scenes.
-
-Generate exactly ${imageCount} scene descriptions. Return ONLY the JSON array.`
+Remember: Output ONLY a JSON array with ${imageCount} items. No explanations.`
           }
         ],
       }),
