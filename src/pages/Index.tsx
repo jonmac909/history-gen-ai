@@ -537,7 +537,8 @@ const Index = () => {
       setPendingImages(imageResult.images || []);
 
       await new Promise(resolve => setTimeout(resolve, 300));
-      setViewState("review-images");
+      // Skip review modal and go directly to results
+      handleImagesConfirmWithImages(imageResult.images || []);
 
     } catch (error) {
       console.error("Image generation error:", error);
@@ -619,7 +620,7 @@ const Index = () => {
   };
 
   // Step 5: Complete - show results
-  const handleImagesConfirm = () => {
+  const handleImagesConfirmWithImages = (images: string[]) => {
     const assets: GeneratedAsset[] = [
       {
         id: "script",
@@ -648,7 +649,7 @@ const Index = () => {
       },
     ];
 
-    pendingImages.forEach((imageUrl, index) => {
+    images.forEach((imageUrl, index) => {
       assets.push({
         id: `image-${index + 1}`,
         name: `Image ${index + 1}`,
@@ -663,11 +664,15 @@ const Index = () => {
     setAudioUrl(pendingAudioUrl);
     setSrtContent(pendingSrtContent);
     setViewState("results");
-    
+
     toast({
       title: "Generation Complete!",
       description: "Your history video assets are ready.",
     });
+  };
+
+  const handleImagesConfirm = () => {
+    handleImagesConfirmWithImages(pendingImages);
   };
 
   const resetPendingState = () => {
@@ -973,11 +978,10 @@ const Index = () => {
 
       {/* Main Content */}
       {viewState === "results" ? (
-        <ProjectResults 
-          sourceUrl={sourceUrl} 
+        <ProjectResults
+          sourceUrl={sourceUrl}
           onNewProject={handleNewProject}
           assets={generatedAssets}
-          audioUrl={audioUrl}
           srtContent={srtContent}
         />
       ) : (

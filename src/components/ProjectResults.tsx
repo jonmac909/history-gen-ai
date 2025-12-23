@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Layers, ExternalLink, Image } from "lucide-react";
+import { Download, RefreshCw, Layers, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
@@ -18,7 +18,6 @@ interface ProjectResultsProps {
   sourceUrl: string;
   onNewProject: () => void;
   assets: GeneratedAsset[];
-  audioUrl?: string;
   srtContent?: string;
 }
 
@@ -96,7 +95,7 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
   window.URL.revokeObjectURL(url);
 };
 
-export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtContent }: ProjectResultsProps) {
+export function ProjectResults({ sourceUrl, onNewProject, assets, srtContent }: ProjectResultsProps) {
   // Calculate image timings based on SRT
   const getImageTimings = () => {
     const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
@@ -275,7 +274,7 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 py-8">
+    <div className="w-full max-w-xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
@@ -288,110 +287,132 @@ export function ProjectResults({ sourceUrl, onNewProject, assets, audioUrl, srtC
         </Button>
       </div>
 
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Preview Area */}
-        <div className="space-y-4">
-          <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-            {audioUrl ? (
-              <audio controls className="w-full max-w-md px-8">
-                <source src={audioUrl} type="audio/mpeg" />
-                Your browser does not support the audio element.
-              </audio>
-            ) : (
-              <div className="text-white/60 text-center">
-                <p>No preview available</p>
-              </div>
-            )}
-          </div>
-
+      {/* Downloads */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Layers className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Downloads</h2>
         </div>
 
-        {/* Generated Assets */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Layers className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Generated Assets</h2>
-          </div>
-
-          <div className="space-y-3">
-            {/* Filter out individual images and script, show other assets */}
-            {assets.filter(a => !a.id.startsWith('image-') && a.id !== 'script').map((asset) => (
-              <div
-                key={asset.id}
-                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                    {asset.icon}
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">{asset.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {asset.type} • {asset.size}
-                    </p>
-                  </div>
+        <div className="space-y-3">
+          {/* Script */}
+          {assets.find(a => a.id === 'script') && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  {assets.find(a => a.id === 'script')!.icon}
                 </div>
-                <div className="flex items-center gap-2">
-                  {asset.url && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => window.open(asset.url, '_blank')}
-                      className="text-muted-foreground hover:text-foreground"
-                      title="Open in new tab"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDownload(asset)}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Download"
-                  >
-                    <Download className="w-5 h-5" />
-                  </Button>
+                <div>
+                  <p className="font-medium text-foreground">Script</p>
+                  <p className="text-sm text-muted-foreground">
+                    {assets.find(a => a.id === 'script')!.size}
+                  </p>
                 </div>
               </div>
-            ))}
-
-            {/* Single Images download block */}
-            {assets.some(a => a.id.startsWith('image-') && a.url) && (
-              <div
-                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDownload(assets.find(a => a.id === 'script')!, 'script.txt')}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                    <Image className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Images</p>
-                    <p className="text-sm text-muted-foreground">
-                      ZIP • {assets.filter(a => a.id.startsWith('image-') && a.url).length} images
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDownloadAllImagesAsZip}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-5 h-5" />
-                </Button>
-              </div>
-            )}
-          </div>
+                <Download className="w-5 h-5" />
+              </Button>
+            </div>
+          )}
 
-          {assets.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No assets generated yet.</p>
+          {/* Audio */}
+          {assets.find(a => a.id === 'audio') && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  {assets.find(a => a.id === 'audio')!.icon}
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Audio</p>
+                  <p className="text-sm text-muted-foreground">
+                    {assets.find(a => a.id === 'audio')!.size}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav')}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download"
+              >
+                <Download className="w-5 h-5" />
+              </Button>
+            </div>
+          )}
+
+          {/* Captions */}
+          {assets.find(a => a.id === 'captions') && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  {assets.find(a => a.id === 'captions')!.icon}
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Captions</p>
+                  <p className="text-sm text-muted-foreground">
+                    {assets.find(a => a.id === 'captions')!.size}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDownload(assets.find(a => a.id === 'captions')!, 'captions.srt')}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download"
+              >
+                <Download className="w-5 h-5" />
+              </Button>
+            </div>
+          )}
+
+          {/* Images */}
+          {assets.some(a => a.id.startsWith('image-') && a.url) && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Image className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Images</p>
+                  <p className="text-sm text-muted-foreground">
+                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} images (ZIP)
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDownloadAllImagesAsZip}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download"
+              >
+                <Download className="w-5 h-5" />
+              </Button>
             </div>
           )}
         </div>
+
+        {assets.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No assets generated yet.</p>
+          </div>
+        )}
       </div>
     </div>
   );
