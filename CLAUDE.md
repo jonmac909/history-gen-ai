@@ -20,6 +20,8 @@ HistoryGen AI generates AI-powered historical video content from YouTube URLs. I
 - Railway API: https://history-gen-ai-production-f1d4.up.railway.app
 - Supabase: https://udqfdeoullsxttqguupz.supabase.co
 
+**Note:** The `render-api/` folder and `VITE_RENDER_API_URL` env var retain "render" in their names for historical reasons (originally deployed on Render.com), but the API now runs on Railway.
+
 ## Development Commands
 
 ### Frontend
@@ -99,6 +101,9 @@ Multi-step generation with user review at each stage:
 6. **Image Generation** (streaming, parallel) → Final Results
 
 **UI Features:**
+- **All preview modals** include:
+  - Back button to return to previous pipeline step
+  - Download button to save progress (script.txt, voiceover.wav, captions.srt, image-prompts.json, or all images)
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox
   - Close with ESC key or click outside the image
   - Lightbox rendered via `createPortal` outside Dialog
@@ -107,8 +112,11 @@ Multi-step generation with user review at each stage:
     - `window.addEventListener('click', handler, { capture: true })` for background clicks
     - Capture phase runs BEFORE Radix Dialog's bubble-phase handlers, preventing Dialog from blocking events
   - `onPointerDownOutside`/`onInteractOutside` on DialogContent prevent Dialog closing when lightbox is open
+  - Edit prompt inline and regenerate individual images
 - `AudioSegmentsPreviewModal`: "Play All" for combined audio + individual segment players with regeneration
-- `ImagePromptsPreviewModal`: Review/edit AI-generated scene descriptions before image generation
+- `ImagePromptsPreviewModal`:
+  - Collapsible Master Style Prompt editor (applies to all images)
+  - Individual scene description editing per image
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 
 ### Audio Generation Architecture

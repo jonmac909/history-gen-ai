@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, Download } from "lucide-react";
+import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ interface AudioSegmentsPreviewModalProps {
   onRegenerate: (segmentIndex: number, editedText?: string) => Promise<void>;
   onCancel: () => void;
   onBack?: () => void;
+  onForward?: () => void;
   regeneratingIndex: number | null;
 }
 
@@ -242,6 +243,7 @@ export function AudioSegmentsPreviewModal({
   onRegenerate,
   onCancel,
   onBack,
+  onForward,
   regeneratingIndex,
 }: AudioSegmentsPreviewModalProps) {
   const [isPlayingAll, setIsPlayingAll] = useState(false);
@@ -455,6 +457,13 @@ export function AudioSegmentsPreviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onForward && (
+            <Button variant="outline" onClick={onForward} className="w-full sm:w-auto">
+              Skip
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
 
           <Button
             onClick={onConfirmAll}

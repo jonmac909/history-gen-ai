@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2, Download } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +17,15 @@ interface ScriptReviewModalProps {
   script: string;
   onConfirm: (script: string) => void;
   onCancel: () => void;
+  onForward?: () => void;
 }
 
-export function ScriptReviewModal({ 
-  isOpen, 
-  script, 
-  onConfirm, 
-  onCancel 
+export function ScriptReviewModal({
+  isOpen,
+  script,
+  onConfirm,
+  onCancel,
+  onForward
 }: ScriptReviewModalProps) {
   const [editedScript, setEditedScript] = useState(script);
   const [isEditing, setIsEditing] = useState(false);
@@ -120,6 +122,13 @@ export function ScriptReviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onForward && (
+            <Button variant="outline" onClick={onForward}>
+              Skip
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
 
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />

@@ -3,6 +3,16 @@ import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
 import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/components/ConfigModal";
@@ -29,6 +39,7 @@ import { defaultTemplates } from "@/data/defaultTemplates";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
+type EntryMode = "script" | "captions" | "prompts";
 
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -68,6 +79,8 @@ const Index = () => {
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [entryMode, setEntryMode] = useState<EntryMode>("script");
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -457,8 +470,12 @@ const Index = () => {
   };
 
   // Step 5: After prompts reviewed/edited, generate images
-  const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[]) => {
+  const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[], editedStylePrompt: string) => {
     setImagePrompts(editedPrompts);
+    // Save the edited style prompt for future use
+    if (editedStylePrompt !== imageStylePrompt) {
+      setImageStylePrompt(editedStylePrompt);
+    }
 
     const steps: GenerationStep[] = [
       { id: "images", label: "Generating Images", status: "pending" },
@@ -643,13 +660,22 @@ const Index = () => {
     setImagePrompts([]);
   };
 
-  const handleCancel = () => {
+  const handleCancelRequest = () => {
+    setShowExitConfirmation(true);
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmation(false);
     resetPendingState();
     setViewState("create");
     toast({
-      title: "Generation Cancelled",
-      description: "Process was cancelled.",
+      title: "Project Closed",
+      description: "Your progress has been cleared.",
     });
+  };
+
+  const handleCancelExit = () => {
+    setShowExitConfirmation(false);
   };
 
   // Back navigation handlers
@@ -668,6 +694,37 @@ const Index = () => {
   const handleBackToPrompts = () => {
     setViewState("review-prompts");
   };
+
+  // Forward navigation handlers (to skip ahead if data already exists)
+  const handleForwardToAudio = () => {
+    if (pendingAudioUrl || pendingAudioSegments.length > 0) {
+      setViewState("review-audio");
+    }
+  };
+
+  const handleForwardToCaptions = () => {
+    if (pendingSrtContent) {
+      setViewState("review-captions");
+    }
+  };
+
+  const handleForwardToPrompts = () => {
+    if (imagePrompts.length > 0) {
+      setViewState("review-prompts");
+    }
+  };
+
+  const handleForwardToImages = () => {
+    if (pendingImages.length > 0) {
+      setViewState("review-images");
+    }
+  };
+
+  // Check if forward navigation is available for each step
+  const canGoForwardFromScript = () => pendingAudioUrl || pendingAudioSegments.length > 0;
+  const canGoForwardFromAudio = () => !!pendingSrtContent;
+  const canGoForwardFromCaptions = () => imagePrompts.length > 0;
+  const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
   const handleNewProject = () => {
     setViewState("create");
@@ -724,7 +781,35 @@ const Index = () => {
               </p>
             </div>
 
-            {settings.customScript && settings.customScript.trim().length > 0 ? (
+            {/* Three entry mode buttons */}
+            <div className="flex gap-3 justify-center mb-6">
+              <Button
+                variant={entryMode === "script" ? "default" : "outline"}
+                onClick={() => setEntryMode("script")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Generate Script
+              </Button>
+              <Button
+                variant={entryMode === "captions" ? "default" : "outline"}
+                onClick={() => setEntryMode("captions")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Mic className="w-4 h-4 mr-2" />
+                Generate Captions
+              </Button>
+              <Button
+                variant={entryMode === "prompts" ? "default" : "outline"}
+                onClick={() => setEntryMode("prompts")}
+                className="flex-1 max-w-[200px] py-6"
+              >
+                <Image className="w-4 h-4 mr-2" />
+                Generate Image Prompts
+              </Button>
+            </div>
+
+            {settings.customScript && settings.customScript.trim().length > 0 && entryMode === "script" ? (
               // Custom script mode - simplified UI
               <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -756,7 +841,7 @@ const Index = () => {
                   Generate Audio from Custom Script
                 </Button>
               </div>
-            ) : (
+            ) : entryMode === "script" ? (
               // Normal mode - YouTube URL input
               <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
                 <button
@@ -796,6 +881,20 @@ const Index = () => {
                   Generate
                 </Button>
               </div>
+            ) : entryMode === "captions" ? (
+              // Captions mode - placeholder for future audio upload
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                <p className="text-muted-foreground text-center">
+                  Coming soon: Upload your own audio file to generate captions.
+                </p>
+              </div>
+            ) : (
+              // Image prompts mode - placeholder for future script/caption upload
+              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+                <p className="text-muted-foreground text-center">
+                  Coming soon: Upload your script and captions to generate image prompts.
+                </p>
+              </div>
             )}
           </div>
         </main>
@@ -813,7 +912,8 @@ const Index = () => {
         isOpen={viewState === "review-script"}
         script={pendingScript}
         onConfirm={handleScriptConfirm}
-        onCancel={handleCancel}
+        onCancel={handleCancelRequest}
+        onForward={canGoForwardFromScript() ? handleForwardToAudio : undefined}
       />
 
       {/* Audio Preview Modal - Show segments modal if we have segments, otherwise legacy single audio */}
@@ -825,8 +925,9 @@ const Index = () => {
           totalDuration={pendingAudioDuration}
           onConfirmAll={handleAudioConfirm}
           onRegenerate={handleSegmentRegenerate}
-          onCancel={handleCancel}
+          onCancel={handleCancelRequest}
           onBack={handleBackToScript}
+          onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
           regeneratingIndex={regeneratingSegmentIndex}
         />
       ) : (
@@ -836,7 +937,7 @@ const Index = () => {
           duration={pendingAudioDuration}
           onConfirm={handleAudioConfirm}
           onRegenerate={handleAudioRegenerate}
-          onCancel={handleCancel}
+          onCancel={handleCancelRequest}
         />
       )}
 
@@ -845,17 +946,20 @@ const Index = () => {
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent}
         onConfirm={handleCaptionsConfirm}
-        onCancel={handleCancel}
+        onCancel={handleCancelRequest}
         onBack={handleBackToAudio}
+        onForward={canGoForwardFromCaptions() ? handleForwardToPrompts : undefined}
       />
 
       {/* Image Prompts Preview Modal */}
       <ImagePromptsPreviewModal
         isOpen={viewState === "review-prompts"}
         prompts={imagePrompts}
+        stylePrompt={imageStylePrompt}
         onConfirm={handlePromptsConfirm}
-        onCancel={handleCancel}
+        onCancel={handleCancelRequest}
         onBack={handleBackToCaptions}
+        onForward={canGoForwardFromPrompts() ? handleForwardToImages : undefined}
       />
 
       {/* Images Preview Modal */}
@@ -864,11 +968,27 @@ const Index = () => {
         images={pendingImages}
         prompts={imagePrompts}
         onConfirm={handleImagesConfirm}
-        onCancel={handleCancel}
+        onCancel={handleCancelRequest}
         onBack={handleBackToPrompts}
         onRegenerate={handleRegenerateImage}
         regeneratingIndex={regeneratingImageIndex}
       />
+
+      {/* Exit Confirmation Dialog */}
+      <AlertDialog open={showExitConfirmation} onOpenChange={setShowExitConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Exit Project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to exit? All your progress in this project will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelExit}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmExit}>Exit Project</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

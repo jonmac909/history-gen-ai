@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, Download } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,9 +23,11 @@ interface ImagePrompt {
 interface ImagePromptsPreviewModalProps {
   isOpen: boolean;
   prompts: ImagePrompt[];
-  onConfirm: (editedPrompts: ImagePrompt[]) => void;
+  stylePrompt: string;
+  onConfirm: (editedPrompts: ImagePrompt[], editedStylePrompt: string) => void;
   onCancel: () => void;
   onBack?: () => void;
+  onForward?: () => void;
 }
 
 function formatTimecode(time: string): string {
@@ -118,16 +120,25 @@ function PromptCard({ prompt, onUpdate }: PromptCardProps) {
 export function ImagePromptsPreviewModal({
   isOpen,
   prompts,
+  stylePrompt,
   onConfirm,
   onCancel,
-  onBack
+  onBack,
+  onForward
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
+  const [editedStyle, setEditedStyle] = useState(stylePrompt);
+  const [isStyleExpanded, setIsStyleExpanded] = useState(true);
 
   // Sync with props when prompts change
   useEffect(() => {
     setEditedPrompts(prompts);
   }, [prompts]);
+
+  // Sync style prompt when prop changes
+  useEffect(() => {
+    setEditedStyle(stylePrompt);
+  }, [stylePrompt]);
 
   const handleUpdatePrompt = (updatedPrompt: ImagePrompt) => {
     setEditedPrompts(prev =>
@@ -136,8 +147,15 @@ export function ImagePromptsPreviewModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(editedPrompts);
+    // Rebuild prompts with the current style
+    const finalPrompts = editedPrompts.map(p => ({
+      ...p,
+      prompt: `${editedStyle}. ${p.sceneDescription}`
+    }));
+    onConfirm(finalPrompts, editedStyle);
   };
+
+  const styleHasChanges = editedStyle !== stylePrompt;
 
   const handleDownload = () => {
     const data = editedPrompts.map(p => ({
@@ -183,7 +201,45 @@ export function ImagePromptsPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-y-auto max-h-[60vh] py-4 pr-2">
+        {/* Master Style Prompt Editor */}
+        <div className="border rounded-lg bg-muted/30">
+          <button
+            onClick={() => setIsStyleExpanded(!isStyleExpanded)}
+            className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Palette className="w-5 h-5 text-primary" />
+              <span className="font-medium">Master Style Prompt</span>
+              {styleHasChanges && <span className="text-xs text-yellow-500">(edited)</span>}
+            </div>
+            {isStyleExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {isStyleExpanded && (
+            <div className="px-3 pb-3 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                This style is applied to all images. Edit to change the overall look and feel.
+              </p>
+              <textarea
+                value={editedStyle}
+                onChange={(e) => setEditedStyle(e.target.value)}
+                className="w-full min-h-[120px] p-3 text-sm bg-background border rounded resize-y"
+                placeholder="Describe the visual style..."
+              />
+              {styleHasChanges && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditedStyle(stylePrompt)}
+                >
+                  Reset to Original
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-y-auto max-h-[50vh] py-4 pr-2">
           <div className="space-y-3">
             {editedPrompts.map((prompt) => (
               <PromptCard
@@ -212,6 +268,13 @@ export function ImagePromptsPreviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onForward && (
+            <Button variant="outline" onClick={onForward}>
+              Skip
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
 
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />

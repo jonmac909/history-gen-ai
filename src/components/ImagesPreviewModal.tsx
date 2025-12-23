@@ -43,6 +43,7 @@ export function ImagesPreviewModal({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
   const prevImagesRef = useRef<string[]>([]);
+  const prevRegeneratingIndexRef = useRef<number | undefined>(undefined);
 
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -75,6 +76,19 @@ export function ImagesPreviewModal({
     // Store current images for next comparison
     prevImagesRef.current = [...images];
   }, [images]);
+
+  // Force refresh image key when regeneration completes (even if URL is the same)
+  useEffect(() => {
+    // When regeneratingIndex transitions from a number to undefined, regeneration just completed
+    if (prevRegeneratingIndexRef.current !== undefined && regeneratingIndex === undefined) {
+      const completedIndex = prevRegeneratingIndexRef.current;
+      setImageKeys(prev => ({
+        ...prev,
+        [completedIndex]: Date.now()
+      }));
+    }
+    prevRegeneratingIndexRef.current = regeneratingIndex;
+  }, [regeneratingIndex]);
 
   // Add cache buster to image URL
   const getImageUrl = (url: string, index: number) => {
