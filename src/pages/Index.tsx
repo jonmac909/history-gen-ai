@@ -446,8 +446,26 @@ const Index = () => {
     try {
       updateStep("prompts", "active", "Analyzing script...");
 
+      // Use confirmedScript if available, otherwise extract text from captions
+      // This handles the "Generate Captions" flow where user uploads audio without a script
+      let scriptForPrompts = confirmedScript;
+      if (!scriptForPrompts.trim()) {
+        // Extract plain text from SRT captions
+        const srtLines = srt.split('\n');
+        const textLines: string[] = [];
+        for (let i = 0; i < srtLines.length; i++) {
+          const line = srtLines[i].trim();
+          // Skip empty lines, numbers, and timecodes
+          if (line && !line.match(/^\d+$/) && !line.includes('-->')) {
+            textLines.push(line);
+          }
+        }
+        scriptForPrompts = textLines.join(' ');
+        console.log('No script available, using captions text for image prompts');
+      }
+
       const promptResult = await generateImagePrompts(
-        confirmedScript,
+        scriptForPrompts,
         srt,
         settings.imageCount,
         imageStylePrompt,
