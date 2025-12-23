@@ -82,7 +82,11 @@ export function SettingsPopover({
           <Settings className="w-5 h-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-center gap-2 text-primary">
             <Settings className="w-4 h-4" />

@@ -1240,9 +1240,9 @@ const Index = () => {
       )}
 
       {/* Processing Modal */}
-      <ProcessingModal 
-        isOpen={viewState === "processing"} 
-        onClose={() => {}} 
+      <ProcessingModal
+        isOpen={viewState === "processing"}
+        onClose={handleCancelRequest}
         steps={processingSteps}
       />
 

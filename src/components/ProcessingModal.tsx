@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 export interface GenerationStep {
   id: string;
@@ -22,8 +24,12 @@ interface ProcessingModalProps {
 
 export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center gap-3">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
@@ -51,10 +57,10 @@ export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className={`font-medium ${
-                    step.status === "active" 
-                      ? "text-primary" 
-                      : step.status === "completed" 
-                        ? "text-foreground" 
+                    step.status === "active"
+                      ? "text-primary"
+                      : step.status === "completed"
+                        ? "text-foreground"
                         : "text-muted-foreground"
                   }`}>
                     {step.label}
@@ -74,6 +80,13 @@ export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps
             </div>
           ))}
         </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            <X className="w-4 h-4 mr-2" />
+            Cancel
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
