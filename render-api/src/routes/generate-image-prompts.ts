@@ -212,14 +212,25 @@ router.post('/', async (req: Request, res: Response) => {
 
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
+CONTENT SAFETY - STRICTLY PROHIBITED:
+- NO nudity, partial nudity, or sexually suggestive content
+- NO gore, blood, graphic violence, or injury depictions
+- NO weapons being used against people
+- NO disturbing, shocking, or traumatic imagery
+- NO dead bodies or death scenes
+- For war/conflict topics: show maps, documents, leaders in meetings, monuments, museums, artifacts - NOT battle scenes
+- For medical topics: show doctors, hospitals, equipment - NOT injuries or procedures
+- For crime topics: show courtrooms, documents, buildings - NOT crime scenes
+
 RULES:
 1. READ the script context to understand the overall topic
-2. For each image segment, create a visual scene that illustrates the content
-3. If narration is sparse, use the script context to infer appropriate visuals
+2. For each image segment, create a SAFE, family-friendly visual scene
+3. If narration mentions violence/war/death, depict the AFTERMATH (memorials, documents, peaceful scenes) not the event itself
 4. For technical/abstract topics: visualize people using technology, historical contexts, symbolic representations, or documentary-style scenes
 5. Include specific details: setting, lighting, objects, people, actions, atmosphere
 6. 50-100 words per description
 7. Do NOT include any text, titles, or words in the image
+8. When in doubt, choose the most peaceful, dignified representation
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
