@@ -3,10 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
 
-// Model-specific constants
-const MAX_TOKENS_SONNET = 16384;
-const MAX_TOKENS_HAIKU = 8192;
-const BATCH_SIZE_PARALLEL = 10; // Smaller batches for parallel processing (Option C)
+// Constants
+const MAX_TOKENS = 16384;  // Sonnet max tokens
+const BATCH_SIZE_PARALLEL = 10; // Smaller batches for parallel processing
 
 interface SrtSegment {
   index: number;
@@ -110,16 +109,10 @@ function groupSegmentsForImages(segments: SrtSegment[], imageCount: number, audi
 }
 
 router.post('/', async (req: Request, res: Response) => {
-  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream, fastMode } = req.body;
+  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream } = req.body;
 
-  // Use Haiku for fast mode (3x faster, 1/3 cost), otherwise use Sonnet
-  const selectedModel = fastMode
-    ? 'claude-3-5-haiku-latest'
-    : 'claude-sonnet-4-20250514';
-
-  // Model-specific token limits
-  const isHaiku = selectedModel.includes('haiku');
-  const maxTokensPerBatch = isHaiku ? MAX_TOKENS_HAIKU : MAX_TOKENS_SONNET;
+  // Always use Sonnet for best quality scene descriptions
+  const selectedModel = 'claude-sonnet-4-20250514';
 
   // Keepalive interval for SSE
   let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -173,7 +166,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json(error);
     }
 
-    console.log(`🚀 Generating ${imageCount} image prompts with ${selectedModel}${fastMode ? ' (FAST MODE)' : ''}...`);
+    console.log(`🚀 Generating ${imageCount} image prompts with ${selectedModel}...`);
 
     // Parse SRT and group into time windows
     const segments = parseSrt(srtContent);
@@ -256,7 +249,7 @@ Output format:
       ).join('\n\n');
 
       // Calculate tokens needed for this batch (use model-specific limit)
-      const batchTokens = Math.min(maxTokensPerBatch, batchSize * 150 + 500);
+      const batchTokens = Math.min(MAX_TOKENS, batchSize * 150 + 500);
 
       let fullResponse = '';
 

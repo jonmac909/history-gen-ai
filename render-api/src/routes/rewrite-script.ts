@@ -4,13 +4,11 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 
 // Constants
-const MAX_TOKENS_SONNET = 16000;  // Sonnet supports 16k output tokens
-const MAX_TOKENS_HAIKU = 8192;    // Haiku only supports 8k output tokens
+const MAX_TOKENS = 16000;  // Sonnet supports 16k output tokens
 const API_CALL_TIMEOUT = 1200000; // 20 minutes
 const MAX_ITERATIONS = 10;
 const KEEPALIVE_INTERVAL_MS = 15000; // Reduced keepalive frequency (was 3s, now 15s)
-const WORDS_PER_ITERATION_SONNET = 12000; // ~75% of 16k token capacity
-const WORDS_PER_ITERATION_HAIKU = 6000;   // ~75% of 8k token capacity
+const WORDS_PER_ITERATION = 12000; // ~75% of 16k token capacity
 
 interface GenerateScriptChunkOptions {
   apiKey: string;
@@ -113,7 +111,7 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { transcript, template, title, model, stream, wordCount, fastMode } = req.body;
+    const { transcript, template, title, model, stream, wordCount } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: 'Transcript is required' });
@@ -124,18 +122,11 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Anthropic API key not configured' });
     }
 
-    // Use Haiku for fast mode (3x faster, 1/3 cost), otherwise use Sonnet
-    const selectedModel = fastMode
-      ? 'claude-3-5-haiku-latest'
-      : (model || 'claude-sonnet-4-5');
+    // Always use Sonnet 4.5 for best quality
+    const selectedModel = model || 'claude-sonnet-4-5';
 
-    // Use model-specific token limits (Haiku: 8k, Sonnet: 16k)
-    const isHaiku = selectedModel.includes('haiku');
-    const maxTokensPerCall = isHaiku ? MAX_TOKENS_HAIKU : MAX_TOKENS_SONNET;
-    const wordsPerIteration = isHaiku ? WORDS_PER_ITERATION_HAIKU : WORDS_PER_ITERATION_SONNET;
-
-    console.log(`🚀 [v3.0-OPTIMIZED] Rewriting script with ${selectedModel}${fastMode ? ' (FAST MODE)' : ''}...`);
-    console.log(`📊 Max tokens: ${maxTokensPerCall} | Words/iteration: ${wordsPerIteration}`);
+    console.log(`🚀 Rewriting script with ${selectedModel}...`);
+    console.log(`📊 Max tokens: ${MAX_TOKENS} | Words/iteration: ${WORDS_PER_ITERATION}`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
@@ -179,14 +170,14 @@ CRITICAL RULES:
 
           if (iteration === 1) {
             // First iteration: start fresh
-            const wordLimit = Math.min(wordsPerIteration, targetWords);
+            const wordLimit = Math.min(WORDS_PER_ITERATION, targetWords);
             messages = [{
               role: 'user',
               content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nIMPORTANT: Write EXACTLY ${wordLimit} words of pure narration. Do not exceed ${wordLimit} words. Stop writing when you reach ${wordLimit} words.`
             }];
           } else {
             // Continuation iterations
-            const wordLimit = Math.min(wordsPerIteration, wordsRemaining);
+            const wordLimit = Math.min(WORDS_PER_ITERATION, wordsRemaining);
             messages = [
               {
                 role: 'user',
@@ -213,7 +204,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
 
           // Send initial progress for this iteration (actual progress only)
           const currentProgress = Math.round((currentWordCount / targetWords) * 100);
-          const estimatedIterations = Math.ceil(targetWords / wordsPerIteration);
+          const estimatedIterations = Math.ceil(targetWords / WORDS_PER_ITERATION);
           sendEvent({
             type: 'progress',
             progress: currentProgress,
@@ -246,7 +237,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
               model: selectedModel,
               systemPrompt,
               messages,
-              maxTokens: maxTokensPerCall,
+              maxTokens: MAX_TOKENS,
               usePromptCaching: useCaching, // Cache transcript on subsequent iterations
               onToken: (text) => {
                 // Stream tokens to client in real-time for better UX
@@ -372,7 +363,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
         res.end();
       }
     } else {
-      // Non-streaming mode (uses wordsPerIteration and maxTokensPerCall from line 135)
+      // Non-streaming mode
       let fullScript = '';
       let currentWordCount = 0;
       let iteration = 0;
@@ -385,13 +376,13 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
         let messages: { role: 'user' | 'assistant'; content: string }[];
 
         if (iteration === 1) {
-          const wordLimit = Math.min(wordsPerIteration, targetWords);
+          const wordLimit = Math.min(WORDS_PER_ITERATION, targetWords);
           messages = [{
             role: 'user',
             content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nIMPORTANT: Write EXACTLY ${wordLimit} words of pure narration. Do not exceed ${wordLimit} words. Stop writing when you reach ${wordLimit} words.`
           }];
         } else {
-          const wordLimit = Math.min(wordsPerIteration, wordsRemaining);
+          const wordLimit = Math.min(WORDS_PER_ITERATION, wordsRemaining);
           messages = [
             {
               role: 'user',
@@ -422,7 +413,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
           model: selectedModel,
           systemPrompt,
           messages,
-          maxTokens: maxTokensPerCall,
+          maxTokens: MAX_TOKENS,
           usePromptCaching: iteration > 1 // Cache transcript on subsequent iterations
         });
 

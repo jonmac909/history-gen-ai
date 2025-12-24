@@ -151,8 +151,7 @@ export async function rewriteScriptStreaming(
   aiModel: string,
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void,
-  onToken?: (token: string) => void, // Real-time token streaming callback
-  fastMode?: boolean // Use faster Haiku model instead of Sonnet
+  onToken?: (token: string) => void // Real-time token streaming callback
 ): Promise<ScriptResult> {
   const CHUNK_SIZE = 30000; // Render has no timeout limit - can generate full scripts in one call!
 
@@ -200,8 +199,7 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
           const overallWords = totalWordsGenerated + chunkWords;
           onProgress(Math.round(overallProgress), overallWords);
         },
-        onToken, // Pass through token callback
-        fastMode // Pass through fast mode
+        onToken // Pass through token callback
       );
 
       if (!chunkResult.success) {
@@ -232,7 +230,7 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
   }
 
   // For scripts <= 5000 words, use single-chunk generation
-  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken, fastMode);
+  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken);
 }
 
 /**
@@ -246,8 +244,7 @@ async function generateSingleChunk(
   aiModel: string,
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void,
-  onToken?: (token: string) => void, // Real-time token streaming
-  fastMode?: boolean // Use faster Haiku model
+  onToken?: (token: string) => void // Real-time token streaming
 ): Promise<ScriptResult> {
   // Use Render API for script generation (no timeout limits!)
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
@@ -280,7 +277,7 @@ async function generateSingleChunk(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true, fastMode }),
+      body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true }),
       signal: controller.signal,
     });
 
@@ -698,10 +695,9 @@ export async function generateImagePrompts(
   imageCount: number,
   stylePrompt: string,
   audioDuration?: number,
-  onProgress?: (progress: number, message: string) => void,
-  fastMode?: boolean // Use Haiku for 3x faster generation
+  onProgress?: (progress: number, message: string) => void
 ): Promise<ImagePromptsResult> {
-  console.log(`Generating AI-powered image prompts from script and captions${fastMode ? ' (FAST MODE)' : ''}...`);
+  console.log('Generating AI-powered image prompts from script and captions...');
   console.log(`Script length: ${script.length}, SRT length: ${srtContent.length}, imageCount: ${imageCount}`);
   if (audioDuration) {
     console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
@@ -715,7 +711,7 @@ export async function generateImagePrompts(
       const response = await fetch(`${renderUrl}/generate-image-prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true, fastMode })
+        body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true })
       });
 
       if (!response.ok) {

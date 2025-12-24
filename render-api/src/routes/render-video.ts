@@ -18,8 +18,6 @@ if (ffmpegStatic) {
 const IMAGES_PER_CHUNK = 25;
 // Parallel chunk rendering for speed (limited to avoid memory pressure)
 const PARALLEL_CHUNK_RENDERS = 3;
-// Embers overlay effect URL (served from Netlify frontend)
-const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 
 interface ImageTiming {
   startSeconds: number;
@@ -121,20 +119,10 @@ async function handleRenderVideo(req: Request, res: Response) {
     }
     console.log('All images downloaded');
 
-    // Write SRT file
+    // Write SRT file (kept for future use, but not burned into video)
     const srtPath = path.join(tempDir, 'captions.srt');
     fs.writeFileSync(srtPath, srtContent, 'utf8');
     console.log('SRT file written');
-
-    // Download embers overlay for final compositing
-    const embersPath = path.join(tempDir, 'embers.mp4');
-    try {
-      await downloadFile(EMBERS_OVERLAY_URL, embersPath);
-      console.log('Embers overlay downloaded');
-    } catch (overlayErr) {
-      console.warn('Failed to download embers overlay, will skip overlay effect:', overlayErr);
-    }
-    const hasEmbersOverlay = fs.existsSync(embersPath);
 
     // Stage 2: Chunked video rendering
     sendEvent(res, { type: 'progress', stage: 'preparing', percent: 30, message: 'Preparing timeline...' });
@@ -366,214 +354,12 @@ async function handleRenderVideo(req: Request, res: Response) {
     const videoUrl = urlData1.publicUrl;
     console.log(`Video (no captions) uploaded: ${videoUrl}`);
 
-    // Send partial complete - user can download video without captions now
-    sendEvent(res, {
-      type: 'video_ready',
-      videoUrl,
-      size: withAudioStats.size,
-      message: 'Video without captions ready! Now burning in captions...'
-    });
-
-    // Stage 6: Burn in subtitles
-    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 82, message: 'Burning in captions...' });
-
-    const captionedOutputPath = path.join(tempDir, 'output_captioned.mp4');
-
-    console.log(`SRT path: ${srtPath}`);
-
-    // Read first few lines of SRT to verify content
-    const srtPreview = fs.readFileSync(srtPath, 'utf8').substring(0, 500);
-    console.log(`SRT content preview:\n${srtPreview}`);
-
-    // Verify SRT file exists and has content
-    const srtStats = fs.statSync(srtPath);
-    console.log(`SRT file size: ${srtStats.size} bytes`);
-    if (srtStats.size === 0) {
-      console.warn('WARNING: SRT file is empty!');
-    }
-
-    // Progress heartbeat during long subtitle burn
-    const progressHeartbeat = setInterval(() => {
-      sendEvent(res, {
-        type: 'progress',
-        stage: 'rendering',
-        percent: 85,
-        message: 'Burning in captions (processing)...'
-      });
-    }, 10000);
-
-    let captionedVideoUrl: string | null = null;
-    let captionedSize = 0;
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        // Build subtitle filter - use videoFilters for proper escaping
-        // Note: On Linux, srtPath like /tmp/render-xxx/captions.srt has no special chars
-        // Fonts installed via nixpacks.toml (fontconfig, fonts-dejavu-core, fonts-liberation)
-        // Don't specify FontName - fontconfig will use installed fonts as fallback
-        const subtitleFilter = `subtitles=${srtPath}:force_style='FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
-
-        // Build complete filter graph based on whether overlay is available
-        let filterComplex: string;
-        let ffmpegCmd = ffmpeg().input(withAudioPath);
-
-        if (hasEmbersOverlay) {
-          // Add looping embers overlay input
-          // -stream_loop -1 loops indefinitely, -shortest ends when main video ends
-          ffmpegCmd = ffmpegCmd
-            .input(embersPath)
-            .inputOptions(['-stream_loop', '-1']);  // Loop overlay indefinitely
-
-          // Complex filter: scale overlay, apply screen blend, then add subtitles
-          // [0:v] = main video, [1:v] = embers overlay
-          // Screen blend mode: bright pixels from overlay show, dark become transparent
-          filterComplex = `[1:v]scale=1920:1080,format=yuva420p[embers];[0:v][embers]blend=all_mode=screen:all_opacity=0.4[blended];[blended]${subtitleFilter}[out]`;
-
-          console.log(`Using embers overlay with filter: ${filterComplex}`);
-
-          ffmpegCmd = ffmpegCmd
-            .complexFilter(filterComplex, 'out')
-            .outputOptions([
-              '-map', '[out]',
-              '-map', '0:a',
-              '-threads', '0',
-              '-c:v', 'libx264',
-              '-preset', 'fast',
-              '-crf', '23',
-              '-pix_fmt', 'yuv420p',
-              '-c:a', 'copy',
-              '-shortest',              // End when main video ends
-              '-movflags', '+faststart',
-              '-y'
-            ]);
-        } else {
-          // No overlay - just apply subtitles
-          console.log(`Subtitle filter only: ${subtitleFilter}`);
-
-          ffmpegCmd = ffmpegCmd
-            .videoFilters(subtitleFilter)
-            .outputOptions([
-              '-threads', '0',
-              '-c:v', 'libx264',
-              '-preset', 'fast',
-              '-crf', '23',
-              '-pix_fmt', 'yuv420p',
-              '-c:a', 'copy',
-              '-movflags', '+faststart',
-              '-y'
-            ]);
-        }
-
-        ffmpegCmd
-          .output(captionedOutputPath)
-          .on('start', (cmd) => {
-            console.log('Subtitle burn FFmpeg command:', cmd);
-          })
-          .on('stderr', (stderrLine) => {
-            // Log ALL FFmpeg stderr for debugging subtitle issues
-            console.log('FFmpeg subtitle stderr:', stderrLine);
-          })
-          .on('progress', (progress) => {
-            let finalPercent = 82;
-            if (progress.timemark) {
-              const timeMatch = progress.timemark.match(/(\d+):(\d+):(\d+)/);
-              if (timeMatch) {
-                const processedSeconds =
-                  parseInt(timeMatch[1]) * 3600 +
-                  parseInt(timeMatch[2]) * 60 +
-                  parseInt(timeMatch[3]);
-                finalPercent = 82 + Math.round((processedSeconds / totalDuration) * 10);
-                finalPercent = Math.min(finalPercent, 92);
-              }
-            }
-            sendEvent(res, {
-              type: 'progress',
-              stage: 'rendering',
-              percent: finalPercent,
-              message: `Burning captions: ${progress.timemark || '00:00:00'}`
-            });
-          })
-          .on('error', (err) => {
-            clearInterval(progressHeartbeat);
-            console.error('Subtitle burn FFmpeg error:', err);
-            reject(err);
-          })
-          .on('end', () => {
-            clearInterval(progressHeartbeat);
-            console.log('Subtitle burning complete');
-            resolve();
-          })
-          .run();
-      });
-
-      // Check captioned output
-      const captionedStats = fs.statSync(captionedOutputPath);
-      captionedSize = captionedStats.size;
-      const captionedSizeMB = (captionedSize / 1024 / 1024).toFixed(1);
-      console.log(`Captioned video size: ${captionedSizeMB} MB`);
-
-      // Stage 7: Upload captioned video
-      sendEvent(res, { type: 'progress', stage: 'uploading', percent: 95, message: `Uploading captioned video (${captionedSizeMB} MB)...` });
-
-      const videoCaptionedPath = `${projectId}/video_captioned.mp4`;
-      const videoCaptionedBuffer = fs.readFileSync(captionedOutputPath);
-
-      // Heartbeat during captioned upload
-      const captionedUploadHeartbeat = setInterval(() => {
-        sendEvent(res, {
-          type: 'progress',
-          stage: 'uploading',
-          percent: 96,
-          message: `Uploading captioned video (${captionedSizeMB} MB)...`
-        });
-      }, 3000);
-
-      const { error: uploadError2 } = await supabase.storage
-        .from('generated-assets')
-        .upload(videoCaptionedPath, videoCaptionedBuffer, {
-          contentType: 'video/mp4',
-          upsert: true
-        });
-
-      clearInterval(captionedUploadHeartbeat);
-
-      if (uploadError2) {
-        console.error('Supabase upload error (captioned):', uploadError2);
-        // Don't throw - we already have the non-captioned version
-        sendEvent(res, {
-          type: 'caption_error',
-          error: `Failed to upload captioned video: ${uploadError2.message}`,
-          message: 'Captioned video upload failed, but video without captions is available'
-        });
-      } else {
-        const { data: urlData2 } = supabase.storage
-          .from('generated-assets')
-          .getPublicUrl(videoCaptionedPath);
-
-        captionedVideoUrl = urlData2.publicUrl;
-        console.log(`Captioned video uploaded: ${captionedVideoUrl}`);
-      }
-
-    } catch (captionError: any) {
-      clearInterval(progressHeartbeat);
-      console.error('Caption burning failed:', captionError);
-      sendEvent(res, {
-        type: 'caption_error',
-        error: captionError.message,
-        message: 'Caption burning failed, but video without captions is available'
-      });
-    }
-
-    // Send final completion event with both URLs
+    // Send final completion event
     sendEvent(res, {
       type: 'complete',
       videoUrl,
-      videoUrlCaptioned: captionedVideoUrl,
       size: withAudioStats.size,
-      sizeCaptioned: captionedSize,
-      message: captionedVideoUrl
-        ? 'Video rendering complete! Both versions available.'
-        : 'Video rendering complete! (Captions failed, video without captions available)'
+      message: 'Video rendering complete!'
     });
 
   } catch (error: any) {
