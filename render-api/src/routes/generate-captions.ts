@@ -211,8 +211,8 @@ async function transcribeChunk(audioData: Uint8Array, groqApiKey: string, chunkI
       formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
       formData.append('model', 'whisper-large-v3-turbo'); // Groq's fastest Whisper model
       formData.append('response_format', 'verbose_json');
-      formData.append('timestamp_granularities[]', 'segment');
       formData.append('language', 'en'); // Speed optimization: skip language detection
+      // Note: verbose_json returns segments by default, timestamp_granularities not needed
 
       console.log(`Transcribing chunk ${chunkIndex + 1}, size: ${audioData.length} bytes${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
 
@@ -232,7 +232,12 @@ async function transcribeChunk(audioData: Uint8Array, groqApiKey: string, chunkI
       }
 
       const result = await whisperResponse.json() as any;
-      console.log(`Chunk ${chunkIndex + 1} transcribed, duration: ${result.duration}s, segments: ${result.segments?.length || 0}`);
+      console.log(`Chunk ${chunkIndex + 1} transcribed:`, {
+        duration: result.duration,
+        segmentCount: result.segments?.length || 0,
+        hasText: !!result.text,
+        keys: Object.keys(result)
+      });
 
       return {
         chunkIndex,
