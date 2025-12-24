@@ -245,6 +245,16 @@ async function handleStreamingImages(
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  // Keepalive heartbeat to prevent connection timeout
+  const heartbeatInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
+
+  const cleanup = () => {
+    clearInterval(heartbeatInterval);
+  };
 
   const sendEvent = (data: any) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -448,6 +458,7 @@ async function handleStreamingImages(
       failed: failedCount
     });
 
+    cleanup();
     res.end();
 
   } catch (err) {
@@ -456,6 +467,7 @@ async function handleStreamingImages(
       type: 'error',
       error: err instanceof Error ? err.message : 'Generation failed'
     });
+    cleanup();
     res.end();
   }
 }
