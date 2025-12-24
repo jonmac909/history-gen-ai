@@ -397,8 +397,9 @@ async function handleRenderVideo(req: Request, res: Response) {
       await new Promise<void>((resolve, reject) => {
         // Build subtitle filter - use videoFilters for proper escaping
         // Note: On Linux, srtPath like /tmp/render-xxx/captions.srt has no special chars
-        // Use DejaVu Sans which is installed via nixpacks.toml (fonts-dejavu-core)
-        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,FontName=DejaVu Sans,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
+        // Fonts installed via nixpacks.toml (fontconfig, fonts-dejavu-core, fonts-liberation)
+        // Don't specify FontName - fontconfig will use installed fonts as fallback
+        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
         console.log(`Subtitle filter: ${subtitleFilterString}`);
 
         ffmpeg()
@@ -419,10 +420,8 @@ async function handleRenderVideo(req: Request, res: Response) {
             console.log('Subtitle burn FFmpeg command:', cmd);
           })
           .on('stderr', (stderrLine) => {
-            // Log FFmpeg stderr for debugging (includes useful info and warnings)
-            if (stderrLine.includes('Error') || stderrLine.includes('error') || stderrLine.includes('Invalid')) {
-              console.error('FFmpeg stderr:', stderrLine);
-            }
+            // Log ALL FFmpeg stderr for debugging subtitle issues
+            console.log('FFmpeg subtitle stderr:', stderrLine);
           })
           .on('progress', (progress) => {
             let finalPercent = 82;
