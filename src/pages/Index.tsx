@@ -95,6 +95,8 @@ const Index = () => {
   const captionsFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedAudioFileForImages, setUploadedAudioFileForImages] = useState<File | null>(null);
   const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
+  const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
+  const [imagesProjectTitle, setImagesProjectTitle] = useState("");
 
   // Check for saved project on load and when returning to create view
   useEffect(() => {
@@ -942,13 +944,18 @@ const Index = () => {
       return;
     }
 
+    // Set project title
+    const title = captionsProjectTitle.trim() || "Untitled Project";
+    setVideoTitle(title);
+
     setViewState("processing");
     setProcessingSteps([{ id: "captions", label: "Generating captions...", status: "loading", progress: 5 }]);
 
     try {
       // Upload the audio file to Supabase storage
-      const projectId = crypto.randomUUID();
-      const audioFileName = `${projectId}/voiceover.wav`;
+      const newProjectId = crypto.randomUUID();
+      setProjectId(newProjectId);
+      const audioFileName = `${newProjectId}/voiceover.wav`;
 
       const { error: uploadError } = await supabase.storage
         .from("generated-assets")
@@ -1005,9 +1012,14 @@ const Index = () => {
       return;
     }
 
+    // Set project title
+    const title = imagesProjectTitle.trim() || "Untitled Project";
+    setVideoTitle(title);
+
     setViewState("processing");
     setProcessingSteps([{ id: "prompts", label: "Generating image prompts...", status: "loading", progress: 10 }]);
     setPendingScript(scriptText);
+    setConfirmedScript(scriptText);
     setPendingSrtContent(captionsText);
 
     try {
@@ -1401,6 +1413,18 @@ const Index = () => {
                 <p className="text-muted-foreground text-sm">
                   Upload an audio file to generate captions (SRT) from it.
                 </p>
+
+                {/* Project Title input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-left block">Project Title</label>
+                  <Input
+                    value={captionsProjectTitle}
+                    onChange={(e) => setCaptionsProjectTitle(e.target.value)}
+                    placeholder="Enter project title..."
+                    className="w-full"
+                  />
+                </div>
+
                 <input
                   ref={audioFileInputRef}
                   type="file"
@@ -1434,6 +1458,17 @@ const Index = () => {
                 <p className="text-muted-foreground text-sm">
                   Upload or paste your script and captions (SRT) to generate image prompts.
                 </p>
+
+                {/* Project Title input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-left block">Project Title</label>
+                  <Input
+                    value={imagesProjectTitle}
+                    onChange={(e) => setImagesProjectTitle(e.target.value)}
+                    placeholder="Enter project title..."
+                    className="w-full"
+                  />
+                </div>
 
                 {/* Script input */}
                 <div className="space-y-2">
