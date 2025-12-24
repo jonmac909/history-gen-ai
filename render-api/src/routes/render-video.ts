@@ -367,14 +367,11 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     const captionedOutputPath = path.join(tempDir, 'output_captioned.mp4');
 
-    // For Linux, escape special characters for FFmpeg subtitles filter
-    // The subtitles filter requires escaping: \ : ' (backslash, colon, single quote)
-    const escapedSrtPath = srtPath
-      .replace(/\\/g, '\\\\')  // Escape backslashes first
-      .replace(/:/g, '\\:')     // Escape colons
-      .replace(/'/g, "'\\''");  // Escape single quotes
     console.log(`SRT path: ${srtPath}`);
-    console.log(`Escaped SRT path: ${escapedSrtPath}`);
+
+    // Read first few lines of SRT to verify content
+    const srtPreview = fs.readFileSync(srtPath, 'utf8').substring(0, 500);
+    console.log(`SRT content preview:\n${srtPreview}`);
 
     // Verify SRT file exists and has content
     const srtStats = fs.statSync(srtPath);
@@ -398,14 +395,15 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     try {
       await new Promise<void>((resolve, reject) => {
-        // Use -vf option directly for better control over subtitle filter
-        const subtitleFilter = `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
-        console.log(`Subtitle filter: ${subtitleFilter}`);
+        // Build subtitle filter - use videoFilters for proper escaping
+        // Note: On Linux, srtPath like /tmp/render-xxx/captions.srt has no special chars
+        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
+        console.log(`Subtitle filter: ${subtitleFilterString}`);
 
         ffmpeg()
           .input(withAudioPath)
+          .videoFilters(subtitleFilterString)
           .outputOptions([
-            '-vf', subtitleFilter,
             '-threads', '0',           // Use all CPU cores
             '-c:v', 'libx264',
             '-preset', 'fast',         // Keep fast for final output quality
@@ -418,6 +416,12 @@ async function handleRenderVideo(req: Request, res: Response) {
           .output(captionedOutputPath)
           .on('start', (cmd) => {
             console.log('Subtitle burn FFmpeg command:', cmd);
+          })
+          .on('stderr', (stderrLine) => {
+            // Log FFmpeg stderr for debugging (includes useful info and warnings)
+            if (stderrLine.includes('Error') || stderrLine.includes('error') || stderrLine.includes('Invalid')) {
+              console.error('FFmpeg stderr:', stderrLine);
+            }
           })
           .on('progress', (progress) => {
             let finalPercent = 82;
