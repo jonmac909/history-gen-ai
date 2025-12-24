@@ -69,14 +69,15 @@ export function SettingsPopover({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (open) setIsOpen(true); }}>
+    <Dialog open={isOpen}>
       <DialogTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
+          onClick={() => setIsOpen(true)}
           className={`shrink-0 transition-colors ${
-            isOpen 
-              ? "bg-primary text-primary-foreground hover:bg-primary/90" 
+            isOpen
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -112,6 +113,7 @@ export function SettingsPopover({
               placeholder="Paste your pre-written script here to skip the transcript and rewriting steps..."
               value={settings.customScript || ""}
               onChange={(e) => updateSetting("customScript", e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
               className="min-h-[120px] resize-y"
             />
             {settings.customScript && settings.customScript.trim().length > 0 && (
