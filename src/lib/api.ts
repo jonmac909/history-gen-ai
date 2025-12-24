@@ -200,7 +200,8 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
           const overallWords = totalWordsGenerated + chunkWords;
           onProgress(Math.round(overallProgress), overallWords);
         },
-        onToken // Pass through token callback
+        onToken, // Pass through token callback
+        fastMode // Pass through fast mode
       );
 
       if (!chunkResult.success) {
@@ -231,7 +232,7 @@ Continue the narrative seamlessly from where this left off. DO NOT repeat any co
   }
 
   // For scripts <= 5000 words, use single-chunk generation
-  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken);
+  return generateSingleChunk(transcript, template, title, aiModel, wordCount, onProgress, onToken, fastMode);
 }
 
 /**
@@ -245,7 +246,8 @@ async function generateSingleChunk(
   aiModel: string,
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void,
-  onToken?: (token: string) => void // NEW: Real-time token streaming
+  onToken?: (token: string) => void, // Real-time token streaming
+  fastMode?: boolean // Use faster Haiku model
 ): Promise<ScriptResult> {
   // Use Render API for script generation (no timeout limits!)
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
