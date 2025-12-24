@@ -146,15 +146,22 @@ async function handleRenderVideo(req: Request, res: Response) {
       // Calculate total duration for progress estimation
       const totalDuration = imageTimings[imageTimings.length - 1].endSeconds;
 
+      // Escape the SRT path for FFmpeg subtitles filter (Linux-compatible)
+      // FFmpeg subtitles filter needs colons and backslashes escaped
+      const escapedSrtPath = srtPath
+        .replace(/\\/g, '/')  // Use forward slashes
+        .replace(/:/g, '\\:')  // Escape colons
+        .replace(/'/g, "'\\''");  // Escape single quotes for shell
+
       ffmpeg()
         .input(concatPath)
         .inputOptions(['-f', 'concat', '-safe', '0'])
         .input(audioPath)
         .complexFilter([
           // Scale images to 1920x1080, center them if aspect ratio differs
-          '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[scaled]',
+          '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p[scaled]',
           // Burn in subtitles with styling
-          `[scaled]subtitles='${srtPath.replace(/'/g, "\\'")}':force_style='FontSize=24,Alignment=2,BorderStyle=3,Outline=2,Shadow=1,MarginV=40,FontName=Arial'[final]`
+          `[scaled]subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'[final]`
         ])
         .outputOptions([
           '-map', '[final]',
@@ -162,9 +169,10 @@ async function handleRenderVideo(req: Request, res: Response) {
           '-c:v', 'libx264',
           '-preset', 'fast',
           '-crf', '23',
+          '-pix_fmt', 'yuv420p',  // QuickTime compatibility
           '-c:a', 'aac',
+          '-ar', '48000',  // Standard audio sample rate
           '-b:a', '192k',
-          '-shortest',
           '-movflags', '+faststart',
           '-y'
         ])
