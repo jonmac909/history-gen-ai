@@ -636,6 +636,9 @@ const Index = () => {
   const handleCaptionsConfirm = async (srt: string) => {
     setPendingSrtContent(srt);
 
+    // Auto-save captions immediately
+    autoSave("captions", { srtContent: srt });
+
     const steps: GenerationStep[] = [
       { id: "prompts", label: "Generating Scene Descriptions", status: "pending" },
     ];
