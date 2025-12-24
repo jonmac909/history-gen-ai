@@ -1126,8 +1126,55 @@ const Index = () => {
       setImagePrompts(basicPrompts);
     }
 
-    // Go to images review (user can navigate to results from there)
-    setViewState("review-images");
+    // Build generated assets for results view
+    const assets: GeneratedAsset[] = [];
+    if (project.script) {
+      assets.push({
+        id: "script",
+        name: "Rewritten Script",
+        type: "Markdown",
+        size: `${Math.round(project.script.length / 1024)} KB`,
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        content: project.script,
+      });
+    }
+    if (project.audioUrl) {
+      assets.push({
+        id: "audio",
+        name: "Voiceover Audio",
+        type: "MP3",
+        size: project.audioDuration ? `${Math.round(project.audioDuration / 60)} min` : "Unknown",
+        icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+        url: project.audioUrl,
+      });
+    }
+    if (project.srtContent) {
+      assets.push({
+        id: "captions",
+        name: "Captions",
+        type: "SRT",
+        size: `${Math.round(project.srtContent.length / 1024)} KB`,
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        url: project.srtUrl,
+        content: project.srtContent,
+      });
+    }
+    if (project.imageUrls) {
+      project.imageUrls.forEach((imageUrl, index) => {
+        assets.push({
+          id: `image-${index + 1}`,
+          name: `Image ${index + 1}`,
+          type: "PNG",
+          size: "~1 MB",
+          icon: <Image className="w-5 h-5 text-muted-foreground" />,
+          url: imageUrl,
+        });
+      });
+    }
+    setGeneratedAssets(assets);
+
+    // Go to results page (last step with all downloads)
+    setViewState("results");
 
     toast({
       title: "Project Opened",
