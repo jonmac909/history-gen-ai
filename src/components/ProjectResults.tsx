@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -33,6 +33,7 @@ interface ProjectResultsProps {
   projectId?: string;
   videoUrl?: string;  // Pre-rendered video URL (from saved project)
   onVideoRendered?: (videoUrl: string) => void;  // Callback when video is rendered
+  autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
 }
 
 // Parse SRT to get timing info
@@ -121,12 +122,30 @@ export function ProjectResults({
   projectTitle,
   projectId,
   videoUrl,
-  onVideoRendered
+  onVideoRendered,
+  autoRender
 }: ProjectResultsProps) {
   // State for video rendering - initialize from prop if available
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
+  const autoRenderTriggered = useRef(false);
+
+  // Auto-render video when in full automation mode
+  useEffect(() => {
+    if (autoRender && !autoRenderTriggered.current && !renderedVideoUrl && !isRendering) {
+      // Check if we have all required data for rendering
+      const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
+      if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
+        console.log("[Full Automation] Auto-starting video render...");
+        autoRenderTriggered.current = true;
+        // Small delay to let the UI render first
+        setTimeout(() => {
+          handleRenderVideo();
+        }, 1000);
+      }
+    }
+  }, [autoRender, projectId, audioUrl, srtContent, assets, renderedVideoUrl, isRendering]);
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {

@@ -50,6 +50,7 @@ const Index = () => {
   const [viewState, setViewState] = useState<ViewState>("create");
   const [settings, setSettings] = useState<GenerationSettings>({
     projectTitle: "",
+    fullAutomation: false,
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
@@ -107,6 +108,61 @@ const Index = () => {
       }
     }
   }, [viewState]);
+
+  // Full Automation: Auto-confirm script when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-script" && pendingScript) {
+      console.log("[Full Automation] Auto-confirming script...");
+      const timer = setTimeout(() => {
+        handleScriptConfirm(pendingScript);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, pendingScript]);
+
+  // Full Automation: Auto-confirm audio when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-audio" && pendingAudioUrl) {
+      console.log("[Full Automation] Auto-confirming audio...");
+      const timer = setTimeout(() => {
+        handleAudioConfirm();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, pendingAudioUrl]);
+
+  // Full Automation: Auto-confirm captions when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-captions" && pendingSrtContent) {
+      console.log("[Full Automation] Auto-confirming captions...");
+      const timer = setTimeout(() => {
+        handleCaptionsConfirm(pendingSrtContent);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, pendingSrtContent]);
+
+  // Full Automation: Auto-confirm prompts when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-prompts" && imagePrompts.length > 0) {
+      console.log("[Full Automation] Auto-confirming image prompts...");
+      const timer = setTimeout(() => {
+        handlePromptsConfirm(imagePrompts, imageStylePrompt);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, imagePrompts]);
+
+  // Full Automation: Auto-confirm images when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-images" && pendingImages.length > 0) {
+      console.log("[Full Automation] Auto-confirming images...");
+      const timer = setTimeout(() => {
+        handleImagesConfirm();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, pendingImages]);
 
   // Auto-save helper - accepts overrides for values that were just set
   const autoSave = (step: SavedProject["step"], overrides?: Partial<SavedProject>) => {
@@ -1252,6 +1308,7 @@ const Index = () => {
             autoSave("complete", { videoUrl: url });
             updateProjectInHistory(projectId, { videoUrl: url });
           }}
+          autoRender={settings.fullAutomation}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { Settings, Minus, Plus, X } from "lucide-react";
+import { Settings, Minus, Plus, X, Zap } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import type { ScriptTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   projectTitle: string;
+  fullAutomation: boolean;
   scriptTemplate: string;
   aiModel: string;
   voiceSampleUrl: string | null;
@@ -126,6 +128,23 @@ export function SettingsPopover({
               onChange={(e) => updateSetting("projectTitle", e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
               className="text-center"
+            />
+          </div>
+
+          {/* Full Automation Toggle */}
+          <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-primary" />
+              <div>
+                <span className="text-sm font-medium">Full Automation</span>
+                <p className="text-xs text-muted-foreground">
+                  Auto-confirm each step & render video
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={localSettings.fullAutomation || false}
+              onCheckedChange={(checked) => updateSetting("fullAutomation", checked)}
             />
           </div>
 
