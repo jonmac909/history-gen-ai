@@ -93,13 +93,15 @@ const Index = () => {
   const [uploadedAudioFileForImages, setUploadedAudioFileForImages] = useState<File | null>(null);
   const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
 
-  // Check for saved project on load
+  // Check for saved project on load and when returning to create view
   useEffect(() => {
-    const saved = loadProject();
-    if (saved) {
-      setSavedProject(saved);
+    if (viewState === "create") {
+      const saved = loadProject();
+      if (saved) {
+        setSavedProject(saved);
+      }
     }
-  }, []);
+  }, [viewState]);
 
   // Auto-save helper - accepts overrides for values that were just set
   const autoSave = (step: SavedProject["step"], overrides?: Partial<SavedProject>) => {
