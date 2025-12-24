@@ -228,6 +228,22 @@ async function transcribeChunk(audioData: Uint8Array, groqApiKey: string, chunkI
       if (!whisperResponse.ok) {
         const errorText = await whisperResponse.text();
         console.error('Groq Whisper API error:', whisperResponse.status, errorText);
+
+        // Handle rate limiting (429) with retry
+        if (whisperResponse.status === 429) {
+          // Parse retry time from error message if available
+          const retryMatch = errorText.match(/try again in (\d+)m?(\d*)s?/i);
+          let waitTime = 60000; // Default 60 seconds
+          if (retryMatch) {
+            const minutes = parseInt(retryMatch[1]) || 0;
+            const seconds = parseInt(retryMatch[2]) || 0;
+            waitTime = (minutes * 60 + seconds) * 1000 + 5000; // Add 5s buffer
+          }
+          console.log(`Rate limited, waiting ${waitTime/1000}s before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue; // Retry this attempt
+        }
+
         throw new Error(`Groq Whisper API error: ${whisperResponse.status}`);
       }
 
