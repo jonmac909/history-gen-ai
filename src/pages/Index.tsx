@@ -860,6 +860,10 @@ const Index = () => {
     setViewState("review-prompts");
   };
 
+  const handleBackToImages = () => {
+    setViewState("review-images");
+  };
+
   // Forward navigation handlers (to skip ahead if data already exists)
   const handleForwardToAudio = () => {
     if (pendingAudioUrl || pendingAudioSegments.length > 0) {
@@ -1164,7 +1168,7 @@ const Index = () => {
         <ProjectResults
           sourceUrl={sourceUrl}
           onNewProject={handleNewProject}
-          onBack={handleBackToPrompts}
+          onBack={handleBackToImages}
           assets={generatedAssets}
           srtContent={srtContent}
         />
