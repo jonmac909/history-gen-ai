@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Settings, Minus, Plus, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -54,6 +54,14 @@ export function SettingsPopover({
   scriptTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [localSettings, setLocalSettings] = useState(settings);
+
+  // Sync local settings when props change (but not when modal is open)
+  React.useEffect(() => {
+    if (!isOpen) {
+      setLocalSettings(settings);
+    }
+  }, [settings, isOpen]);
 
   // Build template options from scriptTemplates with custom names or defaults
   const scriptTemplateOptions = scriptTemplates.map((template) => ({
@@ -65,7 +73,12 @@ export function SettingsPopover({
     key: K,
     value: GenerationSettings[K]
   ) => {
-    onSettingsChange({ ...settings, [key]: value });
+    setLocalSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleClose = () => {
+    onSettingsChange(localSettings);
+    setIsOpen(false);
   };
 
   return (
@@ -111,14 +124,14 @@ export function SettingsPopover({
             </p>
             <Textarea
               placeholder="Paste your pre-written script here to skip the transcript and rewriting steps..."
-              value={settings.customScript || ""}
+              value={localSettings.customScript || ""}
               onChange={(e) => updateSetting("customScript", e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
               className="min-h-[120px] resize-y"
             />
-            {settings.customScript && settings.customScript.trim().length > 0 && (
+            {localSettings.customScript && localSettings.customScript.trim().length > 0 && (
               <p className="text-xs text-primary text-center">
-                ✓ Custom script ready ({settings.customScript.trim().split(/\s+/).length} words)
+                ✓ Custom script ready ({localSettings.customScript.trim().split(/\s+/).length} words)
               </p>
             )}
           </div>
@@ -129,14 +142,14 @@ export function SettingsPopover({
               Select Your Script Template:
             </label>
             <p className="text-xs text-muted-foreground text-center">
-              {settings.customScript && settings.customScript.trim().length > 0
+              {localSettings.customScript && localSettings.customScript.trim().length > 0
                 ? "(Ignored when using custom script)"
                 : "For AI-generated scripts from YouTube"}
             </p>
             <Select
-              value={settings.scriptTemplate}
+              value={localSettings.scriptTemplate}
               onValueChange={(value) => updateSetting("scriptTemplate", value)}
-              disabled={!!(settings.customScript && settings.customScript.trim().length > 0)}
+              disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a template" />
@@ -153,7 +166,7 @@ export function SettingsPopover({
 
           {/* Voice Sample Upload */}
           <VoiceSampleUpload
-            voiceSampleUrl={settings.voiceSampleUrl}
+            voiceSampleUrl={localSettings.voiceSampleUrl}
             onVoiceSampleChange={(url) => updateSetting("voiceSampleUrl", url)}
           />
 
@@ -165,10 +178,10 @@ export function SettingsPopover({
             <div className="px-3 py-3 bg-secondary/50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Speed</span>
-                <span className="text-sm font-medium">{settings.speed.toFixed(1)}x</span>
+                <span className="text-sm font-medium">{localSettings.speed.toFixed(1)}x</span>
               </div>
               <Slider
-                value={[settings.speed]}
+                value={[localSettings.speed]}
                 onValueChange={(value) => updateSetting("speed", value[0])}
                 min={0.6}
                 max={1}
@@ -194,7 +207,7 @@ export function SettingsPopover({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.max(1, settings.imageCount - 1))}
+                  onClick={() => updateSetting("imageCount", Math.max(1, localSettings.imageCount - 1))}
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
@@ -202,7 +215,7 @@ export function SettingsPopover({
                   type="number"
                   min={1}
                   max={200}
-                  value={settings.imageCount}
+                  value={localSettings.imageCount}
                   onChange={(e) => {
                     const value = parseInt(e.target.value, 10);
                     if (!isNaN(value) && value >= 1 && value <= 200) {
@@ -215,7 +228,7 @@ export function SettingsPopover({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.min(200, settings.imageCount + 1))}
+                  onClick={() => updateSetting("imageCount", Math.min(200, localSettings.imageCount + 1))}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
@@ -231,10 +244,10 @@ export function SettingsPopover({
             <div className="px-3 py-3 bg-secondary/50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Words</span>
-                <span className="text-sm font-medium">{settings.wordCount.toLocaleString()}</span>
+                <span className="text-sm font-medium">{localSettings.wordCount.toLocaleString()}</span>
               </div>
               <Slider
-                value={[settings.wordCount]}
+                value={[localSettings.wordCount]}
                 onValueChange={(value) => updateSetting("wordCount", value[0])}
                 min={500}
                 max={30000}
@@ -250,7 +263,7 @@ export function SettingsPopover({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)} className="w-full">
+          <Button variant="outline" onClick={handleClose} className="w-full">
             <X className="w-4 h-4 mr-2" />
             Close
           </Button>
