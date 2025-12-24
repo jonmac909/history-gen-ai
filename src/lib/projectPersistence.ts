@@ -35,6 +35,7 @@ export interface ProjectHistoryItem {
   srtContent?: string;
   srtUrl?: string;
   imageUrls?: string[];
+  imagePrompts?: ImagePromptWithTiming[];
 }
 
 const STORAGE_KEY = "historygenai-saved-project";

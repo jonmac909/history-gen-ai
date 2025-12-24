@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RotateCcw, Volume2, Loader2 } from "lucide-react";
+import { Check, X, Play, Pause, RotateCcw, Volume2, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,8 @@ interface AudioPreviewModalProps {
   onConfirm: () => void;
   onRegenerate: () => void;
   onCancel: () => void;
+  onBack?: () => void;
+  onForward?: () => void;
 }
 
 export function AudioPreviewModal({
@@ -25,7 +27,9 @@ export function AudioPreviewModal({
   duration,
   onConfirm,
   onRegenerate,
-  onCancel
+  onCancel,
+  onBack,
+  onForward,
 }: AudioPreviewModalProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -217,16 +221,28 @@ export function AudioPreviewModal({
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" onClick={onRegenerate} className="w-full sm:w-auto sm:mr-auto">
+          {onBack && (
+            <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step" className="sm:mr-auto">
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+          )}
+
+          <Button variant="outline" onClick={onRegenerate} className="w-full sm:w-auto">
             <RotateCcw className="w-4 h-4 mr-2" />
             Regenerate
           </Button>
-          
+
           <Button variant="outline" onClick={onCancel} className="w-full sm:w-auto">
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
-          
+
+          {onForward && (
+            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          )}
+
           <Button onClick={onConfirm} className="w-full sm:w-auto">
             <Check className="w-4 h-4 mr-2" />
             Confirm

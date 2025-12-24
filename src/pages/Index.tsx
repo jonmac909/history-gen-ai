@@ -790,6 +790,7 @@ const Index = () => {
       srtContent: pendingSrtContent,
       srtUrl: pendingSrtUrl,
       imageUrls: images,
+      imagePrompts: imagePrompts,
     });
     clearProject();
 
@@ -1104,7 +1105,11 @@ const Index = () => {
     if (project.srtUrl) setPendingSrtUrl(project.srtUrl);
     if (project.imageUrls) {
       setPendingImages(project.imageUrls);
-      // Create basic image prompts for back navigation to prompts view
+    }
+    // Use stored image prompts if available, otherwise create basic ones
+    if (project.imagePrompts && project.imagePrompts.length > 0) {
+      setImagePrompts(project.imagePrompts);
+    } else if (project.imageUrls) {
       const basicPrompts: ImagePromptWithTiming[] = project.imageUrls.map((url, index) => ({
         index: index + 1,
         startTime: "",
@@ -1117,50 +1122,8 @@ const Index = () => {
       setImagePrompts(basicPrompts);
     }
 
-    // Build generated assets for results view
-    const assets: GeneratedAsset[] = [
-      {
-        id: "script",
-        name: "Rewritten Script",
-        type: "Markdown",
-        size: project.script ? `${Math.round(project.script.length / 1024)} KB` : "Unknown",
-        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
-        content: project.script,
-      },
-      {
-        id: "audio",
-        name: "Voiceover Audio",
-        type: "MP3",
-        size: "Unknown",
-        icon: <Mic className="w-5 h-5 text-muted-foreground" />,
-        url: project.audioUrl,
-      },
-      {
-        id: "captions",
-        name: "Captions",
-        type: "SRT",
-        size: project.srtContent ? `${Math.round(project.srtContent.length / 1024)} KB` : "Unknown",
-        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
-        url: project.srtUrl,
-        content: project.srtContent,
-      },
-    ];
-
-    if (project.imageUrls) {
-      project.imageUrls.forEach((imageUrl, index) => {
-        assets.push({
-          id: `image-${index + 1}`,
-          name: `Image ${index + 1}`,
-          type: "PNG",
-          size: "~1 MB",
-          icon: <Image className="w-5 h-5 text-muted-foreground" />,
-          url: imageUrl,
-        });
-      });
-    }
-
-    setGeneratedAssets(assets);
-    setViewState("results");
+    // Go to images review (user can navigate to results from there)
+    setViewState("review-images");
 
     toast({
       title: "Project Opened",
@@ -1532,6 +1495,8 @@ const Index = () => {
           onConfirm={handleAudioConfirm}
           onRegenerate={handleAudioRegenerate}
           onCancel={handleCancelRequest}
+          onBack={handleBackToScript}
+          onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
         />
       )}
 
