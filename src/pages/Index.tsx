@@ -83,6 +83,7 @@ const Index = () => {
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
+  const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -182,6 +183,7 @@ const Index = () => {
       imagePrompts: overrides?.imagePrompts || imagePrompts,
       imageUrls: overrides?.imageUrls || pendingImages,
       videoUrl: overrides?.videoUrl || videoUrl,
+      videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
     };
     saveProject(project);
     console.log(`Auto-saved project at step: ${step}`);
@@ -209,6 +211,7 @@ const Index = () => {
     if (savedProject.imagePrompts) setImagePrompts(savedProject.imagePrompts);
     if (savedProject.imageUrls) setPendingImages(savedProject.imageUrls);
     if (savedProject.videoUrl) setVideoUrl(savedProject.videoUrl);
+    if (savedProject.videoUrlCaptioned) setVideoUrlCaptioned(savedProject.videoUrlCaptioned);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.step) {
@@ -1297,9 +1300,12 @@ const Index = () => {
       }));
       setImagePrompts(basicPrompts);
     }
-    // Load video URL if available
+    // Load video URLs if available
     if (project.videoUrl) {
       setVideoUrl(project.videoUrl);
+    }
+    if (project.videoUrlCaptioned) {
+      setVideoUrlCaptioned(project.videoUrlCaptioned);
     }
 
     // Build generated assets for results view
@@ -1400,11 +1406,18 @@ const Index = () => {
           projectTitle={videoTitle}
           projectId={projectId}
           videoUrl={videoUrl}
+          videoUrlCaptioned={videoUrlCaptioned}
           onVideoRendered={(url) => {
             setVideoUrl(url);
             // Save to current project and update history
             autoSave("complete", { videoUrl: url });
             updateProjectInHistory(projectId, { videoUrl: url });
+          }}
+          onCaptionedVideoRendered={(url) => {
+            setVideoUrlCaptioned(url);
+            // Save captioned video URL to current project and update history
+            autoSave("complete", { videoUrlCaptioned: url });
+            updateProjectInHistory(projectId, { videoUrlCaptioned: url });
           }}
           autoRender={settings.fullAutomation}
         />

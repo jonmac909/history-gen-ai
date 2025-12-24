@@ -32,7 +32,9 @@ interface ProjectResultsProps {
   projectTitle?: string;
   projectId?: string;
   videoUrl?: string;  // Pre-rendered video URL (from saved project)
+  videoUrlCaptioned?: string;  // Pre-rendered captioned video URL (from saved project)
   onVideoRendered?: (videoUrl: string) => void;  // Callback when video is rendered
+  onCaptionedVideoRendered?: (videoUrl: string) => void;  // Callback when captioned video is rendered
   autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
 }
 
@@ -122,14 +124,16 @@ export function ProjectResults({
   projectTitle,
   projectId,
   videoUrl,
+  videoUrlCaptioned,
   onVideoRendered,
+  onCaptionedVideoRendered,
   autoRender
 }: ProjectResultsProps) {
-  // State for video rendering - initialize from prop if available
+  // State for video rendering - initialize from props if available
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
-  const [captionedVideoUrl, setCaptionedVideoUrl] = useState<string | null>(null);
+  const [captionedVideoUrl, setCaptionedVideoUrl] = useState<string | null>(videoUrlCaptioned || null);
   const [isBurningCaptions, setIsBurningCaptions] = useState(false);
   const [captionError, setCaptionError] = useState<string | null>(null);
   const autoRenderTriggered = useRef(false);
@@ -501,6 +505,10 @@ export function ProjectResults({
         setRenderedVideoUrl(result.videoUrl);
         if (result.videoUrlCaptioned) {
           setCaptionedVideoUrl(result.videoUrlCaptioned);
+          // Notify parent to save the captioned video URL
+          if (onCaptionedVideoRendered) {
+            onCaptionedVideoRendered(result.videoUrlCaptioned);
+          }
           toast({
             title: "Captions Complete",
             description: "Both video versions are ready to download!",
