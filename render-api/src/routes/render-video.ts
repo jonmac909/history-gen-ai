@@ -18,6 +18,8 @@ if (ffmpegStatic) {
 const IMAGES_PER_CHUNK = 25;
 // Parallel chunk rendering for speed (limited to avoid memory pressure)
 const PARALLEL_CHUNK_RENDERS = 3;
+// Embers overlay effect URL (served from Netlify)
+const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 
 interface ImageTiming {
   startSeconds: number;
@@ -100,6 +102,15 @@ async function handleRenderVideo(req: Request, res: Response) {
     const audioPath = path.join(tempDir, 'voiceover.wav');
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
+
+    // Download embers overlay
+    const embersPath = path.join(tempDir, 'embers.mp4');
+    try {
+      await downloadFile(EMBERS_OVERLAY_URL, embersPath);
+      console.log('Embers overlay downloaded');
+    } catch (err) {
+      console.warn('Failed to download embers overlay, continuing without it:', err);
+    }
 
     // Download images
     const imagePaths: string[] = [];
@@ -302,8 +313,58 @@ async function handleRenderVideo(req: Request, res: Response) {
       throw new Error('FFmpeg produced empty video file');
     }
 
-    // Stage 5: Upload video WITHOUT captions first (so user has it even if captions fail)
-    sendEvent(res, { type: 'progress', stage: 'uploading', percent: 78, message: 'Uploading video (without captions)...' });
+    // Stage 5: Apply embers overlay effect
+    let finalVideoPath = withAudioPath;
+
+    if (fs.existsSync(embersPath)) {
+      sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Adding embers effect...' });
+
+      const withEmbersPath = path.join(tempDir, 'with_embers.mp4');
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(withAudioPath)
+          .input(embersPath)
+          .inputOptions(['-stream_loop', '-1'])  // Loop embers for entire video duration
+          .complexFilter([
+            // Apply screen blend mode to overlay embers on video
+            '[1:v]format=rgba[embers]',
+            '[0:v][embers]blend=all_mode=screen:shortest=1[out]'
+          ])
+          .outputOptions([
+            '-map', '[out]',
+            '-map', '0:a',                       // Keep original audio
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'copy',
+            '-shortest',
+            '-y'
+          ])
+          .output(withEmbersPath)
+          .on('start', (cmd) => {
+            console.log('Embers overlay FFmpeg command:', cmd.substring(0, 200) + '...');
+          })
+          .on('error', (err) => {
+            console.error('Embers overlay FFmpeg error:', err);
+            // Continue without embers if overlay fails
+            console.log('Continuing without embers overlay...');
+            resolve();
+          })
+          .on('end', () => {
+            console.log('Embers overlay complete');
+            finalVideoPath = withEmbersPath;
+            resolve();
+          })
+          .run();
+      });
+    } else {
+      console.log('Embers overlay not available, skipping...');
+    }
+
+    // Stage 6: Upload final video
+    sendEvent(res, { type: 'progress', stage: 'uploading', percent: 85, message: 'Uploading video...' });
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -317,10 +378,10 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Upload video without captions - with progress heartbeat for large files
-    const videoNoCaptionsPath = `${projectId}/video.mp4`;
-    const videoNoCaptionsBuffer = fs.readFileSync(withAudioPath);
-    const uploadSizeMB = (videoNoCaptionsBuffer.length / 1024 / 1024).toFixed(1);
+    // Upload final video - with progress heartbeat for large files
+    const videoUploadPath = `${projectId}/video.mp4`;
+    const finalVideoBuffer = fs.readFileSync(finalVideoPath);
+    const uploadSizeMB = (finalVideoBuffer.length / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
 
     // Heartbeat during upload (large files can take minutes)
@@ -333,32 +394,32 @@ async function handleRenderVideo(req: Request, res: Response) {
       });
     }, 3000);
 
-    const { error: uploadError1 } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(videoNoCaptionsPath, videoNoCaptionsBuffer, {
+      .upload(videoUploadPath, finalVideoBuffer, {
         contentType: 'video/mp4',
         upsert: true
       });
 
     clearInterval(uploadHeartbeat);
 
-    if (uploadError1) {
-      console.error('Supabase upload error (no captions):', uploadError1);
-      throw new Error(`Failed to upload video: ${uploadError1.message}`);
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError);
+      throw new Error(`Failed to upload video: ${uploadError.message}`);
     }
 
-    const { data: urlData1 } = supabase.storage
+    const { data: urlData } = supabase.storage
       .from('generated-assets')
-      .getPublicUrl(videoNoCaptionsPath);
+      .getPublicUrl(videoUploadPath);
 
-    const videoUrl = urlData1.publicUrl;
-    console.log(`Video (no captions) uploaded: ${videoUrl}`);
+    const videoUrl = urlData.publicUrl;
+    console.log(`Video uploaded: ${videoUrl}`);
 
     // Send final completion event
     sendEvent(res, {
       type: 'complete',
       videoUrl,
-      size: withAudioStats.size,
+      size: finalVideoBuffer.length,
       message: 'Video rendering complete!'
     });
 

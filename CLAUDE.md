@@ -81,7 +81,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
-| `/render-video` | FFmpeg video rendering with burned-in captions, SSE progress |
+| `/render-video` | FFmpeg video rendering (no captions), SSE progress |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -122,7 +122,7 @@ Multi-step generation with user review at each stage:
 - `ProjectResults`: Final downloads page with export options:
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
-  - **Render Video (MP4)**: Server-side FFmpeg with burned-in captions via `/render-video`
+  - **Render Video (MP4)**: Server-side FFmpeg rendering via `/render-video`
 
 ### Audio Generation Architecture
 
@@ -213,22 +213,32 @@ Multi-step generation with user review at each stage:
 
 ### Script Rewriting Architecture
 
-**Uses Claude with prompt caching for faster iterations.**
+**Uses Claude Sonnet 4.5 with prompt caching for faster iterations.**
 
-- Prompt caching enabled on ALL iterations (not just 2+) for 5-10% speed improvement
+- Prompt caching enabled on ALL iterations for 5-10% speed improvement + 90% cost reduction
 - Streaming tokens via SSE for real-time display
-- Model: `claude-sonnet-4-5` (configurable)
+- Model: `claude-sonnet-4-5`
+- Max tokens: 16000, Words per iteration: 12000
+
+### Scene Description (Image Prompts) Architecture
+
+**Uses Claude Sonnet with prompt caching and parallel batching.**
+
+- Prompt caching on system prompt for cost reduction
+- Parallel batches of 10 images each for faster generation
+- Model: `claude-sonnet-4-20250514`
+- Content safety rules for documentary-appropriate imagery
 
 ### Video Rendering Architecture
 
-**Server-side FFmpeg rendering with burned-in captions.**
+**Server-side FFmpeg rendering (no captions burned in - clean video output).**
 
 - Downloads audio + images from Supabase to temp directory
 - Creates concat demuxer file with per-image durations from `imageTimings`
-- FFmpeg command: scales to 1080p, pads letterbox, burns SRT subtitles
-- SSE progress through 4 stages: downloading (5-25%), preparing (30%), rendering (35-85%), uploading (90-100%)
+- FFmpeg command: scales to 1080p, pads letterbox
+- SSE progress through stages: downloading (5-25%), preparing (30%), rendering (35-80%), uploading (85-100%)
 - 15-second keepalive heartbeat prevents connection timeout
-- Uploads final MP4 to Supabase: `{projectId}/video.mp4`
+- Uploads final MP4 to Supabase: `{projectId}/video_no_captions.mp4`
 
 **Key files:**
 - `render-api/src/routes/render-video.ts`: FFmpeg rendering endpoint
@@ -355,7 +365,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 Generated images: `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
 Audio segments: `{projectId}/voiceover-segment-{1-6}.wav`
 Combined audio: `{projectId}/voiceover.wav`
-Rendered video: `{projectId}/video.mp4`
+Rendered video: `{projectId}/video_no_captions.mp4`
 
 ## Default Settings
 
