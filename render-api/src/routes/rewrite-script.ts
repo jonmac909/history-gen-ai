@@ -190,7 +190,15 @@ CRITICAL RULES:
               },
               {
                 role: 'user',
-                content: `Continue the script. IMPORTANT: Write EXACTLY ${wordLimit} more words - no more, no less. Do not exceed ${wordLimit} words. Continue seamlessly from where you left off - do not repeat any content. Stop writing when you reach ${wordLimit} words.`
+                content: `Continue the script from where you left off.
+
+CRITICAL - DO NOT REPEAT ANY CONTENT:
+- Your previous response ended with the last few sentences shown above
+- Start your continuation with NEW content only
+- Do NOT rewrite or paraphrase sentences you already wrote
+- If you're unsure, skip ahead to genuinely new material
+
+Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
               }
             ];
           }
@@ -389,7 +397,15 @@ CRITICAL RULES:
             },
             {
               role: 'user',
-              content: `Continue the script. IMPORTANT: Write EXACTLY ${wordLimit} more words - no more, no less. Do not exceed ${wordLimit} words. Continue seamlessly from where you left off - do not repeat any content. Stop writing when you reach ${wordLimit} words.`
+              content: `Continue the script from where you left off.
+
+CRITICAL - DO NOT REPEAT ANY CONTENT:
+- Your previous response ended with the last few sentences shown above
+- Start your continuation with NEW content only
+- Do NOT rewrite or paraphrase sentences you already wrote
+- If you're unsure, skip ahead to genuinely new material
+
+Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
             }
           ];
         }

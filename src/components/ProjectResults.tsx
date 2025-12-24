@@ -774,7 +774,7 @@ export function ProjectResults({
             </div>
           )}
 
-          {/* Render Video (MP4) */}
+          {/* Render Video (MP4 without captions) */}
           {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
             <div
               className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
@@ -784,9 +784,11 @@ export function ProjectResults({
                   <Video className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Render Video</p>
+                  <p className="font-medium text-foreground">
+                    {renderedVideoUrl ? 'Video (No Captions)' : 'Render Video'}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    MP4 with burned-in captions
+                    {renderedVideoUrl ? 'MP4 without captions' : 'MP4 with burned-in captions'}
                   </p>
                 </div>
               </div>
@@ -796,7 +798,7 @@ export function ProjectResults({
                   size="icon"
                   onClick={handleDownloadVideo}
                   className="text-muted-foreground hover:text-foreground"
-                  title="Download Video"
+                  title="Download Video (No Captions)"
                 >
                   <Download className="w-5 h-5" />
                 </Button>
@@ -816,6 +818,34 @@ export function ProjectResults({
                   )}
                 </Button>
               )}
+            </div>
+          )}
+
+          {/* Video with Captions (MP4) */}
+          {captionedVideoUrl && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Video className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Video (With Captions)</p>
+                  <p className="text-sm text-muted-foreground">
+                    MP4 with burned-in captions
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDownloadCaptionedVideo}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download Video (With Captions)"
+              >
+                <Download className="w-5 h-5" />
+              </Button>
             </div>
           )}
         </div>

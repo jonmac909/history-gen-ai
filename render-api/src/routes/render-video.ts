@@ -367,10 +367,21 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     const captionedOutputPath = path.join(tempDir, 'output_captioned.mp4');
 
-    // For Linux, use simpler escaping - just escape colons for FFmpeg filter
-    const escapedSrtPath = srtPath.replace(/:/g, '\\:');
+    // For Linux, escape special characters for FFmpeg subtitles filter
+    // The subtitles filter requires escaping: \ : ' (backslash, colon, single quote)
+    const escapedSrtPath = srtPath
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/:/g, '\\:')     // Escape colons
+      .replace(/'/g, "'\\''");  // Escape single quotes
     console.log(`SRT path: ${srtPath}`);
     console.log(`Escaped SRT path: ${escapedSrtPath}`);
+
+    // Verify SRT file exists and has content
+    const srtStats = fs.statSync(srtPath);
+    console.log(`SRT file size: ${srtStats.size} bytes`);
+    if (srtStats.size === 0) {
+      console.warn('WARNING: SRT file is empty!');
+    }
 
     // Progress heartbeat during long subtitle burn
     const progressHeartbeat = setInterval(() => {
@@ -387,12 +398,14 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     try {
       await new Promise<void>((resolve, reject) => {
+        // Use -vf option directly for better control over subtitle filter
+        const subtitleFilter = `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
+        console.log(`Subtitle filter: ${subtitleFilter}`);
+
         ffmpeg()
           .input(withAudioPath)
-          .videoFilters([
-            `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`
-          ])
           .outputOptions([
+            '-vf', subtitleFilter,
             '-threads', '0',           // Use all CPU cores
             '-c:v', 'libx264',
             '-preset', 'fast',         // Keep fast for final output quality
