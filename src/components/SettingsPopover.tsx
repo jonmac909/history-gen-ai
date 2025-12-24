@@ -85,6 +85,7 @@ export function SettingsPopover({
       </DialogTrigger>
       <DialogContent
         className="sm:max-w-md"
+        hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
