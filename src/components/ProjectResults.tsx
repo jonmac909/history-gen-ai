@@ -1,8 +1,10 @@
-import { Download, RefreshCw, Layers, Image, ChevronLeft } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
+import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
+import type { ImagePromptWithTiming } from "@/lib/api";
 
 export interface GeneratedAsset {
   id: string;
@@ -20,6 +22,11 @@ interface ProjectResultsProps {
   onBack?: () => void;
   assets: GeneratedAsset[];
   srtContent?: string;
+  // Additional props for FCPXML export
+  imagePrompts?: ImagePromptWithTiming[];
+  audioUrl?: string;
+  audioDuration?: number;
+  projectTitle?: string;
 }
 
 // Parse SRT to get timing info
@@ -96,7 +103,17 @@ const downloadTextContent = (content: string, filename: string, mimeType: string
   window.URL.revokeObjectURL(url);
 };
 
-export function ProjectResults({ sourceUrl, onNewProject, onBack, assets, srtContent }: ProjectResultsProps) {
+export function ProjectResults({
+  sourceUrl,
+  onNewProject,
+  onBack,
+  assets,
+  srtContent,
+  imagePrompts,
+  audioUrl,
+  audioDuration,
+  projectTitle
+}: ProjectResultsProps) {
   // Calculate image timings based on SRT
   const getImageTimings = () => {
     const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
@@ -274,6 +291,71 @@ export function ProjectResults({ sourceUrl, onNewProject, onBack, assets, srtCon
     }
   };
 
+  // Handle FCPXML timeline export
+  const handleDownloadFCPXML = () => {
+    if (!srtContent) {
+      toast({
+        title: "Export Unavailable",
+        description: "Captions are required for timeline export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Get image timings from imagePrompts or calculate from SRT
+      let images: FCPXMLImage[] = [];
+
+      if (imagePrompts && imagePrompts.length > 0) {
+        // Use imagePrompts with proper timing
+        images = imagePrompts.map((prompt, index) => ({
+          index: index + 1,
+          startSeconds: prompt.startSeconds,
+          endSeconds: prompt.endSeconds,
+        }));
+      } else {
+        // Fall back to calculated timings
+        const timings = getImageTimings();
+        images = timings.map((t, index) => ({
+          index: index + 1,
+          startSeconds: t.startTime,
+          endSeconds: t.endTime,
+        }));
+      }
+
+      // Parse captions from SRT
+      const captions = parseSRTToCaptions(srtContent);
+
+      // Calculate total duration
+      const srtTimings = parseSRTTimings(srtContent);
+      const totalDuration = audioDuration ||
+        (srtTimings.length > 0 ? srtTimings[srtTimings.length - 1].endTime : 0);
+
+      // Generate FCPXML
+      const fcpxmlContent = generateFCPXML({
+        projectTitle: projectTitle || 'HistoryGenAI Export',
+        audioDuration: totalDuration,
+        images,
+        captions,
+      });
+
+      // Download the file
+      downloadTextContent(fcpxmlContent, 'timeline.fcpxml', 'application/xml');
+
+      toast({
+        title: "Timeline Exported",
+        description: "FCPXML file downloaded. Import into DaVinci Resolve and link media files.",
+      });
+    } catch (error) {
+      console.error('FCPXML export failed:', error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to generate FCPXML file. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto px-4 py-8">
       {/* Header */}
@@ -409,6 +491,34 @@ export function ProjectResults({ sourceUrl, onNewProject, onBack, assets, srtCon
                 onClick={handleDownloadAllImagesAsZip}
                 className="text-muted-foreground hover:text-foreground"
                 title="Download"
+              >
+                <Download className="w-5 h-5" />
+              </Button>
+            </div>
+          )}
+
+          {/* Timeline Export (FCPXML) */}
+          {srtContent && assets.some(a => a.id.startsWith('image-')) && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Film className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Timeline Export</p>
+                  <p className="text-sm text-muted-foreground">
+                    FCPXML (DaVinci Resolve, FCP, Premiere)
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDownloadFCPXML}
+                className="text-muted-foreground hover:text-foreground"
+                title="Download FCPXML"
               >
                 <Download className="w-5 h-5" />
               </Button>

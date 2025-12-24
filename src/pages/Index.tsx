@@ -1218,6 +1218,10 @@ const Index = () => {
           onBack={handleBackToImages}
           assets={generatedAssets}
           srtContent={srtContent}
+          imagePrompts={imagePrompts}
+          audioUrl={audioUrl}
+          audioDuration={pendingAudioDuration}
+          projectTitle={videoTitle}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
