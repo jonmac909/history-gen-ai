@@ -6,6 +6,7 @@ import generateAudioRouter from './routes/generate-audio';
 import generateImagesRouter from './routes/generate-images';
 import getYoutubeTranscriptRouter from './routes/get-youtube-transcript';
 import generateCaptionsRouter from './routes/generate-captions';
+import renderVideoRouter from './routes/render-video';
 
 dotenv.config();
 
@@ -42,6 +43,7 @@ app.use('/generate-audio', generateAudioRouter);
 app.use('/generate-images', generateImagesRouter);
 app.use('/get-youtube-transcript', getYoutubeTranscriptRouter);
 app.use('/generate-captions', generateCaptionsRouter);
+app.use('/render-video', renderVideoRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

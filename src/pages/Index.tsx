@@ -1222,6 +1222,7 @@ const Index = () => {
           audioUrl={audioUrl}
           audioDuration={pendingAudioDuration}
           projectTitle={videoTitle}
+          projectId={projectId}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

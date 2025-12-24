@@ -1045,3 +1045,171 @@ export function downloadText(content: string, filename: string, mimeType: string
   downloadFile(url, filename);
   URL.revokeObjectURL(url);
 }
+
+export interface RenderVideoResult {
+  success: boolean;
+  videoUrl?: string;
+  size?: number;
+  error?: string;
+}
+
+export interface RenderVideoProgress {
+  stage: 'downloading' | 'preparing' | 'rendering' | 'uploading';
+  percent: number;
+  message: string;
+  frames?: number;
+}
+
+export async function renderVideoStreaming(
+  projectId: string,
+  audioUrl: string,
+  imageUrls: string[],
+  imageTimings: { startSeconds: number; endSeconds: number }[],
+  srtContent: string,
+  projectTitle: string,
+  onProgress: (progress: RenderVideoProgress) => void
+): Promise<RenderVideoResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  // Long timeout for video rendering (30 minutes)
+  const controller = new AbortController();
+  const RENDER_TIMEOUT_MS = 30 * 60 * 1000;
+  const timeoutId = setTimeout(() => controller.abort(), RENDER_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${renderUrl}/render-video`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId,
+        audioUrl,
+        imageUrls,
+        imageTimings,
+        srtContent,
+        projectTitle
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Render video error:', response.status, errorText);
+      return { success: false, error: `Failed to render video: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: RenderVideoResult = { success: false, error: 'No response received' };
+    let lastEventTime = Date.now();
+    const EVENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes between events (rendering can be slow)
+
+    try {
+      while (true) {
+        // Check if we've been waiting too long for an event
+        if (Date.now() - lastEventTime > EVENT_TIMEOUT_MS) {
+          console.error('[Render Video] Event timeout - no data received for 5 minutes');
+          result.error = 'Video rendering timed out - no progress received for 5 minutes. Please try again.';
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastEventTime = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          // Skip keepalive comments
+          if (event.startsWith(':')) continue;
+
+          const dataMatch = event.match(/^data: (.+)$/m);
+          if (dataMatch) {
+            try {
+              const parsed = JSON.parse(dataMatch[1]);
+
+              if (parsed.type === 'progress') {
+                onProgress({
+                  stage: parsed.stage,
+                  percent: parsed.percent,
+                  message: parsed.message,
+                  frames: parsed.frames
+                });
+              } else if (parsed.type === 'complete') {
+                result = {
+                  success: true,
+                  videoUrl: parsed.videoUrl,
+                  size: parsed.size
+                };
+                onProgress({
+                  stage: 'uploading',
+                  percent: 100,
+                  message: 'Complete!'
+                });
+              } else if (parsed.type === 'error' || parsed.error) {
+                result = {
+                  success: false,
+                  error: parsed.error || 'Video rendering failed'
+                };
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+    } catch (streamError) {
+      console.error('Stream reading error:', streamError);
+
+      if (streamError instanceof Error && streamError.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Video rendering timed out after 30 minutes. Please try again.'
+        };
+      }
+
+      return {
+        success: false,
+        error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Video rendering timed out after 30 minutes. Please try again.'
+      };
+    }
+
+    console.error('Render video fetch error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start video rendering'
+    };
+  }
+}

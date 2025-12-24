@@ -1,10 +1,13 @@
-import { Download, RefreshCw, Layers, Image, ChevronLeft, Film } from "lucide-react";
+import { useState } from "react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
-import type { ImagePromptWithTiming } from "@/lib/api";
+import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress } from "@/lib/api";
 
 export interface GeneratedAsset {
   id: string;
@@ -22,11 +25,12 @@ interface ProjectResultsProps {
   onBack?: () => void;
   assets: GeneratedAsset[];
   srtContent?: string;
-  // Additional props for FCPXML export
+  // Additional props for FCPXML and video export
   imagePrompts?: ImagePromptWithTiming[];
   audioUrl?: string;
   audioDuration?: number;
   projectTitle?: string;
+  projectId?: string;
 }
 
 // Parse SRT to get timing info
@@ -112,8 +116,14 @@ export function ProjectResults({
   imagePrompts,
   audioUrl,
   audioDuration,
-  projectTitle
+  projectTitle,
+  projectId
 }: ProjectResultsProps) {
+  // State for video rendering
+  const [isRendering, setIsRendering] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+
   // Calculate image timings based on SRT
   const getImageTimings = () => {
     const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
@@ -356,6 +366,151 @@ export function ProjectResults({
     }
   };
 
+  // Handle Render Video (MP4)
+  const handleRenderVideo = async () => {
+    // Validate required data
+    if (!projectId) {
+      toast({
+        title: "Render Unavailable",
+        description: "Project ID is required for video rendering.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!audioUrl) {
+      toast({
+        title: "Render Unavailable",
+        description: "Audio is required for video rendering.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!srtContent) {
+      toast({
+        title: "Render Unavailable",
+        description: "Captions are required for video rendering.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
+    if (imageAssets.length === 0) {
+      toast({
+        title: "Render Unavailable",
+        description: "Images are required for video rendering.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get image URLs and timings
+    const imageUrls = imageAssets.map(a => a.url!);
+    let timings: { startSeconds: number; endSeconds: number }[] = [];
+
+    if (imagePrompts && imagePrompts.length > 0) {
+      timings = imagePrompts.map(p => ({
+        startSeconds: p.startSeconds,
+        endSeconds: p.endSeconds
+      }));
+    } else {
+      // Calculate from SRT timings
+      const srtTimings = parseSRTTimings(srtContent);
+      const totalDuration = srtTimings.length > 0 ? srtTimings[srtTimings.length - 1].endTime : 0;
+      const imageDuration = totalDuration / imageAssets.length;
+      timings = imageAssets.map((_, i) => ({
+        startSeconds: i * imageDuration,
+        endSeconds: (i + 1) * imageDuration
+      }));
+    }
+
+    // Start rendering
+    setIsRendering(true);
+    setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
+    setRenderedVideoUrl(null);
+
+    try {
+      const result = await renderVideoStreaming(
+        projectId,
+        audioUrl,
+        imageUrls,
+        timings,
+        srtContent,
+        projectTitle || 'HistoryGenAI Export',
+        (progress) => setRenderProgress(progress)
+      );
+
+      if (result.success && result.videoUrl) {
+        setRenderedVideoUrl(result.videoUrl);
+        toast({
+          title: "Video Rendered",
+          description: "Your video is ready to download!",
+        });
+      } else {
+        setIsRendering(false);
+        toast({
+          title: "Render Failed",
+          description: result.error || "Failed to render video. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Render video error:', error);
+      setIsRendering(false);
+      toast({
+        title: "Render Failed",
+        description: error instanceof Error ? error.message : "Failed to render video. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Download rendered video
+  const handleDownloadVideo = async () => {
+    if (!renderedVideoUrl) return;
+
+    toast({
+      title: "Downloading...",
+      description: "Downloading your rendered video...",
+    });
+
+    try {
+      await downloadFromUrl(renderedVideoUrl, 'video.mp4');
+      toast({
+        title: "Download Complete",
+        description: "video.mp4 downloaded successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to download video. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Close render modal
+  const handleCloseRenderModal = () => {
+    if (!isRendering || renderedVideoUrl) {
+      setIsRendering(false);
+      setRenderProgress(null);
+      // Don't clear renderedVideoUrl so user can still download
+    }
+  };
+
+  // Get stage label for progress
+  const getStageLabel = (stage: string): string => {
+    switch (stage) {
+      case 'downloading': return 'Downloading assets';
+      case 'preparing': return 'Preparing timeline';
+      case 'rendering': return 'Rendering video';
+      case 'uploading': return 'Uploading video';
+      default: return stage;
+    }
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto px-4 py-8">
       {/* Header */}
@@ -524,6 +679,51 @@ export function ProjectResults({
               </Button>
             </div>
           )}
+
+          {/* Render Video (MP4) */}
+          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Video className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Render Video</p>
+                  <p className="text-sm text-muted-foreground">
+                    MP4 with burned-in captions
+                  </p>
+                </div>
+              </div>
+              {renderedVideoUrl ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDownloadVideo}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download Video"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRenderVideo}
+                  disabled={isRendering}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Render Video"
+                >
+                  {isRendering ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    "Render"
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {assets.length === 0 && (
@@ -532,6 +732,52 @@ export function ProjectResults({
           </div>
         )}
       </div>
+
+      {/* Render Progress Modal */}
+      <Dialog open={isRendering} onOpenChange={handleCloseRenderModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Video className="w-5 h-5" />
+              {renderedVideoUrl ? 'Video Ready' : 'Rendering Video'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {renderedVideoUrl ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Your video has been rendered and is ready to download.
+                </p>
+                <Button onClick={handleDownloadVideo} className="w-full gap-2">
+                  <Download className="w-4 h-4" />
+                  Download Video
+                </Button>
+              </>
+            ) : renderProgress && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {getStageLabel(renderProgress.stage)}
+                    </span>
+                    <span className="font-medium">{renderProgress.percent}%</span>
+                  </div>
+                  <Progress value={renderProgress.percent} className="h-2" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {renderProgress.message}
+                </p>
+                {renderProgress.stage === 'rendering' && (
+                  <p className="text-xs text-muted-foreground">
+                    This may take a few minutes depending on video length...
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
