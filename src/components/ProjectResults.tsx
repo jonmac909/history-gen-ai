@@ -130,6 +130,8 @@ export function ProjectResults({
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
   const [captionedVideoUrl, setCaptionedVideoUrl] = useState<string | null>(null);
+  const [isBurningCaptions, setIsBurningCaptions] = useState(false);
+  const [captionError, setCaptionError] = useState<string | null>(null);
   const autoRenderTriggered = useRef(false);
 
   // Auto-render video when in full automation mode
@@ -454,6 +456,9 @@ export function ProjectResults({
     setIsRendering(true);
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
     setRenderedVideoUrl(null);
+    setCaptionedVideoUrl(null);
+    setIsBurningCaptions(false);
+    setCaptionError(null);
 
     try {
       const result = await renderVideoStreaming(
@@ -463,25 +468,46 @@ export function ProjectResults({
         timings,
         srtContent,
         projectTitle || 'HistoryGenAI Export',
-        (progress) => setRenderProgress(progress)
+        {
+          onProgress: (progress) => setRenderProgress(progress),
+          onVideoReady: (url) => {
+            // Video without captions is ready - show preview immediately
+            setRenderedVideoUrl(url);
+            setIsBurningCaptions(true);
+            // Notify parent to save the video URL
+            if (onVideoRendered) {
+              onVideoRendered(url);
+            }
+            toast({
+              title: "Video Ready",
+              description: "Video without captions is ready! Burning captions...",
+            });
+          },
+          onCaptionError: (error) => {
+            setIsBurningCaptions(false);
+            setCaptionError(error);
+            toast({
+              title: "Caption Burning Failed",
+              description: "Video without captions is still available for download.",
+              variant: "destructive",
+            });
+          }
+        }
       );
 
+      // Final result
+      setIsBurningCaptions(false);
       if (result.success && result.videoUrl) {
         setRenderedVideoUrl(result.videoUrl);
         if (result.videoUrlCaptioned) {
           setCaptionedVideoUrl(result.videoUrlCaptioned);
+          toast({
+            title: "Captions Complete",
+            description: "Both video versions are ready to download!",
+          });
         }
-        // Notify parent to save the video URL
-        if (onVideoRendered) {
-          onVideoRendered(result.videoUrl);
-        }
-        toast({
-          title: "Video Rendered",
-          description: result.videoUrlCaptioned
-            ? "Both video versions are ready to download!"
-            : "Video without captions is ready! (Caption burning may have failed)",
-        });
-      } else {
+      } else if (!renderedVideoUrl) {
+        // Only show error if we don't have any video
         setIsRendering(false);
         toast({
           title: "Render Failed",
@@ -491,12 +517,15 @@ export function ProjectResults({
       }
     } catch (error) {
       console.error('Render video error:', error);
-      setIsRendering(false);
-      toast({
-        title: "Render Failed",
-        description: error instanceof Error ? error.message : "Failed to render video. Please try again.",
-        variant: "destructive",
-      });
+      setIsBurningCaptions(false);
+      if (!renderedVideoUrl) {
+        setIsRendering(false);
+        toast({
+          title: "Render Failed",
+          description: error instanceof Error ? error.message : "Failed to render video. Please try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -812,24 +841,52 @@ export function ProjectResults({
           </DialogHeader>
 
           <div className="space-y-4">
-            {renderedVideoUrl ? (
+            {/* Video Preview Player */}
+            {renderedVideoUrl && (
               <div className="space-y-3">
+                <video
+                  src={renderedVideoUrl}
+                  controls
+                  className="w-full rounded-lg border"
+                  style={{ maxHeight: '300px' }}
+                />
+
                 <Button onClick={handleDownloadVideo} variant="outline" className="w-full gap-2">
                   <Download className="w-4 h-4" />
                   Download Video (No Captions)
                 </Button>
-                {captionedVideoUrl ? (
+
+                {/* Caption burning progress */}
+                {isBurningCaptions && renderProgress && (
+                  <div className="p-3 bg-muted rounded-lg space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Burning captions...</span>
+                      <span className="font-medium">{renderProgress.percent}%</span>
+                    </div>
+                    <Progress value={renderProgress.percent} className="h-2" />
+                    <p className="text-xs text-muted-foreground">{renderProgress.message}</p>
+                  </div>
+                )}
+
+                {/* Captioned video download */}
+                {captionedVideoUrl && (
                   <Button onClick={handleDownloadCaptionedVideo} className="w-full gap-2">
                     <Download className="w-4 h-4" />
                     Download Video (With Captions)
                   </Button>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center">
-                    Caption burning failed - only video without captions is available
+                )}
+
+                {/* Caption error message */}
+                {captionError && !captionedVideoUrl && (
+                  <p className="text-sm text-destructive text-center">
+                    Caption burning failed: {captionError}
                   </p>
                 )}
               </div>
-            ) : renderProgress && (
+            )}
+
+            {/* Initial rendering progress (before video is ready) */}
+            {!renderedVideoUrl && renderProgress && (
               <>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">

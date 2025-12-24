@@ -1124,6 +1124,12 @@ export interface RenderVideoProgress {
   frames?: number;
 }
 
+export interface RenderVideoCallbacks {
+  onProgress: (progress: RenderVideoProgress) => void;
+  onVideoReady?: (videoUrl: string) => void;
+  onCaptionError?: (error: string) => void;
+}
+
 export async function renderVideoStreaming(
   projectId: string,
   audioUrl: string,
@@ -1131,8 +1137,12 @@ export async function renderVideoStreaming(
   imageTimings: { startSeconds: number; endSeconds: number }[],
   srtContent: string,
   projectTitle: string,
-  onProgress: (progress: RenderVideoProgress) => void
+  callbacks: RenderVideoCallbacks | ((progress: RenderVideoProgress) => void)
 ): Promise<RenderVideoResult> {
+  // Support both old callback style and new object style
+  const { onProgress, onVideoReady, onCaptionError } = typeof callbacks === 'function'
+    ? { onProgress: callbacks, onVideoReady: undefined, onCaptionError: undefined }
+    : callbacks;
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
@@ -1225,14 +1235,21 @@ export async function renderVideoStreaming(
                   videoUrl: parsed.videoUrl,
                   size: parsed.size
                 };
+                // Notify caller that video is ready for preview/download
+                if (onVideoReady) {
+                  onVideoReady(parsed.videoUrl);
+                }
                 onProgress({
                   stage: 'rendering',
-                  percent: parsed.percent || 80,
-                  message: parsed.message || 'Video ready, burning captions...'
+                  percent: parsed.percent || 82,
+                  message: parsed.message || 'Video ready! Now burning captions...'
                 });
               } else if (parsed.type === 'caption_error') {
                 // Captions failed but we have the video without captions
                 console.warn('Caption burning failed:', parsed.error);
+                if (onCaptionError) {
+                  onCaptionError(parsed.error || 'Caption burning failed');
+                }
                 // Keep the existing result (video without captions)
               } else if (parsed.type === 'complete') {
                 result = {
