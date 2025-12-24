@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Clock, Image, Music } from "lucide-react";
+import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -28,7 +28,11 @@ import {
   type ProjectHistoryItem,
 } from "@/lib/projectPersistence";
 
-export function ProjectsDrawer() {
+interface ProjectsDrawerProps {
+  onOpenProject?: (project: ProjectHistoryItem) => void;
+}
+
+export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectHistoryItem[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -119,7 +123,13 @@ export function ProjectsDrawer() {
               projects.map(project => (
                 <div
                   key={project.id}
-                  className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/20 transition-colors"
+                  className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    if (onOpenProject) {
+                      onOpenProject(project);
+                      setIsOpen(false);
+                    }
+                  }}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground truncate">
@@ -142,15 +152,21 @@ export function ProjectsDrawer() {
                       </span>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setConfirmDelete(project)}
-                    disabled={deletingId === project.id}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDelete(project);
+                      }}
+                      disabled={deletingId === project.id}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}

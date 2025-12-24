@@ -23,6 +23,7 @@ import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
 import type { ScriptTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
+  projectTitle: string;
   scriptTemplate: string;
   aiModel: string;
   voiceSampleUrl: string | null;
@@ -114,6 +115,20 @@ export function SettingsPopover({
         </DialogHeader>
 
         <div className="space-y-5 py-4 px-1 max-h-[70vh] overflow-y-auto">
+          {/* Project Title */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Project Title:
+            </label>
+            <Input
+              placeholder="Enter a name for this project..."
+              value={localSettings.projectTitle || ""}
+              onChange={(e) => updateSetting("projectTitle", e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="text-center"
+            />
+          </div>
+
           {/* Custom Script Input */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">

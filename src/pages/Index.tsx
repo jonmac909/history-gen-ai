@@ -37,7 +37,7 @@ import {
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
-import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, type SavedProject } from "@/lib/projectPersistence";
+import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
@@ -49,6 +49,7 @@ const Index = () => {
   const [inputValue, setInputValue] = useState("");
   const [viewState, setViewState] = useState<ViewState>("create");
   const [settings, setSettings] = useState<GenerationSettings>({
+    projectTitle: "",
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
@@ -226,7 +227,7 @@ const Index = () => {
       setSourceUrl("Custom Script");
       const newProjectId = crypto.randomUUID();
       setProjectId(newProjectId);
-      setVideoTitle("Custom Script");
+      setVideoTitle(settings.projectTitle || "Custom Script");
 
       // Go straight to script review with custom script
       setPendingScript(settings.customScript!);
@@ -299,7 +300,7 @@ const Index = () => {
       }
       
       const transcript = transcriptResult.transcript;
-      setVideoTitle(transcriptResult.title || "History Documentary");
+      setVideoTitle(settings.projectTitle || transcriptResult.title || "History Documentary");
       updateStep("transcript", "completed");
 
       updateStep("script", "active", "0%");
@@ -784,6 +785,11 @@ const Index = () => {
       completedAt: Date.now(),
       imageCount: images.length,
       audioDuration: pendingAudioDuration,
+      script: confirmedScript,
+      audioUrl: pendingAudioUrl,
+      srtContent: pendingSrtContent,
+      srtUrl: pendingSrtUrl,
+      imageUrls: images,
     });
     clearProject();
 
@@ -1074,6 +1080,78 @@ const Index = () => {
     clearProject();
   };
 
+  // Open a project from history
+  const handleOpenProject = (project: ProjectHistoryItem) => {
+    // Set project state
+    setProjectId(project.id);
+    setVideoTitle(project.videoTitle);
+    setSourceUrl(project.videoTitle);
+
+    // Set asset state
+    if (project.script) setConfirmedScript(project.script);
+    if (project.audioUrl) {
+      setPendingAudioUrl(project.audioUrl);
+      setAudioUrl(project.audioUrl);
+    }
+    if (project.audioDuration) setPendingAudioDuration(project.audioDuration);
+    if (project.srtContent) {
+      setPendingSrtContent(project.srtContent);
+      setSrtContent(project.srtContent);
+    }
+    if (project.srtUrl) setPendingSrtUrl(project.srtUrl);
+    if (project.imageUrls) setPendingImages(project.imageUrls);
+
+    // Build generated assets for results view
+    const assets: GeneratedAsset[] = [
+      {
+        id: "script",
+        name: "Rewritten Script",
+        type: "Markdown",
+        size: project.script ? `${Math.round(project.script.length / 1024)} KB` : "Unknown",
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        content: project.script,
+      },
+      {
+        id: "audio",
+        name: "Voiceover Audio",
+        type: "MP3",
+        size: "Unknown",
+        icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+        url: project.audioUrl,
+      },
+      {
+        id: "captions",
+        name: "Captions",
+        type: "SRT",
+        size: project.srtContent ? `${Math.round(project.srtContent.length / 1024)} KB` : "Unknown",
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        url: project.srtUrl,
+        content: project.srtContent,
+      },
+    ];
+
+    if (project.imageUrls) {
+      project.imageUrls.forEach((imageUrl, index) => {
+        assets.push({
+          id: `image-${index + 1}`,
+          name: `Image ${index + 1}`,
+          type: "PNG",
+          size: "~1 MB",
+          icon: <Image className="w-5 h-5 text-muted-foreground" />,
+          url: imageUrl,
+        });
+      });
+    }
+
+    setGeneratedAssets(assets);
+    setViewState("results");
+
+    toast({
+      title: "Project Opened",
+      description: `Loaded "${project.videoTitle}"`,
+    });
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -1089,7 +1167,7 @@ const Index = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            <ProjectsDrawer />
+            <ProjectsDrawer onOpenProject={handleOpenProject} />
             <ConfigModal
               scriptTemplates={scriptTemplates}
               onSaveTemplates={handleSaveTemplates}

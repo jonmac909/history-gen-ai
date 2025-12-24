@@ -22,13 +22,19 @@ export interface SavedProject {
   imageUrls?: string[];
 }
 
-// Simplified project info for history list
+// Project info for history list (includes data to reopen)
 export interface ProjectHistoryItem {
   id: string;
   videoTitle: string;
   completedAt: number;
   imageCount: number;
   audioDuration?: number;
+  // Asset URLs for reopening
+  script?: string;
+  audioUrl?: string;
+  srtContent?: string;
+  srtUrl?: string;
+  imageUrls?: string[];
 }
 
 const STORAGE_KEY = "historygenai-saved-project";
