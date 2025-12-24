@@ -322,14 +322,14 @@ async function handleRenderVideo(req: Request, res: Response) {
       const withEmbersPath = path.join(tempDir, 'with_embers.mp4');
 
       await new Promise<void>((resolve, reject) => {
-        ffmpeg()
+        const cmd = ffmpeg()
           .input(withAudioPath)
           .input(embersPath)
           .inputOptions(['-stream_loop', '-1'])  // Loop embers for entire video duration
           .complexFilter([
             // Scale embers to match video, key out black areas (makes them transparent)
-            // colorkey params: color=black, similarity=0.15, blend=0.2 for soft edges
-            '[1:v]scale=1920:1080,colorkey=black:0.15:0.2[embers_keyed]',
+            // colorkey params: color=black, similarity=0.12, blend=0.1 for tighter keying
+            '[1:v]scale=1920:1080,colorkey=0x000000:0.12:0.1[embers_keyed]',
             // Overlay embers on main video (keyed areas are transparent)
             '[0:v][embers_keyed]overlay=shortest=1[out]'
           ])
@@ -337,7 +337,7 @@ async function handleRenderVideo(req: Request, res: Response) {
             '-map', '[out]',
             '-map', '0:a',                       // Keep original audio
             '-c:v', 'libx264',
-            '-preset', 'fast',
+            '-preset', 'veryfast',               // Faster encoding to reduce timeout risk
             '-crf', '23',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'copy',
@@ -345,11 +345,16 @@ async function handleRenderVideo(req: Request, res: Response) {
             '-y'
           ])
           .output(withEmbersPath)
-          .on('start', (cmd) => {
-            console.log('Embers overlay FFmpeg command:', cmd.substring(0, 200) + '...');
+          .on('start', (cmdLine) => {
+            console.log('Embers overlay FFmpeg command:', cmdLine.substring(0, 250) + '...');
+          })
+          .on('progress', (progress) => {
+            if (progress.percent) {
+              console.log(`Embers overlay progress: ${progress.percent.toFixed(1)}%`);
+            }
           })
           .on('error', (err) => {
-            console.error('Embers overlay FFmpeg error:', err);
+            console.error('Embers overlay FFmpeg error:', err.message);
             // Continue without embers if overlay fails
             console.log('Continuing without embers overlay...');
             resolve();
@@ -358,8 +363,9 @@ async function handleRenderVideo(req: Request, res: Response) {
             console.log('Embers overlay complete');
             finalVideoPath = withEmbersPath;
             resolve();
-          })
-          .run();
+          });
+
+        cmd.run();
       });
     } else {
       console.log('Embers overlay not available, skipping...');
