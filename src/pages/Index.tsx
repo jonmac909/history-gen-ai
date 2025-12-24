@@ -1074,6 +1074,17 @@ const Index = () => {
 
       setPendingSrtContent(captionsResult.srtContent);
       if (captionsResult.srtUrl) setPendingSrtUrl(captionsResult.srtUrl);
+      if (captionsResult.audioDuration) setPendingAudioDuration(captionsResult.audioDuration);
+
+      // Auto-save after captions generation
+      autoSave("captions", {
+        id: newProjectId,
+        videoTitle: title,
+        audioUrl: publicUrl,
+        audioDuration: captionsResult.audioDuration,
+        srtContent: captionsResult.srtContent,
+        srtUrl: captionsResult.captionsUrl || "",
+      });
 
       setProcessingSteps([
         { id: "upload", label: "Uploading audio", status: "completed" },
