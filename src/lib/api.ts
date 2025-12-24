@@ -698,9 +698,10 @@ export async function generateImagePrompts(
   imageCount: number,
   stylePrompt: string,
   audioDuration?: number,
-  onProgress?: (progress: number, message: string) => void
+  onProgress?: (progress: number, message: string) => void,
+  fastMode?: boolean // Use Haiku for 3x faster generation
 ): Promise<ImagePromptsResult> {
-  console.log('Generating AI-powered image prompts from script and captions...');
+  console.log(`Generating AI-powered image prompts from script and captions${fastMode ? ' (FAST MODE)' : ''}...`);
   console.log(`Script length: ${script.length}, SRT length: ${srtContent.length}, imageCount: ${imageCount}`);
   if (audioDuration) {
     console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
@@ -714,7 +715,7 @@ export async function generateImagePrompts(
       const response = await fetch(`${renderUrl}/generate-image-prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true })
+        body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true, fastMode })
       });
 
       if (!response.ok) {

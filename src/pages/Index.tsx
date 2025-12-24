@@ -681,7 +681,8 @@ const Index = () => {
         pendingAudioDuration,
         (progress, message) => {
           updateStep("prompts", "active", message);
-        }
+        },
+        settings.fastMode
       );
 
       if (!promptResult.success || !promptResult.prompts) {
@@ -1218,7 +1219,9 @@ const Index = () => {
         captionsText,
         settings.imageCount,
         imageStylePrompt,
-        audioDuration
+        audioDuration,
+        undefined, // no progress callback
+        settings.fastMode
       );
 
       if (!promptsResult.success) {

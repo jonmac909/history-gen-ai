@@ -3,6 +3,11 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
 
+// Model-specific constants
+const MAX_TOKENS_SONNET = 16384;
+const MAX_TOKENS_HAIKU = 8192;
+const BATCH_SIZE_PARALLEL = 10; // Smaller batches for parallel processing (Option C)
+
 interface SrtSegment {
   index: number;
   startTime: string;
@@ -105,7 +110,16 @@ function groupSegmentsForImages(segments: SrtSegment[], imageCount: number, audi
 }
 
 router.post('/', async (req: Request, res: Response) => {
-  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream } = req.body;
+  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream, fastMode } = req.body;
+
+  // Use Haiku for fast mode (3x faster, 1/3 cost), otherwise use Sonnet
+  const selectedModel = fastMode
+    ? 'claude-3-5-haiku-latest'
+    : 'claude-sonnet-4-20250514';
+
+  // Model-specific token limits
+  const isHaiku = selectedModel.includes('haiku');
+  const maxTokensPerBatch = isHaiku ? MAX_TOKENS_HAIKU : MAX_TOKENS_SONNET;
 
   // Keepalive interval for SSE
   let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -159,7 +173,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json(error);
     }
 
-    console.log(`Generating ${imageCount} image prompts from script and SRT...`);
+    console.log(`🚀 Generating ${imageCount} image prompts with ${selectedModel}${fastMode ? ' (FAST MODE)' : ''}...`);
 
     // Parse SRT and group into time windows
     const segments = parseSrt(srtContent);
@@ -173,12 +187,11 @@ router.post('/', async (req: Request, res: Response) => {
     // Initialize Anthropic client
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-    // Process in batches if needed (each scene needs ~150 tokens, max output is 16384)
-    // Use batches of 50 to stay well under the limit
-    const BATCH_SIZE = 50;
-    const numBatches = Math.ceil(imageCount / BATCH_SIZE);
+    // OPTIMIZATION: Use smaller batches (10) for parallel processing
+    // This allows multiple API calls to run simultaneously for faster completion
+    const numBatches = Math.ceil(imageCount / BATCH_SIZE_PARALLEL);
 
-    console.log(`Processing ${imageCount} prompts in ${numBatches} batch(es) in PARALLEL`);
+    console.log(`📊 Processing ${imageCount} prompts in ${numBatches} parallel batch(es) of ${BATCH_SIZE_PARALLEL}`);
 
     // Track progress across all parallel batches
     const batchProgress: number[] = new Array(numBatches).fill(0);
@@ -188,27 +201,8 @@ router.post('/', async (req: Request, res: Response) => {
       sendEvent({ type: 'progress', progress, message: `${progress}%` });
     };
 
-    // Create all batch promises to run in parallel
-    const batchPromises = Array.from({ length: numBatches }, async (_, batchIndex) => {
-      const batchStart = batchIndex * BATCH_SIZE;
-      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, imageCount);
-      const batchWindows = windows.slice(batchStart, batchEnd);
-      const batchSize = batchWindows.length;
-
-      // Build context for this batch
-      const windowDescriptions = batchWindows.map((w, i) =>
-        `IMAGE ${batchStart + i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration being spoken: "${w.text}"`
-      ).join('\n\n');
-
-      // Calculate tokens needed for this batch
-      const batchTokens = Math.min(16384, batchSize * 150 + 500);
-
-      let fullResponse = '';
-
-      const messageStream = await anthropic.messages.stream({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: batchTokens,
-        system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
+    // OPTIMIZATION: Define system prompt once for prompt caching
+    const systemPrompt = `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
@@ -238,7 +232,38 @@ Output format:
 [
   {"index": 1, "sceneDescription": "..."},
   {"index": 2, "sceneDescription": "..."}
-]`,
+]`;
+
+    // OPTIMIZATION: Enable prompt caching for system prompt (90% cost reduction on repeat calls)
+    const systemConfig = [
+      {
+        type: 'text' as const,
+        text: systemPrompt,
+        cache_control: { type: 'ephemeral' as const }
+      }
+    ];
+
+    // Create all batch promises to run in parallel
+    const batchPromises = Array.from({ length: numBatches }, async (_, batchIndex) => {
+      const batchStart = batchIndex * BATCH_SIZE_PARALLEL;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE_PARALLEL, imageCount);
+      const batchWindows = windows.slice(batchStart, batchEnd);
+      const batchSize = batchWindows.length;
+
+      // Build context for this batch
+      const windowDescriptions = batchWindows.map((w, i) =>
+        `IMAGE ${batchStart + i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration being spoken: "${w.text}"`
+      ).join('\n\n');
+
+      // Calculate tokens needed for this batch (use model-specific limit)
+      const batchTokens = Math.min(maxTokensPerBatch, batchSize * 150 + 500);
+
+      let fullResponse = '';
+
+      const messageStream = await anthropic.messages.stream({
+        model: selectedModel,
+        max_tokens: batchTokens,
+        system: systemConfig,
         messages: [
           {
             role: 'user',
