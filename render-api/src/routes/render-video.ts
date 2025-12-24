@@ -54,10 +54,10 @@ async function handleRenderVideo(req: Request, res: Response) {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  // Keepalive heartbeat
+  // Keepalive heartbeat - every 5 seconds to prevent connection drops
   const heartbeatInterval = setInterval(() => {
     res.write(': keepalive\n\n');
-  }, 15000);
+  }, 5000);
 
   let tempDir: string | null = null;
 
@@ -242,40 +242,76 @@ async function handleRenderVideo(req: Request, res: Response) {
         .run();
     });
 
-    // Stage 4: Add audio and burn subtitles to final video
-    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Adding audio and captions...' });
+    // Stage 4: Add audio to concatenated video (fast muxing)
+    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 75, message: 'Adding audio...' });
 
-    const outputPath = path.join(tempDir, 'output.mp4');
-
-    // Escape the SRT path for FFmpeg subtitles filter (Linux-compatible)
-    const escapedSrtPath = srtPath
-      .replace(/\\/g, '/')
-      .replace(/:/g, '\\:')
-      .replace(/'/g, "'\\''");
+    const withAudioPath = path.join(tempDir, 'with_audio.mp4');
 
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(concatenatedPath)
         .input(audioPath)
-        .complexFilter([
-          `[0:v]subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'[final]`
+        .outputOptions([
+          '-c:v', 'copy',  // No re-encoding, just mux
+          '-c:a', 'aac',
+          '-ar', '48000',
+          '-b:a', '192k',
+          '-shortest',
+          '-y'
+        ])
+        .output(withAudioPath)
+        .on('start', (cmd) => {
+          console.log('Audio mux FFmpeg command:', cmd);
+        })
+        .on('error', (err) => {
+          console.error('Audio mux FFmpeg error:', err);
+          reject(err);
+        })
+        .on('end', () => {
+          console.log('Audio muxing complete');
+          resolve();
+        })
+        .run();
+    });
+
+    // Stage 5: Burn in subtitles
+    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Burning in captions...' });
+
+    const outputPath = path.join(tempDir, 'output.mp4');
+
+    // For Linux, use simpler escaping - just escape colons for FFmpeg filter
+    const escapedSrtPath = srtPath.replace(/:/g, '\\:');
+    console.log(`SRT path: ${srtPath}`);
+    console.log(`Escaped SRT path: ${escapedSrtPath}`);
+
+    // Progress heartbeat during long subtitle burn
+    const progressHeartbeat = setInterval(() => {
+      sendEvent(res, {
+        type: 'progress',
+        stage: 'rendering',
+        percent: 80,
+        message: 'Burning in captions (processing)...'
+      });
+    }, 10000);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(withAudioPath)
+        .videoFilters([
+          `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`
         ])
         .outputOptions([
-          '-map', '[final]',
-          '-map', '1:a',
           '-c:v', 'libx264',
           '-preset', 'fast',
           '-crf', '23',
           '-pix_fmt', 'yuv420p',
-          '-c:a', 'aac',
-          '-ar', '48000',
-          '-b:a', '192k',
+          '-c:a', 'copy',  // Audio already encoded, just copy
           '-movflags', '+faststart',
           '-y'
         ])
         .output(outputPath)
         .on('start', (cmd) => {
-          console.log('Final FFmpeg command:', cmd);
+          console.log('Subtitle burn FFmpeg command:', cmd);
         })
         .on('progress', (progress) => {
           let finalPercent = 78;
@@ -286,7 +322,7 @@ async function handleRenderVideo(req: Request, res: Response) {
                 parseInt(timeMatch[1]) * 3600 +
                 parseInt(timeMatch[2]) * 60 +
                 parseInt(timeMatch[3]);
-              finalPercent = 78 + Math.round((processedSeconds / totalDuration) * 12);
+              finalPercent = 78 + Math.round((processedSeconds / totalDuration) * 11);
               finalPercent = Math.min(finalPercent, 89);
             }
           }
@@ -294,15 +330,17 @@ async function handleRenderVideo(req: Request, res: Response) {
             type: 'progress',
             stage: 'rendering',
             percent: finalPercent,
-            message: `Adding captions: ${progress.timemark || '00:00:00'}`
+            message: `Burning captions: ${progress.timemark || '00:00:00'}`
           });
         })
         .on('error', (err) => {
-          console.error('Final FFmpeg error:', err);
+          clearInterval(progressHeartbeat);
+          console.error('Subtitle burn FFmpeg error:', err);
           reject(err);
         })
         .on('end', () => {
-          console.log('Final video rendering complete');
+          clearInterval(progressHeartbeat);
+          console.log('Subtitle burning complete');
           resolve();
         })
         .run();
