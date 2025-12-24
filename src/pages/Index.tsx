@@ -1005,19 +1005,44 @@ const Index = () => {
     setVideoTitle(title);
 
     setViewState("processing");
-    setProcessingSteps([{ id: "upload", label: "Uploading audio...", status: "active" }]);
+    setProcessingSteps([{ id: "upload", label: "Uploading audio", status: "active", sublabel: "0%" }]);
 
     try {
-      // Upload the audio file to Supabase storage
+      // Upload the audio file to Supabase storage with progress tracking
       const newProjectId = crypto.randomUUID();
       setProjectId(newProjectId);
       const audioFileName = `${newProjectId}/voiceover.wav`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("generated-assets")
-        .upload(audioFileName, uploadedAudioFile);
+      // Use XMLHttpRequest for upload progress
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${audioFileName}`;
 
-      if (uploadError) throw uploadError;
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', uploadUrl, true);
+        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`);
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('x-upsert', 'true');
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setProcessingSteps([{ id: "upload", label: "Uploading audio", status: "active", sublabel: `${percent}%` }]);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(uploadedAudioFile);
+      });
 
       const { data: { publicUrl } } = supabase.storage
         .from("generated-assets")
