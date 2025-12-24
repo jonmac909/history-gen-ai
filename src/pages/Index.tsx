@@ -1005,7 +1005,7 @@ const Index = () => {
     setVideoTitle(title);
 
     setViewState("processing");
-    setProcessingSteps([{ id: "captions", label: "Generating captions...", status: "loading", progress: 5 }]);
+    setProcessingSteps([{ id: "upload", label: "Uploading audio...", status: "active" }]);
 
     try {
       // Upload the audio file to Supabase storage
@@ -1025,11 +1025,21 @@ const Index = () => {
 
       setPendingAudioUrl(publicUrl);
 
+      // Update to show captions step
+      setProcessingSteps([
+        { id: "upload", label: "Uploading audio", status: "completed" },
+        { id: "captions", label: "Generating captions", status: "active", sublabel: "5%" }
+      ]);
+
       // Generate captions
       const captionsResult = await generateCaptions(
         publicUrl,
+        newProjectId,
         (progress) => {
-          setProcessingSteps([{ id: "captions", label: "Generating captions...", status: "loading", progress }]);
+          setProcessingSteps([
+            { id: "upload", label: "Uploading audio", status: "completed" },
+            { id: "captions", label: "Generating captions", status: "active", sublabel: `${progress}%` }
+          ]);
         }
       );
 
@@ -1038,7 +1048,10 @@ const Index = () => {
       setPendingSrtContent(captionsResult.srtContent);
       if (captionsResult.srtUrl) setPendingSrtUrl(captionsResult.srtUrl);
 
-      setProcessingSteps([{ id: "captions", label: "Captions generated", status: "complete", progress: 100 }]);
+      setProcessingSteps([
+        { id: "upload", label: "Uploading audio", status: "completed" },
+        { id: "captions", label: "Captions generated", status: "completed" }
+      ]);
       setViewState("review-captions");
 
     } catch (error) {
