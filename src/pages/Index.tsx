@@ -37,7 +37,7 @@ import {
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
-import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
+import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, updateProjectInHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
@@ -81,6 +81,7 @@ const Index = () => {
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -122,6 +123,7 @@ const Index = () => {
       srtUrl: overrides?.srtUrl || pendingSrtUrl,
       imagePrompts: overrides?.imagePrompts || imagePrompts,
       imageUrls: overrides?.imageUrls || pendingImages,
+      videoUrl: overrides?.videoUrl || videoUrl,
     };
     saveProject(project);
     console.log(`Auto-saved project at step: ${step}`);
@@ -148,6 +150,7 @@ const Index = () => {
     if (savedProject.srtUrl) setPendingSrtUrl(savedProject.srtUrl);
     if (savedProject.imagePrompts) setImagePrompts(savedProject.imagePrompts);
     if (savedProject.imageUrls) setPendingImages(savedProject.imageUrls);
+    if (savedProject.videoUrl) setVideoUrl(savedProject.videoUrl);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.step) {
@@ -820,6 +823,7 @@ const Index = () => {
     setPendingSrtContent("");
     setPendingSrtUrl("");
     setPendingImages([]);
+    setVideoUrl(undefined);
     setImagePrompts([]);
   };
 
@@ -1127,6 +1131,10 @@ const Index = () => {
       }));
       setImagePrompts(basicPrompts);
     }
+    // Load video URL if available
+    if (project.videoUrl) {
+      setVideoUrl(project.videoUrl);
+    }
 
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [];
@@ -1225,6 +1233,13 @@ const Index = () => {
           audioDuration={pendingAudioDuration}
           projectTitle={videoTitle}
           projectId={projectId}
+          videoUrl={videoUrl}
+          onVideoRendered={(url) => {
+            setVideoUrl(url);
+            // Save to current project and update history
+            autoSave("complete", { videoUrl: url });
+            updateProjectInHistory(projectId, { videoUrl: url });
+          }}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

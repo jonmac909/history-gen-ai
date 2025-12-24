@@ -31,6 +31,8 @@ interface ProjectResultsProps {
   audioDuration?: number;
   projectTitle?: string;
   projectId?: string;
+  videoUrl?: string;  // Pre-rendered video URL (from saved project)
+  onVideoRendered?: (videoUrl: string) => void;  // Callback when video is rendered
 }
 
 // Parse SRT to get timing info
@@ -117,12 +119,14 @@ export function ProjectResults({
   audioUrl,
   audioDuration,
   projectTitle,
-  projectId
+  projectId,
+  videoUrl,
+  onVideoRendered
 }: ProjectResultsProps) {
-  // State for video rendering
+  // State for video rendering - initialize from prop if available
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
-  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {
@@ -444,6 +448,10 @@ export function ProjectResults({
 
       if (result.success && result.videoUrl) {
         setRenderedVideoUrl(result.videoUrl);
+        // Notify parent to save the video URL
+        if (onVideoRendered) {
+          onVideoRendered(result.videoUrl);
+        }
         toast({
           title: "Video Rendered",
           description: "Your video is ready to download!",

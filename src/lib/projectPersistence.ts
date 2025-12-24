@@ -20,6 +20,7 @@ export interface SavedProject {
   srtUrl?: string;
   imagePrompts?: ImagePromptWithTiming[];
   imageUrls?: string[];
+  videoUrl?: string;  // Rendered video URL
 }
 
 // Project info for history list (includes data to reopen)
@@ -36,6 +37,7 @@ export interface ProjectHistoryItem {
   srtUrl?: string;
   imageUrls?: string[];
   imagePrompts?: ImagePromptWithTiming[];
+  videoUrl?: string;  // Rendered video URL
 }
 
 const STORAGE_KEY = "historygenai-saved-project";
@@ -118,6 +120,20 @@ export function addToProjectHistory(item: ProjectHistoryItem): void {
     console.log(`Added project to history: ${item.videoTitle}`);
   } catch (error) {
     console.error("Failed to add to project history:", error);
+  }
+}
+
+export function updateProjectInHistory(projectId: string, updates: Partial<ProjectHistoryItem>): void {
+  try {
+    const history = getProjectHistory();
+    const index = history.findIndex(h => h.id === projectId);
+    if (index !== -1) {
+      history[index] = { ...history[index], ...updates };
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      console.log(`Updated project in history: ${projectId}`);
+    }
+  } catch (error) {
+    console.error("Failed to update project in history:", error);
   }
 }
 
