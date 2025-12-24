@@ -16,6 +16,8 @@ if (ffmpegStatic) {
 
 // Chunk size for processing large videos (25 images per chunk)
 const IMAGES_PER_CHUNK = 25;
+// Parallel chunk rendering for speed (limited to avoid memory pressure)
+const PARALLEL_CHUNK_RENDERS = 3;
 
 interface ImageTiming {
   startSeconds: number;
@@ -129,18 +131,21 @@ async function handleRenderVideo(req: Request, res: Response) {
     const numChunks = Math.ceil(totalImages / IMAGES_PER_CHUNK);
     const totalDuration = imageTimings[imageTimings.length - 1].endSeconds;
 
-    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) of up to ${IMAGES_PER_CHUNK} images each`);
+    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) of up to ${IMAGES_PER_CHUNK} images each (${PARALLEL_CHUNK_RENDERS} parallel)`);
 
-    const chunkVideoPaths: string[] = [];
+    // Prepare all chunk data first
+    interface ChunkData {
+      index: number;
+      concatPath: string;
+      outputPath: string;
+    }
+    const chunkDataList: ChunkData[] = [];
 
-    // Render each chunk as a separate video segment
     for (let chunkIndex = 0; chunkIndex < numChunks; chunkIndex++) {
       const chunkStart = chunkIndex * IMAGES_PER_CHUNK;
       const chunkEnd = Math.min((chunkIndex + 1) * IMAGES_PER_CHUNK, totalImages);
       const chunkImages = imagePaths.slice(chunkStart, chunkEnd);
       const chunkTimings = imageTimings.slice(chunkStart, chunkEnd);
-
-      console.log(`Rendering chunk ${chunkIndex + 1}/${numChunks}: images ${chunkStart + 1}-${chunkEnd}`);
 
       // Create concat demuxer file for this chunk
       const concatContent = chunkImages.map((imgPath, i) => {
@@ -157,57 +162,72 @@ async function handleRenderVideo(req: Request, res: Response) {
       fs.writeFileSync(concatPath, concatFile, 'utf8');
 
       const chunkOutputPath = path.join(tempDir, `chunk_${chunkIndex}.mp4`);
-      chunkVideoPaths.push(chunkOutputPath);
 
-      // Calculate progress range for this chunk (30-70% for all chunks)
-      const chunkProgressStart = 30 + Math.round((chunkIndex / numChunks) * 40);
-      const chunkProgressEnd = 30 + Math.round(((chunkIndex + 1) / numChunks) * 40);
-
-      sendEvent(res, {
-        type: 'progress',
-        stage: 'rendering',
-        percent: chunkProgressStart,
-        message: `Rendering chunk ${chunkIndex + 1}/${numChunks}...`
+      chunkDataList.push({
+        index: chunkIndex,
+        concatPath,
+        outputPath: chunkOutputPath
       });
+    }
 
-      // Render this chunk (video only, no audio yet)
+    const chunkVideoPaths = chunkDataList.map(c => c.outputPath);
+
+    // Track completed chunks for progress
+    let completedChunks = 0;
+
+    // Helper function to render a single chunk
+    const renderChunk = async (chunk: ChunkData): Promise<void> => {
+      console.log(`Rendering chunk ${chunk.index + 1}/${numChunks}`);
+
       await new Promise<void>((resolve, reject) => {
         ffmpeg()
-          .input(concatPath)
+          .input(chunk.concatPath)
           .inputOptions(['-f', 'concat', '-safe', '0'])
           .outputOptions([
+            '-threads', '0',           // Use all CPU cores
             '-c:v', 'libx264',
-            '-preset', 'fast',
+            '-preset', 'veryfast',     // Faster preset for intermediate files
             '-crf', '23',
             '-pix_fmt', 'yuv420p',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
             '-y'
           ])
-          .output(chunkOutputPath)
+          .output(chunk.outputPath)
           .on('start', (cmd) => {
-            console.log(`Chunk ${chunkIndex + 1} FFmpeg command:`, cmd.substring(0, 200) + '...');
-          })
-          .on('progress', (progress) => {
-            if (progress.percent) {
-              const chunkPercent = chunkProgressStart + Math.round((progress.percent / 100) * (chunkProgressEnd - chunkProgressStart));
-              sendEvent(res, {
-                type: 'progress',
-                stage: 'rendering',
-                percent: Math.min(chunkPercent, chunkProgressEnd),
-                message: `Rendering chunk ${chunkIndex + 1}/${numChunks}: ${Math.round(progress.percent)}%`
-              });
-            }
+            console.log(`Chunk ${chunk.index + 1} FFmpeg:`, cmd.substring(0, 150) + '...');
           })
           .on('error', (err) => {
-            console.error(`Chunk ${chunkIndex + 1} FFmpeg error:`, err);
+            console.error(`Chunk ${chunk.index + 1} FFmpeg error:`, err);
             reject(err);
           })
           .on('end', () => {
-            console.log(`Chunk ${chunkIndex + 1} rendering complete`);
+            completedChunks++;
+            const percent = 30 + Math.round((completedChunks / numChunks) * 40);
+            sendEvent(res, {
+              type: 'progress',
+              stage: 'rendering',
+              percent,
+              message: `Rendered ${completedChunks}/${numChunks} chunks`
+            });
+            console.log(`Chunk ${chunk.index + 1} complete (${completedChunks}/${numChunks})`);
             resolve();
           })
           .run();
       });
+    };
+
+    // Render chunks in parallel batches
+    sendEvent(res, {
+      type: 'progress',
+      stage: 'rendering',
+      percent: 30,
+      message: `Rendering ${numChunks} chunks (${PARALLEL_CHUNK_RENDERS} parallel)...`
+    });
+
+    for (let i = 0; i < chunkDataList.length; i += PARALLEL_CHUNK_RENDERS) {
+      const batch = chunkDataList.slice(i, i + PARALLEL_CHUNK_RENDERS);
+      console.log(`Starting batch: chunks ${batch.map(c => c.index + 1).join(', ')}`);
+      await Promise.all(batch.map(chunk => renderChunk(chunk)));
     }
 
     // Stage 3: Concatenate all chunk videos
@@ -373,8 +393,9 @@ async function handleRenderVideo(req: Request, res: Response) {
             `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`
           ])
           .outputOptions([
+            '-threads', '0',           // Use all CPU cores
             '-c:v', 'libx264',
-            '-preset', 'fast',
+            '-preset', 'fast',         // Keep fast for final output quality
             '-crf', '23',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'copy',
