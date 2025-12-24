@@ -18,6 +18,8 @@ if (ffmpegStatic) {
 const IMAGES_PER_CHUNK = 25;
 // Parallel chunk rendering for speed (limited to avoid memory pressure)
 const PARALLEL_CHUNK_RENDERS = 3;
+// Embers overlay effect URL (served from Netlify frontend)
+const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 
 interface ImageTiming {
   startSeconds: number;
@@ -123,6 +125,16 @@ async function handleRenderVideo(req: Request, res: Response) {
     const srtPath = path.join(tempDir, 'captions.srt');
     fs.writeFileSync(srtPath, srtContent, 'utf8');
     console.log('SRT file written');
+
+    // Download embers overlay for final compositing
+    const embersPath = path.join(tempDir, 'embers.mp4');
+    try {
+      await downloadFile(EMBERS_OVERLAY_URL, embersPath);
+      console.log('Embers overlay downloaded');
+    } catch (overlayErr) {
+      console.warn('Failed to download embers overlay, will skip overlay effect:', overlayErr);
+    }
+    const hasEmbersOverlay = fs.existsSync(embersPath);
 
     // Stage 2: Chunked video rendering
     sendEvent(res, { type: 'progress', stage: 'preparing', percent: 30, message: 'Preparing timeline...' });
@@ -399,22 +411,60 @@ async function handleRenderVideo(req: Request, res: Response) {
         // Note: On Linux, srtPath like /tmp/render-xxx/captions.srt has no special chars
         // Fonts installed via nixpacks.toml (fontconfig, fonts-dejavu-core, fonts-liberation)
         // Don't specify FontName - fontconfig will use installed fonts as fallback
-        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
-        console.log(`Subtitle filter: ${subtitleFilterString}`);
+        const subtitleFilter = `subtitles=${srtPath}:force_style='FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
 
-        ffmpeg()
-          .input(withAudioPath)
-          .videoFilters(subtitleFilterString)
-          .outputOptions([
-            '-threads', '0',           // Use all CPU cores
-            '-c:v', 'libx264',
-            '-preset', 'fast',         // Keep fast for final output quality
-            '-crf', '23',
-            '-pix_fmt', 'yuv420p',
-            '-c:a', 'copy',
-            '-movflags', '+faststart',
-            '-y'
-          ])
+        // Build complete filter graph based on whether overlay is available
+        let filterComplex: string;
+        let ffmpegCmd = ffmpeg().input(withAudioPath);
+
+        if (hasEmbersOverlay) {
+          // Add looping embers overlay input
+          // -stream_loop -1 loops indefinitely, -shortest ends when main video ends
+          ffmpegCmd = ffmpegCmd
+            .input(embersPath)
+            .inputOptions(['-stream_loop', '-1']);  // Loop overlay indefinitely
+
+          // Complex filter: scale overlay, apply screen blend, then add subtitles
+          // [0:v] = main video, [1:v] = embers overlay
+          // Screen blend mode: bright pixels from overlay show, dark become transparent
+          filterComplex = `[1:v]scale=1920:1080,format=yuva420p[embers];[0:v][embers]blend=all_mode=screen:all_opacity=0.4[blended];[blended]${subtitleFilter}[out]`;
+
+          console.log(`Using embers overlay with filter: ${filterComplex}`);
+
+          ffmpegCmd = ffmpegCmd
+            .complexFilter(filterComplex, 'out')
+            .outputOptions([
+              '-map', '[out]',
+              '-map', '0:a',
+              '-threads', '0',
+              '-c:v', 'libx264',
+              '-preset', 'fast',
+              '-crf', '23',
+              '-pix_fmt', 'yuv420p',
+              '-c:a', 'copy',
+              '-shortest',              // End when main video ends
+              '-movflags', '+faststart',
+              '-y'
+            ]);
+        } else {
+          // No overlay - just apply subtitles
+          console.log(`Subtitle filter only: ${subtitleFilter}`);
+
+          ffmpegCmd = ffmpegCmd
+            .videoFilters(subtitleFilter)
+            .outputOptions([
+              '-threads', '0',
+              '-c:v', 'libx264',
+              '-preset', 'fast',
+              '-crf', '23',
+              '-pix_fmt', 'yuv420p',
+              '-c:a', 'copy',
+              '-movflags', '+faststart',
+              '-y'
+            ]);
+        }
+
+        ffmpegCmd
           .output(captionedOutputPath)
           .on('start', (cmd) => {
             console.log('Subtitle burn FFmpeg command:', cmd);
