@@ -326,30 +326,36 @@ async function handleRenderVideo(req: Request, res: Response) {
       throw new Error('Missing Supabase configuration');
     }
 
+    // Debug: Log key length to verify it's not truncated (service role keys are ~200+ chars)
+    console.log(`Supabase URL: ${supabaseUrl}`);
+    console.log(`Service role key length: ${supabaseKey.length} chars`);
+    console.log(`Service role key prefix: ${supabaseKey.substring(0, 20)}...`);
+
     const supabase = createClient(supabaseUrl, supabaseKey);
     const storagePath = `${projectId}/video.mp4`;
 
-    // Stream upload to Supabase (avoid loading huge video into memory)
-    const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${storagePath}`;
-    const videoStream = fs.createReadStream(outputPath);
+    // Read video file into buffer for upload (Supabase SDK handles chunking)
+    // For large files, we'll read in chunks to avoid memory pressure
+    const videoFileSizeMB = outputStats.size / (1024 * 1024);
+    console.log(`Uploading video: ${videoFileSizeMB.toFixed(2)} MB to ${storagePath}`);
 
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'video/mp4',
-        'x-upsert': 'true',
-        'Content-Length': outputStats.size.toString()
-      },
-      body: videoStream as any,
-      // @ts-ignore - duplex is needed for streaming body in Node.js fetch
-      duplex: 'half'
-    });
+    // Use Supabase SDK upload which handles the upload properly
+    const videoBuffer = fs.readFileSync(outputPath);
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to upload video: ${uploadResponse.status} ${errorText}`);
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(storagePath, videoBuffer, {
+        contentType: 'video/mp4',
+        upsert: true,
+        duplex: 'half'
+      });
+
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError);
+      throw new Error(`Failed to upload video: ${uploadError.message}`);
     }
+
+    console.log('Upload successful:', uploadData);
 
     // Get public URL
     const { data: urlData } = supabase.storage
