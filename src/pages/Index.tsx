@@ -672,7 +672,10 @@ const Index = () => {
         srt,
         settings.imageCount,
         imageStylePrompt,
-        pendingAudioDuration
+        pendingAudioDuration,
+        (progress, message) => {
+          updateStep("prompts", "active", message);
+        }
       );
 
       if (!promptResult.success || !promptResult.prompts) {

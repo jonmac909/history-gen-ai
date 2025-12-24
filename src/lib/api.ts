@@ -694,7 +694,8 @@ export async function generateImagePrompts(
   srtContent: string,
   imageCount: number,
   stylePrompt: string,
-  audioDuration?: number
+  audioDuration?: number,
+  onProgress?: (progress: number, message: string) => void
 ): Promise<ImagePromptsResult> {
   console.log('Generating AI-powered image prompts from script and captions...');
   console.log(`Script length: ${script.length}, SRT length: ${srtContent.length}, imageCount: ${imageCount}`);
@@ -702,13 +703,74 @@ export async function generateImagePrompts(
     console.log(`Audio duration: ${audioDuration.toFixed(2)}s - images will be evenly distributed across full audio`);
   }
 
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  // Use Railway API with streaming for progress
+  if (renderUrl && onProgress) {
+    try {
+      const response = await fetch(`${renderUrl}/generate-image-prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: ImagePromptsResult = { success: false, error: 'No response received' };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'progress') {
+                onProgress(data.progress, data.message || `${data.progress}%`);
+              } else if (data.type === 'complete') {
+                result = {
+                  success: true,
+                  prompts: data.prompts,
+                  totalDuration: data.totalDuration
+                };
+              } else if (data.type === 'error') {
+                result = { success: false, error: data.error };
+              }
+            } catch (e) {
+              // Ignore parse errors for keepalive comments
+            }
+          }
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Streaming image prompts error:', error);
+      // Fall back to Supabase function
+    }
+  }
+
+  // Fallback to Supabase Edge Function (no streaming)
   const { data, error } = await supabase.functions.invoke('generate-image-prompts', {
     body: { script, srtContent, imageCount, stylePrompt, audioDuration }
   });
 
   if (error) {
     console.error('Image prompt generation error:', error);
-    // Try to get more details from the error
     const errorMessage = error.message || 'Unknown error';
     console.error('Error details:', JSON.stringify(error, null, 2));
     return { success: false, error: errorMessage };

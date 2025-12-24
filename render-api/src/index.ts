@@ -7,6 +7,7 @@ import generateImagesRouter from './routes/generate-images';
 import getYoutubeTranscriptRouter from './routes/get-youtube-transcript';
 import generateCaptionsRouter from './routes/generate-captions';
 import renderVideoRouter from './routes/render-video';
+import generateImagePromptsRouter from './routes/generate-image-prompts';
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ app.use('/generate-images', generateImagesRouter);
 app.use('/get-youtube-transcript', getYoutubeTranscriptRouter);
 app.use('/generate-captions', generateCaptionsRouter);
 app.use('/render-video', renderVideoRouter);
+app.use('/generate-image-prompts', generateImagePromptsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
