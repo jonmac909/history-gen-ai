@@ -397,7 +397,8 @@ async function handleRenderVideo(req: Request, res: Response) {
       await new Promise<void>((resolve, reject) => {
         // Build subtitle filter - use videoFilters for proper escaping
         // Note: On Linux, srtPath like /tmp/render-xxx/captions.srt has no special chars
-        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
+        // Use DejaVu Sans which is installed via nixpacks.toml (fonts-dejavu-core)
+        const subtitleFilterString = `subtitles=${srtPath}:force_style='FontSize=28,FontName=DejaVu Sans,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`;
         console.log(`Subtitle filter: ${subtitleFilterString}`);
 
         ffmpeg()

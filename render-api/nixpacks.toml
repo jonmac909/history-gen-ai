@@ -1,0 +1,14 @@
+# Nixpacks configuration for Railway
+# Install fontconfig and fonts for FFmpeg subtitle rendering
+
+[phases.setup]
+aptPkgs = ["fontconfig", "fonts-dejavu-core", "fonts-liberation"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
