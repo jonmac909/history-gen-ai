@@ -182,40 +182,36 @@ export function AudioPreviewModal({
             </Button>
           </div>
 
-          {/* Progress Bar and Speed Control */}
-          <div className="space-y-3 px-2">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className="absolute h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${audioDuration ? (currentTime / audioDuration) * 100 : 0}%` }}
-                  />
-                  <input
-                    type="range"
-                    min={0}
-                    max={audioDuration || 100}
-                    step={0.1}
-                    value={currentTime}
-                    onChange={(e) => handleSeek([parseFloat(e.target.value)])}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                </div>
-                <div className="flex justify-between text-sm font-medium text-muted-foreground">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(audioDuration)}</span>
-                </div>
+          {/* Progress Bar */}
+          <div className="space-y-1 px-2">
+            <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+              <div
+                className="absolute h-full bg-primary rounded-full transition-all"
+                style={{ width: `${audioDuration ? (currentTime / audioDuration) * 100 : 0}%` }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={audioDuration || 100}
+                step={0.1}
+                value={currentTime}
+                onChange={(e) => handleSeek([parseFloat(e.target.value)])}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </div>
+            <div className="flex justify-between text-sm font-medium text-muted-foreground">
+              <span>{formatTime(currentTime)}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={playbackRate === 2 ? "default" : "outline"}
+                  className="h-6 px-2 text-xs"
+                  onClick={togglePlaybackRate}
+                >
+                  {playbackRate}x
+                </Button>
+                <span>{formatTime(audioDuration)}</span>
               </div>
-
-              {/* 2x Speed Button */}
-              <Button
-                size="sm"
-                variant={playbackRate === 2 ? "default" : "outline"}
-                className="h-10 px-3 text-sm flex-shrink-0"
-                onClick={togglePlaybackRate}
-              >
-                {playbackRate}x
-              </Button>
             </div>
           </div>
         </div>
