@@ -354,7 +354,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Download with progress tracking
     const audioArrayBuffer = await audioResponse.arrayBuffer();
-    const audioData = new Uint8Array(audioArrayBuffer);
+    let audioData: Uint8Array | null = new Uint8Array(audioArrayBuffer);
 
     // Send download complete message
     sendEvent({
@@ -363,7 +363,7 @@ router.post('/', async (req: Request, res: Response) => {
       message: '2%'
     });
 
-    console.log('Audio size:', audioData.length, 'bytes');
+    console.log('Audio size:', audioData!.length, 'bytes');
 
     sendEvent({
       type: 'progress',
@@ -372,7 +372,10 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     // Extract PCM data from WAV with proper parsing
-    const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData);
+    const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData!);
+
+    // Free original audio buffer to save memory
+    audioData = null;
     const audioFormat: AudioFormat = { sampleRate, channels, bitsPerSample };
     const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
     const totalDuration = pcmData.length / bytesPerSecond;
@@ -393,43 +396,30 @@ router.post('/', async (req: Request, res: Response) => {
       progress: 5,
       message: '5%'
     });
-    console.log(`Starting transcription: ${numChunks} chunks`);
+    console.log(`Starting transcription: ${numChunks} chunks (processing sequentially to save memory)`);
 
-    // Prepare all chunks upfront
-    const preparedChunks: { chunkIndex: number; wavData: Uint8Array; expectedDuration: number }[] = [];
-    for (let i = 0; i < numChunks; i++) {
-      const startByte = i * chunkSizeBytes;
-      const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
-      const chunkPcm = pcmData.slice(startByte, endByte);
-      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
-      const expectedDuration = chunkPcm.length / bytesPerSecond;
-      preparedChunks.push({ chunkIndex: i, wavData: chunkWav, expectedDuration });
-    }
-
-    // Process chunks in parallel (max 3 concurrent to avoid rate limits)
-    const MAX_PARALLEL_CHUNKS = 3;
+    // Process chunks sequentially to minimize memory usage (important for large files)
     const chunkResults: { chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }[] = [];
-    let completedChunks = 0;
 
-    for (let batchStart = 0; batchStart < preparedChunks.length; batchStart += MAX_PARALLEL_CHUNKS) {
-      const batch = preparedChunks.slice(batchStart, batchStart + MAX_PARALLEL_CHUNKS);
-      const currentProgress = 5 + Math.round((completedChunks / numChunks) * 85);
-
+    for (let i = 0; i < numChunks; i++) {
+      const currentProgress = 5 + Math.round((i / numChunks) * 85);
       sendEvent({
         type: 'progress',
         progress: currentProgress,
         message: `${currentProgress}%`
       });
 
-      // Process batch in parallel
-      const batchResults = await Promise.all(
-        batch.map(chunk => transcribeChunk(chunk.wavData, groqApiKey, chunk.chunkIndex))
-      );
+      // Prepare chunk on-demand (only keep one chunk in memory at a time)
+      const startByte = i * chunkSizeBytes;
+      const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
+      const chunkPcm = pcmData.slice(startByte, endByte);
+      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
 
-      chunkResults.push(...batchResults);
-      completedChunks += batch.length;
+      // Transcribe this chunk
+      const result = await transcribeChunk(chunkWav, groqApiKey, i);
+      chunkResults.push(result);
 
-      const newProgress = 5 + Math.round((completedChunks / numChunks) * 85);
+      const newProgress = 5 + Math.round(((i + 1) / numChunks) * 85);
       sendEvent({
         type: 'progress',
         progress: newProgress,
