@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -37,6 +37,7 @@ import {
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
+import { saveProject, loadProject, clearProject, getStepLabel, type SavedProject } from "@/lib/projectPersistence";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
@@ -90,6 +91,92 @@ const Index = () => {
   const scriptFileInputRef = useRef<HTMLInputElement>(null);
   const captionsFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedAudioFileForImages, setUploadedAudioFileForImages] = useState<File | null>(null);
+  const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
+
+  // Check for saved project on load
+  useEffect(() => {
+    const saved = loadProject();
+    if (saved) {
+      setSavedProject(saved);
+    }
+  }, []);
+
+  // Auto-save helper - accepts overrides for values that were just set
+  const autoSave = (step: SavedProject["step"], overrides?: Partial<SavedProject>) => {
+    const project: SavedProject = {
+      id: overrides?.id || projectId,
+      savedAt: Date.now(),
+      sourceUrl: overrides?.sourceUrl || sourceUrl,
+      videoTitle: overrides?.videoTitle || videoTitle,
+      settings: overrides?.settings || settings,
+      step,
+      script: overrides?.script || confirmedScript || pendingScript,
+      audioUrl: overrides?.audioUrl || pendingAudioUrl,
+      audioDuration: overrides?.audioDuration || pendingAudioDuration,
+      audioSegments: overrides?.audioSegments || pendingAudioSegments,
+      srtContent: overrides?.srtContent || pendingSrtContent,
+      srtUrl: overrides?.srtUrl || pendingSrtUrl,
+      imagePrompts: overrides?.imagePrompts || imagePrompts,
+      imageUrls: overrides?.imageUrls || pendingImages,
+    };
+    saveProject(project);
+    console.log(`Auto-saved project at step: ${step}`);
+  };
+
+  // Resume saved project
+  const handleResumeProject = () => {
+    if (!savedProject) return;
+
+    // Restore state from saved project
+    setProjectId(savedProject.id);
+    setSourceUrl(savedProject.sourceUrl);
+    setVideoTitle(savedProject.videoTitle);
+    setSettings(savedProject.settings);
+
+    if (savedProject.script) {
+      setPendingScript(savedProject.script);
+      setConfirmedScript(savedProject.script);
+    }
+    if (savedProject.audioUrl) setPendingAudioUrl(savedProject.audioUrl);
+    if (savedProject.audioDuration) setPendingAudioDuration(savedProject.audioDuration);
+    if (savedProject.audioSegments) setPendingAudioSegments(savedProject.audioSegments);
+    if (savedProject.srtContent) setPendingSrtContent(savedProject.srtContent);
+    if (savedProject.srtUrl) setPendingSrtUrl(savedProject.srtUrl);
+    if (savedProject.imagePrompts) setImagePrompts(savedProject.imagePrompts);
+    if (savedProject.imageUrls) setPendingImages(savedProject.imageUrls);
+
+    // Navigate to the appropriate view based on saved step
+    switch (savedProject.step) {
+      case "script":
+        setViewState("review-script");
+        break;
+      case "audio":
+        setViewState("review-audio");
+        break;
+      case "captions":
+        setViewState("review-captions");
+        break;
+      case "prompts":
+        setViewState("review-prompts");
+        break;
+      case "images":
+      case "complete":
+        setViewState("review-images");
+        break;
+    }
+
+    setSavedProject(null);
+    toast({
+      title: "Project Resumed",
+      description: `Continuing from: ${getStepLabel(savedProject.step)}`,
+    });
+  };
+
+  // Dismiss saved project
+  const handleDismissSavedProject = () => {
+    clearProject();
+    setSavedProject(null);
+  };
 
   const toggleInputMode = () => {
     setInputMode(prev => prev === "url" ? "title" : "url");
@@ -233,7 +320,10 @@ const Index = () => {
       
       updateStep("script", "completed");
       setPendingScript(scriptResult.script);
-      
+
+      // Auto-save after script generation
+      autoSave("script", { script: scriptResult.script });
+
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-script");
 
@@ -302,6 +392,13 @@ const Index = () => {
       } else {
         throw new Error("No audio generated");
       }
+
+      // Auto-save after audio generation
+      autoSave("audio", {
+        audioUrl: audioRes.audioUrl || (audioRes.segments?.[0]?.audioUrl),
+        audioDuration: audioRes.duration || audioRes.totalDuration || 0,
+        audioSegments: audioRes.segments || [],
+      });
 
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-audio");
@@ -417,9 +514,15 @@ const Index = () => {
       }
 
       updateStep("captions", "completed");
-      
+
       setPendingSrtContent(captionsRes.srtContent);
       setPendingSrtUrl(captionsRes.captionsUrl || "");
+
+      // Auto-save after captions generation
+      autoSave("captions", {
+        srtContent: captionsRes.srtContent,
+        srtUrl: captionsRes.captionsUrl || "",
+      });
 
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-captions");
@@ -483,6 +586,9 @@ const Index = () => {
       setImagePrompts(promptResult.prompts);
       updateStep("prompts", "completed", `${promptResult.prompts.length} scenes`);
 
+      // Auto-save after image prompts generation
+      autoSave("prompts", { imagePrompts: promptResult.prompts });
+
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-prompts");
 
@@ -536,6 +642,9 @@ const Index = () => {
 
       updateStep("images", "completed", "Done");
       setPendingImages(imageResult.images || []);
+
+      // Auto-save after images generation
+      autoSave("images", { imageUrls: imageResult.images || [] });
 
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-images");
@@ -664,6 +773,9 @@ const Index = () => {
     setAudioUrl(pendingAudioUrl);
     setSrtContent(pendingSrtContent);
     setViewState("results");
+
+    // Clear saved project on completion
+    clearProject();
 
     toast({
       title: "Generation Complete!",
@@ -949,6 +1061,7 @@ const Index = () => {
     setInputValue("");
     setSourceUrl("");
     resetPendingState();
+    clearProject();
   };
 
   return (
@@ -987,6 +1100,40 @@ const Index = () => {
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
+          {/* Resume saved project banner */}
+          {savedProject && viewState === "create" && (
+            <div className="w-full max-w-3xl mx-auto mb-8">
+              <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <RotateCcw className="w-5 h-5 text-primary" />
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-foreground">
+                      Resume previous project?
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {savedProject.videoTitle} - {getStepLabel(savedProject.step)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDismissSavedProject}
+                  >
+                    Dismiss
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleResumeProject}
+                  >
+                    Resume
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="w-full max-w-3xl mx-auto text-center space-y-8">
             <div className="space-y-3">
               <h1 className="text-4xl md:text-5xl font-bold text-foreground tracking-tight">
