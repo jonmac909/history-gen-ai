@@ -324,45 +324,17 @@ router.post('/', async (req: Request, res: Response) => {
     const contentLength = audioResponse.headers.get('content-length');
     const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
 
-    let audioData: Uint8Array;
+    // Download with progress tracking
+    const audioArrayBuffer = await audioResponse.arrayBuffer();
+    const audioData = new Uint8Array(audioArrayBuffer);
 
-    if (totalBytes > 0 && audioResponse.body) {
-      // Stream download with progress
-      const reader = audioResponse.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let receivedBytes = 0;
-      let lastProgressUpdate = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        // Update progress every 5%
-        const downloadPercent = Math.round((receivedBytes / totalBytes) * 100);
-        if (downloadPercent >= lastProgressUpdate + 5) {
-          lastProgressUpdate = downloadPercent;
-          sendEvent({
-            type: 'progress',
-            progress: 1,
-            message: `Downloading audio... ${downloadPercent}%`
-          });
-        }
-      }
-
-      // Combine chunks
-      audioData = new Uint8Array(receivedBytes);
-      let offset = 0;
-      for (const chunk of chunks) {
-        audioData.set(chunk, offset);
-        offset += chunk.length;
-      }
-    } else {
-      // Fallback for servers that don't send content-length
-      const audioArrayBuffer = await audioResponse.arrayBuffer();
-      audioData = new Uint8Array(audioArrayBuffer);
+    // Send download complete message
+    if (totalBytes > 0) {
+      sendEvent({
+        type: 'progress',
+        progress: 2,
+        message: `Downloaded ${Math.round(audioData.length / (1024 * 1024))}MB`
+      });
     }
 
     console.log('Audio size:', audioData.length, 'bytes');
