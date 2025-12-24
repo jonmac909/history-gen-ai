@@ -37,7 +37,8 @@ import {
 } from "@/lib/api";
 import { defaultTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
-import { saveProject, loadProject, clearProject, getStepLabel, type SavedProject } from "@/lib/projectPersistence";
+import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, type SavedProject } from "@/lib/projectPersistence";
+import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
 type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
@@ -776,7 +777,14 @@ const Index = () => {
     setSrtContent(pendingSrtContent);
     setViewState("results");
 
-    // Clear saved project on completion
+    // Add to project history and clear in-progress save
+    addToProjectHistory({
+      id: projectId,
+      videoTitle,
+      completedAt: Date.now(),
+      imageCount: images.length,
+      audioDuration: pendingAudioDuration,
+    });
     clearProject();
 
     toast({
@@ -1080,14 +1088,17 @@ const Index = () => {
             </span>
           </div>
           
-          <ConfigModal 
-            scriptTemplates={scriptTemplates}
-            onSaveTemplates={handleSaveTemplates}
-            cartesiaVoices={cartesiaVoices}
-            onSaveVoices={handleSaveVoices}
-            imageStylePrompt={imageStylePrompt}
-            onSaveImageStylePrompt={handleSaveImageStylePrompt}
-          />
+          <div className="flex items-center gap-2">
+            <ProjectsDrawer />
+            <ConfigModal
+              scriptTemplates={scriptTemplates}
+              onSaveTemplates={handleSaveTemplates}
+              cartesiaVoices={cartesiaVoices}
+              onSaveVoices={handleSaveVoices}
+              imageStylePrompt={imageStylePrompt}
+              onSaveImageStylePrompt={handleSaveImageStylePrompt}
+            />
+          </div>
         </div>
       </header>
 

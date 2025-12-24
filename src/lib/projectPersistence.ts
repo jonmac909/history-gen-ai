@@ -22,7 +22,17 @@ export interface SavedProject {
   imageUrls?: string[];
 }
 
+// Simplified project info for history list
+export interface ProjectHistoryItem {
+  id: string;
+  videoTitle: string;
+  completedAt: number;
+  imageCount: number;
+  audioDuration?: number;
+}
+
 const STORAGE_KEY = "historygenai-saved-project";
+const HISTORY_KEY = "historygenai-project-history";
 
 export function saveProject(project: SavedProject): void {
   try {
@@ -74,4 +84,59 @@ export function getStepLabel(step: SavedProject["step"]): string {
     case "complete": return "Complete";
     default: return "In Progress";
   }
+}
+
+// Project History Management
+export function getProjectHistory(): ProjectHistoryItem[] {
+  try {
+    const saved = localStorage.getItem(HISTORY_KEY);
+    if (!saved) return [];
+    return JSON.parse(saved) as ProjectHistoryItem[];
+  } catch (error) {
+    console.error("Failed to load project history:", error);
+    return [];
+  }
+}
+
+export function addToProjectHistory(item: ProjectHistoryItem): void {
+  try {
+    const history = getProjectHistory();
+    // Remove any existing entry with same ID (in case of re-run)
+    const filtered = history.filter(h => h.id !== item.id);
+    // Add new item at the beginning
+    filtered.unshift(item);
+    // Keep only last 50 projects
+    const trimmed = filtered.slice(0, 50);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    console.log(`Added project to history: ${item.videoTitle}`);
+  } catch (error) {
+    console.error("Failed to add to project history:", error);
+  }
+}
+
+export function removeFromProjectHistory(projectId: string): void {
+  try {
+    const history = getProjectHistory();
+    const filtered = history.filter(h => h.id !== projectId);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+    console.log(`Removed project from history: ${projectId}`);
+  } catch (error) {
+    console.error("Failed to remove from project history:", error);
+  }
+}
+
+export function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+export function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
 }
