@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Settings, Minus, Plus, X, Zap } from "lucide-react";
+import { Settings, Minus, Plus, X, Zap, Rabbit } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -26,6 +26,7 @@ import type { ScriptTemplate } from "@/components/ConfigModal";
 export interface GenerationSettings {
   projectTitle: string;
   fullAutomation: boolean;
+  fastMode: boolean;
   scriptTemplate: string;
   aiModel: string;
   voiceSampleUrl: string | null;
@@ -145,6 +146,23 @@ export function SettingsPopover({
             <Switch
               checked={localSettings.fullAutomation || false}
               onCheckedChange={(checked) => updateSetting("fullAutomation", checked)}
+            />
+          </div>
+
+          {/* Fast Mode Toggle */}
+          <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Rabbit className="w-4 h-4 text-primary" />
+              <div>
+                <span className="text-sm font-medium">Fast Mode</span>
+                <p className="text-xs text-muted-foreground">
+                  3x faster script generation (uses Haiku)
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={localSettings.fastMode || false}
+              onCheckedChange={(checked) => updateSetting("fastMode", checked)}
             />
           </div>
 

@@ -151,7 +151,8 @@ export async function rewriteScriptStreaming(
   aiModel: string,
   wordCount: number,
   onProgress: (progress: number, wordCount: number) => void,
-  onToken?: (token: string) => void // NEW: Real-time token streaming callback
+  onToken?: (token: string) => void, // Real-time token streaming callback
+  fastMode?: boolean // Use faster Haiku model instead of Sonnet
 ): Promise<ScriptResult> {
   const CHUNK_SIZE = 30000; // Render has no timeout limit - can generate full scripts in one call!
 
@@ -277,7 +278,7 @@ async function generateSingleChunk(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true }),
+      body: JSON.stringify({ transcript, template, title, model: aiModel, wordCount, stream: true, fastMode }),
       signal: controller.signal,
     });
 

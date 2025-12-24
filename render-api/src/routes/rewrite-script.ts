@@ -110,7 +110,7 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { transcript, template, title, model, stream, wordCount } = req.body;
+    const { transcript, template, title, model, stream, wordCount, fastMode } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: 'Transcript is required' });
@@ -121,8 +121,11 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Anthropic API key not configured' });
     }
 
-    const selectedModel = model || 'claude-sonnet-4-5';
-    console.log(`🚀 [v3.0-OPTIMIZED] Rewriting script with ${selectedModel}...`);
+    // Use Haiku for fast mode (3x faster, 1/3 cost), otherwise use Sonnet
+    const selectedModel = fastMode
+      ? 'claude-3-5-haiku-latest'
+      : (model || 'claude-sonnet-4-5');
+    console.log(`🚀 [v3.0-OPTIMIZED] Rewriting script with ${selectedModel}${fastMode ? ' (FAST MODE)' : ''}...`);
     console.log(`📊 Optimizations: Prompt Caching ✓ | Token Streaming ✓ | 12k words/iteration ✓`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.

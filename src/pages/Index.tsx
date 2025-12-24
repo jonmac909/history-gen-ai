@@ -51,6 +51,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     projectTitle: "",
     fullAutomation: false,
+    fastMode: false,
     scriptTemplate: "template-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
@@ -379,7 +380,9 @@ const Index = () => {
           // Show only progress percentage and word count (no script preview)
           const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
           updateStep("script", "active", progressText);
-        }
+        },
+        undefined, // onToken callback (not used here)
+        settings.fastMode // Use Haiku model when fast mode enabled
       );
       
       if (!scriptResult.success || !scriptResult.script) {
