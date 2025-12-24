@@ -191,11 +191,11 @@ const Index = () => {
   const handleResumeProject = () => {
     if (!savedProject) return;
 
-    // Restore state from saved project
+    // Restore state from saved project (but keep current settings so user can change them)
     setProjectId(savedProject.id);
     setSourceUrl(savedProject.sourceUrl);
     setVideoTitle(savedProject.videoTitle);
-    setSettings(savedProject.settings);
+    // Don't restore settings - use current settings so user can adjust image count, etc.
 
     if (savedProject.script) {
       setPendingScript(savedProject.script);
