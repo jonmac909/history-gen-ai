@@ -200,8 +200,8 @@ function createWavFromPcm(pcmData: Uint8Array, format: AudioFormat): Uint8Array 
   return wavData;
 }
 
-// Transcribe a single audio chunk with retry logic
-async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
+// Transcribe a single audio chunk with retry logic (using Groq Whisper)
+async function transcribeChunk(audioData: Uint8Array, groqApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
 
@@ -209,17 +209,17 @@ async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chun
     try {
       const formData = new FormData();
       formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
-      formData.append('model', 'whisper-1');
+      formData.append('model', 'whisper-large-v3-turbo'); // Groq's fastest Whisper model
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'segment');
       formData.append('language', 'en'); // Speed optimization: skip language detection
 
       console.log(`Transcribing chunk ${chunkIndex + 1}, size: ${audioData.length} bytes${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
 
-      const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
+          'Authorization': `Bearer ${groqApiKey}`,
           ...formData.getHeaders(),
         },
         body: formData as any,
@@ -227,8 +227,8 @@ async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chun
 
       if (!whisperResponse.ok) {
         const errorText = await whisperResponse.text();
-        console.error('Whisper API error:', whisperResponse.status, errorText);
-        throw new Error(`Whisper API error: ${whisperResponse.status}`);
+        console.error('Groq Whisper API error:', whisperResponse.status, errorText);
+        throw new Error(`Groq Whisper API error: ${whisperResponse.status}`);
       }
 
       const result = await whisperResponse.json() as any;
@@ -305,9 +305,9 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json(error);
     }
 
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    if (!openaiApiKey) {
-      const error = { error: 'OPENAI_API_KEY is not configured' };
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
+      const error = { error: 'GROQ_API_KEY is not configured' };
       if (stream) {
         sendEvent({ type: 'error', ...error });
         cleanup();
@@ -418,7 +418,7 @@ router.post('/', async (req: Request, res: Response) => {
 
       // Process batch in parallel
       const batchResults = await Promise.all(
-        batch.map(chunk => transcribeChunk(chunk.wavData, openaiApiKey, chunk.chunkIndex))
+        batch.map(chunk => transcribeChunk(chunk.wavData, groqApiKey, chunk.chunkIndex))
       );
 
       chunkResults.push(...batchResults);
