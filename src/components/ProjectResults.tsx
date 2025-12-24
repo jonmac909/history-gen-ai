@@ -500,20 +500,27 @@ export function ProjectResults({
     }
   };
 
+  // Sanitize project title for filename
+  const getSafeFilename = (title: string | undefined, suffix: string = '') => {
+    const base = (title || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50);
+    return suffix ? `${base}_${suffix}.mp4` : `${base}.mp4`;
+  };
+
   // Download rendered video (without captions)
   const handleDownloadVideo = async () => {
     if (!renderedVideoUrl) return;
 
+    const filename = getSafeFilename(projectTitle);
     toast({
       title: "Downloading...",
       description: "Downloading video without captions...",
     });
 
     try {
-      await downloadFromUrl(renderedVideoUrl, 'video.mp4');
+      await downloadFromUrl(renderedVideoUrl, filename);
       toast({
         title: "Download Complete",
-        description: "video.mp4 downloaded successfully.",
+        description: `${filename} downloaded successfully.`,
       });
     } catch (error) {
       toast({
@@ -528,16 +535,17 @@ export function ProjectResults({
   const handleDownloadCaptionedVideo = async () => {
     if (!captionedVideoUrl) return;
 
+    const filename = getSafeFilename(projectTitle, 'captioned');
     toast({
       title: "Downloading...",
       description: "Downloading video with captions...",
     });
 
     try {
-      await downloadFromUrl(captionedVideoUrl, 'video_captioned.mp4');
+      await downloadFromUrl(captionedVideoUrl, filename);
       toast({
         title: "Download Complete",
-        description: "video_captioned.mp4 downloaded successfully.",
+        description: `${filename} downloaded successfully.`,
       });
     } catch (error) {
       toast({
