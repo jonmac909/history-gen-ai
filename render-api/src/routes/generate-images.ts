@@ -250,7 +250,7 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const MAX_CONCURRENT_JOBS = 8; // Increased from 4 - RunPod will queue excess jobs
+  const MAX_CONCURRENT_JOBS = 10; // Match RunPod max workers for image endpoint
   const POLL_INTERVAL = 2000; // 2 seconds
   const MAX_POLLING_TIME = 15 * 60 * 1000; // 15 minutes total (increased for large batches)
   const MAX_RETRIES = 2; // Retry failed jobs up to 2 times
