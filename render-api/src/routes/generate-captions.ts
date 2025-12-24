@@ -239,13 +239,22 @@ async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chun
 router.post('/', async (req: Request, res: Response) => {
   const { audioUrl, projectId, stream } = req.body;
 
+  // Keepalive interval for SSE
+  let heartbeatInterval: NodeJS.Timeout | null = null;
+
   // Setup SSE if streaming is enabled
   if (stream) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     });
+
+    // Send keepalive every 15 seconds to prevent connection timeout
+    heartbeatInterval = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 15000);
   }
 
   const sendEvent = (data: any) => {
@@ -254,11 +263,20 @@ router.post('/', async (req: Request, res: Response) => {
     }
   };
 
+  // Cleanup function to clear heartbeat
+  const cleanup = () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  };
+
   try {
     if (!audioUrl) {
       const error = { error: 'Audio URL is required' };
       if (stream) {
         sendEvent({ type: 'error', ...error });
+        cleanup();
         return res.end();
       }
       return res.status(400).json(error);
@@ -269,6 +287,7 @@ router.post('/', async (req: Request, res: Response) => {
       const error = { error: 'OPENAI_API_KEY is not configured' };
       if (stream) {
         sendEvent({ type: 'error', ...error });
+        cleanup();
         return res.end();
       }
       return res.status(500).json(error);
@@ -280,6 +299,7 @@ router.post('/', async (req: Request, res: Response) => {
       const error = { error: 'Supabase credentials not configured' };
       if (stream) {
         sendEvent({ type: 'error', ...error });
+        cleanup();
         return res.end();
       }
       return res.status(500).json(error);
@@ -412,6 +432,11 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
+      if (stream) {
+        sendEvent({ type: 'error', error: 'Failed to upload captions file' });
+        cleanup();
+        return res.end();
+      }
       return res.status(500).json({ error: 'Failed to upload captions file' });
     }
 
@@ -434,6 +459,7 @@ router.post('/', async (req: Request, res: Response) => {
         type: 'complete',
         ...result
       });
+      cleanup();
       res.end();
     } else {
       return res.json(result);
@@ -447,6 +473,7 @@ router.post('/', async (req: Request, res: Response) => {
         type: 'error',
         error: error instanceof Error ? error.message : 'Failed to generate captions'
       });
+      cleanup();
       res.end();
     } else {
       return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to generate captions' });
