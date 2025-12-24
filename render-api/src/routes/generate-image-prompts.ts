@@ -167,28 +167,41 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Parsed ${segments.length} SRT segments into ${windows.length} time windows`);
 
-    // Build context for Claude
-    const windowDescriptions = windows.map((w, i) =>
-      `IMAGE ${i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration being spoken: "${w.text}"`
-    ).join('\n\n');
-
     // Send initial progress
     sendEvent({ type: 'progress', progress: 5, message: '5%' });
 
     // Initialize Anthropic client
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-    // Use streaming to show progress
-    let fullResponse = '';
-    let lastProgress = 5;
+    // Process in batches if needed (each scene needs ~150 tokens, max output is 16384)
+    // Use batches of 50 to stay well under the limit
+    const BATCH_SIZE = 50;
+    const numBatches = Math.ceil(imageCount / BATCH_SIZE);
+    const allSceneDescriptions: { index: number; sceneDescription: string }[] = [];
+    let totalCompleted = 0;
 
-    // Estimate tokens: ~100 words per scene description, ~1.3 tokens per word
-    const estimatedTokens = imageCount * 130;
+    console.log(`Processing ${imageCount} prompts in ${numBatches} batch(es)`);
 
-    const messageStream = await anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8192,
-      system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
+    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, imageCount);
+      const batchWindows = windows.slice(batchStart, batchEnd);
+      const batchSize = batchWindows.length;
+
+      // Build context for this batch
+      const windowDescriptions = batchWindows.map((w, i) =>
+        `IMAGE ${batchStart + i + 1} (${formatTimecodeForFilename(w.startSeconds)} to ${formatTimecodeForFilename(w.endSeconds)}):\nNarration being spoken: "${w.text}"`
+      ).join('\n\n');
+
+      // Calculate tokens needed for this batch
+      const batchTokens = Math.min(16384, batchSize * 150 + 500);
+
+      let fullResponse = '';
+
+      const messageStream = await anthropic.messages.stream({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: batchTokens,
+        system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
@@ -208,10 +221,10 @@ Output format:
   {"index": 1, "sceneDescription": "..."},
   {"index": 2, "sceneDescription": "..."}
 ]`,
-      messages: [
-        {
-          role: 'user',
-          content: `Generate exactly ${imageCount} visual scene descriptions. Return ONLY the JSON array, nothing else.
+        messages: [
+          {
+            role: 'user',
+            content: `Generate exactly ${batchSize} visual scene descriptions for images ${batchStart + 1} to ${batchEnd}. Return ONLY the JSON array, nothing else.
 
 SCRIPT CONTEXT:
 ${script.substring(0, 12000)}
@@ -219,39 +232,51 @@ ${script.substring(0, 12000)}
 TIME-CODED SEGMENTS:
 ${windowDescriptions}
 
-Remember: Output ONLY a JSON array with ${imageCount} items. No explanations.`
-        }
-      ],
-    });
+Remember: Output ONLY a JSON array with ${batchSize} items, starting with index ${batchStart + 1}. No explanations.`
+          }
+        ],
+      });
 
-    // Process stream and track progress
-    for await (const event of messageStream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        fullResponse += event.delta.text;
+      // Process stream and track progress
+      for await (const event of messageStream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          fullResponse += event.delta.text;
 
-        // Count completed scenes by counting closing braces with sceneDescription
-        const completedScenes = (fullResponse.match(/\"sceneDescription\"\s*:\s*\"[^\"]+\"/g) || []).length;
-        const progress = Math.min(95, 5 + Math.round((completedScenes / imageCount) * 90));
+          // Count completed scenes in this batch
+          const completedInBatch = (fullResponse.match(/\"sceneDescription\"\s*:\s*\"[^\"]+\"/g) || []).length;
+          const totalProgress = totalCompleted + completedInBatch;
+          const progress = Math.min(95, 5 + Math.round((totalProgress / imageCount) * 90));
 
-        if (progress > lastProgress) {
-          lastProgress = progress;
           sendEvent({ type: 'progress', progress, message: `${progress}%` });
         }
       }
+
+      // Parse the JSON response for this batch
+      try {
+        const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          throw new Error(`No JSON array found in batch ${batchIndex + 1} response`);
+        }
+        const batchDescriptions = JSON.parse(jsonMatch[0]) as { index: number; sceneDescription: string }[];
+
+        // Adjust indices if needed (Claude might start from 1 in each batch)
+        for (const desc of batchDescriptions) {
+          // If index is within batch range (1 to batchSize), adjust to global index
+          if (desc.index >= 1 && desc.index <= batchSize) {
+            desc.index = batchStart + desc.index;
+          }
+          allSceneDescriptions.push(desc);
+        }
+
+        totalCompleted += batchDescriptions.length;
+        console.log(`Batch ${batchIndex + 1}/${numBatches}: generated ${batchDescriptions.length} descriptions`);
+      } catch (parseError) {
+        console.error(`Failed to parse batch ${batchIndex + 1} response:`, fullResponse.substring(0, 500));
+        throw new Error(`Failed to parse image descriptions from AI (batch ${batchIndex + 1})`);
+      }
     }
 
-    // Parse the JSON response
-    let sceneDescriptions: { index: number; sceneDescription: string }[];
-    try {
-      const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        throw new Error('No JSON array found in response');
-      }
-      sceneDescriptions = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      console.error('Failed to parse Claude response:', fullResponse.substring(0, 500));
-      throw new Error('Failed to parse image descriptions from AI');
-    }
+    const sceneDescriptions = allSceneDescriptions;
 
     // Build final prompts with style and timing info
     const imagePrompts: ImagePrompt[] = windows.map((window, i) => {
