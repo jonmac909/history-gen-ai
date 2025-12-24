@@ -4,24 +4,27 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 
 // Constants
-const MAX_TOKENS_PER_CALL = 16000;
+const MAX_TOKENS_SONNET = 16000;  // Sonnet supports 16k output tokens
+const MAX_TOKENS_HAIKU = 8192;    // Haiku only supports 8k output tokens
 const API_CALL_TIMEOUT = 1200000; // 20 minutes
 const MAX_ITERATIONS = 10;
 const KEEPALIVE_INTERVAL_MS = 15000; // Reduced keepalive frequency (was 3s, now 15s)
-const WORDS_PER_ITERATION = 12000; // Increased from 8k to use full 16k token capacity (~0.75 words/token)
+const WORDS_PER_ITERATION_SONNET = 12000; // ~75% of 16k token capacity
+const WORDS_PER_ITERATION_HAIKU = 6000;   // ~75% of 8k token capacity
 
 interface GenerateScriptChunkOptions {
   apiKey: string;
   model: string;
   systemPrompt: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
+  maxTokens: number; // Model-specific max tokens (Haiku: 8k, Sonnet: 16k)
   usePromptCaching?: boolean;
   onToken?: (text: string) => void; // Callback for streaming tokens
 }
 
 // Non-streaming version (for non-streaming endpoint)
 async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string }> {
-  const { apiKey, model, systemPrompt, messages, usePromptCaching } = options;
+  const { apiKey, model, systemPrompt, messages, maxTokens, usePromptCaching } = options;
 
   const anthropic = new Anthropic({ apiKey });
 
@@ -42,7 +45,7 @@ async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise
 
     const response = await anthropic.messages.create({
       model,
-      max_tokens: MAX_TOKENS_PER_CALL,
+      max_tokens: maxTokens,
       system: systemConfig,
       messages,
     }, {
@@ -60,7 +63,7 @@ async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise
 
 // Streaming version (for streaming endpoint)
 async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string }> {
-  const { apiKey, model, systemPrompt, messages, usePromptCaching, onToken } = options;
+  const { apiKey, model, systemPrompt, messages, maxTokens, usePromptCaching, onToken } = options;
 
   const anthropic = new Anthropic({ apiKey });
 
@@ -85,7 +88,7 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
     // OPTIMIZATION: Token streaming for real-time progress
     const stream = await anthropic.messages.stream({
       model,
-      max_tokens: MAX_TOKENS_PER_CALL,
+      max_tokens: maxTokens,
       system: systemConfig,
       messages,
     });
@@ -125,8 +128,14 @@ router.post('/', async (req: Request, res: Response) => {
     const selectedModel = fastMode
       ? 'claude-3-5-haiku-latest'
       : (model || 'claude-sonnet-4-5');
+
+    // Use model-specific token limits (Haiku: 8k, Sonnet: 16k)
+    const isHaiku = selectedModel.includes('haiku');
+    const maxTokensPerCall = isHaiku ? MAX_TOKENS_HAIKU : MAX_TOKENS_SONNET;
+    const wordsPerIteration = isHaiku ? WORDS_PER_ITERATION_HAIKU : WORDS_PER_ITERATION_SONNET;
+
     console.log(`🚀 [v3.0-OPTIMIZED] Rewriting script with ${selectedModel}${fastMode ? ' (FAST MODE)' : ''}...`);
-    console.log(`📊 Optimizations: Prompt Caching ✓ | Token Streaming ✓ | 12k words/iteration ✓`);
+    console.log(`📊 Max tokens: ${maxTokensPerCall} | Words/iteration: ${wordsPerIteration}`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
@@ -160,10 +169,6 @@ CRITICAL RULES:
         let fullScript = '';
         let currentWordCount = 0;
         let iteration = 0;
-
-        // OPTIMIZATION: Use full 16k token capacity (≈12k words)
-        // This reduces iterations significantly: 3k words = 1 iteration, 15k = 2 iterations instead of 3+
-        const wordsPerIteration = WORDS_PER_ITERATION;
 
         while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
           iteration++;
@@ -241,6 +246,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
               model: selectedModel,
               systemPrompt,
               messages,
+              maxTokens: maxTokensPerCall,
               usePromptCaching: useCaching, // Cache transcript on subsequent iterations
               onToken: (text) => {
                 // Stream tokens to client in real-time for better UX
@@ -366,13 +372,10 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
         res.end();
       }
     } else {
-      // Non-streaming mode
+      // Non-streaming mode (uses wordsPerIteration and maxTokensPerCall from line 135)
       let fullScript = '';
       let currentWordCount = 0;
       let iteration = 0;
-
-      // OPTIMIZATION: Use full 16k token capacity (≈12k words)
-      const wordsPerIteration = WORDS_PER_ITERATION;
 
       while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
         iteration++;
@@ -419,6 +422,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
           model: selectedModel,
           systemPrompt,
           messages,
+          maxTokens: maxTokensPerCall,
           usePromptCaching: iteration > 1 // Cache transcript on subsequent iterations
         });
 
