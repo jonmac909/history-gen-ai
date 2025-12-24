@@ -232,18 +232,28 @@ async function handleRenderVideo(req: Request, res: Response) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const videoBuffer = fs.readFileSync(outputPath);
     const storagePath = `${projectId}/video.mp4`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('generated-assets')
-      .upload(storagePath, videoBuffer, {
-        contentType: 'video/mp4',
-        upsert: true
-      });
+    // Stream upload to Supabase (avoid loading huge video into memory)
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${storagePath}`;
+    const videoStream = fs.createReadStream(outputPath);
 
-    if (uploadError) {
-      throw new Error(`Failed to upload video: ${uploadError.message}`);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'video/mp4',
+        'x-upsert': 'true',
+        'Content-Length': outputStats.size.toString()
+      },
+      body: videoStream as any,
+      // @ts-ignore - duplex is needed for streaming body in Node.js fetch
+      duplex: 'half'
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to upload video: ${uploadResponse.status} ${errorText}`);
     }
 
     // Get public URL
