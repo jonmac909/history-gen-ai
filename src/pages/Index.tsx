@@ -570,9 +570,10 @@ const Index = () => {
       const captionsRes = await generateCaptions(
         pendingAudioUrl,
         projectId,
-        (progress) => {
+        (progress, message) => {
           // Update progress in real-time as chunks are transcribed
-          updateStep("captions", "active", `${progress}%`);
+          const sublabel = message || `${progress}%`;
+          updateStep("captions", "active", sublabel);
         }
       );
 
@@ -1060,10 +1061,11 @@ const Index = () => {
       const captionsResult = await generateCaptions(
         publicUrl,
         newProjectId,
-        (progress) => {
+        (progress, message) => {
+          const sublabel = message || `${progress}%`;
           setProcessingSteps([
             { id: "upload", label: "Uploading audio", status: "completed" },
-            { id: "captions", label: "Generating captions", status: "active", sublabel: `${progress}%` }
+            { id: "captions", label: "Generating captions", status: "active", sublabel }
           ]);
         }
       );

@@ -307,14 +307,71 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log('Fetching audio from:', audioUrl);
 
+    // Send downloading progress
+    sendEvent({
+      type: 'progress',
+      progress: 1,
+      message: 'Downloading audio file...'
+    });
+
     // Download the audio file
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
       throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
     }
-    const audioArrayBuffer = await audioResponse.arrayBuffer();
-    const audioData = new Uint8Array(audioArrayBuffer);
+
+    // Get content length for progress tracking
+    const contentLength = audioResponse.headers.get('content-length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+
+    let audioData: Uint8Array;
+
+    if (totalBytes > 0 && audioResponse.body) {
+      // Stream download with progress
+      const reader = audioResponse.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+      let lastProgressUpdate = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        receivedBytes += value.length;
+
+        // Update progress every 5%
+        const downloadPercent = Math.round((receivedBytes / totalBytes) * 100);
+        if (downloadPercent >= lastProgressUpdate + 5) {
+          lastProgressUpdate = downloadPercent;
+          sendEvent({
+            type: 'progress',
+            progress: 1,
+            message: `Downloading audio... ${downloadPercent}%`
+          });
+        }
+      }
+
+      // Combine chunks
+      audioData = new Uint8Array(receivedBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        audioData.set(chunk, offset);
+        offset += chunk.length;
+      }
+    } else {
+      // Fallback for servers that don't send content-length
+      const audioArrayBuffer = await audioResponse.arrayBuffer();
+      audioData = new Uint8Array(audioArrayBuffer);
+    }
+
     console.log('Audio size:', audioData.length, 'bytes');
+
+    sendEvent({
+      type: 'progress',
+      progress: 3,
+      message: 'Parsing audio file...'
+    });
 
     // Extract PCM data from WAV with proper parsing
     const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData);

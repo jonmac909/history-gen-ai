@@ -850,7 +850,7 @@ export async function generateImagesStreaming(
 export async function generateCaptions(
   audioUrl: string,
   projectId: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<CaptionsResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -892,7 +892,7 @@ export async function generateCaptions(
 async function generateCaptionsStreaming(
   audioUrl: string,
   projectId: string,
-  onProgress: (progress: number) => void
+  onProgress: (progress: number, message?: string) => void
 ): Promise<CaptionsResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -943,7 +943,7 @@ async function generateCaptionsStreaming(
             const parsed = JSON.parse(dataMatch[1]);
 
             if (parsed.type === 'progress') {
-              onProgress(parsed.progress);
+              onProgress(parsed.progress, parsed.message);
             } else if (parsed.type === 'complete') {
               result = {
                 success: true,
