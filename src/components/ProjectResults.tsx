@@ -129,6 +129,7 @@ export function ProjectResults({
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
+  const [captionedVideoUrl, setCaptionedVideoUrl] = useState<string | null>(null);
   const autoRenderTriggered = useRef(false);
 
   // Auto-render video when in full automation mode
@@ -467,13 +468,18 @@ export function ProjectResults({
 
       if (result.success && result.videoUrl) {
         setRenderedVideoUrl(result.videoUrl);
+        if (result.videoUrlCaptioned) {
+          setCaptionedVideoUrl(result.videoUrlCaptioned);
+        }
         // Notify parent to save the video URL
         if (onVideoRendered) {
           onVideoRendered(result.videoUrl);
         }
         toast({
           title: "Video Rendered",
-          description: "Your video is ready to download!",
+          description: result.videoUrlCaptioned
+            ? "Both video versions are ready to download!"
+            : "Video without captions is ready! (Caption burning may have failed)",
         });
       } else {
         setIsRendering(false);
@@ -494,13 +500,13 @@ export function ProjectResults({
     }
   };
 
-  // Download rendered video
+  // Download rendered video (without captions)
   const handleDownloadVideo = async () => {
     if (!renderedVideoUrl) return;
 
     toast({
       title: "Downloading...",
-      description: "Downloading your rendered video...",
+      description: "Downloading video without captions...",
     });
 
     try {
@@ -513,6 +519,30 @@ export function ProjectResults({
       toast({
         title: "Download Failed",
         description: "Failed to download video. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Download captioned video
+  const handleDownloadCaptionedVideo = async () => {
+    if (!captionedVideoUrl) return;
+
+    toast({
+      title: "Downloading...",
+      description: "Downloading video with captions...",
+    });
+
+    try {
+      await downloadFromUrl(captionedVideoUrl, 'video_captioned.mp4');
+      toast({
+        title: "Download Complete",
+        description: "video_captioned.mp4 downloaded successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to download captioned video. Please try again.",
         variant: "destructive",
       });
     }
@@ -775,10 +805,22 @@ export function ProjectResults({
 
           <div className="space-y-4">
             {renderedVideoUrl ? (
-              <Button onClick={handleDownloadVideo} className="w-full gap-2">
-                <Download className="w-4 h-4" />
-                Download Video
-              </Button>
+              <div className="space-y-3">
+                <Button onClick={handleDownloadVideo} variant="outline" className="w-full gap-2">
+                  <Download className="w-4 h-4" />
+                  Download Video (No Captions)
+                </Button>
+                {captionedVideoUrl ? (
+                  <Button onClick={handleDownloadCaptionedVideo} className="w-full gap-2">
+                    <Download className="w-4 h-4" />
+                    Download Video (With Captions)
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center">
+                    Caption burning failed - only video without captions is available
+                  </p>
+                )}
+              </div>
             ) : renderProgress && (
               <>
                 <div className="space-y-2">

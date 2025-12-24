@@ -274,10 +274,64 @@ async function handleRenderVideo(req: Request, res: Response) {
         .run();
     });
 
-    // Stage 5: Burn in subtitles
-    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Burning in captions...' });
+    // Check video with audio file
+    const withAudioStats = fs.statSync(withAudioPath);
+    console.log(`Video with audio size: ${(withAudioStats.size / 1024 / 1024).toFixed(2)} MB`);
 
-    const outputPath = path.join(tempDir, 'output.mp4');
+    if (withAudioStats.size === 0) {
+      throw new Error('FFmpeg produced empty video file');
+    }
+
+    // Stage 5: Upload video WITHOUT captions first (so user has it even if captions fail)
+    sendEvent(res, { type: 'progress', stage: 'uploading', percent: 78, message: 'Uploading video (without captions)...' });
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase configuration');
+    }
+
+    console.log(`Supabase URL: ${supabaseUrl}`);
+    console.log(`Service role key length: ${supabaseKey.length} chars`);
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Upload video without captions
+    const videoNoCaptionsPath = `${projectId}/video.mp4`;
+    const videoNoCaptionsBuffer = fs.readFileSync(withAudioPath);
+
+    const { error: uploadError1 } = await supabase.storage
+      .from('generated-assets')
+      .upload(videoNoCaptionsPath, videoNoCaptionsBuffer, {
+        contentType: 'video/mp4',
+        upsert: true
+      });
+
+    if (uploadError1) {
+      console.error('Supabase upload error (no captions):', uploadError1);
+      throw new Error(`Failed to upload video: ${uploadError1.message}`);
+    }
+
+    const { data: urlData1 } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(videoNoCaptionsPath);
+
+    const videoUrl = urlData1.publicUrl;
+    console.log(`Video (no captions) uploaded: ${videoUrl}`);
+
+    // Send partial complete - user can download video without captions now
+    sendEvent(res, {
+      type: 'video_ready',
+      videoUrl,
+      size: withAudioStats.size,
+      message: 'Video without captions ready! Now burning in captions...'
+    });
+
+    // Stage 6: Burn in subtitles
+    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 82, message: 'Burning in captions...' });
+
+    const captionedOutputPath = path.join(tempDir, 'output_captioned.mp4');
 
     // For Linux, use simpler escaping - just escape colons for FFmpeg filter
     const escapedSrtPath = srtPath.replace(/:/g, '\\:');
@@ -289,126 +343,122 @@ async function handleRenderVideo(req: Request, res: Response) {
       sendEvent(res, {
         type: 'progress',
         stage: 'rendering',
-        percent: 80,
+        percent: 85,
         message: 'Burning in captions (processing)...'
       });
     }, 10000);
 
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(withAudioPath)
-        .videoFilters([
-          `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`
-        ])
-        .outputOptions([
-          '-c:v', 'libx264',
-          '-preset', 'fast',
-          '-crf', '23',
-          '-pix_fmt', 'yuv420p',
-          '-c:a', 'copy',  // Audio already encoded, just copy
-          '-movflags', '+faststart',
-          '-y'
-        ])
-        .output(outputPath)
-        .on('start', (cmd) => {
-          console.log('Subtitle burn FFmpeg command:', cmd);
-        })
-        .on('progress', (progress) => {
-          let finalPercent = 78;
-          if (progress.timemark) {
-            const timeMatch = progress.timemark.match(/(\d+):(\d+):(\d+)/);
-            if (timeMatch) {
-              const processedSeconds =
-                parseInt(timeMatch[1]) * 3600 +
-                parseInt(timeMatch[2]) * 60 +
-                parseInt(timeMatch[3]);
-              finalPercent = 78 + Math.round((processedSeconds / totalDuration) * 11);
-              finalPercent = Math.min(finalPercent, 89);
+    let captionedVideoUrl: string | null = null;
+    let captionedSize = 0;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(withAudioPath)
+          .videoFilters([
+            `subtitles='${escapedSrtPath}':force_style='FontSize=28,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=50'`
+          ])
+          .outputOptions([
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'copy',
+            '-movflags', '+faststart',
+            '-y'
+          ])
+          .output(captionedOutputPath)
+          .on('start', (cmd) => {
+            console.log('Subtitle burn FFmpeg command:', cmd);
+          })
+          .on('progress', (progress) => {
+            let finalPercent = 82;
+            if (progress.timemark) {
+              const timeMatch = progress.timemark.match(/(\d+):(\d+):(\d+)/);
+              if (timeMatch) {
+                const processedSeconds =
+                  parseInt(timeMatch[1]) * 3600 +
+                  parseInt(timeMatch[2]) * 60 +
+                  parseInt(timeMatch[3]);
+                finalPercent = 82 + Math.round((processedSeconds / totalDuration) * 10);
+                finalPercent = Math.min(finalPercent, 92);
+              }
             }
-          }
-          sendEvent(res, {
-            type: 'progress',
-            stage: 'rendering',
-            percent: finalPercent,
-            message: `Burning captions: ${progress.timemark || '00:00:00'}`
-          });
-        })
-        .on('error', (err) => {
-          clearInterval(progressHeartbeat);
-          console.error('Subtitle burn FFmpeg error:', err);
-          reject(err);
-        })
-        .on('end', () => {
-          clearInterval(progressHeartbeat);
-          console.log('Subtitle burning complete');
-          resolve();
-        })
-        .run();
-    });
-
-    // Check output file exists and has content
-    const outputStats = fs.statSync(outputPath);
-    console.log(`Output video size: ${(outputStats.size / 1024 / 1024).toFixed(2)} MB`);
-
-    if (outputStats.size === 0) {
-      throw new Error('FFmpeg produced empty output file');
-    }
-
-    // Stage 4: Upload to Supabase
-    sendEvent(res, { type: 'progress', stage: 'uploading', percent: 90, message: 'Uploading video...' });
-
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing Supabase configuration');
-    }
-
-    // Debug: Log key length to verify it's not truncated (service role keys are ~200+ chars)
-    console.log(`Supabase URL: ${supabaseUrl}`);
-    console.log(`Service role key length: ${supabaseKey.length} chars`);
-    console.log(`Service role key prefix: ${supabaseKey.substring(0, 20)}...`);
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const storagePath = `${projectId}/video.mp4`;
-
-    // Read video file into buffer for upload (Supabase SDK handles chunking)
-    // For large files, we'll read in chunks to avoid memory pressure
-    const videoFileSizeMB = outputStats.size / (1024 * 1024);
-    console.log(`Uploading video: ${videoFileSizeMB.toFixed(2)} MB to ${storagePath}`);
-
-    // Use Supabase SDK upload which handles the upload properly
-    const videoBuffer = fs.readFileSync(outputPath);
-
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('generated-assets')
-      .upload(storagePath, videoBuffer, {
-        contentType: 'video/mp4',
-        upsert: true,
-        duplex: 'half'
+            sendEvent(res, {
+              type: 'progress',
+              stage: 'rendering',
+              percent: finalPercent,
+              message: `Burning captions: ${progress.timemark || '00:00:00'}`
+            });
+          })
+          .on('error', (err) => {
+            clearInterval(progressHeartbeat);
+            console.error('Subtitle burn FFmpeg error:', err);
+            reject(err);
+          })
+          .on('end', () => {
+            clearInterval(progressHeartbeat);
+            console.log('Subtitle burning complete');
+            resolve();
+          })
+          .run();
       });
 
-    if (uploadError) {
-      console.error('Supabase upload error:', uploadError);
-      throw new Error(`Failed to upload video: ${uploadError.message}`);
+      // Check captioned output
+      const captionedStats = fs.statSync(captionedOutputPath);
+      captionedSize = captionedStats.size;
+      console.log(`Captioned video size: ${(captionedSize / 1024 / 1024).toFixed(2)} MB`);
+
+      // Stage 7: Upload captioned video
+      sendEvent(res, { type: 'progress', stage: 'uploading', percent: 95, message: 'Uploading captioned video...' });
+
+      const videoCaptionedPath = `${projectId}/video_captioned.mp4`;
+      const videoCaptionedBuffer = fs.readFileSync(captionedOutputPath);
+
+      const { error: uploadError2 } = await supabase.storage
+        .from('generated-assets')
+        .upload(videoCaptionedPath, videoCaptionedBuffer, {
+          contentType: 'video/mp4',
+          upsert: true
+        });
+
+      if (uploadError2) {
+        console.error('Supabase upload error (captioned):', uploadError2);
+        // Don't throw - we already have the non-captioned version
+        sendEvent(res, {
+          type: 'caption_error',
+          error: `Failed to upload captioned video: ${uploadError2.message}`,
+          message: 'Captioned video upload failed, but video without captions is available'
+        });
+      } else {
+        const { data: urlData2 } = supabase.storage
+          .from('generated-assets')
+          .getPublicUrl(videoCaptionedPath);
+
+        captionedVideoUrl = urlData2.publicUrl;
+        console.log(`Captioned video uploaded: ${captionedVideoUrl}`);
+      }
+
+    } catch (captionError: any) {
+      clearInterval(progressHeartbeat);
+      console.error('Caption burning failed:', captionError);
+      sendEvent(res, {
+        type: 'caption_error',
+        error: captionError.message,
+        message: 'Caption burning failed, but video without captions is available'
+      });
     }
 
-    console.log('Upload successful:', uploadData);
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('generated-assets')
-      .getPublicUrl(storagePath);
-
-    const videoUrl = urlData.publicUrl;
-    console.log(`Video uploaded: ${videoUrl}`);
-
-    // Send completion event
+    // Send final completion event with both URLs
     sendEvent(res, {
       type: 'complete',
       videoUrl,
-      size: outputStats.size,
-      message: 'Video rendering complete!'
+      videoUrlCaptioned: captionedVideoUrl,
+      size: withAudioStats.size,
+      sizeCaptioned: captionedSize,
+      message: captionedVideoUrl
+        ? 'Video rendering complete! Both versions available.'
+        : 'Video rendering complete! (Captions failed, video without captions available)'
     });
 
   } catch (error: any) {

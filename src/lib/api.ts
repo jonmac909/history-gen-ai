@@ -1111,7 +1111,9 @@ export function downloadText(content: string, filename: string, mimeType: string
 export interface RenderVideoResult {
   success: boolean;
   videoUrl?: string;
+  videoUrlCaptioned?: string;
   size?: number;
+  sizeCaptioned?: number;
   error?: string;
 }
 
@@ -1216,11 +1218,29 @@ export async function renderVideoStreaming(
                   message: parsed.message,
                   frames: parsed.frames
                 });
-              } else if (parsed.type === 'complete') {
+              } else if (parsed.type === 'video_ready') {
+                // Video without captions is ready - store it in case captioning fails
                 result = {
                   success: true,
                   videoUrl: parsed.videoUrl,
                   size: parsed.size
+                };
+                onProgress({
+                  stage: 'rendering',
+                  percent: parsed.percent || 80,
+                  message: parsed.message || 'Video ready, burning captions...'
+                });
+              } else if (parsed.type === 'caption_error') {
+                // Captions failed but we have the video without captions
+                console.warn('Caption burning failed:', parsed.error);
+                // Keep the existing result (video without captions)
+              } else if (parsed.type === 'complete') {
+                result = {
+                  success: true,
+                  videoUrl: parsed.videoUrl,
+                  videoUrlCaptioned: parsed.videoUrlCaptioned,
+                  size: parsed.size,
+                  sizeCaptioned: parsed.sizeCaptioned
                 };
                 onProgress({
                   stage: 'uploading',
