@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
@@ -749,19 +749,17 @@ export function ProjectResults({
               <Video className="w-5 h-5" />
               {renderedVideoUrl ? 'Video Ready' : 'Rendering Video'}
             </DialogTitle>
+            <DialogDescription>
+              {renderedVideoUrl ? 'Your video has been rendered successfully.' : 'Please wait while your video is being rendered.'}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {renderedVideoUrl ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Your video has been rendered and is ready to download.
-                </p>
-                <Button onClick={handleDownloadVideo} className="w-full gap-2">
-                  <Download className="w-4 h-4" />
-                  Download Video
-                </Button>
-              </>
+              <Button onClick={handleDownloadVideo} className="w-full gap-2">
+                <Download className="w-4 h-4" />
+                Download Video
+              </Button>
             ) : renderProgress && (
               <>
                 <div className="space-y-2">
