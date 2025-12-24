@@ -250,9 +250,10 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const MAX_CONCURRENT_JOBS = 4; // Match RunPod max workers for image endpoint
+  const MAX_CONCURRENT_JOBS = 8; // Increased from 4 - RunPod will queue excess jobs
   const POLL_INTERVAL = 2000; // 2 seconds
-  const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
+  const MAX_POLLING_TIME = 15 * 60 * 1000; // 15 minutes total (increased for large batches)
+  const MAX_RETRIES = 2; // Retry failed jobs up to 2 times
 
   try {
     console.log(`\n=== Generating ${total} images with rolling concurrency (max ${MAX_CONCURRENT_JOBS} concurrent) ===`);
@@ -266,30 +267,44 @@ async function handleStreamingImages(
 
     const allResults: JobStatus[] = [];
     let nextPromptIndex = 0;
-    const activeJobs = new Map<string, { index: number; filename: string; startTime: number }>();
+    const activeJobs = new Map<string, { index: number; filename: string; startTime: number; retryCount: number }>();
     const startTime = Date.now();
+    const retryQueue: { index: number; prompt: string; filename: string; retryCount: number }[] = [];
 
-    // Helper to start next job
+    // Helper to start next job (from queue or retry queue)
     const startNextJob = async (): Promise<void> => {
-      if (nextPromptIndex >= normalizedPrompts.length) return;
+      let jobData: { index: number; prompt: string; filename: string; retryCount: number } | null = null;
 
-      const promptData = normalizedPrompts[nextPromptIndex];
-      const index = nextPromptIndex;
-      nextPromptIndex++;
+      // First try retry queue, then main queue
+      if (retryQueue.length > 0) {
+        jobData = retryQueue.shift()!;
+        console.log(`Retrying job ${jobData.index + 1} (attempt ${jobData.retryCount + 1})`);
+      } else if (nextPromptIndex < normalizedPrompts.length) {
+        const promptData = normalizedPrompts[nextPromptIndex];
+        jobData = { index: nextPromptIndex, prompt: promptData.prompt, filename: promptData.filename, retryCount: 0 };
+        nextPromptIndex++;
+      }
+
+      if (!jobData) return;
 
       try {
-        const jobId = await startImageJob(runpodApiKey, promptData.prompt, quality, aspectRatio);
-        activeJobs.set(jobId, { index, filename: promptData.filename, startTime: Date.now() });
-        console.log(`Started job ${index + 1}/${total} (${activeJobs.size} active): ${promptData.filename}`);
+        const jobId = await startImageJob(runpodApiKey, jobData.prompt, quality, aspectRatio);
+        activeJobs.set(jobId, { index: jobData.index, filename: jobData.filename, startTime: Date.now(), retryCount: jobData.retryCount });
+        console.log(`Started job ${jobData.index + 1}/${total} (${activeJobs.size} active): ${jobData.filename}`);
       } catch (err) {
-        console.error(`Failed to create job ${index + 1}:`, err);
-        allResults.push({
-          jobId: '',
-          index,
-          state: 'fail',
-          error: err instanceof Error ? err.message : 'Failed to create job',
-          filename: promptData.filename
-        });
+        console.error(`Failed to create job ${jobData.index + 1}:`, err);
+        // Queue for retry if not exceeded max retries
+        if (jobData.retryCount < MAX_RETRIES) {
+          retryQueue.push({ ...jobData, retryCount: jobData.retryCount + 1 });
+        } else {
+          allResults.push({
+            jobId: '',
+            index: jobData.index,
+            state: 'fail',
+            error: err instanceof Error ? err.message : 'Failed to create job after retries',
+            filename: jobData.filename
+          });
+        }
       }
     };
 
@@ -299,7 +314,7 @@ async function handleStreamingImages(
     await Promise.all(Array.from({ length: initialBatch }, () => startNextJob()));
 
     // Poll active jobs and start new ones as they complete
-    while (activeJobs.size > 0 && Date.now() - startTime < MAX_POLLING_TIME) {
+    while ((activeJobs.size > 0 || retryQueue.length > 0) && Date.now() - startTime < MAX_POLLING_TIME) {
       const jobIds = Array.from(activeJobs.keys());
 
       // Check all active jobs in parallel
@@ -348,35 +363,54 @@ async function handleStreamingImages(
           });
 
         } else if (status.state === 'fail') {
-          console.error(`✗ Job ${jobData.index + 1}/${total} failed: ${status.error}`);
-
-          allResults.push({
-            jobId,
-            index: jobData.index,
-            state: 'fail',
-            error: status.error,
-            filename: jobData.filename
-          });
+          console.error(`✗ Job ${jobData.index + 1}/${total} failed (attempt ${jobData.retryCount + 1}): ${status.error}`);
 
           activeJobs.delete(jobId);
 
-          // Start next job even if this one failed
+          // Retry if not exceeded max retries
+          if (jobData.retryCount < MAX_RETRIES) {
+            const promptData = normalizedPrompts[jobData.index];
+            retryQueue.push({
+              index: jobData.index,
+              prompt: promptData.prompt,
+              filename: jobData.filename,
+              retryCount: jobData.retryCount + 1
+            });
+            console.log(`Queued job ${jobData.index + 1} for retry (attempt ${jobData.retryCount + 2})`);
+          } else {
+            allResults.push({
+              jobId,
+              index: jobData.index,
+              state: 'fail',
+              error: status.error,
+              filename: jobData.filename
+            });
+          }
+
+          // Start next job
           await startNextJob();
 
           // Send progress update
-          const completed = allResults.length;
+          const completed = allResults.filter(r => r.state === 'success').length;
+          const failed = allResults.filter(r => r.state === 'fail').length;
+          const pending = retryQueue.length;
           sendEvent({
             type: 'progress',
             completed,
             total,
-            message: `${completed}/${total} images processed (${allResults.filter(r => r.state === 'fail').length} failed)`
+            message: `${completed}/${total} done${failed > 0 ? `, ${failed} failed` : ''}${pending > 0 ? `, ${pending} retrying` : ''}`
           });
         }
       }
 
-      // Wait before next poll if there are still active jobs
-      if (activeJobs.size > 0) {
+      // Wait before next poll if there are still active jobs or retries pending
+      if (activeJobs.size > 0 || retryQueue.length > 0) {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+        // If no active jobs but retries pending, start them
+        while (activeJobs.size < MAX_CONCURRENT_JOBS && retryQueue.length > 0) {
+          await startNextJob();
+        }
       }
     }
 
