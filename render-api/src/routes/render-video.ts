@@ -297,9 +297,21 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Upload video without captions
+    // Upload video without captions - with progress heartbeat for large files
     const videoNoCaptionsPath = `${projectId}/video.mp4`;
     const videoNoCaptionsBuffer = fs.readFileSync(withAudioPath);
+    const uploadSizeMB = (videoNoCaptionsBuffer.length / 1024 / 1024).toFixed(1);
+    console.log(`Uploading ${uploadSizeMB} MB video...`);
+
+    // Heartbeat during upload (large files can take minutes)
+    const uploadHeartbeat = setInterval(() => {
+      sendEvent(res, {
+        type: 'progress',
+        stage: 'uploading',
+        percent: 79,
+        message: `Uploading video (${uploadSizeMB} MB)...`
+      });
+    }, 3000);
 
     const { error: uploadError1 } = await supabase.storage
       .from('generated-assets')
@@ -307,6 +319,8 @@ async function handleRenderVideo(req: Request, res: Response) {
         contentType: 'video/mp4',
         upsert: true
       });
+
+    clearInterval(uploadHeartbeat);
 
     if (uploadError1) {
       console.error('Supabase upload error (no captions):', uploadError1);
@@ -407,13 +421,24 @@ async function handleRenderVideo(req: Request, res: Response) {
       // Check captioned output
       const captionedStats = fs.statSync(captionedOutputPath);
       captionedSize = captionedStats.size;
-      console.log(`Captioned video size: ${(captionedSize / 1024 / 1024).toFixed(2)} MB`);
+      const captionedSizeMB = (captionedSize / 1024 / 1024).toFixed(1);
+      console.log(`Captioned video size: ${captionedSizeMB} MB`);
 
       // Stage 7: Upload captioned video
-      sendEvent(res, { type: 'progress', stage: 'uploading', percent: 95, message: 'Uploading captioned video...' });
+      sendEvent(res, { type: 'progress', stage: 'uploading', percent: 95, message: `Uploading captioned video (${captionedSizeMB} MB)...` });
 
       const videoCaptionedPath = `${projectId}/video_captioned.mp4`;
       const videoCaptionedBuffer = fs.readFileSync(captionedOutputPath);
+
+      // Heartbeat during captioned upload
+      const captionedUploadHeartbeat = setInterval(() => {
+        sendEvent(res, {
+          type: 'progress',
+          stage: 'uploading',
+          percent: 96,
+          message: `Uploading captioned video (${captionedSizeMB} MB)...`
+        });
+      }, 3000);
 
       const { error: uploadError2 } = await supabase.storage
         .from('generated-assets')
@@ -421,6 +446,8 @@ async function handleRenderVideo(req: Request, res: Response) {
           contentType: 'video/mp4',
           upsert: true
         });
+
+      clearInterval(captionedUploadHeartbeat);
 
       if (uploadError2) {
         console.error('Supabase upload error (captioned):', uploadError2);
