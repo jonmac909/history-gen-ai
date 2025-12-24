@@ -200,40 +200,63 @@ function createWavFromPcm(pcmData: Uint8Array, format: AudioFormat): Uint8Array 
   return wavData;
 }
 
-// Transcribe a single audio chunk
+// Transcribe a single audio chunk with retry logic
 async function transcribeChunk(audioData: Uint8Array, openaiApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
-  const formData = new FormData();
-  formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
-  formData.append('model', 'whisper-1');
-  formData.append('response_format', 'verbose_json');
-  formData.append('timestamp_granularities[]', 'segment');
-  formData.append('language', 'en'); // Speed optimization: skip language detection
+  const MAX_RETRIES = 3;
+  let lastError: Error | null = null;
 
-  console.log(`Transcribing chunk ${chunkIndex + 1}, size: ${audioData.length} bytes`);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const formData = new FormData();
+      formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
+      formData.append('model', 'whisper-1');
+      formData.append('response_format', 'verbose_json');
+      formData.append('timestamp_granularities[]', 'segment');
+      formData.append('language', 'en'); // Speed optimization: skip language detection
 
-  const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
-      ...formData.getHeaders(),
-    },
-    body: formData as any,
-  });
+      console.log(`Transcribing chunk ${chunkIndex + 1}, size: ${audioData.length} bytes${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
 
-  if (!whisperResponse.ok) {
-    const errorText = await whisperResponse.text();
-    console.error('Whisper API error:', whisperResponse.status, errorText);
-    throw new Error(`Whisper API error: ${whisperResponse.status}`);
+      const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
+          ...formData.getHeaders(),
+        },
+        body: formData as any,
+      });
+
+      if (!whisperResponse.ok) {
+        const errorText = await whisperResponse.text();
+        console.error('Whisper API error:', whisperResponse.status, errorText);
+        throw new Error(`Whisper API error: ${whisperResponse.status}`);
+      }
+
+      const result = await whisperResponse.json() as any;
+      console.log(`Chunk ${chunkIndex + 1} transcribed, duration: ${result.duration}s, segments: ${result.segments?.length || 0}`);
+
+      return {
+        chunkIndex,
+        segments: result.segments || [],
+        duration: result.duration || 0,
+      };
+    } catch (error: any) {
+      lastError = error;
+      const isRetryable = error.code === 'ECONNRESET' ||
+                          error.code === 'ETIMEDOUT' ||
+                          error.message?.includes('socket hang up') ||
+                          error.message?.includes('network');
+
+      if (isRetryable && attempt < MAX_RETRIES) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // 1s, 2s, 4s... max 10s
+        console.log(`Chunk ${chunkIndex + 1} failed (${error.code || error.message}), retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
   }
 
-  const result = await whisperResponse.json() as any;
-  console.log(`Chunk ${chunkIndex + 1} transcribed, duration: ${result.duration}s, segments: ${result.segments?.length || 0}`);
-
-  return {
-    chunkIndex,
-    segments: result.segments || [],
-    duration: result.duration || 0,
-  };
+  throw lastError || new Error('Transcription failed after retries');
 }
 
 router.post('/', async (req: Request, res: Response) => {
@@ -311,7 +334,7 @@ router.post('/', async (req: Request, res: Response) => {
     sendEvent({
       type: 'progress',
       progress: 1,
-      message: 'Downloading audio file...'
+      message: '1%'
     });
 
     // Download the audio file
@@ -329,20 +352,18 @@ router.post('/', async (req: Request, res: Response) => {
     const audioData = new Uint8Array(audioArrayBuffer);
 
     // Send download complete message
-    if (totalBytes > 0) {
-      sendEvent({
-        type: 'progress',
-        progress: 2,
-        message: `Downloaded ${Math.round(audioData.length / (1024 * 1024))}MB`
-      });
-    }
+    sendEvent({
+      type: 'progress',
+      progress: 2,
+      message: '2%'
+    });
 
     console.log('Audio size:', audioData.length, 'bytes');
 
     sendEvent({
       type: 'progress',
       progress: 3,
-      message: 'Parsing audio file...'
+      message: '3%'
     });
 
     // Extract PCM data from WAV with proper parsing
@@ -365,10 +386,9 @@ router.post('/', async (req: Request, res: Response) => {
     sendEvent({
       type: 'progress',
       progress: 5,
-      message: `Starting transcription (${numChunks} chunk${numChunks > 1 ? 's' : ''})...`,
-      chunksProcessed: 0,
-      totalChunks: numChunks
+      message: '5%'
     });
+    console.log(`Starting transcription: ${numChunks} chunks`);
 
     // Prepare all chunks upfront
     const preparedChunks: { chunkIndex: number; wavData: Uint8Array; expectedDuration: number }[] = [];
@@ -388,13 +408,12 @@ router.post('/', async (req: Request, res: Response) => {
 
     for (let batchStart = 0; batchStart < preparedChunks.length; batchStart += MAX_PARALLEL_CHUNKS) {
       const batch = preparedChunks.slice(batchStart, batchStart + MAX_PARALLEL_CHUNKS);
+      const currentProgress = 5 + Math.round((completedChunks / numChunks) * 85);
 
       sendEvent({
         type: 'progress',
-        progress: 5 + Math.round((completedChunks / numChunks) * 85),
-        message: `Transcribing${numChunks > 1 ? ` chunks ${batchStart + 1}-${Math.min(batchStart + batch.length, numChunks)}/${numChunks}` : ''}...`,
-        chunksProcessed: completedChunks,
-        totalChunks: numChunks
+        progress: currentProgress,
+        message: `${currentProgress}%`
       });
 
       // Process batch in parallel
@@ -405,12 +424,11 @@ router.post('/', async (req: Request, res: Response) => {
       chunkResults.push(...batchResults);
       completedChunks += batch.length;
 
+      const newProgress = 5 + Math.round((completedChunks / numChunks) * 85);
       sendEvent({
         type: 'progress',
-        progress: 5 + Math.round((completedChunks / numChunks) * 85),
-        message: `Transcribed${numChunks > 1 ? ` ${completedChunks}/${numChunks} chunks` : ''}`,
-        chunksProcessed: completedChunks,
-        totalChunks: numChunks
+        progress: newProgress,
+        message: `${newProgress}%`
       });
     }
 
