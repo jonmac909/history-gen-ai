@@ -19,6 +19,7 @@ interface AudioPreviewModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  onSkipCaptions?: () => void;
 }
 
 export function AudioPreviewModal({
@@ -30,6 +31,7 @@ export function AudioPreviewModal({
   onCancel,
   onBack,
   onForward,
+  onSkipCaptions,
 }: AudioPreviewModalProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -232,6 +234,12 @@ export function AudioPreviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onSkipCaptions && (
+            <Button variant="outline" onClick={onSkipCaptions} className="w-full sm:w-auto">
+              Skip Captions
+            </Button>
+          )}
 
           {onForward && (
             <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">

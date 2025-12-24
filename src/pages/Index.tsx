@@ -556,6 +556,32 @@ const Index = () => {
     }
   };
 
+  // Skip captions and go directly to image prompts
+  const handleSkipCaptions = async () => {
+    // Use script text as fallback for captions (for timing, prompts will be evenly distributed)
+    const scriptAsSrt = confirmedScript || pendingScript || "";
+
+    // Create a simple SRT from script (single segment spanning full duration)
+    const duration = pendingAudioDuration || 60;
+    const formatTime = (seconds: number) => {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 1000);
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
+    };
+
+    const simpleSrt = `1\n${formatTime(0)} --> ${formatTime(duration)}\n${scriptAsSrt.substring(0, 500)}...\n`;
+
+    setPendingSrtContent(simpleSrt);
+
+    // Auto-save and go to prompts
+    autoSave("captions", { srtContent: simpleSrt });
+
+    // Call the captions confirm handler with the script as SRT
+    await handleCaptionsConfirm(simpleSrt);
+  };
+
   // Step 3: After audio confirmed, generate captions
   const handleAudioConfirm = async () => {
     const steps: GenerationStep[] = [
@@ -1716,6 +1742,7 @@ const Index = () => {
           onCancel={handleCancelRequest}
           onBack={handleBackToScript}
           onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
+          onSkipCaptions={handleSkipCaptions}
           regeneratingIndex={regeneratingSegmentIndex}
         />
       ) : (
@@ -1728,6 +1755,7 @@ const Index = () => {
           onCancel={handleCancelRequest}
           onBack={handleBackToScript}
           onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
+          onSkipCaptions={handleSkipCaptions}
         />
       )}
 

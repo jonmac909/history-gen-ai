@@ -21,6 +21,7 @@ interface AudioSegmentsPreviewModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  onSkipCaptions?: () => void;
   regeneratingIndex: number | null;
 }
 
@@ -244,6 +245,7 @@ export function AudioSegmentsPreviewModal({
   onCancel,
   onBack,
   onForward,
+  onSkipCaptions,
   regeneratingIndex,
 }: AudioSegmentsPreviewModalProps) {
   const [isPlayingAll, setIsPlayingAll] = useState(false);
@@ -456,6 +458,12 @@ export function AudioSegmentsPreviewModal({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+
+          {onSkipCaptions && (
+            <Button variant="outline" onClick={onSkipCaptions} className="w-full sm:w-auto">
+              Skip Captions
+            </Button>
+          )}
 
           {onForward && (
             <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
