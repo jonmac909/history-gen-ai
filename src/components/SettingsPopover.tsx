@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Minus, Plus } from "lucide-react";
+import { Settings, Minus, Plus, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -68,7 +69,7 @@ export function SettingsPopover({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (open) setIsOpen(true); }}>
       <DialogTrigger asChild>
         <Button
           variant="ghost"
@@ -86,6 +87,7 @@ export function SettingsPopover({
         className="sm:max-w-md"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-center gap-2 text-primary">
@@ -243,6 +245,13 @@ export function SettingsPopover({
             </div>
           </div>
         </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)} className="w-full">
+            <X className="w-4 h-4 mr-2" />
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
