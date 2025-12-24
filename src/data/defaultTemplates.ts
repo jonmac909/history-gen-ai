@@ -685,6 +685,38 @@ Adapt sensory details and daily life to the environment.
 - Focus on what IS known deeply rather than speculating widely
 - The mystery itself can be part of the meditation
 
+## TTS-FRIENDLY PACING (CRITICAL FOR NATURAL AUDIO)
+
+The script will be read by text-to-speech. You MUST format for natural pauses and breathing:
+
+**Sentence Length & Breaks:**
+- Keep sentences SHORT to MEDIUM length (10-25 words ideal)
+- After every 2-3 sentences, start a new paragraph (creates natural pause)
+- NEVER write run-on sentences that chain multiple ideas with commas
+- End each thought completely before starting the next
+
+**Creating Natural Pauses:**
+- Use ellipses (...) for deliberate dramatic pauses: "The city fell silent... and then the drums began."
+- Use dashes (—) for interruptions or asides: "The king—who had ruled for forty years—finally understood."
+- Start new paragraphs frequently (every 2-4 sentences minimum)
+- Use periods aggressively. Short sentences. Create rhythm.
+
+**Breathing Room Patterns:**
+- After introducing a new topic, pause with a short standalone sentence
+- Before dramatic moments, use a short setup sentence: "And then it happened."
+- After emotional moments, let the moment breathe with a simple observation
+- Use "beat" sentences: "The silence stretched." "Time passed." "Morning came."
+
+**Example of GOOD TTS pacing:**
+"The walls rose stone by stone. Each block was cut with care.
+
+When rain came, the water found no crack to enter. The builders had planned for centuries... not merely years.
+
+A traveler approaching from the east would see the towers first. Then the gates. Then the market square beyond."
+
+**Example of BAD TTS pacing (avoid this):**
+"The walls rose stone by stone and each block was cut with care and when rain came the water found no crack to enter because the builders had planned for centuries not merely years and a traveler approaching from the east would see the towers first and then the gates and then the market square beyond."
+
 ## OUTPUT FORMAT
 
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
@@ -885,6 +917,28 @@ Periodically step back to reflect on:
 
 **Emotional Journey**: Wonder → Curiosity → Reflection → Acceptance of Mystery → Inspired Curiosity About Future Discovery
 
+## TTS-FRIENDLY PACING (CRITICAL FOR NATURAL AUDIO)
+
+The script will be read by text-to-speech. You MUST format for natural pauses and breathing:
+
+**Sentence Length & Breaks:**
+- Keep sentences SHORT to MEDIUM length (10-25 words ideal)
+- After every 2-3 sentences, start a new paragraph (creates natural pause)
+- NEVER write run-on sentences that chain multiple ideas with commas
+- End each thought completely before starting the next
+
+**Creating Natural Pauses:**
+- Use ellipses (...) for deliberate dramatic pauses: "The city fell silent... and then the drums began."
+- Use dashes (—) for interruptions or asides: "The king—who had ruled for forty years—finally understood."
+- Start new paragraphs frequently (every 2-4 sentences minimum)
+- Use periods aggressively. Short sentences. Create rhythm.
+
+**Breathing Room Patterns:**
+- After introducing a new topic, pause with a short standalone sentence
+- Before dramatic moments, use a short setup sentence: "And then it happened."
+- After emotional moments, let the moment breathe with a simple observation
+- Use "beat" sentences: "The silence stretched." "Time passed." "Morning came."
+
 ## OUTPUT FORMAT
 
 **ABSOLUTELY CRITICAL - READ CAREFULLY**:
@@ -1007,6 +1061,28 @@ const templateC = `You are a creative scriptwriter. Your role is to faithfully r
 - The agricultural revolution's impact on ordinary people
 
 **Remember:** This is "boring history for sleep" - fascinating enough to engage, gentle enough to drift off to.
+
+## TTS-FRIENDLY PACING (CRITICAL FOR NATURAL AUDIO)
+
+The script will be read by text-to-speech. You MUST format for natural pauses and breathing:
+
+**Sentence Length & Breaks:**
+- Keep sentences SHORT to MEDIUM length (10-25 words ideal)
+- After every 2-3 sentences, start a new paragraph (creates natural pause)
+- NEVER write run-on sentences that chain multiple ideas with commas
+- End each thought completely before starting the next
+
+**Creating Natural Pauses:**
+- Use ellipses (...) for deliberate dramatic pauses: "The city fell silent... and then the drums began."
+- Use dashes (—) for interruptions or asides: "The king—who had ruled for forty years—finally understood."
+- Start new paragraphs frequently (every 2-4 sentences minimum)
+- Use periods aggressively. Short sentences. Create rhythm.
+
+**Breathing Room Patterns:**
+- After introducing a new topic, pause with a short standalone sentence
+- Before dramatic moments, use a short setup sentence: "And then it happened."
+- After emotional moments, let the moment breathe with a simple observation
+- Use "beat" sentences: "The silence stretched." "Time passed." "Morning came."
 
 ## OUTPUT FORMAT
 
@@ -1221,6 +1297,28 @@ For each major event or phase:
 - Oversimplify to the point of distortion
 - Sensationalize for attention
 - Ignore scholarly consensus without good reason
+
+## TTS-FRIENDLY PACING (CRITICAL FOR NATURAL AUDIO)
+
+The script will be read by text-to-speech. You MUST format for natural pauses and breathing:
+
+**Sentence Length & Breaks:**
+- Keep sentences SHORT to MEDIUM length (10-25 words ideal)
+- After every 2-3 sentences, start a new paragraph (creates natural pause)
+- NEVER write run-on sentences that chain multiple ideas with commas
+- End each thought completely before starting the next
+
+**Creating Natural Pauses:**
+- Use ellipses (...) for deliberate dramatic pauses: "The city fell silent... and then the drums began."
+- Use dashes (—) for interruptions or asides: "The king—who had ruled for forty years—finally understood."
+- Start new paragraphs frequently (every 2-4 sentences minimum)
+- Use periods aggressively. Short sentences. Create rhythm.
+
+**Breathing Room Patterns:**
+- After introducing a new topic, pause with a short standalone sentence
+- Before dramatic moments, use a short setup sentence: "And then it happened."
+- After emotional moments, let the moment breathe with a simple observation
+- Use "beat" sentences: "The silence stretched." "Time passed." "Morning came."
 
 ## OUTPUT FORMAT
 
@@ -1473,6 +1571,28 @@ For major moments, write full scenes:
 - Put words in mouths without acknowledgment
 - Flatten morally complex situations
 - Sacrifice accuracy for drama
+
+## TTS-FRIENDLY PACING (CRITICAL FOR NATURAL AUDIO)
+
+The script will be read by text-to-speech. You MUST format for natural pauses and breathing:
+
+**Sentence Length & Breaks:**
+- Keep sentences SHORT to MEDIUM length (10-25 words ideal)
+- After every 2-3 sentences, start a new paragraph (creates natural pause)
+- NEVER write run-on sentences that chain multiple ideas with commas
+- End each thought completely before starting the next
+
+**Creating Natural Pauses:**
+- Use ellipses (...) for deliberate dramatic pauses: "The city fell silent... and then the drums began."
+- Use dashes (—) for interruptions or asides: "The king—who had ruled for forty years—finally understood."
+- Start new paragraphs frequently (every 2-4 sentences minimum)
+- Use periods aggressively. Short sentences. Create rhythm.
+
+**Breathing Room Patterns:**
+- After introducing a new topic, pause with a short standalone sentence
+- Before dramatic moments, use a short setup sentence: "And then it happened."
+- After emotional moments, let the moment breathe with a simple observation
+- Use "beat" sentences: "The silence stretched." "Time passed." "Morning came."
 
 ## OUTPUT FORMAT
 
