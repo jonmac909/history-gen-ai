@@ -327,9 +327,11 @@ async function handleRenderVideo(req: Request, res: Response) {
           .input(embersPath)
           .inputOptions(['-stream_loop', '-1'])  // Loop embers for entire video duration
           .complexFilter([
-            // Apply screen blend mode to overlay embers on video
-            '[1:v]format=rgba[embers]',
-            '[0:v][embers]blend=all_mode=screen:shortest=1[out]'
+            // Scale embers to match video, key out black areas (makes them transparent)
+            // colorkey params: color=black, similarity=0.15, blend=0.2 for soft edges
+            '[1:v]scale=1920:1080,colorkey=black:0.15:0.2[embers_keyed]',
+            // Overlay embers on main video (keyed areas are transparent)
+            '[0:v][embers_keyed]overlay=shortest=1[out]'
           ])
           .outputOptions([
             '-map', '[out]',
