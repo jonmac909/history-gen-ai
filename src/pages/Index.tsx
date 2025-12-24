@@ -1087,8 +1087,11 @@ const Index = () => {
     setVideoTitle(project.videoTitle);
     setSourceUrl(project.videoTitle);
 
-    // Set asset state
-    if (project.script) setConfirmedScript(project.script);
+    // Set asset state for ALL views (so back navigation works)
+    if (project.script) {
+      setPendingScript(project.script);
+      setConfirmedScript(project.script);
+    }
     if (project.audioUrl) {
       setPendingAudioUrl(project.audioUrl);
       setAudioUrl(project.audioUrl);
@@ -1099,7 +1102,20 @@ const Index = () => {
       setSrtContent(project.srtContent);
     }
     if (project.srtUrl) setPendingSrtUrl(project.srtUrl);
-    if (project.imageUrls) setPendingImages(project.imageUrls);
+    if (project.imageUrls) {
+      setPendingImages(project.imageUrls);
+      // Create basic image prompts for back navigation to prompts view
+      const basicPrompts: ImagePromptWithTiming[] = project.imageUrls.map((url, index) => ({
+        index: index + 1,
+        startTime: "",
+        endTime: "",
+        startSeconds: 0,
+        endSeconds: 0,
+        prompt: "",
+        sceneDescription: `Image ${index + 1}`,
+      }));
+      setImagePrompts(basicPrompts);
+    }
 
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [
