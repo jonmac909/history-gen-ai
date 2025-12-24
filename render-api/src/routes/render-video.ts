@@ -321,6 +321,11 @@ async function handleRenderVideo(req: Request, res: Response) {
 
       const withEmbersPath = path.join(tempDir, 'with_embers.mp4');
 
+      // Heartbeat during embers encoding to prevent connection timeout
+      const embersHeartbeat = setInterval(() => {
+        sendEvent(res, { type: 'progress', stage: 'rendering', percent: 79, message: 'Adding embers effect...' });
+      }, 3000);
+
       await new Promise<void>((resolve, reject) => {
         const cmd = ffmpeg()
           .input(withAudioPath)
@@ -354,12 +359,14 @@ async function handleRenderVideo(req: Request, res: Response) {
             }
           })
           .on('error', (err) => {
+            clearInterval(embersHeartbeat);
             console.error('Embers overlay FFmpeg error:', err.message);
             // Continue without embers if overlay fails
             console.log('Continuing without embers overlay...');
             resolve();
           })
           .on('end', () => {
+            clearInterval(embersHeartbeat);
             console.log('Embers overlay complete');
             finalVideoPath = withEmbersPath;
             resolve();
