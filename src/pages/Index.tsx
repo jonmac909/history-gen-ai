@@ -344,6 +344,8 @@ const Index = () => {
 
   // Step 2: After script confirmed, generate audio (6 segments)
   const handleScriptConfirm = async (script: string) => {
+    // Update both pending and confirmed script so edits persist when navigating back
+    setPendingScript(script);
     setConfirmedScript(script);
 
     const steps: GenerationStep[] = [
