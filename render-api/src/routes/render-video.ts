@@ -316,7 +316,11 @@ async function handleRenderVideo(req: Request, res: Response) {
     // Stage 5: Apply embers overlay effect
     let finalVideoPath = withAudioPath;
 
-    if (fs.existsSync(embersPath)) {
+    // TEMPORARILY DISABLED: Embers overlay causing Railway crashes
+    // Re-enable once we identify the root cause
+    const EMBERS_ENABLED = false;
+
+    if (EMBERS_ENABLED && fs.existsSync(embersPath)) {
       sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Adding embers effect...' });
 
       const withEmbersPath = path.join(tempDir, 'with_embers.mp4');
