@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const router = Router();
 
@@ -200,8 +203,142 @@ function createWavFromPcm(pcmData: Uint8Array, format: AudioFormat): Uint8Array 
   return wavData;
 }
 
+// Download a file to a temp location using streams (memory efficient)
+async function downloadToTempFile(url: string, onProgress?: (percent: number) => void): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${response.status}`);
+  }
+
+  const contentLength = response.headers.get('content-length');
+  const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+
+  const tempDir = os.tmpdir();
+  const tempFile = path.join(tempDir, `audio-${Date.now()}.wav`);
+  const writeStream = fs.createWriteStream(tempFile);
+
+  let downloadedBytes = 0;
+  let lastProgressPercent = 0;
+
+  return new Promise((resolve, reject) => {
+    if (!response.body) {
+      reject(new Error('No response body'));
+      return;
+    }
+
+    response.body.on('data', (chunk: Buffer) => {
+      downloadedBytes += chunk.length;
+      writeStream.write(chunk);
+
+      if (totalBytes > 0 && onProgress) {
+        const percent = Math.floor((downloadedBytes / totalBytes) * 100);
+        if (percent > lastProgressPercent) {
+          lastProgressPercent = percent;
+          onProgress(percent);
+        }
+      }
+    });
+
+    response.body.on('end', () => {
+      writeStream.end();
+      console.log(`Downloaded ${downloadedBytes} bytes to ${tempFile}`);
+      resolve(tempFile);
+    });
+
+    response.body.on('error', (err: Error) => {
+      writeStream.end();
+      fs.unlinkSync(tempFile);
+      reject(err);
+    });
+  });
+}
+
+// Parse WAV header from file to get audio format info
+function parseWavHeaderFromFile(filePath: string): { format: AudioFormat; dataOffset: number; dataSize: number } {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    // Read first 1KB to find headers (should be plenty)
+    const headerBuffer = Buffer.alloc(1024);
+    fs.readSync(fd, headerBuffer, 0, 1024, 0);
+
+    // Find fmt chunk
+    let fmtIdx = -1;
+    for (let i = 0; i <= headerBuffer.length - 4; i++) {
+      if (headerBuffer.toString('ascii', i, i + 4) === 'fmt ') {
+        fmtIdx = i;
+        break;
+      }
+    }
+
+    if (fmtIdx === -1) {
+      console.warn('No fmt chunk found, using defaults');
+      return {
+        format: { sampleRate: SAMPLE_RATE, channels: NUM_CHANNELS, bitsPerSample: BITS_PER_SAMPLE },
+        dataOffset: 44,
+        dataSize: fs.statSync(filePath).size - 44
+      };
+    }
+
+    // Parse fmt chunk
+    const channels = headerBuffer.readUInt16LE(fmtIdx + 10);
+    const sampleRate = headerBuffer.readUInt32LE(fmtIdx + 12);
+    const bitsPerSample = headerBuffer.readUInt16LE(fmtIdx + 22);
+
+    // Find data chunk
+    let dataIdx = -1;
+    for (let i = 0; i <= headerBuffer.length - 4; i++) {
+      if (headerBuffer.toString('ascii', i, i + 4) === 'data') {
+        dataIdx = i;
+        break;
+      }
+    }
+
+    if (dataIdx === -1) {
+      console.warn('No data chunk found in header, using offset 44');
+      return {
+        format: { sampleRate, channels, bitsPerSample },
+        dataOffset: 44,
+        dataSize: fs.statSync(filePath).size - 44
+      };
+    }
+
+    const dataSize = headerBuffer.readUInt32LE(dataIdx + 4);
+    const dataOffset = dataIdx + 8;
+
+    console.log(`WAV from file: fmt@${fmtIdx}, data@${dataIdx}, dataSize=${dataSize}`);
+    console.log(`WAV format: ${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit`);
+
+    return {
+      format: { sampleRate, channels, bitsPerSample },
+      dataOffset,
+      dataSize
+    };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// Read a PCM chunk from file at specific byte offset
+function readPcmChunkFromFile(filePath: string, dataOffset: number, startByte: number, endByte: number): Buffer {
+  const chunkSize = endByte - startByte;
+  const buffer = Buffer.alloc(chunkSize);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    fs.readSync(fd, buffer, 0, chunkSize, dataOffset + startByte);
+    return buffer;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// Create a WAV buffer from PCM buffer with correct format
+function createWavBufferFromPcm(pcmData: Buffer, format: AudioFormat): Buffer {
+  const header = createWavHeader(pcmData.length, format);
+  return Buffer.concat([Buffer.from(header), pcmData]);
+}
+
 // Transcribe a single audio chunk with retry logic (using Groq Whisper)
-async function transcribeChunk(audioData: Uint8Array, groqApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
+async function transcribeChunk(audioData: Uint8Array | Buffer, groqApiKey: string, chunkIndex: number): Promise<{ chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }> {
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
 
@@ -358,49 +495,48 @@ router.post('/', async (req: Request, res: Response) => {
       message: '1%'
     });
 
-    // Download the audio file
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
+    // Download the audio file to temp file (memory efficient streaming)
+    let tempFilePath: string | null = null;
+    try {
+      tempFilePath = await downloadToTempFile(audioUrl, (percent) => {
+        // Map download progress to 1-3%
+        const mappedProgress = 1 + Math.floor(percent * 0.02);
+        sendEvent({
+          type: 'progress',
+          progress: mappedProgress,
+          message: `${mappedProgress}%`
+        });
+      });
+    } catch (downloadError) {
+      throw new Error(`Failed to download audio: ${downloadError instanceof Error ? downloadError.message : 'Unknown error'}`);
     }
 
-    // Get content length for progress tracking
-    const contentLength = audioResponse.headers.get('content-length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-
-    // Download with progress tracking
-    const audioArrayBuffer = await audioResponse.arrayBuffer();
-    let audioData: Uint8Array | null = new Uint8Array(audioArrayBuffer);
-
     // Send download complete message
-    sendEvent({
-      type: 'progress',
-      progress: 2,
-      message: '2%'
-    });
-
-    console.log('Audio size:', audioData!.length, 'bytes');
-
     sendEvent({
       type: 'progress',
       progress: 3,
       message: '3%'
     });
 
-    // Extract PCM data from WAV with proper parsing
-    const { pcmData, sampleRate, channels, bitsPerSample } = extractPcmFromWav(audioData!);
+    const fileStats = fs.statSync(tempFilePath);
+    console.log('Audio file size:', fileStats.size, 'bytes');
 
-    // Free original audio buffer to save memory
-    audioData = null;
-    const audioFormat: AudioFormat = { sampleRate, channels, bitsPerSample };
-    const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
-    const totalDuration = pcmData.length / bytesPerSecond;
+    sendEvent({
+      type: 'progress',
+      progress: 4,
+      message: '4%'
+    });
+
+    // Parse WAV header from file (only reads 1KB, not the whole file)
+    const { format: audioFormat, dataOffset, dataSize } = parseWavHeaderFromFile(tempFilePath);
+    const bytesPerSecond = audioFormat.sampleRate * audioFormat.channels * (audioFormat.bitsPerSample / 8);
+    const totalDuration = dataSize / bytesPerSecond;
     console.log('Total audio duration:', totalDuration.toFixed(2), 's');
 
     // Calculate chunk size in bytes using actual audio parameters
     const maxChunkDuration = Math.floor(MAX_CHUNK_BYTES / bytesPerSecond);
     const chunkSizeBytes = maxChunkDuration * bytesPerSecond;
-    const numChunks = Math.ceil(pcmData.length / chunkSizeBytes);
+    const numChunks = Math.ceil(dataSize / chunkSizeBytes);
     console.log(`Splitting into ${numChunks} chunks of ~${maxChunkDuration}s each`);
 
     // Process each chunk and collect segments
@@ -412,9 +548,9 @@ router.post('/', async (req: Request, res: Response) => {
       progress: 5,
       message: '5%'
     });
-    console.log(`Starting transcription: ${numChunks} chunks (processing sequentially to save memory)`);
+    console.log(`Starting transcription: ${numChunks} chunks (processing sequentially, reading from disk)`);
 
-    // Process chunks sequentially to minimize memory usage (important for large files)
+    // Process chunks sequentially, reading each chunk from disk (minimal memory usage)
     const chunkResults: { chunkIndex: number; segments: Array<{ text: string; start: number; end: number }>; duration: number }[] = [];
 
     for (let i = 0; i < numChunks; i++) {
@@ -425,11 +561,11 @@ router.post('/', async (req: Request, res: Response) => {
         message: `${currentProgress}%`
       });
 
-      // Prepare chunk on-demand (only keep one chunk in memory at a time)
+      // Read chunk directly from file (only one chunk in memory at a time)
       const startByte = i * chunkSizeBytes;
-      const endByte = Math.min((i + 1) * chunkSizeBytes, pcmData.length);
-      const chunkPcm = pcmData.slice(startByte, endByte);
-      const chunkWav = createWavFromPcm(chunkPcm, audioFormat);
+      const endByte = Math.min((i + 1) * chunkSizeBytes, dataSize);
+      const chunkPcm = readPcmChunkFromFile(tempFilePath, dataOffset, startByte, endByte);
+      const chunkWav = createWavBufferFromPcm(chunkPcm, audioFormat);
 
       // Transcribe this chunk
       const result = await transcribeChunk(chunkWav, groqApiKey, i);
@@ -441,6 +577,14 @@ router.post('/', async (req: Request, res: Response) => {
         progress: newProgress,
         message: `${newProgress}%`
       });
+    }
+
+    // Clean up temp file
+    try {
+      fs.unlinkSync(tempFilePath);
+      console.log('Cleaned up temp file:', tempFilePath);
+    } catch (cleanupErr) {
+      console.warn('Failed to clean up temp file:', cleanupErr);
     }
 
     // Sort results by chunk index and merge with proper time offsets
@@ -525,6 +669,24 @@ router.post('/', async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error generating captions:', error);
+
+    // Clean up temp file if it exists (defined earlier in the try block)
+    // Note: tempFilePath may not be defined if error occurred before download
+    try {
+      const tempDir = os.tmpdir();
+      const tempFiles = fs.readdirSync(tempDir).filter(f => f.startsWith('audio-') && f.endsWith('.wav'));
+      for (const file of tempFiles) {
+        const filePath = path.join(tempDir, file);
+        const stats = fs.statSync(filePath);
+        // Clean up files older than 5 minutes to avoid cleaning up other processes' files
+        if (Date.now() - stats.mtimeMs > 5 * 60 * 1000) {
+          fs.unlinkSync(filePath);
+          console.log('Cleaned up old temp file:', filePath);
+        }
+      }
+    } catch (cleanupErr) {
+      // Ignore cleanup errors
+    }
 
     if (stream) {
       sendEvent({
