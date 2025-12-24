@@ -177,12 +177,19 @@ router.post('/', async (req: Request, res: Response) => {
     // Use batches of 50 to stay well under the limit
     const BATCH_SIZE = 50;
     const numBatches = Math.ceil(imageCount / BATCH_SIZE);
-    const allSceneDescriptions: { index: number; sceneDescription: string }[] = [];
-    let totalCompleted = 0;
 
-    console.log(`Processing ${imageCount} prompts in ${numBatches} batch(es)`);
+    console.log(`Processing ${imageCount} prompts in ${numBatches} batch(es) in PARALLEL`);
 
-    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
+    // Track progress across all parallel batches
+    const batchProgress: number[] = new Array(numBatches).fill(0);
+    const updateTotalProgress = () => {
+      const totalCompleted = batchProgress.reduce((a, b) => a + b, 0);
+      const progress = Math.min(95, 5 + Math.round((totalCompleted / imageCount) * 90));
+      sendEvent({ type: 'progress', progress, message: `${progress}%` });
+    };
+
+    // Create all batch promises to run in parallel
+    const batchPromises = Array.from({ length: numBatches }, async (_, batchIndex) => {
       const batchStart = batchIndex * BATCH_SIZE;
       const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, imageCount);
       const batchWindows = windows.slice(batchStart, batchEnd);
@@ -244,39 +251,33 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
 
           // Count completed scenes in this batch
           const completedInBatch = (fullResponse.match(/\"sceneDescription\"\s*:\s*\"[^\"]+\"/g) || []).length;
-          const totalProgress = totalCompleted + completedInBatch;
-          const progress = Math.min(95, 5 + Math.round((totalProgress / imageCount) * 90));
-
-          sendEvent({ type: 'progress', progress, message: `${progress}%` });
+          batchProgress[batchIndex] = completedInBatch;
+          updateTotalProgress();
         }
       }
 
       // Parse the JSON response for this batch
-      try {
-        const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) {
-          throw new Error(`No JSON array found in batch ${batchIndex + 1} response`);
-        }
-        const batchDescriptions = JSON.parse(jsonMatch[0]) as { index: number; sceneDescription: string }[];
-
-        // Adjust indices if needed (Claude might start from 1 in each batch)
-        for (const desc of batchDescriptions) {
-          // If index is within batch range (1 to batchSize), adjust to global index
-          if (desc.index >= 1 && desc.index <= batchSize) {
-            desc.index = batchStart + desc.index;
-          }
-          allSceneDescriptions.push(desc);
-        }
-
-        totalCompleted += batchDescriptions.length;
-        console.log(`Batch ${batchIndex + 1}/${numBatches}: generated ${batchDescriptions.length} descriptions`);
-      } catch (parseError) {
-        console.error(`Failed to parse batch ${batchIndex + 1} response:`, fullResponse.substring(0, 500));
-        throw new Error(`Failed to parse image descriptions from AI (batch ${batchIndex + 1})`);
+      const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error(`No JSON array found in batch ${batchIndex + 1} response`);
       }
-    }
+      const batchDescriptions = JSON.parse(jsonMatch[0]) as { index: number; sceneDescription: string }[];
 
-    const sceneDescriptions = allSceneDescriptions;
+      // Adjust indices if needed (Claude might start from 1 in each batch)
+      for (const desc of batchDescriptions) {
+        // If index is within batch range (1 to batchSize), adjust to global index
+        if (desc.index >= 1 && desc.index <= batchSize) {
+          desc.index = batchStart + desc.index;
+        }
+      }
+
+      console.log(`Batch ${batchIndex + 1}/${numBatches}: generated ${batchDescriptions.length} descriptions`);
+      return batchDescriptions;
+    });
+
+    // Run all batches in parallel
+    const batchResults = await Promise.all(batchPromises);
+    const sceneDescriptions = batchResults.flat();
 
     // Build final prompts with style and timing info
     const imagePrompts: ImagePrompt[] = windows.map((window, i) => {
