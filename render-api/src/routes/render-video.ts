@@ -186,45 +186,104 @@ async function handleRenderVideo(req: Request, res: Response) {
     // Track completed chunks for progress
     let completedChunks = 0;
 
-    // Helper function to render a single chunk
+    // Check if embers overlay is available
+    const embersAvailable = fs.existsSync(embersPath);
+    if (embersAvailable) {
+      console.log('Embers overlay available, will apply to each chunk');
+    } else {
+      console.log('Embers overlay not available, rendering without embers');
+    }
+
+    // Helper function to render a single chunk (with optional embers overlay)
     const renderChunk = async (chunk: ChunkData): Promise<void> => {
-      console.log(`Rendering chunk ${chunk.index + 1}/${numChunks}`);
+      console.log(`Rendering chunk ${chunk.index + 1}/${numChunks}${embersAvailable ? ' with embers' : ''}`);
+
+      // Pass 1: Render images to raw chunk
+      const rawChunkPath = path.join(tempDir!, `chunk_raw_${chunk.index}.mp4`);
 
       await new Promise<void>((resolve, reject) => {
         ffmpeg()
           .input(chunk.concatPath)
           .inputOptions(['-f', 'concat', '-safe', '0'])
           .outputOptions([
-            '-threads', '0',           // Use all CPU cores
+            '-threads', '0',
             '-c:v', 'libx264',
-            '-preset', 'veryfast',     // Faster preset for intermediate files
+            '-preset', 'veryfast',
             '-crf', '23',
             '-pix_fmt', 'yuv420p',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
             '-y'
           ])
-          .output(chunk.outputPath)
+          .output(rawChunkPath)
           .on('start', (cmd) => {
-            console.log(`Chunk ${chunk.index + 1} FFmpeg:`, cmd.substring(0, 150) + '...');
+            console.log(`Chunk ${chunk.index + 1} Pass 1:`, cmd.substring(0, 150) + '...');
           })
           .on('error', (err) => {
-            console.error(`Chunk ${chunk.index + 1} FFmpeg error:`, err);
+            console.error(`Chunk ${chunk.index + 1} Pass 1 error:`, err);
             reject(err);
           })
           .on('end', () => {
-            completedChunks++;
-            const percent = 30 + Math.round((completedChunks / numChunks) * 40);
-            sendEvent(res, {
-              type: 'progress',
-              stage: 'rendering',
-              percent,
-              message: `Rendered ${completedChunks}/${numChunks} chunks`
-            });
-            console.log(`Chunk ${chunk.index + 1} complete (${completedChunks}/${numChunks})`);
+            console.log(`Chunk ${chunk.index + 1} Pass 1 complete`);
             resolve();
           })
           .run();
       });
+
+      // Pass 2: Apply embers overlay (if available)
+      if (embersAvailable) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg()
+              .input(rawChunkPath)
+              .input(embersPath)
+              .inputOptions(['-stream_loop', '-1'])  // Loop embers
+              .complexFilter([
+                '[1:v]scale=1920:1080,colorkey=0x000000:0.12:0.1[embers]',
+                '[0:v][embers]overlay=shortest=1[out]'
+              ])
+              .outputOptions([
+                '-map', '[out]',
+                '-c:v', 'libx264',
+                '-preset', 'veryfast',
+                '-crf', '23',
+                '-pix_fmt', 'yuv420p',
+                '-y'
+              ])
+              .output(chunk.outputPath)
+              .on('start', (cmd) => {
+                console.log(`Chunk ${chunk.index + 1} Pass 2 (embers):`, cmd.substring(0, 150) + '...');
+              })
+              .on('error', (err) => {
+                console.error(`Chunk ${chunk.index + 1} Pass 2 error:`, err);
+                reject(err);
+              })
+              .on('end', () => {
+                console.log(`Chunk ${chunk.index + 1} Pass 2 complete`);
+                // Clean up raw chunk to free disk space
+                try { fs.unlinkSync(rawChunkPath); } catch (e) { /* ignore */ }
+                resolve();
+              })
+              .run();
+          });
+        } catch (err) {
+          // Fallback: use raw chunk if embers pass fails
+          console.error(`Chunk ${chunk.index + 1} embers failed, using raw:`, err);
+          fs.renameSync(rawChunkPath, chunk.outputPath);
+        }
+      } else {
+        // No embers, just rename raw chunk to final output
+        fs.renameSync(rawChunkPath, chunk.outputPath);
+      }
+
+      completedChunks++;
+      const percent = 30 + Math.round((completedChunks / numChunks) * 40);
+      sendEvent(res, {
+        type: 'progress',
+        stage: 'rendering',
+        percent,
+        message: `Rendered ${completedChunks}/${numChunks} chunks${embersAvailable ? ' with embers' : ''}`
+      });
+      console.log(`Chunk ${chunk.index + 1} fully complete (${completedChunks}/${numChunks})`);
     };
 
     // Render chunks in parallel batches
@@ -313,74 +372,9 @@ async function handleRenderVideo(req: Request, res: Response) {
       throw new Error('FFmpeg produced empty video file');
     }
 
-    // Stage 5: Apply embers overlay effect
-    let finalVideoPath = withAudioPath;
-
-    // TEMPORARILY DISABLED: Embers overlay causing Railway crashes
-    // Re-enable once we identify the root cause
-    const EMBERS_ENABLED = false;
-
-    if (EMBERS_ENABLED && fs.existsSync(embersPath)) {
-      sendEvent(res, { type: 'progress', stage: 'rendering', percent: 78, message: 'Adding embers effect...' });
-
-      const withEmbersPath = path.join(tempDir, 'with_embers.mp4');
-
-      // Heartbeat during embers encoding to prevent connection timeout
-      const embersHeartbeat = setInterval(() => {
-        sendEvent(res, { type: 'progress', stage: 'rendering', percent: 79, message: 'Adding embers effect...' });
-      }, 3000);
-
-      await new Promise<void>((resolve, reject) => {
-        const cmd = ffmpeg()
-          .input(withAudioPath)
-          .input(embersPath)
-          .inputOptions(['-stream_loop', '-1'])  // Loop embers for entire video duration
-          .complexFilter([
-            // Scale embers to match video, key out black areas (makes them transparent)
-            // colorkey params: color=black, similarity=0.12, blend=0.1 for tighter keying
-            '[1:v]scale=1920:1080,colorkey=0x000000:0.12:0.1[embers_keyed]',
-            // Overlay embers on main video (keyed areas are transparent)
-            '[0:v][embers_keyed]overlay=shortest=1[out]'
-          ])
-          .outputOptions([
-            '-map', '[out]',
-            '-map', '0:a',                       // Keep original audio
-            '-c:v', 'libx264',
-            '-preset', 'veryfast',               // Faster encoding to reduce timeout risk
-            '-crf', '23',
-            '-pix_fmt', 'yuv420p',
-            '-c:a', 'copy',
-            '-shortest',
-            '-y'
-          ])
-          .output(withEmbersPath)
-          .on('start', (cmdLine) => {
-            console.log('Embers overlay FFmpeg command:', cmdLine.substring(0, 250) + '...');
-          })
-          .on('progress', (progress) => {
-            if (progress.percent) {
-              console.log(`Embers overlay progress: ${progress.percent.toFixed(1)}%`);
-            }
-          })
-          .on('error', (err) => {
-            clearInterval(embersHeartbeat);
-            console.error('Embers overlay FFmpeg error:', err.message);
-            // Continue without embers if overlay fails
-            console.log('Continuing without embers overlay...');
-            resolve();
-          })
-          .on('end', () => {
-            clearInterval(embersHeartbeat);
-            console.log('Embers overlay complete');
-            finalVideoPath = withEmbersPath;
-            resolve();
-          });
-
-        cmd.run();
-      });
-    } else {
-      console.log('Embers overlay not available, skipping...');
-    }
+    // Embers overlay is now applied per-chunk during rendering (above)
+    // No post-concat embers processing needed
+    const finalVideoPath = withAudioPath;
 
     // Stage 6: Upload final video
     sendEvent(res, { type: 'progress', stage: 'uploading', percent: 85, message: 'Uploading video...' });
