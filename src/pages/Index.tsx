@@ -1192,6 +1192,21 @@ const Index = () => {
       }
 
       setImagePrompts(promptsResult.prompts);
+
+      // Auto-save after image prompts generation
+      const newProjectId = projectId || crypto.randomUUID();
+      if (!projectId) setProjectId(newProjectId);
+
+      autoSave("prompts", {
+        id: newProjectId,
+        videoTitle: title,
+        script: scriptText,
+        srtContent: captionsText,
+        audioUrl: pendingAudioUrl,
+        audioDuration: audioDuration || pendingAudioDuration,
+        imagePrompts: promptsResult.prompts,
+      });
+
       setProcessingSteps([{ id: "prompts", label: "Image prompts generated", status: "complete", progress: 100 }]);
       setViewState("review-prompts");
 
