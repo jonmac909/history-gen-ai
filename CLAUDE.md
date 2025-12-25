@@ -231,19 +231,40 @@ Multi-step generation with user review at each stage:
 
 ### Video Rendering Architecture
 
-**Server-side FFmpeg rendering (no captions burned in - clean video output).**
+**Server-side FFmpeg rendering with chunked processing and embers overlay.**
 
-- Downloads audio + images from Supabase to temp directory
-- Creates concat demuxer file with per-image durations from `imageTimings`
-- FFmpeg command: scales to 1080p, pads letterbox
-- SSE progress through stages: downloading (5-25%), preparing (30%), rendering (35-80%), uploading (85-100%)
-- 15-second keepalive heartbeat prevents connection timeout
-- Uploads final MP4 to Supabase: `{projectId}/video_no_captions.mp4`
+**Chunked Rendering Pipeline:**
+1. Download audio + images + embers overlay from Supabase/Netlify
+2. Split images into chunks (25 images per chunk)
+3. Render each chunk with two-pass approach:
+   - Pass 1: Images → raw chunk video (scale, letterbox)
+   - Pass 2: Apply embers overlay via screen blend
+4. Concatenate chunks (fast copy, no re-encode)
+5. Add audio (fast mux)
+6. Upload final MP4 to Supabase
+
+**Embers Overlay:**
+- Source: `public/overlays/embers.mp4` (served from Netlify)
+- Applied per-chunk to avoid memory issues with large videos
+- Uses screen blend mode with TV→full range color conversion
+- Filter: `scale=in_range=tv:out_range=full,format=yuv420p` → `blend=all_mode=screen`
+- Embers loop resets at chunk boundaries (~30-60s), barely noticeable
+
+**Key constants** in `render-api/src/routes/render-video.ts`:
+- `IMAGES_PER_CHUNK = 25` images per chunk
+- `PARALLEL_CHUNK_RENDERS = 2` parallel chunks (reduced for two-pass rendering)
+- `EMBERS_ENABLED = true` toggle for debugging
+- `EMBERS_TIMEOUT_MS = 120000` (2 min timeout per chunk)
+
+**SSE Progress Stages:**
+- Downloading (5-25%), Preparing (30%), Rendering chunks (30-70%), Concatenating (72%), Audio mux (75%), Uploading (85-100%)
+- 5-second keepalive heartbeat prevents connection timeout
 
 **Key files:**
 - `render-api/src/routes/render-video.ts`: FFmpeg rendering endpoint
 - `src/lib/fcpxmlGenerator.ts`: Client-side FCPXML generation for NLE import
 - `src/lib/api.ts`: `renderVideoStreaming()` with SSE progress parsing
+- `public/overlays/embers.mp4`: Embers overlay asset
 
 ## Configuration
 
@@ -365,7 +386,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 Generated images: `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
 Audio segments: `{projectId}/voiceover-segment-{1-6}.wav`
 Combined audio: `{projectId}/voiceover.wav`
-Rendered video: `{projectId}/video_no_captions.mp4`
+Rendered video: `{projectId}/video.mp4` (with embers overlay)
 
 ## Default Settings
 
