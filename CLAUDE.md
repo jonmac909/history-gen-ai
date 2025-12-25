@@ -244,11 +244,11 @@ Multi-step generation with user review at each stage:
 6. Upload final MP4 to Supabase
 
 **Embers Overlay:**
-- Source: `public/overlays/embers.mp4` (served from Netlify)
-- Applied per-chunk to avoid memory issues with large videos
-- Uses desaturated grayscale overlay at 30% opacity to avoid color cast
-- Filter: `hue=s=0,colorchannelmixer=aa=0.3` → `overlay` (not screen blend)
-- Embers loop infinitely via `-stream_loop -1` to match any chunk length
+- Source: `public/overlays/embers.mp4` (~10s, served from Netlify)
+- Applied per-chunk using concat demuxer (NOT -stream_loop which crashes on long videos)
+- Each chunk calculates duration, creates concat file with exact loop count needed
+- Uses desaturated grayscale at 15% opacity: `hue=s=0` → `blend=addition:0.15:shortest=1`
+- Graceful fallback: if embers pass fails, uses raw chunk without embers
 
 **Key constants** in `render-api/src/routes/render-video.ts`:
 - `IMAGES_PER_CHUNK = 25` images per chunk
