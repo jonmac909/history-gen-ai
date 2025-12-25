@@ -21,7 +21,9 @@ const PARALLEL_CHUNK_RENDERS = 3;
 // Embers overlay effect URL (served from Netlify)
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 // Enable/disable embers overlay (set to false to debug rendering issues)
-const EMBERS_ENABLED = false;  // TEMP: Disabled to debug rendering crashes
+const EMBERS_ENABLED = true;
+// Duration of the embers.mp4 source file (seconds)
+const EMBERS_SOURCE_DURATION = 10;
 // Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
 const EMBERS_TIMEOUT_MS = 120000;  // 2 minutes per chunk
 
@@ -204,6 +206,13 @@ async function handleRenderVideo(req: Request, res: Response) {
     const renderChunk = async (chunk: ChunkData): Promise<void> => {
       console.log(`Rendering chunk ${chunk.index + 1}/${numChunks}${embersAvailable ? ' with embers' : ''}`);
 
+      // Calculate chunk duration from timings
+      const chunkStart = chunk.index * IMAGES_PER_CHUNK;
+      const chunkEnd = Math.min((chunk.index + 1) * IMAGES_PER_CHUNK, totalImages);
+      const chunkTimingsSlice = imageTimings.slice(chunkStart, chunkEnd);
+      const chunkDuration = chunkTimingsSlice[chunkTimingsSlice.length - 1].endSeconds - chunkTimingsSlice[0].startSeconds;
+      console.log(`Chunk ${chunk.index + 1} duration: ${chunkDuration.toFixed(1)}s`);
+
       // Pass 1: Render images to raw chunk
       const rawChunkPath = path.join(tempDir!, `chunk_raw_${chunk.index}.mp4`);
 
@@ -238,15 +247,22 @@ async function handleRenderVideo(req: Request, res: Response) {
       // Pass 2: Apply embers overlay (if available)
       if (embersAvailable) {
         try {
+          // Create concat file for embers to cover chunk duration (no infinite loop)
+          const embersLoopCount = Math.ceil(chunkDuration / EMBERS_SOURCE_DURATION) + 1;
+          const embersChunkConcatPath = path.join(tempDir!, `embers_concat_${chunk.index}.txt`);
+          const embersConcatContent = Array(embersLoopCount).fill(`file '${embersPath}'`).join('\n');
+          fs.writeFileSync(embersChunkConcatPath, embersConcatContent, 'utf8');
+          console.log(`Chunk ${chunk.index + 1} embers: ${embersLoopCount} loops (${embersLoopCount * EMBERS_SOURCE_DURATION}s coverage)`);
+
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(rawChunkPath)
-              .addInput(embersPath)
-              .inputOptions(['-stream_loop', '-1'])  // Loop embers infinitely
+              .input(embersChunkConcatPath)
+              .inputOptions(['-f', 'concat', '-safe', '0'])  // Concat demuxer for embers
               .complexFilter([
                 // Desaturate embers to grayscale to avoid pink tint, blend at low opacity
                 '[1:v]scale=1920:1080,hue=s=0[embers_gray]',
-                '[0:v][embers_gray]blend=all_mode=addition:all_opacity=0.15[out]'
+                '[0:v][embers_gray]blend=all_mode=addition:all_opacity=0.15:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
@@ -254,7 +270,6 @@ async function handleRenderVideo(req: Request, res: Response) {
                 '-preset', 'veryfast',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
-                '-shortest',  // Output length = base video, not infinite embers loop
                 '-y'
               ])
               .output(chunk.outputPath)
@@ -267,8 +282,9 @@ async function handleRenderVideo(req: Request, res: Response) {
               })
               .on('end', () => {
                 console.log(`Chunk ${chunk.index + 1} Pass 2 complete`);
-                // Clean up raw chunk to free disk space
+                // Clean up temp files
                 try { fs.unlinkSync(rawChunkPath); } catch (e) { /* ignore */ }
+                try { fs.unlinkSync(embersChunkConcatPath); } catch (e) { /* ignore */ }
                 resolve();
               })
               .run();
@@ -276,7 +292,9 @@ async function handleRenderVideo(req: Request, res: Response) {
         } catch (err) {
           // Fallback: use raw chunk if embers pass fails
           console.error(`Chunk ${chunk.index + 1} embers failed, using raw:`, err);
-          fs.renameSync(rawChunkPath, chunk.outputPath);
+          if (fs.existsSync(rawChunkPath)) {
+            fs.renameSync(rawChunkPath, chunk.outputPath);
+          }
         }
       } else {
         // No embers, just rename raw chunk to final output
