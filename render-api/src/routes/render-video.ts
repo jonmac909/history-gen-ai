@@ -21,7 +21,7 @@ const PARALLEL_CHUNK_RENDERS = 2;  // Reduced from 3 due to two-pass embers rend
 // Embers overlay effect URL (served from Netlify)
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 // Enable/disable embers overlay (set to false to debug rendering issues)
-const EMBERS_ENABLED = false;  // DISABLED - debugging Railway crashes
+const EMBERS_ENABLED = true;
 // Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
 const EMBERS_TIMEOUT_MS = 120000;  // 2 minutes per chunk
 
@@ -244,8 +244,10 @@ async function handleRenderVideo(req: Request, res: Response) {
               .input(embersPath)
               .inputOptions(['-stream_loop', '-1'])  // Loop embers
               .complexFilter([
-                '[1:v]scale=1920:1080,colorkey=0x000000:0.12:0.1[embers]',
-                '[0:v][embers]overlay=shortest=1[out]'
+                // Convert embers from TV range to full range, then use screen blend
+                // Screen blend: bright pixels lighten, black stays black (no tint)
+                '[1:v]scale=1920:1080:in_range=tv:out_range=full,format=yuv420p[embers]',
+                '[0:v][embers]blend=all_mode=screen:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
