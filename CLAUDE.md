@@ -246,9 +246,9 @@ Multi-step generation with user review at each stage:
 **Embers Overlay:**
 - Source: `public/overlays/embers.mp4` (served from Netlify)
 - Applied per-chunk to avoid memory issues with large videos
-- Uses screen blend mode with TV→full range color conversion
-- Filter: `scale=in_range=tv:out_range=full,format=yuv420p` → `blend=all_mode=screen`
-- Embers loop resets at chunk boundaries (~30-60s), barely noticeable
+- Uses desaturated grayscale overlay at 30% opacity to avoid color cast
+- Filter: `hue=s=0,colorchannelmixer=aa=0.3` → `overlay` (not screen blend)
+- Embers loop infinitely via `-stream_loop -1` to match any chunk length
 
 **Key constants** in `render-api/src/routes/render-video.ts`:
 - `IMAGES_PER_CHUNK = 25` images per chunk

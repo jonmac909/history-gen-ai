@@ -266,10 +266,11 @@ async function handleRenderVideo(req: Request, res: Response) {
             ffmpeg()
               .input(rawChunkPath)
               .input(embersLoopedPath)  // Use pre-looped embers (no stream_loop needed)
+              .inputOptions(['-stream_loop', '-1'])  // Loop embers infinitely to match chunk length
               .complexFilter([
-                // Simple screen blend - embers is already looped to 60s
-                '[1:v]scale=1920:1080[embers]',
-                '[0:v][embers]blend=all_mode=screen:shortest=1[out]'
+                // Scale embers, desaturate to avoid color cast, then overlay with opacity
+                '[1:v]scale=1920:1080,hue=s=0,format=rgba,colorchannelmixer=aa=0.3[embers]',
+                '[0:v][embers]overlay=0:0:shortest=0[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
