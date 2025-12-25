@@ -758,15 +758,31 @@ export function ProjectResults({
                 </div>
               </div>
               {renderedVideoUrl ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDownloadVideo}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Download Video"
-                >
-                  <Download className="w-5 h-5" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRenderVideo}
+                    disabled={isRendering}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Re-render Video"
+                  >
+                    {isRendering ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-5 h-5" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDownloadVideo}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Download Video"
+                  >
+                    <Download className="w-5 h-5" />
+                  </Button>
+                </div>
               ) : (
                 <Button
                   variant="ghost"
