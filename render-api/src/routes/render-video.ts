@@ -21,7 +21,7 @@ const PARALLEL_CHUNK_RENDERS = 2;  // Reduced from 3 due to two-pass embers rend
 // Embers overlay effect URL (served from Netlify)
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 // Enable/disable embers overlay (set to false to debug rendering issues)
-const EMBERS_ENABLED = true;
+const EMBERS_ENABLED = false;  // DISABLED - debugging Railway crashes
 // Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
 const EMBERS_TIMEOUT_MS = 120000;  // 2 minutes per chunk
 
