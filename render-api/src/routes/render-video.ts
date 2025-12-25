@@ -21,7 +21,7 @@ const PARALLEL_CHUNK_RENDERS = 3;
 // Embers overlay effect URL (served from Netlify)
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 // Enable/disable embers overlay (set to false to debug rendering issues)
-const EMBERS_ENABLED = false;
+const EMBERS_ENABLED = true;
 // Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
 const EMBERS_TIMEOUT_MS = 120000;  // 2 minutes per chunk
 
@@ -107,11 +107,35 @@ async function handleRenderVideo(req: Request, res: Response) {
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
 
-    // Download embers overlay
+    // Download and pre-loop embers overlay (avoids -stream_loop which can cause issues)
     const embersPath = path.join(tempDir, 'embers.mp4');
+    const embersLoopedPath = path.join(tempDir, 'embers_looped.mp4');
     try {
       await downloadFile(EMBERS_OVERLAY_URL, embersPath);
       console.log('Embers overlay downloaded');
+
+      // Pre-loop embers to 60 seconds (6 copies of ~10s video)
+      // This avoids using -stream_loop -1 which can cause memory issues
+      const loopListPath = path.join(tempDir, 'embers_loop.txt');
+      const loopContent = Array(6).fill(`file '${embersPath}'`).join('\n');
+      fs.writeFileSync(loopListPath, loopContent, 'utf8');
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(loopListPath)
+          .inputOptions(['-f', 'concat', '-safe', '0'])
+          .outputOptions(['-c', 'copy', '-y'])
+          .output(embersLoopedPath)
+          .on('end', () => {
+            console.log('Embers pre-looped to 60 seconds');
+            resolve();
+          })
+          .on('error', (err) => {
+            console.warn('Failed to pre-loop embers:', err);
+            resolve(); // Continue without looped embers
+          })
+          .run();
+      });
     } catch (err) {
       console.warn('Failed to download embers overlay, continuing without it:', err);
     }
@@ -190,12 +214,12 @@ async function handleRenderVideo(req: Request, res: Response) {
     // Track completed chunks for progress
     let completedChunks = 0;
 
-    // Check if embers overlay is available and enabled
-    const embersAvailable = EMBERS_ENABLED && fs.existsSync(embersPath);
+    // Check if embers overlay is available and enabled (use pre-looped version)
+    const embersAvailable = EMBERS_ENABLED && fs.existsSync(embersLoopedPath);
     if (!EMBERS_ENABLED) {
       console.log('Embers overlay disabled via EMBERS_ENABLED flag');
     } else if (embersAvailable) {
-      console.log('Embers overlay available, will apply to each chunk');
+      console.log('Embers overlay available (pre-looped), will apply to each chunk');
     } else {
       console.log('Embers overlay not available, rendering without embers');
     }
@@ -241,12 +265,10 @@ async function handleRenderVideo(req: Request, res: Response) {
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(rawChunkPath)
-              .input(embersPath)
-              .inputOptions(['-stream_loop', '-1'])  // Loop embers
+              .input(embersLoopedPath)  // Use pre-looped embers (no stream_loop needed)
               .complexFilter([
-                // Convert embers from TV range to full range, then use screen blend
-                // Screen blend: bright pixels lighten, black stays black (no tint)
-                '[1:v]scale=1920:1080:in_range=tv:out_range=full,format=yuv420p[embers]',
+                // Simple screen blend - embers is already looped to 60s
+                '[1:v]scale=1920:1080[embers]',
                 '[0:v][embers]blend=all_mode=screen:shortest=1[out]'
               ])
               .outputOptions([
