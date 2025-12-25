@@ -107,35 +107,11 @@ async function handleRenderVideo(req: Request, res: Response) {
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
 
-    // Download and pre-loop embers overlay (avoids -stream_loop which can cause issues)
+    // Download embers overlay (will be looped at runtime via -stream_loop)
     const embersPath = path.join(tempDir, 'embers.mp4');
-    const embersLoopedPath = path.join(tempDir, 'embers_looped.mp4');
     try {
       await downloadFile(EMBERS_OVERLAY_URL, embersPath);
       console.log('Embers overlay downloaded');
-
-      // Pre-loop embers to 60 seconds (6 copies of ~10s video)
-      // This avoids using -stream_loop -1 which can cause memory issues
-      const loopListPath = path.join(tempDir, 'embers_loop.txt');
-      const loopContent = Array(6).fill(`file '${embersPath}'`).join('\n');
-      fs.writeFileSync(loopListPath, loopContent, 'utf8');
-
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg()
-          .input(loopListPath)
-          .inputOptions(['-f', 'concat', '-safe', '0'])
-          .outputOptions(['-c', 'copy', '-y'])
-          .output(embersLoopedPath)
-          .on('end', () => {
-            console.log('Embers pre-looped to 60 seconds');
-            resolve();
-          })
-          .on('error', (err) => {
-            console.warn('Failed to pre-loop embers:', err);
-            resolve(); // Continue without looped embers
-          })
-          .run();
-      });
     } catch (err) {
       console.warn('Failed to download embers overlay, continuing without it:', err);
     }
@@ -214,12 +190,12 @@ async function handleRenderVideo(req: Request, res: Response) {
     // Track completed chunks for progress
     let completedChunks = 0;
 
-    // Check if embers overlay is available and enabled (use pre-looped version)
-    const embersAvailable = EMBERS_ENABLED && fs.existsSync(embersLoopedPath);
+    // Check if embers overlay is available and enabled
+    const embersAvailable = EMBERS_ENABLED && fs.existsSync(embersPath);
     if (!EMBERS_ENABLED) {
       console.log('Embers overlay disabled via EMBERS_ENABLED flag');
     } else if (embersAvailable) {
-      console.log('Embers overlay available (pre-looped), will apply to each chunk');
+      console.log('Embers overlay available, will apply to each chunk with -stream_loop');
     } else {
       console.log('Embers overlay not available, rendering without embers');
     }
@@ -265,12 +241,12 @@ async function handleRenderVideo(req: Request, res: Response) {
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(rawChunkPath)
-              .input(embersLoopedPath)  // Use pre-looped embers (no stream_loop needed)
-              .inputOptions(['-stream_loop', '-1'])  // Loop embers infinitely to match chunk length
+              .addInput(embersPath)
+              .inputOptions(['-stream_loop', '-1'])  // Loop embers infinitely
               .complexFilter([
-                // Scale embers, desaturate to avoid color cast, then overlay with opacity
-                '[1:v]scale=1920:1080,hue=s=0,format=rgba,colorchannelmixer=aa=0.3[embers]',
-                '[0:v][embers]overlay=0:0:shortest=0[out]'
+                // Desaturate embers to grayscale to avoid pink tint, blend at low opacity
+                '[1:v]scale=1920:1080,hue=s=0[embers_gray]',
+                '[0:v][embers_gray]blend=all_mode=addition:all_opacity=0.15[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
@@ -278,6 +254,7 @@ async function handleRenderVideo(req: Request, res: Response) {
                 '-preset', 'veryfast',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
+                '-shortest',  // Output length = base video, not infinite embers loop
                 '-y'
               ])
               .output(chunk.outputPath)
