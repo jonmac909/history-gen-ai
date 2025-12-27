@@ -3,7 +3,33 @@ import type { ScriptTemplate, FormatTemplate, ImageTemplate } from "@/components
 // ===== FORMAT TEMPLATES =====
 // These define the structure and format of the script
 
-const formatListicle = `Structure the content as a numbered list format. Present information as distinct, digestible points. Each item should be self-contained but flow naturally to the next. Use clear transitions between list items. Good for "Top 10" or "5 Things You Didn't Know" style content.`;
+const formatListicle = `Write a 2-hour narrated script (approximately 18,000 words) in listicle format.
+
+*Title:* [INSERT TITLE - e.g., "10 Ways You Wouldn't Survive Medieval Times" / "10 Things That Would Shock You About Ancient Rome" / "10 Reasons Life in Victorian England Was Terrifying"]
+
+*The 10 Things:* [LIST YOUR 10 SPECIFIC ITEMS HERE]
+1. [Thing 1]
+2. [Thing 2]
+3. [Thing 3]
+4. [Thing 4]
+5. [Thing 5]
+6. [Thing 6]
+7. [Thing 7]
+8. [Thing 8]
+9. [Thing 9]
+10. [Thing 10]
+
+*Format:* Each of the 10 sections is approximately 1,800 words (~12 minutes narration). Each section is a single, deep, immersive exploration of that one thing—not a list within, but a flowing narrative.
+
+*Style:*
+- Second person POV ("You wake up..." / "You're standing in...")
+- Dreamy, time-travelly, sensory immersion
+- Flowing sentences, meditative pacing
+- Dark humor, reflective narration
+- Sleep-friendly, no jarring transitions
+- "It's fine. Probably." energy
+
+*Output:* Pure narration only. No headers, timestamps, or section labels.`;
 
 const formatDocumentary = `Traditional documentary structure with clear narrative arc. Begin with context and background, build through key events and developments, reach a climax or turning point, then resolve with aftermath and legacy. Include expert-style commentary and analysis. Balanced, objective tone.`;
 
