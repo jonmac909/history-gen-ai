@@ -483,14 +483,15 @@ export function ProjectResults({
             }
             toast({
               title: "Video Ready",
-              description: "Your video has been rendered successfully!",
+              description: effects?.embers ? "Your video with embers effect has been rendered!" : "Your video has been rendered successfully!",
             });
           },
           onCaptionError: (error) => {
             // Caption errors are now ignored since we don't burn captions
             console.warn('Caption error (ignored):', error);
           }
-        }
+        },
+        effects
       );
 
       // Final result
@@ -768,7 +769,7 @@ export function ProjectResults({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={handleRenderVideo}
+                    onClick={() => handleRenderVideo()}
                     disabled={isRendering}
                     className="text-muted-foreground hover:text-foreground"
                     title="Re-render Video"
@@ -778,6 +779,16 @@ export function ProjectResults({
                     ) : (
                       <RefreshCw className="w-5 h-5" />
                     )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowEffectsModal(true)}
+                    disabled={isRendering}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Add Effects"
+                  >
+                    <Sparkles className="w-5 h-5" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -793,7 +804,7 @@ export function ProjectResults({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleRenderVideo}
+                  onClick={() => handleRenderVideo()}
                   disabled={isRendering}
                   className="text-muted-foreground hover:text-foreground"
                   title="Render Video"
@@ -871,6 +882,61 @@ export function ProjectResults({
                 )}
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Effects Modal */}
+      <Dialog open={showEffectsModal} onOpenChange={setShowEffectsModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5" />
+              Video Effects
+            </DialogTitle>
+            <DialogDescription>
+              Apply effects to your video. This will re-render the video with the selected effects.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Embers Effect Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="embers-toggle" className="text-base font-medium">
+                  Embers Overlay
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Add a subtle animated embers effect over the entire video
+                </p>
+              </div>
+              <Switch
+                id="embers-toggle"
+                checked={effectsSettings.embers}
+                onCheckedChange={(checked) => setEffectsSettings({ ...effectsSettings, embers: checked })}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowEffectsModal(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowEffectsModal(false);
+                handleRenderVideo(effectsSettings);
+              }}
+              disabled={!effectsSettings.embers}
+              className="flex-1 gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Apply Effects
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
