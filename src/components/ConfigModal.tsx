@@ -120,8 +120,8 @@ export function ConfigModal({
         <Tabs defaultValue="format" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="format">Format</TabsTrigger>
-            <TabsTrigger value="tone">Script Tone</TabsTrigger>
-            <TabsTrigger value="image">Image Templates</TabsTrigger>
+            <TabsTrigger value="tone">Script</TabsTrigger>
+            <TabsTrigger value="image">Image</TabsTrigger>
           </TabsList>
 
           {/* Format Templates Tab */}
