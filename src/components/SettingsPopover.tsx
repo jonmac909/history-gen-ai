@@ -52,6 +52,7 @@ const defaultFormatLabels: Record<string, string> = {
   "format-b": "Format B",
   "format-c": "Format C",
   "format-d": "Format D",
+  "format-e": "Format E",
 };
 
 const defaultToneLabels: Record<string, string> = {

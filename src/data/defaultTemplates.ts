@@ -200,11 +200,87 @@ NIGHT (10 min): Going to Bed - Reflection. The fears for tomorrow. The "Big Pict
 
 CLOSING (5 min): The Sources - Further reading for those who want to know more about this specific life.`;
 
+const formatWalkingTour = `Write a 2-hour narrated script (approximately 18,000 words) as an immersive walking tour through [PLACE/CITY/LOCATION].
+
+*Title:* [INSERT TITLE - e.g., "A Walk Through Ancient Rome" / "Exploring Medieval Paris" / "The Streets of Victorian London"]
+
+---
+
+*STRUCTURE:*
+
+*THE HOOK (~300 words)*
+Open with a single, arresting moment. A scene. A death. A battle. A quiet detail that contains the whole story. Drop the listener into the most compelling, cinematic fragment—out of context, mysterious, visceral. Make them need to know more. Then pull back: "But to understand how we got here, we need to go back..."
+
+*INTRODUCTION (~1,000 words)*
+Set the stage. Where are we? What are we exploring? Transport the listener. Invite them to close their eyes. Establish why this matters, why this civilization/subject captivates us. A sweeping, cinematic opening that orients us in time and place.
+
+---
+
+*ERA ONE: [NAME OF ERA] (~5,000 words total)*
+
+e.g., "The Early Kingdom" / "The Republic" / "The Rise"
+
+Introduce the era. When are we? What defines this period?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The founding myth, the first rulers, the origins
+- *[Subtopic 2]* (~1,500 words) - e.g., Daily life, society, how people lived
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, war, discovery, turning point
+
+Transition to the next era.
+
+---
+
+*ERA TWO: [NAME OF ERA] (~5,000 words total)*
+
+e.g., "The Golden Age" / "The Empire" / "The Height of Power"
+
+Introduce the era. What changed? What defines this period?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The great leader, the expansion, the peak
+- *[Subtopic 2]* (~1,500 words) - e.g., Culture, art, religion, beliefs
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, conflict, innovation, crisis
+
+Transition to the next era.
+
+---
+
+*ERA THREE: [NAME OF ERA] (~5,000 words total)*
+
+e.g., "The Decline" / "The Fall" / "The Transformation"
+
+Introduce the era. What went wrong—or what changed?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The cracks forming, internal struggles
+- *[Subtopic 2]* (~1,500 words) - e.g., External threats, invasions, pressures
+- *[Subtopic 3]* (~1,500 words) - e.g., The end, the legacy, what remained
+
+---
+
+*CONCLUSION (~700 words)*
+Reflect on the full arc. What can we learn? What echoes into the present? A meditative closing that lets the listener drift, feeling connected to something ancient and vast.
+
+---
+
+*STYLE:*
+
+- Second person POV where immersive ("You're standing in the Forum..." / "Imagine yourself...")
+- Third person for historical narrative ("The emperor knew..." / "The armies marched...")
+- Blend both seamlessly
+- Dreamy, time-travelly, sensory
+- Flowing sentences, meditative pacing
+- Dark humor where appropriate
+- Sleep-friendly—no jarring transitions
+- Reflective narration that lingers
+- Ground the narrative in specific, human details
+
+*OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
+
 export const defaultFormatTemplates: FormatTemplate[] = [
   { id: "format-a", template: formatListicle, name: "Listicle" },
   { id: "format-b", template: formatDocumentary, name: "Documentary" },
   { id: "format-c", template: formatNarrative, name: "Narrative" },
   { id: "format-d", template: formatPOV, name: "POV" },
+  { id: "format-e", template: formatWalkingTour, name: "Walking Tour" },
 ];
 
 // ===== SCRIPT TONE TEMPLATES =====
