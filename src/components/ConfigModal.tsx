@@ -47,8 +47,8 @@ export interface CartesiaVoice {
 interface ConfigModalProps {
   formatTemplates: FormatTemplate[];
   onSaveFormatTemplates: (templates: FormatTemplate[]) => void;
-  toneTemplates: FormatTemplate[];
-  onSaveToneTemplates: (templates: FormatTemplate[]) => void;
+  scriptTemplates: FormatTemplate[];
+  onSaveScriptTemplates: (templates: FormatTemplate[]) => void;
   imageTemplates: ImageTemplate[];
   onSaveImageTemplates: (templates: ImageTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
@@ -58,8 +58,8 @@ interface ConfigModalProps {
 export function ConfigModal({
   formatTemplates,
   onSaveFormatTemplates,
-  toneTemplates,
-  onSaveToneTemplates,
+  scriptTemplates,
+  onSaveScriptTemplates,
   imageTemplates,
   onSaveImageTemplates,
   cartesiaVoices,
@@ -67,13 +67,13 @@ export function ConfigModal({
 }: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [formats, setFormats] = useState<FormatTemplate[]>(formatTemplates);
-  const [tones, setTones] = useState<FormatTemplate[]>(toneTemplates);
+  const [scripts, setScripts] = useState<FormatTemplate[]>(scriptTemplates);
   const [images, setImages] = useState<ImageTemplate[]>(imageTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
 
   const handleSave = () => {
     onSaveFormatTemplates(formats);
-    onSaveToneTemplates(tones);
+    onSaveScriptTemplates(scripts);
     onSaveImageTemplates(images);
     onSaveVoices(voices);
     setIsOpen(false);
@@ -85,8 +85,8 @@ export function ConfigModal({
     ));
   };
 
-  const updateToneTemplate = (id: string, field: keyof FormatTemplate, value: string) => {
-    setTones(prev => prev.map(t =>
+  const updateScriptTemplate = (id: string, field: keyof FormatTemplate, value: string) => {
+    setScripts(prev => prev.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
   };
@@ -120,7 +120,7 @@ export function ConfigModal({
         <Tabs defaultValue="format" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="format">Format</TabsTrigger>
-            <TabsTrigger value="tone">Script</TabsTrigger>
+            <TabsTrigger value="script">Script</TabsTrigger>
             <TabsTrigger value="image">Image</TabsTrigger>
           </TabsList>
 
@@ -162,36 +162,36 @@ export function ConfigModal({
             })}
           </TabsContent>
 
-          {/* Script Tone Tab */}
-          <TabsContent value="tone" className="space-y-6 py-4">
+          {/* Script Templates Tab */}
+          <TabsContent value="script" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
-              Configure script tone templates to define the voice and mood of narration.
+              Configure script templates to define the voice and approach for narration.
             </p>
 
-            {tones.map((tone, index) => {
-              const defaultName = `Tone ${String.fromCharCode(65 + index)}`;
+            {scripts.map((script, index) => {
+              const defaultName = `Script ${String.fromCharCode(65 + index)}`;
               return (
-                <div key={tone.id} className="space-y-3 p-4 border border-border rounded-lg">
+                <div key={script.id} className="space-y-3 p-4 border border-border rounded-lg">
                   <div className="flex items-center gap-2">
                     <Volume2 className="w-4 h-4 text-primary" />
-                    <span className="font-medium">{tone.name || defaultName}</span>
+                    <span className="font-medium">{script.name || defaultName}</span>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Tone Name</Label>
+                    <Label>Script Name</Label>
                     <Input
-                      value={tone.name || ""}
-                      onChange={(e) => updateToneTemplate(tone.id, "name", e.target.value)}
+                      value={script.name || ""}
+                      onChange={(e) => updateScriptTemplate(script.id, "name", e.target.value)}
                       placeholder={defaultName}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Tone Description</Label>
+                    <Label>Script Description</Label>
                     <Textarea
-                      value={tone.template}
-                      onChange={(e) => updateToneTemplate(tone.id, "template", e.target.value)}
-                      placeholder="Describe the voice, mood, and emotional quality..."
+                      value={script.template}
+                      onChange={(e) => updateScriptTemplate(script.id, "template", e.target.value)}
+                      placeholder="Describe the voice, approach, and techniques..."
                       className="min-h-[100px]"
                     />
                   </div>

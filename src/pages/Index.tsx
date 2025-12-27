@@ -35,7 +35,7 @@ import {
   type ImagePromptWithTiming,
   type AudioSegment,
 } from "@/lib/api";
-import { defaultTemplates, defaultFormatTemplates, defaultToneTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
+import { defaultTemplates, defaultFormatTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
 import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, updateProjectInHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -52,7 +52,7 @@ const Index = () => {
     projectTitle: "",
     fullAutomation: false,
     formatTemplate: "format-a",
-    toneTemplate: "tone-a",
+    scriptTemplate: "template-humor",
     imageTemplate: "image-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
@@ -63,7 +63,6 @@ const Index = () => {
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [formatTemplates, setFormatTemplates] = useState<FormatTemplate[]>(defaultFormatTemplates);
-  const [toneTemplates, setToneTemplates] = useState<FormatTemplate[]>(defaultToneTemplates);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(defaultImageTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
@@ -265,8 +264,8 @@ const Index = () => {
     setFormatTemplates(templates);
   };
 
-  const handleSaveToneTemplates = (templates: FormatTemplate[]) => {
-    setToneTemplates(templates);
+  const handleSaveScriptTemplates = (templates: FormatTemplate[]) => {
+    setScriptTemplates(templates as ScriptTemplate[]);
   };
 
   const handleSaveImageTemplates = (templates: ImageTemplate[]) => {
@@ -1394,8 +1393,8 @@ const Index = () => {
             <ConfigModal
               formatTemplates={formatTemplates}
               onSaveFormatTemplates={handleSaveFormatTemplates}
-              toneTemplates={toneTemplates}
-              onSaveToneTemplates={handleSaveToneTemplates}
+              scriptTemplates={scriptTemplates}
+              onSaveScriptTemplates={handleSaveScriptTemplates}
               imageTemplates={imageTemplates}
               onSaveImageTemplates={handleSaveImageTemplates}
               cartesiaVoices={cartesiaVoices}
@@ -1534,7 +1533,7 @@ const Index = () => {
                         settings={settings}
                         onSettingsChange={setSettings}
                         formatTemplates={formatTemplates}
-                        toneTemplates={toneTemplates}
+                        scriptTemplates={scriptTemplates}
                         imageTemplates={imageTemplates}
                       />
                     </div>
@@ -1576,7 +1575,7 @@ const Index = () => {
                       settings={settings}
                       onSettingsChange={setSettings}
                       formatTemplates={formatTemplates}
-                      toneTemplates={toneTemplates}
+                      scriptTemplates={scriptTemplates}
                       imageTemplates={imageTemplates}
                     />
 

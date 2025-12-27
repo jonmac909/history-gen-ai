@@ -27,7 +27,7 @@ export interface GenerationSettings {
   projectTitle: string;
   fullAutomation: boolean;
   formatTemplate: string;
-  toneTemplate: string;
+  scriptTemplate: string;
   imageTemplate: string;
   aiModel: string;
   voiceSampleUrl: string | null;
@@ -43,7 +43,7 @@ interface SettingsPopoverProps {
   settings: GenerationSettings;
   onSettingsChange: (settings: GenerationSettings) => void;
   formatTemplates: FormatTemplate[];
-  toneTemplates: FormatTemplate[];
+  scriptTemplates: FormatTemplate[];
   imageTemplates: ImageTemplate[];
 }
 
@@ -56,10 +56,10 @@ const defaultFormatLabels: Record<string, string> = {
   "format-f": "Format F",
 };
 
-const defaultToneLabels: Record<string, string> = {
-  "tone-a": "Tone A",
-  "tone-b": "Tone B",
-  "tone-c": "Tone C",
+const defaultScriptLabels: Record<string, string> = {
+  "template-humor": "Humor",
+  "template-immersive": "Immersive",
+  "template-documentary": "Documentary",
 };
 
 const defaultImageLabels: Record<string, string> = {
@@ -72,7 +72,7 @@ export function SettingsPopover({
   settings,
   onSettingsChange,
   formatTemplates,
-  toneTemplates,
+  scriptTemplates,
   imageTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -91,9 +91,9 @@ export function SettingsPopover({
     label: template.name || defaultFormatLabels[template.id] || template.id,
   }));
 
-  const toneTemplateOptions = toneTemplates.map((template) => ({
+  const scriptTemplateOptions = scriptTemplates.map((template) => ({
     value: template.id,
-    label: template.name || defaultToneLabels[template.id] || template.id,
+    label: template.name || defaultScriptLabels[template.id] || template.id,
   }));
 
   const imageTemplateOptions = imageTemplates.map((template) => ({
@@ -238,15 +238,15 @@ export function SettingsPopover({
                 : "Voice and mood (Immersive, Serious, Funny)"}
             </p>
             <Select
-              value={localSettings.toneTemplate}
-              onValueChange={(value) => updateSetting("toneTemplate", value)}
+              value={localSettings.scriptTemplate}
+              onValueChange={(value) => updateSetting("scriptTemplate", value)}
               disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a tone" />
+                <SelectValue placeholder="Select a script style" />
               </SelectTrigger>
               <SelectContent>
-                {toneTemplateOptions.map((template) => (
+                {scriptTemplateOptions.map((template) => (
                   <SelectItem key={template.value} value={template.value}>
                     {template.label}
                   </SelectItem>
