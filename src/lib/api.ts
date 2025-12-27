@@ -1130,6 +1130,10 @@ export interface RenderVideoCallbacks {
   onCaptionError?: (error: string) => void;
 }
 
+export interface VideoEffects {
+  embers?: boolean;
+}
+
 export async function renderVideoStreaming(
   projectId: string,
   audioUrl: string,
@@ -1137,7 +1141,8 @@ export async function renderVideoStreaming(
   imageTimings: { startSeconds: number; endSeconds: number }[],
   srtContent: string,
   projectTitle: string,
-  callbacks: RenderVideoCallbacks | ((progress: RenderVideoProgress) => void)
+  callbacks: RenderVideoCallbacks | ((progress: RenderVideoProgress) => void),
+  effects?: VideoEffects
 ): Promise<RenderVideoResult> {
   // Support both old callback style and new object style
   const { onProgress, onVideoReady, onCaptionError } = typeof callbacks === 'function'
@@ -1169,7 +1174,8 @@ export async function renderVideoStreaming(
         imageUrls,
         imageTimings,
         srtContent,
-        projectTitle
+        projectTitle,
+        effects
       }),
       signal: controller.signal
     });

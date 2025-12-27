@@ -20,8 +20,10 @@ const IMAGES_PER_CHUNK = 25;
 const PARALLEL_CHUNK_RENDERS = 3;
 // Embers overlay effect URL (served from Netlify)
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
-// Enable/disable embers overlay (set to false to debug rendering issues)
-const EMBERS_ENABLED = false;
+// Effects interface for configurable video effects
+interface VideoEffects {
+  embers?: boolean;
+}
 // Duration of the embers.mp4 source file (seconds)
 const EMBERS_SOURCE_DURATION = 10;
 // Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
@@ -39,6 +41,7 @@ interface RenderVideoRequest {
   imageTimings: ImageTiming[];
   srtContent: string;
   projectTitle: string;
+  effects?: VideoEffects;
 }
 
 // Helper to send SSE events
@@ -78,8 +81,13 @@ async function handleRenderVideo(req: Request, res: Response) {
       imageUrls,
       imageTimings,
       srtContent,
-      projectTitle
+      projectTitle,
+      effects
     } = req.body as RenderVideoRequest;
+
+    // Determine if embers effect is enabled (default: false)
+    const embersEnabled = effects?.embers ?? false;
+    console.log(`Effects: embers=${embersEnabled}`);
 
     // Validate input
     if (!projectId || !audioUrl || !imageUrls || imageUrls.length === 0) {
@@ -193,13 +201,13 @@ async function handleRenderVideo(req: Request, res: Response) {
     let completedChunks = 0;
 
     // Check if embers overlay is available and enabled
-    const embersAvailable = EMBERS_ENABLED && fs.existsSync(embersPath);
-    if (!EMBERS_ENABLED) {
-      console.log('Embers overlay disabled via EMBERS_ENABLED flag');
+    const embersAvailable = embersEnabled && fs.existsSync(embersPath);
+    if (!embersEnabled) {
+      console.log('Embers overlay disabled (effects.embers not set)');
     } else if (embersAvailable) {
-      console.log('Embers overlay available, will apply to each chunk with -stream_loop');
+      console.log('Embers overlay enabled, will apply to each chunk');
     } else {
-      console.log('Embers overlay not available, rendering without embers');
+      console.log('Embers overlay enabled but file not available, rendering without embers');
     }
 
     // Helper function to render a single chunk (with optional embers overlay)

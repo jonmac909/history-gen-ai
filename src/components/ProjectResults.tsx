@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2 } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -7,7 +7,9 @@ import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
-import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress } from "@/lib/api";
+import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export interface GeneratedAsset {
   id: string;
@@ -134,6 +136,10 @@ export function ProjectResults({
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
   const autoRenderTriggered = useRef(false);
+
+  // State for effects modal
+  const [showEffectsModal, setShowEffectsModal] = useState(false);
+  const [effectsSettings, setEffectsSettings] = useState<VideoEffects>({ embers: false });
 
   // Auto-render video when in full automation mode
   useEffect(() => {
@@ -394,7 +400,7 @@ export function ProjectResults({
   };
 
   // Handle Render Video (MP4)
-  const handleRenderVideo = async () => {
+  const handleRenderVideo = async (effects?: VideoEffects) => {
     // Validate required data
     if (!projectId) {
       toast({
