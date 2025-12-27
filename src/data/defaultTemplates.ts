@@ -377,12 +377,149 @@ const toneImmersive = `Immersive and transportive. Use vivid sensory details to 
 
 const toneSerious = `Serious and authoritative. Academic but accessible tone. Present facts with gravitas and respect for the subject matter. Measured pacing. Acknowledge complexity and nuance. Suitable for weighty historical topics. Dignified treatment of tragedy and triumph alike.`;
 
-const toneFunny = `Light and entertaining with humor woven throughout. Find the amusing absurdities in history. Use modern comparisons and relatable observations. Conversational and irreverent but still informative. Make history fun and accessible. Avoid being disrespectful to serious events.`;
+const toneHumor = `Apply this comedic voice to any script format. This is the tonal layer that sits on top of the structure.
+
+---
+
+*THE CORE PHILOSOPHY:*
+
+Everything is terrible, but we've accepted it. Not with despair—with the exhausted shrug of someone who has been dealing with this for thirty years and will deal with it for thirty more. The humor comes from treating genuine horrors as minor inconveniences, and minor inconveniences as cosmic injustices.
+
+The humor must feel *fresh throughout*. No catchphrases. No callbacks. No running gags. Each joke lands once and we move on. The listener should never be able to predict the next punchline.
+
+---
+
+*KEY TECHNIQUES:*
+
+*1. The Casual Horror*
+Mention genuinely awful things in the same breath as mundane observations. No dramatic pause. No emphasis. Just facts delivered with the same energy as commenting on the weather.
+
+"The river gives, and you build. The river also gives you intestinal parasites and the occasional crocodile attack, but we don't talk about that before breakfast. Bad for digestion."
+
+"It keeps scorpions from crawling into your ears at night, so there's that."
+
+---
+
+*2. Deadpan Acceptance*
+State something that should be alarming, then immediately normalize it. The humor is in the lack of reaction.
+
+"You'll have a permanently curved spine by forty, but everyone does. Your father has one. His father had one."
+
+"Your teeth are already mostly ground down anyway from thirty years of sandy bread. You've never met anyone over thirty with perfect teeth."
+
+---
+
+*3. The Overcorrection*
+Give a positive spin, then immediately undercut it with the brutal reality.
+
+"The shaduf is brilliant engineering. It is also the reason your right shoulder is noticeably bigger than your left and the reason you wake up with back pain every single morning."
+
+"That person was a genius. That person also doomed thousands of farmers to a lifetime of repetitive strain injuries. You have complicated feelings about that person."
+
+---
+
+*4. The Unexpected Escalation*
+Lists or descriptions where one item is wildly different and no one acknowledges it.
+
+"On one side: soil, water, onions, barley, life, civilization, everything that makes Egypt Egypt. One inch over: sand, scorpions, demons, death, the void, the place where order ends and chaos begins."
+
+---
+
+*5. The Rhetorical Spiral*
+Ask a question, answer it, then spiral into increasingly absurd specificity.
+
+"Does he think you can yell at the wheat to make it grow faster? Should you stand in the field and scream at the barley?"
+
+---
+
+*6. False Dignity*
+Assign grand, poetic language to something utterly mundane or disgusting.
+
+"This is the heartbeat of Egypt... The sound of thousands of leather buckets hitting the water."
+
+---
+
+*7. The Body as Reluctant Participant*
+Treat the human body as something that is constantly failing, complaining, or betraying you in small ways.
+
+"You stand up. Your knees crack. You're not old—you're maybe thirty—but you feel old. Agricultural labor does that to you."
+
+---
+
+*8. Animals With Agendas*
+Animals are treated as sentient beings with personal vendettas, opinions, and an inflated sense of their own importance. But describe each animal freshly—don't repeat the same joke.
+
+"The rooster in your courtyard disagrees. Loudly. Aggressively. With the confidence of a creature that has never been told to shut up."
+
+---
+
+*9. Bureaucratic Dread*
+Authority figures are treated with the same resigned horror as plagues or natural disasters.
+
+"Your stomach tightens. Not from hunger, but from the ancient, universal fear of The Audit."
+
+---
+
+*10. The Flat Punchline*
+End observations with a line that's funny because it's bleak, delivered without emphasis. Let it land quietly.
+
+---
+
+*11. The Specific Complaint*
+Describe unpleasant things with such weirdly specific detail that the precision itself becomes funny.
+
+---
+
+*12. The Optimistic Reframe*
+Take something grim and spin it into a positive with obvious denial.
+
+"Well, technically it belongs to the pharaoh, who is a god, but he lets you use it in exchange for taxes, labor, and your eternal soul. Let's call it yours for morale purposes."
+
+---
+
+*13. The Parenthetical Aside*
+Drop in qualifiers and corrections mid-sentence that undercut what you just said.
+
+---
+
+*14. Universal Human Experience*
+Observations that connect the ancient person to all humans everywhere, delivered deadpan.
+
+"You groan. It is a sound that comes from the depths of your soul. It is the groan of every tired person who has ever been woken from a nap. It transcends time and culture."
+
+---
+
+*THE GOLDEN RULE:*
+
+Every joke should feel like it was invented for that exact moment. If you've used a construction once, find a different way to be funny the next time. Vary the rhythm. Some jokes are long spirals. Some are single words. Some are structural.
+
+*Never repeat a punchline structure within the same script.*
+
+---
+
+*WHAT TO AVOID:*
+
+- Catchphrases or repeated sign-off lines
+- The same joke told twice with different words
+- Callbacks to earlier jokes
+- Running gags
+- Winking at the audience
+- Modern slang that breaks immersion
+- Exclamation marks for excitement
+- Sarcasm that feels cruel rather than weary
+- Punching down at historical people for being "primitive"
+- Any phrase that sounds like it could become a meme
+
+---
+
+*THE TONE IN ONE SENTENCE:*
+
+A deeply tired, deeply kind narrator who has seen too much, accepted all of it, and finds dark comfort in describing exactly how bad things are with the calm precision of someone filling out an insurance claim.`;
 
 export const defaultToneTemplates: FormatTemplate[] = [
   { id: "tone-a", template: toneImmersive, name: "Immersive" },
   { id: "tone-b", template: toneSerious, name: "Serious" },
-  { id: "tone-c", template: toneFunny, name: "Funny" },
+  { id: "tone-c", template: toneHumor, name: "Humor" },
 ];
 
 // ===== IMAGE TEMPLATES =====
