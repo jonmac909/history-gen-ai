@@ -373,7 +373,195 @@ export const defaultFormatTemplates: FormatTemplate[] = [
 // ===== SCRIPT TONE TEMPLATES =====
 // These define the voice, mood, and emotional quality of the narration
 
-const toneImmersive = `Immersive and transportive. Use vivid sensory details to place the viewer directly into historical moments. Present tense for key scenes. Rich descriptions of sights, sounds, smells, and textures. Create the feeling of time travel. Let viewers experience history rather than just learn about it.`;
+const toneImmersive = `Apply this voice to historical scripts. This is the style of a guide who takes your hand and walks you through time.
+
+---
+
+*THE CORE PHILOSOPHY:*
+
+You are not lecturing. You are guiding. The listener is physically there with you—standing in the dust, touching the stone, smelling the air. You move through space together. You move through time together. The narrator is a companion, not a professor.
+
+---
+
+*KEY TECHNIQUES:*
+
+*1. The Modern Arrival*
+Start in the present. Start ugly. Start honest. The traffic, the tourist traps, the disappointment of reality versus expectation. Ground the listener in the now before you transport them.
+
+    "It's hot. You're standing outside the Giza Plateau, and the first thing you smell is exhaust fumes from tour buses and camel sweat mixed with sunblock. Someone tries to sell you a plastic pyramid for five dollars."
+
+    "There's a KFC right behind you. A Pizza Hut sign. Car horns. For a moment, you wonder why you came here at all."
+
+---
+
+*2. The Physical Command*
+Tell the listener what to do. Make them move. Make them touch. Make them look. This isn't passive listening—it's participation.
+
+    "Walk closer to the base. Go ahead, put your hand on the stone. It's warm, isn't it? Hot, even, from baking in the sun all day."
+
+    "Walk around the base. Go on, take the time."
+
+    "Stand here for a moment. Listen."
+
+    "Look up. Follow the line with your eyes, all the way to the top."
+
+---
+
+*3. The Sensory Anchor*
+Every scene needs texture. What does it smell like? What's the temperature? What's the sound? What does the surface feel like under your fingers? Anchor abstract history in physical sensation.
+
+    "The limestone is rough under your palm, porous, filled with tiny fossils—the shells of ancient sea creatures that lived when this stone was forming at the bottom of a warm shallow sea 50 million years ago."
+
+    "The first thing that hit him wasn't gold. It wasn't a mummy. It was a smell. The smell of cedar wood. Rich, resinous, spicy cedar wood. It smelled like a fresh forest. But that air had been trapped in the dark for 4,500 years."
+
+---
+
+*4. The Reveal Structure*
+Show what they see. Then show what it really was. The gap between the ruin and the original is where wonder lives.
+
+    "What you're seeing is a shadow. A worn, weathered, stripped version of what was really here. Let me show you what you're actually looking at."
+
+    "The pyramid was originally covered in smooth white limestone, polished until it gleamed. Every one of the 2.3 million blocks you're looking at was once hidden beneath a smooth shell of casing stones."
+
+    "Try to imagine it. Three pyramids, smooth and white, rising from the desert. At dawn, they would have caught the first light and blazed gold."
+
+---
+
+*5. The Impossible Number*
+Use specific measurements. Exact figures. The precision itself creates awe. But then contextualize—make the number feel real.
+
+    "The four sides of the base are 230.253 meters, 230.391 meters, 230.454 meters, and 230.357 meters. The variation is less than 20 centimeters across a distance of more than 200 meters. And the base is level to within 2.1 centimeters."
+
+    "Think about that for a second. Across thirteen acres, the base is level to within two centimeters."
+
+Then the humanizing punch:
+
+    "I recently bought a coffee table that wobbles if you look at it wrong, and I had an instruction manual. These guys leveled a mountain using sticks, water, and obsession, and they got it perfect."
+
+---
+
+*6. The Time Jump*
+Move fluidly between eras. Don't announce it heavily—just step through. One moment you're in the present, then you're watching construction, then you're with Napoleon, then you're back.
+
+    "Let's leave the silence of the chamber now. Let's step out of the darkness, back down the Grand Gallery, and out into the light. But not the light of today. I want you to imagine a different world."
+
+    "Let's go back 4,600 years. To the world before the pyramids."
+
+---
+
+*7. The Character Portrait*
+When introducing historical figures, make them human in one vivid stroke. Physical details. Personality. The weight of their burden.
+
+    "We know what he looked like. A life-sized statue of him was found. He isn't depicted as a buff, idealized warrior. He is depicted as a heavy-set man. He has rolls of fat around his waist. He has a double chin. To the Egyptians, this wasn't an insult; it was a sign of success."
+
+    "Stare at his face in that statue. He looks tired. He looks like a man with a headache. And he should be. He had the hardest job in human history."
+
+---
+
+*8. The Witness Moment*
+Put the listener inside a specific person at a specific moment. Not abstract history—lived experience.
+
+    "Imagine being a traveler in 1400 BC—a thousand years after the pyramids were built. Egypt is still powerful, but the Giza plateau is ancient history. The pyramids are already old. A young prince named Thutmose is out hunting in the desert. He is tired. He sits down in the shadow of the Sphinx's head to rest. He falls asleep. And he has a dream."
+
+---
+
+*9. The Sound of History*
+Describe what the place sounded like. Sound is the most overlooked sense in historical writing, and the most immersive.
+
+    "The first thing you notice isn't the sight. It's the sound. Giza isn't a silent tomb; it is a construction site. It is arguably the loudest place on Earth. You hear the clink-clink-clink of copper chisels on limestone. It's a deafening, high-pitched ringing that never stops, from dawn until dusk."
+
+---
+
+*10. The Myth Puncture*
+Address the theories, the legends, the misconceptions. Acknowledge them, then gently correct with something more interesting.
+
+    "Before you ever reach them, the theories start circulating. Atlantis built them. Time travelers built them. A tourist beside you leans in and whispers, 'Aliens definitely did it.' Then you look up. And for a split second... even you consider the alien option."
+
+Later:
+
+    "Forget the movies. Forget the images of slaves driven by whips. The archaeology tells a different, more interesting story."
+
+---
+
+*11. The Humanizing Detail*
+Find the small, weird, personal details that make ancient people feel real. Graffiti. Nicknames. Complaints. Lunch.
+
+    "Deep inside the pyramid, in places no one was ever meant to see, modern explorers found red ochre paint on the walls. They are team names. One gang called themselves 'The Friends of Khufu.' Another, with a bit more personality, called themselves 'The Drunkards of Menkaure.'"
+
+    "This monument was built on carbohydrates, team spirit, and mild intoxication."
+
+---
+
+*12. The Universal Truth*
+Observations that connect ancient humans to all humans. The shared experience across millennia.
+
+    "There is a universal truth about the Great Pyramid: It is physically impossible to look cool while entering it. It doesn't matter who you are. You could be a head of state, a billionaire, or an influencer. Once you step into that ascending passage, you are doing the same awkward, hunchbacked duck-walk as everyone else."
+
+    "Carved into the paws of the Sphinx is ancient graffiti. 'I saw the pyramids without you, my dearest brother, and I wept.' It is touching. 2,000 years ago, a Roman stood where you are standing, missing his brother, feeling the same awe."
+
+---
+
+*13. The Weight of Place*
+Describe the feeling of being somewhere—not just what it looks like, but what it does to you. The psychological and emotional texture.
+
+    "But there's something else. Something you feel more than see. The weight. The presence. You are standing inside a mountain. There are 146 meters of stone above you, surrounding you, pressing in from all sides. Six million tons of limestone and granite, perfectly balanced, perfectly stable."
+
+---
+
+*14. The Philosophical Landing*
+Each major section should land on meaning, not just information. Why does this matter? What does it tell us about being human?
+
+    "The Egyptians lived in a world where everything died. The crops died every year. The sun died every night. People died young. The pyramid was their answer to that fear. It was a massive, desperate, beautiful attempt to say: 'No. We will not vanish. We will turn ourselves into stone and stars, and we will last forever.'"
+
+---
+
+*15. The Return to Now*
+End back in the present. The sun setting. The quiet after the crowds leave. The listener standing there, changed by what they now understand.
+
+    "The sun is setting. The tour buses are gone. The vendors have packed up their plastic pyramids. The plateau is quiet. You are still standing at Giza, but the light is different now."
+
+---
+
+*SENTENCE RHYTHM:*
+
+Mix long, flowing, sensory sentences with short punches.
+
+    "It was made of Lebanese cedar. The ropes were made of halfa grass." (Short, factual)
+
+    "When they reassembled it, they found it was a masterpiece of engineering—it had no nails, it was stitched together with ropes that tightened when the wood got wet, making it watertight." (Long, building)
+
+    "Why bury a boat next to a pyramid?" (Question)
+
+    "Because the King needed to travel." (Answer—short, landing)
+
+---
+
+*THE GUIDE'S VOICE:*
+
+Warm but authoritative. Knows the material deeply but never condescends. Shares wonder rather than performing expertise. Says "we" and "let's" to include the listener. Comfortable with mystery—doesn't pretend to have all the answers.
+
+    "Nobody knows for certain."
+
+    "We don't know. After 4,500 years, some mysteries remain."
+
+    "It's a great story. Did it happen? Maybe."
+
+---
+
+*WHAT TO AVOID:*
+
+- Lecture tone or textbook phrasing
+- Staying in one time period too long without grounding in the physical
+- Abstract history without sensory anchors
+- Dismissing wonder in favor of pure skepticism
+- Breathless exclamation-point enthusiasm
+- Staying distant—always bring it back to "you are here"
+
+---
+
+*THE TONE IN ONE SENTENCE:*
+
+A knowledgeable friend walking you through ruins at golden hour, pointing out what you'd miss on your own, making the stones speak.`;
 
 const toneSerious = `Serious and authoritative. Academic but accessible tone. Present facts with gravitas and respect for the subject matter. Measured pacing. Acknowledge complexity and nuance. Suitable for weighty historical topics. Dignified treatment of tragedy and triumph alike.`;
 
