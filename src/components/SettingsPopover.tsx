@@ -21,13 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
-import type { ScriptTemplate, ToneTemplate, ImageTemplate } from "@/components/ConfigModal";
+import type { FormatTemplate, ImageTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   projectTitle: string;
   fullAutomation: boolean;
+  formatTemplate: string;
   toneTemplate: string;
-  scriptTemplate: string;
   imageTemplate: string;
   aiModel: string;
   voiceSampleUrl: string | null;
@@ -42,40 +42,35 @@ export interface GenerationSettings {
 interface SettingsPopoverProps {
   settings: GenerationSettings;
   onSettingsChange: (settings: GenerationSettings) => void;
-  toneTemplates: ToneTemplate[];
-  scriptTemplates: ScriptTemplate[];
+  formatTemplates: FormatTemplate[];
+  toneTemplates: FormatTemplate[];
   imageTemplates: ImageTemplate[];
 }
+
+const defaultFormatLabels: Record<string, string> = {
+  "format-a": "Format A",
+  "format-b": "Format B",
+  "format-c": "Format C",
+  "format-d": "Format D",
+};
 
 const defaultToneLabels: Record<string, string> = {
   "tone-a": "Tone A",
   "tone-b": "Tone B",
   "tone-c": "Tone C",
-  "tone-d": "Tone D",
-  "tone-e": "Tone E",
-};
-
-const defaultTemplateLabels: Record<string, string> = {
-  "template-a": "Script A",
-  "template-b": "Script B",
-  "template-c": "Script C",
-  "template-d": "Script D",
-  "template-e": "Script E",
 };
 
 const defaultImageLabels: Record<string, string> = {
   "image-a": "Image A",
   "image-b": "Image B",
   "image-c": "Image C",
-  "image-d": "Image D",
-  "image-e": "Image E",
 };
 
 export function SettingsPopover({
   settings,
   onSettingsChange,
+  formatTemplates,
   toneTemplates,
-  scriptTemplates,
   imageTemplates,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -89,14 +84,14 @@ export function SettingsPopover({
   }, [settings, isOpen]);
 
   // Build template options from templates with custom names or defaults
+  const formatTemplateOptions = formatTemplates.map((template) => ({
+    value: template.id,
+    label: template.name || defaultFormatLabels[template.id] || template.id,
+  }));
+
   const toneTemplateOptions = toneTemplates.map((template) => ({
     value: template.id,
     label: template.name || defaultToneLabels[template.id] || template.id,
-  }));
-
-  const scriptTemplateOptions = scriptTemplates.map((template) => ({
-    value: template.id,
-    label: template.name || defaultTemplateLabels[template.id] || template.id,
   }));
 
   const imageTemplateOptions = imageTemplates.map((template) => ({
@@ -202,15 +197,43 @@ export function SettingsPopover({
             )}
           </div>
 
-          {/* Tone Template */}
+          {/* Format Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Tone Template:
+              Format:
             </label>
             <p className="text-xs text-muted-foreground text-center">
               {localSettings.customScript && localSettings.customScript.trim().length > 0
                 ? "(Ignored when using custom script)"
-                : "Voice and mood for narration"}
+                : "Script structure (Listicle, Documentary, etc.)"}
+            </p>
+            <Select
+              value={localSettings.formatTemplate}
+              onValueChange={(value) => updateSetting("formatTemplate", value)}
+              disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a format" />
+              </SelectTrigger>
+              <SelectContent>
+                {formatTemplateOptions.map((template) => (
+                  <SelectItem key={template.value} value={template.value}>
+                    {template.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Script Tone */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Script Tone:
+            </label>
+            <p className="text-xs text-muted-foreground text-center">
+              {localSettings.customScript && localSettings.customScript.trim().length > 0
+                ? "(Ignored when using custom script)"
+                : "Voice and mood (Immersive, Serious, Funny)"}
             </p>
             <Select
               value={localSettings.toneTemplate}
@@ -230,38 +253,10 @@ export function SettingsPopover({
             </Select>
           </div>
 
-          {/* Script Template */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Script Template:
-            </label>
-            <p className="text-xs text-muted-foreground text-center">
-              {localSettings.customScript && localSettings.customScript.trim().length > 0
-                ? "(Ignored when using custom script)"
-                : "Structure for AI-generated scripts"}
-            </p>
-            <Select
-              value={localSettings.scriptTemplate}
-              onValueChange={(value) => updateSetting("scriptTemplate", value)}
-              disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a template" />
-              </SelectTrigger>
-              <SelectContent>
-                {scriptTemplateOptions.map((template) => (
-                  <SelectItem key={template.value} value={template.value}>
-                    {template.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Image Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Image Template:
+              Image Style:
             </label>
             <p className="text-xs text-muted-foreground text-center">
               Visual style for generated images

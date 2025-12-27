@@ -1,45 +1,67 @@
-import type { ScriptTemplate, ToneTemplate, ImageTemplate } from "@/components/ConfigModal";
+import type { ScriptTemplate, FormatTemplate, ImageTemplate } from "@/components/ConfigModal";
 
-// ===== TONE TEMPLATES =====
+// ===== FORMAT TEMPLATES =====
+// These define the structure and format of the script
+
+const formatListicle = `Structure the content as a numbered list format. Present information as distinct, digestible points. Each item should be self-contained but flow naturally to the next. Use clear transitions between list items. Good for "Top 10" or "5 Things You Didn't Know" style content.`;
+
+const formatDocumentary = `Traditional documentary structure with clear narrative arc. Begin with context and background, build through key events and developments, reach a climax or turning point, then resolve with aftermath and legacy. Include expert-style commentary and analysis. Balanced, objective tone.`;
+
+const formatNarrative = `Story-driven approach that follows characters through events. Use narrative techniques like foreshadowing, tension building, and dramatic irony. Focus on human experiences and emotions. Create scenes with sensory details. Let the story unfold chronologically with occasional flashbacks for context.`;
+
+const formatPOV = `POV (Point of View) Layout for immersive first-person historical experience:
+
+THE HOOK (10 min): "Where are you?" - Sensory immersion. The smells, the sounds, the immediate surroundings. No names/dates yet—just the feeling of being there.
+
+THE INTRO (10 min): "When are you?" - Zoom out. The political era, the year, the technology. Anchor the viewer in time and place.
+
+MORNING (20 min): Task 1: Survival - The first priority of the day (getting water, opening the shop, preparing for battle). The "physicality" of history.
+
+MID-DAY (25 min): Task 2: The Core - The main work or the "Big Event" of the day. This is the heaviest historical/data section.
+
+AFTERNOON (25 min): Task 3: The Crisis - What goes wrong? The friction of the era (a tax collector arrives, a storm hits, news of war).
+
+EVENING (15 min): Winding Down - Coming home, the family dynamic, the food, the lack of light. The "Quiet History."
+
+NIGHT (10 min): Going to Bed - Reflection. The fears for tomorrow. The "Big Picture" legacy of this person's life.
+
+CLOSING (5 min): The Sources - Further reading for those who want to know more about this specific life.`;
+
+export const defaultFormatTemplates: FormatTemplate[] = [
+  { id: "format-a", template: formatListicle, name: "Listicle" },
+  { id: "format-b", template: formatDocumentary, name: "Documentary" },
+  { id: "format-c", template: formatNarrative, name: "Narrative" },
+  { id: "format-d", template: formatPOV, name: "POV" },
+];
+
+// ===== SCRIPT TONE TEMPLATES =====
 // These define the voice, mood, and emotional quality of the narration
 
-const toneA = `Dreamy and meditative. Create a sense of floating through time with contemplative, reflective narration. The tone should be reverent without being stiff, emotionally restrained but deeply felt. Ideal for sleep-friendly content where viewers drift peacefully through history.`;
+const toneImmersive = `Immersive and transportive. Use vivid sensory details to place the viewer directly into historical moments. Present tense for key scenes. Rich descriptions of sights, sounds, smells, and textures. Create the feeling of time travel. Let viewers experience history rather than just learn about it.`;
 
-const toneB = `Curious and wonder-filled. Emphasize mysteries, gaps, and uncertainties in history. Present competing theories honestly and acknowledge what we don't know. The tone celebrates discovery and invites reflection on the nature of historical knowledge.`;
+const toneSerious = `Serious and authoritative. Academic but accessible tone. Present facts with gravitas and respect for the subject matter. Measured pacing. Acknowledge complexity and nuance. Suitable for weighty historical topics. Dignified treatment of tragedy and triumph alike.`;
 
-const toneC = `Warm and conversational. Speak like telling a bedtime story to a friend - intimate, gentle, with dry humor woven throughout. Educational ASMR style that's informative but calming. Not dramatic or sensational.`;
+const toneFunny = `Light and entertaining with humor woven throughout. Find the amusing absurdities in history. Use modern comparisons and relatable observations. Conversational and irreverent but still informative. Make history fun and accessible. Avoid being disrespectful to serious events.`;
 
-const toneD = `Authoritative and comprehensive. Speak with confidence based on research and evidence. Balance expertise with approachability. Measured pacing that allows ideas to breathe. Think "ultimate guide" energy.`;
-
-const toneE = `Immersive storyteller. Use the rhythms and techniques of narrative prose. Create atmosphere and mood through word choice. Place viewers inside historical moments using present tense for key scenes.`;
-
-export const defaultToneTemplates: ToneTemplate[] = [
-  { id: "tone-a", template: toneA, name: "Dreamy & Meditative" },
-  { id: "tone-b", template: toneB, name: "Curious & Wonder-filled" },
-  { id: "tone-c", template: toneC, name: "Warm & Conversational" },
-  { id: "tone-d", template: toneD, name: "Authoritative & Comprehensive" },
-  { id: "tone-e", template: toneE, name: "Immersive Storyteller" },
+export const defaultToneTemplates: FormatTemplate[] = [
+  { id: "tone-a", template: toneImmersive, name: "Immersive" },
+  { id: "tone-b", template: toneSerious, name: "Serious" },
+  { id: "tone-c", template: toneFunny, name: "Funny" },
 ];
 
 // ===== IMAGE TEMPLATES =====
 // These define the visual style for generated images
 
-const imageA = `Warm classical oil-painting style, inspired by Dutch Golden Age. Soft, intimate chiaroscuro with lifted shadows and glowing midtones, avoiding harsh contrast. Rich, earthy palette of warm reds, ochres, umbers, and deep teal-blues. Painterly brushwork with visible texture and gentle edges. Quiet, reverent, contemplative mood. Old-world, timeless atmosphere with a sense of stillness, intimacy, and human warmth. Romantic historical painting sensibility with softened realism. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no gouache or watercolor, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism, no high saturation`;
+const imageDutch = `Warm classical oil-painting style, inspired by Dutch Golden Age masters like Vermeer and Rembrandt. Soft, intimate chiaroscuro with lifted shadows and glowing midtones, avoiding harsh contrast. Rich, earthy palette of warm reds, ochres, umbers, and deep teal-blues. Painterly brushwork with visible texture and gentle edges. Quiet, reverent, contemplative mood. Old-world, timeless atmosphere with a sense of stillness, intimacy, and human warmth. Romantic historical painting sensibility with softened realism. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content`;
 
-const imageB = `Cinematic documentary style with dramatic natural lighting. Atmospheric, moody compositions inspired by historical epics. Deep shadows and warm highlights suggesting torchlight or golden hour. Slightly desaturated colors with emphasis on earth tones and muted blues. Photorealistic textures with film grain. Epic scale balanced with intimate human moments. No violence, no horror, no threatening mood, no nudity, no sexualized content`;
+const imageItalianRenaissance = `Italian Renaissance painting style inspired by masters like Raphael, Botticelli, and Leonardo da Vinci. Balanced classical compositions with idealized figures. Soft sfumato technique with subtle gradations. Rich but harmonious colors - ultramarine blues, terra cotta reds, gold accents. Architectural elements and perspectival depth. Serene, dignified expressions. Divine light and ethereal atmosphere. Classical beauty and mathematical proportion. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content`;
 
-const imageC = `Illustrated manuscript style inspired by medieval illuminated texts. Decorative borders and ornate details. Rich jewel tones - deep blues, ruby reds, forest greens, gold accents. Flat perspective with stylized figures. Intricate patterns and symbolic imagery. Elegant and refined with a sense of sacred history. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
-
-const imageD = `Atmospheric watercolor with soft edges and dreamy washes. Muted pastel palette with occasional deeper accent colors. Loose, impressionistic brushwork that suggests rather than defines. Light and airy feeling with plenty of white space. Gentle and calming visual style. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
-
-const imageE = `Dramatic Renaissance painting style inspired by Caravaggio and Rembrandt. Strong chiaroscuro with deep blacks and luminous highlights. Rich, saturated colors in fabric and materials. Highly detailed faces and hands. Theatrical lighting that creates depth and drama. Classical composition with careful attention to gesture and expression. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
+const imageMedieval = `Medieval illuminated manuscript style with rich jewel tones and gold leaf accents. Flat, stylized figures with expressive gestures. Decorative borders with intricate patterns, vines, and symbolic imagery. Deep blues, ruby reds, forest greens, and burnished gold. Gothic architectural elements and heraldic motifs. Sacred and mystical atmosphere. Ornate details and symbolic storytelling. The aesthetic of Books of Hours and medieval chronicles. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content`;
 
 export const defaultImageTemplates: ImageTemplate[] = [
-  { id: "image-a", template: imageA, name: "Dutch Golden Age" },
-  { id: "image-b", template: imageB, name: "Cinematic Documentary" },
-  { id: "image-c", template: imageC, name: "Illuminated Manuscript" },
-  { id: "image-d", template: imageD, name: "Dreamy Watercolor" },
-  { id: "image-e", template: imageE, name: "Renaissance Drama" },
+  { id: "image-a", template: imageDutch, name: "Dutch Golden Age" },
+  { id: "image-b", template: imageItalianRenaissance, name: "Italian Renaissance" },
+  { id: "image-c", template: imageMedieval, name: "Medieval Style" },
 ];
 
 // ===== SCRIPT TEMPLATES =====

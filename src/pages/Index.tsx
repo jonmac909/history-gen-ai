@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
-import { ConfigModal, type ScriptTemplate, type ToneTemplate, type ImageTemplate, type CartesiaVoice } from "@/components/ConfigModal";
+import { ConfigModal, type ScriptTemplate, type FormatTemplate, type ImageTemplate, type CartesiaVoice } from "@/components/ConfigModal";
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { AudioPreviewModal } from "@/components/AudioPreviewModal";
@@ -35,7 +35,7 @@ import {
   type ImagePromptWithTiming,
   type AudioSegment,
 } from "@/lib/api";
-import { defaultTemplates, defaultToneTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
+import { defaultTemplates, defaultFormatTemplates, defaultToneTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
 import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, updateProjectInHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -51,8 +51,8 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     projectTitle: "",
     fullAutomation: false,
+    formatTemplate: "format-a",
     toneTemplate: "tone-a",
-    scriptTemplate: "template-a",
     imageTemplate: "image-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
@@ -62,7 +62,8 @@ const Index = () => {
     quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
-  const [toneTemplates, setToneTemplates] = useState<ToneTemplate[]>(defaultToneTemplates);
+  const [formatTemplates, setFormatTemplates] = useState<FormatTemplate[]>(defaultFormatTemplates);
+  const [toneTemplates, setToneTemplates] = useState<FormatTemplate[]>(defaultToneTemplates);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(defaultImageTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
@@ -260,12 +261,12 @@ const Index = () => {
     setInputValue("");
   };
 
-  const handleSaveToneTemplates = (templates: ToneTemplate[]) => {
-    setToneTemplates(templates);
+  const handleSaveFormatTemplates = (templates: FormatTemplate[]) => {
+    setFormatTemplates(templates);
   };
 
-  const handleSaveScriptTemplates = (templates: ScriptTemplate[]) => {
-    setScriptTemplates(templates);
+  const handleSaveToneTemplates = (templates: FormatTemplate[]) => {
+    setToneTemplates(templates);
   };
 
   const handleSaveImageTemplates = (templates: ImageTemplate[]) => {
@@ -1391,10 +1392,10 @@ const Index = () => {
           <div className="flex items-center gap-2">
             <ProjectsDrawer onOpenProject={handleOpenProject} />
             <ConfigModal
+              formatTemplates={formatTemplates}
+              onSaveFormatTemplates={handleSaveFormatTemplates}
               toneTemplates={toneTemplates}
               onSaveToneTemplates={handleSaveToneTemplates}
-              scriptTemplates={scriptTemplates}
-              onSaveScriptTemplates={handleSaveScriptTemplates}
               imageTemplates={imageTemplates}
               onSaveImageTemplates={handleSaveImageTemplates}
               cartesiaVoices={cartesiaVoices}
@@ -1532,8 +1533,8 @@ const Index = () => {
                       <SettingsPopover
                         settings={settings}
                         onSettingsChange={setSettings}
+                        formatTemplates={formatTemplates}
                         toneTemplates={toneTemplates}
-                        scriptTemplates={scriptTemplates}
                         imageTemplates={imageTemplates}
                       />
                     </div>
@@ -1574,8 +1575,8 @@ const Index = () => {
                     <SettingsPopover
                       settings={settings}
                       onSettingsChange={setSettings}
+                      formatTemplates={formatTemplates}
                       toneTemplates={toneTemplates}
-                      scriptTemplates={scriptTemplates}
                       imageTemplates={imageTemplates}
                     />
 
