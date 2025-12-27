@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
-import { ConfigModal, type ScriptTemplate, type CartesiaVoice } from "@/components/ConfigModal";
+import { ConfigModal, type ScriptTemplate, type ToneTemplate, type ImageTemplate, type CartesiaVoice } from "@/components/ConfigModal";
 import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults";
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { AudioPreviewModal } from "@/components/AudioPreviewModal";
@@ -35,7 +35,7 @@ import {
   type ImagePromptWithTiming,
   type AudioSegment,
 } from "@/lib/api";
-import { defaultTemplates } from "@/data/defaultTemplates";
+import { defaultTemplates, defaultToneTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
 import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, updateProjectInHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -51,7 +51,9 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>({
     projectTitle: "",
     fullAutomation: false,
+    toneTemplate: "tone-a",
     scriptTemplate: "template-a",
+    imageTemplate: "image-a",
     aiModel: "claude-sonnet-4-5",
     voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
     speed: 1,
@@ -60,9 +62,16 @@ const Index = () => {
     quality: "basic",
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
+  const [toneTemplates, setToneTemplates] = useState<ToneTemplate[]>(defaultToneTemplates);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
+  const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(defaultImageTemplates);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
-  const [imageStylePrompt, setImageStylePrompt] = useState("Warm classical oil-painting style, inspired by Dutch Golden Age.. Soft, intimate chiaroscuro with lifted shadows and glowing midtones, avoiding harsh contrast. Rich, earthy palette of warm reds, ochres, umbers, and deep teal-blues. Painterly brushwork with visible texture and gentle edges. Quiet, reverent, contemplative mood. Old-world, timeless atmosphere with a sense of stillness, intimacy, and human warmth. Romantic historical painting sensibility with softened realism. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no gouache or watercolor, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism, no high saturation");
+
+  // Get the selected image template content for image generation
+  const getSelectedImageStyle = () => {
+    const selected = imageTemplates.find(t => t.id === settings.imageTemplate);
+    return selected?.template || imageTemplates[0]?.template || "";
+  };
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | undefined>();
@@ -148,7 +157,7 @@ const Index = () => {
     if (settings.fullAutomation && viewState === "review-prompts" && imagePrompts.length > 0) {
       console.log("[Full Automation] Auto-confirming image prompts...");
       const timer = setTimeout(() => {
-        handlePromptsConfirm(imagePrompts, imageStylePrompt);
+        handlePromptsConfirm(imagePrompts, getSelectedImageStyle());
       }, 500);
       return () => clearTimeout(timer);
     }
@@ -251,16 +260,20 @@ const Index = () => {
     setInputValue("");
   };
 
-  const handleSaveTemplates = (templates: ScriptTemplate[]) => {
+  const handleSaveToneTemplates = (templates: ToneTemplate[]) => {
+    setToneTemplates(templates);
+  };
+
+  const handleSaveScriptTemplates = (templates: ScriptTemplate[]) => {
     setScriptTemplates(templates);
+  };
+
+  const handleSaveImageTemplates = (templates: ImageTemplate[]) => {
+    setImageTemplates(templates);
   };
 
   const handleSaveVoices = (voices: CartesiaVoice[]) => {
     setCartesiaVoices(voices);
-  };
-
-  const handleSaveImageStylePrompt = (prompt: string) => {
-    setImageStylePrompt(prompt);
   };
 
   const updateStep = (stepId: string, status: "pending" | "active" | "completed", sublabel?: string) => {
@@ -674,7 +687,7 @@ const Index = () => {
         scriptForPrompts,
         srt,
         settings.imageCount,
-        imageStylePrompt,
+        getSelectedImageStyle(),
         pendingAudioDuration,
         (progress, message) => {
           updateStep("prompts", "active", message);
@@ -709,10 +722,7 @@ const Index = () => {
   // Step 5: After prompts reviewed/edited, generate images
   const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[], editedStylePrompt: string) => {
     setImagePrompts(editedPrompts);
-    // Save the edited style prompt for future use
-    if (editedStylePrompt !== imageStylePrompt) {
-      setImageStylePrompt(editedStylePrompt);
-    }
+    // editedStylePrompt is used directly for this generation (not saved back to template)
 
     const steps: GenerationStep[] = [
       { id: "images", label: "Generating Images", status: "pending" },
@@ -1142,7 +1152,7 @@ const Index = () => {
     console.log("Script length:", scriptText.length);
     console.log("Captions length:", captionsText.length);
     console.log("Image count:", settings.imageCount);
-    console.log("Style prompt length:", imageStylePrompt.length);
+    console.log("Style prompt length:", getSelectedImageStyle().length);
     console.log("Audio file:", uploadedAudioFileForImages?.name);
 
     if (!scriptText) {
@@ -1214,7 +1224,7 @@ const Index = () => {
         scriptText,
         captionsText,
         settings.imageCount,
-        imageStylePrompt,
+        getSelectedImageStyle(),
         audioDuration
       );
 
@@ -1381,12 +1391,14 @@ const Index = () => {
           <div className="flex items-center gap-2">
             <ProjectsDrawer onOpenProject={handleOpenProject} />
             <ConfigModal
+              toneTemplates={toneTemplates}
+              onSaveToneTemplates={handleSaveToneTemplates}
               scriptTemplates={scriptTemplates}
-              onSaveTemplates={handleSaveTemplates}
+              onSaveScriptTemplates={handleSaveScriptTemplates}
+              imageTemplates={imageTemplates}
+              onSaveImageTemplates={handleSaveImageTemplates}
               cartesiaVoices={cartesiaVoices}
               onSaveVoices={handleSaveVoices}
-              imageStylePrompt={imageStylePrompt}
-              onSaveImageStylePrompt={handleSaveImageStylePrompt}
             />
           </div>
         </div>
@@ -1520,7 +1532,9 @@ const Index = () => {
                       <SettingsPopover
                         settings={settings}
                         onSettingsChange={setSettings}
+                        toneTemplates={toneTemplates}
                         scriptTemplates={scriptTemplates}
+                        imageTemplates={imageTemplates}
                       />
                     </div>
                     <Button
@@ -1560,7 +1574,9 @@ const Index = () => {
                     <SettingsPopover
                       settings={settings}
                       onSettingsChange={setSettings}
+                      toneTemplates={toneTemplates}
                       scriptTemplates={scriptTemplates}
+                      imageTemplates={imageTemplates}
                     />
 
                     <Button
@@ -1792,7 +1808,7 @@ const Index = () => {
       <ImagePromptsPreviewModal
         isOpen={viewState === "review-prompts"}
         prompts={imagePrompts}
-        stylePrompt={imageStylePrompt}
+        stylePrompt={getSelectedImageStyle()}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToCaptions}

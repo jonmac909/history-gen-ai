@@ -753,7 +753,7 @@ export function ProjectResults({
                     {renderedVideoUrl ? 'Video' : 'Render Video'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {renderedVideoUrl ? 'MP4 video with embers effect' : 'Generate MP4 video'}
+                    {renderedVideoUrl ? 'MP4 video' : 'Generate MP4 video'}
                   </p>
                 </div>
               </div>

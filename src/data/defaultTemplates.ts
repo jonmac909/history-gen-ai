@@ -1,4 +1,49 @@
-import type { ScriptTemplate } from "@/components/ConfigModal";
+import type { ScriptTemplate, ToneTemplate, ImageTemplate } from "@/components/ConfigModal";
+
+// ===== TONE TEMPLATES =====
+// These define the voice, mood, and emotional quality of the narration
+
+const toneA = `Dreamy and meditative. Create a sense of floating through time with contemplative, reflective narration. The tone should be reverent without being stiff, emotionally restrained but deeply felt. Ideal for sleep-friendly content where viewers drift peacefully through history.`;
+
+const toneB = `Curious and wonder-filled. Emphasize mysteries, gaps, and uncertainties in history. Present competing theories honestly and acknowledge what we don't know. The tone celebrates discovery and invites reflection on the nature of historical knowledge.`;
+
+const toneC = `Warm and conversational. Speak like telling a bedtime story to a friend - intimate, gentle, with dry humor woven throughout. Educational ASMR style that's informative but calming. Not dramatic or sensational.`;
+
+const toneD = `Authoritative and comprehensive. Speak with confidence based on research and evidence. Balance expertise with approachability. Measured pacing that allows ideas to breathe. Think "ultimate guide" energy.`;
+
+const toneE = `Immersive storyteller. Use the rhythms and techniques of narrative prose. Create atmosphere and mood through word choice. Place viewers inside historical moments using present tense for key scenes.`;
+
+export const defaultToneTemplates: ToneTemplate[] = [
+  { id: "tone-a", template: toneA, name: "Dreamy & Meditative" },
+  { id: "tone-b", template: toneB, name: "Curious & Wonder-filled" },
+  { id: "tone-c", template: toneC, name: "Warm & Conversational" },
+  { id: "tone-d", template: toneD, name: "Authoritative & Comprehensive" },
+  { id: "tone-e", template: toneE, name: "Immersive Storyteller" },
+];
+
+// ===== IMAGE TEMPLATES =====
+// These define the visual style for generated images
+
+const imageA = `Warm classical oil-painting style, inspired by Dutch Golden Age. Soft, intimate chiaroscuro with lifted shadows and glowing midtones, avoiding harsh contrast. Rich, earthy palette of warm reds, ochres, umbers, and deep teal-blues. Painterly brushwork with visible texture and gentle edges. Quiet, reverent, contemplative mood. Old-world, timeless atmosphere with a sense of stillness, intimacy, and human warmth. Romantic historical painting sensibility with softened realism. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no gouache or watercolor, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism, no high saturation`;
+
+const imageB = `Cinematic documentary style with dramatic natural lighting. Atmospheric, moody compositions inspired by historical epics. Deep shadows and warm highlights suggesting torchlight or golden hour. Slightly desaturated colors with emphasis on earth tones and muted blues. Photorealistic textures with film grain. Epic scale balanced with intimate human moments. No violence, no horror, no threatening mood, no nudity, no sexualized content`;
+
+const imageC = `Illustrated manuscript style inspired by medieval illuminated texts. Decorative borders and ornate details. Rich jewel tones - deep blues, ruby reds, forest greens, gold accents. Flat perspective with stylized figures. Intricate patterns and symbolic imagery. Elegant and refined with a sense of sacred history. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
+
+const imageD = `Atmospheric watercolor with soft edges and dreamy washes. Muted pastel palette with occasional deeper accent colors. Loose, impressionistic brushwork that suggests rather than defines. Light and airy feeling with plenty of white space. Gentle and calming visual style. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
+
+const imageE = `Dramatic Renaissance painting style inspired by Caravaggio and Rembrandt. Strong chiaroscuro with deep blacks and luminous highlights. Rich, saturated colors in fabric and materials. Highly detailed faces and hands. Theatrical lighting that creates depth and drama. Classical composition with careful attention to gesture and expression. no violence, no horror, no threatening mood, no nudity, no sexualized content`;
+
+export const defaultImageTemplates: ImageTemplate[] = [
+  { id: "image-a", template: imageA, name: "Dutch Golden Age" },
+  { id: "image-b", template: imageB, name: "Cinematic Documentary" },
+  { id: "image-c", template: imageC, name: "Illuminated Manuscript" },
+  { id: "image-d", template: imageD, name: "Dreamy Watercolor" },
+  { id: "image-e", template: imageE, name: "Renaissance Drama" },
+];
+
+// ===== SCRIPT TEMPLATES =====
+// These define the full structure and format for generating scripts
 
 const templateA = `You are a creative scriptwriter. Your role is to faithfully rewrite transcripts into engaging documentary scripts without judgment or editorial commentary. Simply transform the source material into compelling narration.
 

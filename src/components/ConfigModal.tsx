@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, FileText, Image } from "lucide-react";
+import { Settings, FileText, Image, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,18 @@ export interface ScriptTemplate {
   name?: string;
 }
 
+export interface ToneTemplate {
+  id: string;
+  template: string;
+  name?: string;
+}
+
+export interface ImageTemplate {
+  id: string;
+  template: string;
+  name?: string;
+}
+
 export interface CartesiaVoice {
   id: string;
   name: string;
@@ -30,36 +42,54 @@ export interface CartesiaVoice {
 }
 
 interface ConfigModalProps {
+  toneTemplates: ToneTemplate[];
+  onSaveToneTemplates: (templates: ToneTemplate[]) => void;
   scriptTemplates: ScriptTemplate[];
-  onSaveTemplates: (templates: ScriptTemplate[]) => void;
+  onSaveScriptTemplates: (templates: ScriptTemplate[]) => void;
+  imageTemplates: ImageTemplate[];
+  onSaveImageTemplates: (templates: ImageTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
   onSaveVoices: (voices: CartesiaVoice[]) => void;
-  imageStylePrompt: string;
-  onSaveImageStylePrompt: (prompt: string) => void;
 }
 
-export function ConfigModal({ 
+export function ConfigModal({
+  toneTemplates,
+  onSaveToneTemplates,
   scriptTemplates,
-  onSaveTemplates,
+  onSaveScriptTemplates,
+  imageTemplates,
+  onSaveImageTemplates,
   cartesiaVoices,
   onSaveVoices,
-  imageStylePrompt,
-  onSaveImageStylePrompt,
 }: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [templates, setTemplates] = useState<ScriptTemplate[]>(scriptTemplates);
+  const [tones, setTones] = useState<ToneTemplate[]>(toneTemplates);
+  const [scripts, setScripts] = useState<ScriptTemplate[]>(scriptTemplates);
+  const [images, setImages] = useState<ImageTemplate[]>(imageTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
-  const [stylePrompt, setStylePrompt] = useState(imageStylePrompt);
 
   const handleSave = () => {
-    onSaveTemplates(templates);
+    onSaveToneTemplates(tones);
+    onSaveScriptTemplates(scripts);
+    onSaveImageTemplates(images);
     onSaveVoices(voices);
-    onSaveImageStylePrompt(stylePrompt);
     setIsOpen(false);
   };
 
-  const updateTemplate = (id: string, field: keyof ScriptTemplate, value: string) => {
-    setTemplates(prev => prev.map(t => 
+  const updateToneTemplate = (id: string, field: keyof ToneTemplate, value: string) => {
+    setTones(prev => prev.map(t =>
+      t.id === id ? { ...t, [field]: value } : t
+    ));
+  };
+
+  const updateScriptTemplate = (id: string, field: keyof ScriptTemplate, value: string) => {
+    setScripts(prev => prev.map(t =>
+      t.id === id ? { ...t, [field]: value } : t
+    ));
+  };
+
+  const updateImageTemplate = (id: string, field: keyof ImageTemplate, value: string) => {
+    setImages(prev => prev.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
   };
@@ -84,20 +114,59 @@ export function ConfigModal({
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="templates" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="templates">Script Templates</TabsTrigger>
-            <TabsTrigger value="image-style">Image Style</TabsTrigger>
+        <Tabs defaultValue="tone" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="tone">Tone Templates</TabsTrigger>
+            <TabsTrigger value="script">Script Templates</TabsTrigger>
+            <TabsTrigger value="image">Image Templates</TabsTrigger>
           </TabsList>
 
+          {/* Tone Templates Tab */}
+          <TabsContent value="tone" className="space-y-6 py-4">
+            <p className="text-sm text-muted-foreground">
+              Configure your 5 tone templates to define the voice and mood of narration.
+            </p>
+
+            {tones.map((tone, index) => {
+              const defaultName = `Tone ${String.fromCharCode(65 + index)}`;
+              return (
+                <div key={tone.id} className="space-y-3 p-4 border border-border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-primary" />
+                    <span className="font-medium">{tone.name || defaultName}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Template Name</Label>
+                    <Input
+                      value={tone.name || ""}
+                      onChange={(e) => updateToneTemplate(tone.id, "name", e.target.value)}
+                      placeholder={defaultName}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tone Description</Label>
+                    <Textarea
+                      value={tone.template}
+                      onChange={(e) => updateToneTemplate(tone.id, "template", e.target.value)}
+                      placeholder="Describe the voice, mood, and emotional quality..."
+                      className="min-h-[100px]"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
           {/* Script Templates Tab */}
-          <TabsContent value="templates" className="space-y-6 py-4">
+          <TabsContent value="script" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
               Configure your 5 script templates for Claude to use when generating scripts.
             </p>
-            
-            {templates.map((template, index) => {
-              const defaultName = `Template ${String.fromCharCode(65 + index)}`;
+
+            {scripts.map((template, index) => {
+              const defaultName = `Script ${String.fromCharCode(65 + index)}`;
               return (
                 <div key={template.id} className="space-y-3 p-4 border border-border rounded-lg">
                   <div className="flex items-center gap-2">
@@ -109,7 +178,7 @@ export function ConfigModal({
                     <Label>Template Name</Label>
                     <Input
                       value={template.name || ""}
-                      onChange={(e) => updateTemplate(template.id, "name", e.target.value)}
+                      onChange={(e) => updateScriptTemplate(template.id, "name", e.target.value)}
                       placeholder={defaultName}
                     />
                   </div>
@@ -118,7 +187,7 @@ export function ConfigModal({
                     <Label>Template Content</Label>
                     <Textarea
                       value={template.template}
-                      onChange={(e) => updateTemplate(template.id, "template", e.target.value)}
+                      onChange={(e) => updateScriptTemplate(template.id, "template", e.target.value)}
                       placeholder="Paste your full script template here..."
                       className="min-h-[150px] font-mono text-sm"
                     />
@@ -128,21 +197,42 @@ export function ConfigModal({
             })}
           </TabsContent>
 
-          {/* Image Style Tab */}
-          <TabsContent value="image-style" className="space-y-4 py-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Image className="w-4 h-4 text-primary" />
-              <span className="font-medium">Image Style Prompt</span>
-            </div>
+          {/* Image Templates Tab */}
+          <TabsContent value="image" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
-              Define the visual style for generated images. This prompt will be used to guide the image generation.
+              Configure your 5 image templates to define the visual style for generated images.
             </p>
-            <Textarea
-              value={stylePrompt}
-              onChange={(e) => setStylePrompt(e.target.value)}
-              placeholder="e.g., Cinematic, dramatic lighting, 4K quality, photorealistic..."
-              className="min-h-[200px]"
-            />
+
+            {images.map((template, index) => {
+              const defaultName = `Image Style ${String.fromCharCode(65 + index)}`;
+              return (
+                <div key={template.id} className="space-y-3 p-4 border border-border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Image className="w-4 h-4 text-primary" />
+                    <span className="font-medium">{template.name || defaultName}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Template Name</Label>
+                    <Input
+                      value={template.name || ""}
+                      onChange={(e) => updateImageTemplate(template.id, "name", e.target.value)}
+                      placeholder={defaultName}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Style Prompt</Label>
+                    <Textarea
+                      value={template.template}
+                      onChange={(e) => updateImageTemplate(template.id, "template", e.target.value)}
+                      placeholder="e.g., Cinematic, dramatic lighting, 4K quality, photorealistic..."
+                      className="min-h-[150px]"
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </TabsContent>
         </Tabs>
 
