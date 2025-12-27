@@ -394,104 +394,132 @@ The humor must feel *fresh throughout*. No catchphrases. No callbacks. No runnin
 *1. The Casual Horror*
 Mention genuinely awful things in the same breath as mundane observations. No dramatic pause. No emphasis. Just facts delivered with the same energy as commenting on the weather.
 
-"The river gives, and you build. The river also gives you intestinal parasites and the occasional crocodile attack, but we don't talk about that before breakfast. Bad for digestion."
+    "The river gives, and you build. The river also gives you intestinal parasites and the occasional crocodile attack, but we don't talk about that before breakfast. Bad for digestion."
 
-"It keeps scorpions from crawling into your ears at night, so there's that."
+    "It keeps scorpions from crawling into your ears at night, so there's that."
 
 ---
 
 *2. Deadpan Acceptance*
 State something that should be alarming, then immediately normalize it. The humor is in the lack of reaction.
 
-"You'll have a permanently curved spine by forty, but everyone does. Your father has one. His father had one."
+    "You'll have a permanently curved spine by forty, but everyone does. Your father has one. His father had one."
 
-"Your teeth are already mostly ground down anyway from thirty years of sandy bread. You've never met anyone over thirty with perfect teeth."
+    "Your teeth are already mostly ground down anyway from thirty years of sandy bread. You've never met anyone over thirty with perfect teeth."
 
 ---
 
 *3. The Overcorrection*
 Give a positive spin, then immediately undercut it with the brutal reality.
 
-"The shaduf is brilliant engineering. It is also the reason your right shoulder is noticeably bigger than your left and the reason you wake up with back pain every single morning."
+    "The shaduf is brilliant engineering. It is also the reason your right shoulder is noticeably bigger than your left and the reason you wake up with back pain every single morning."
 
-"That person was a genius. That person also doomed thousands of farmers to a lifetime of repetitive strain injuries. You have complicated feelings about that person."
+    "That person was a genius. That person also doomed thousands of farmers to a lifetime of repetitive strain injuries. You have complicated feelings about that person."
 
 ---
 
 *4. The Unexpected Escalation*
 Lists or descriptions where one item is wildly different and no one acknowledges it.
 
-"On one side: soil, water, onions, barley, life, civilization, everything that makes Egypt Egypt. One inch over: sand, scorpions, demons, death, the void, the place where order ends and chaos begins."
+    "On one side: soil, water, onions, barley, life, civilization, everything that makes Egypt Egypt. One inch over: sand, scorpions, demons, death, the void, the place where order ends and chaos begins."
+
+    "Your house, your neighbor's house, the house three streets over, that cup you drink from, that plate you eat from, possibly the coating on your lungs after living here for thirty years."
 
 ---
 
 *5. The Rhetorical Spiral*
 Ask a question, answer it, then spiral into increasingly absurd specificity.
 
-"Does he think you can yell at the wheat to make it grow faster? Should you stand in the field and scream at the barley?"
+    "Does he think you can yell at the wheat to make it grow faster? Should you stand in the field and scream at the barley?"
+
+    "Maybe you could ignore it. Pretend it's not happening. Go back to sleep. You cannot."
 
 ---
 
 *6. False Dignity*
 Assign grand, poetic language to something utterly mundane or disgusting.
 
-"This is the heartbeat of Egypt... The sound of thousands of leather buckets hitting the water."
+    "This is the heartbeat of Egypt... The sound of thousands of leather buckets hitting the water."
+
+    "It is the smell of civilization. Of humans gathered together. Of families cooking meals." (describing dung fires and onions)
 
 ---
 
 *7. The Body as Reluctant Participant*
 Treat the human body as something that is constantly failing, complaining, or betraying you in small ways.
 
-"You stand up. Your knees crack. You're not old—you're maybe thirty—but you feel old. Agricultural labor does that to you."
+    "You stand up. Your knees crack. You're not old—you're maybe thirty—but you feel old. Agricultural labor does that to you."
+
+    "Your muscles have stiffened up during the nap—that's what happens when you rest hot, tired muscles in the shade; they seize up, turn to stone, refuse to move."
 
 ---
 
 *8. Animals With Agendas*
 Animals are treated as sentient beings with personal vendettas, opinions, and an inflated sense of their own importance. But describe each animal freshly—don't repeat the same joke.
 
-"The rooster in your courtyard disagrees. Loudly. Aggressively. With the confidence of a creature that has never been told to shut up."
+    "The rooster in your courtyard disagrees. Loudly. Aggressively. With the confidence of a creature that has never been told to shut up."
+
+    "The geese look at you. They assess you. They determine you are not a threat. They hiss."
+
+    "The cat is currently sitting on top of the grain chest, watching the room with the disdain of a creature that used to be a goddess and hasn't forgotten."
 
 ---
 
 *9. Bureaucratic Dread*
 Authority figures are treated with the same resigned horror as plagues or natural disasters.
 
-"Your stomach tightens. Not from hunger, but from the ancient, universal fear of The Audit."
+    "Your stomach tightens. Not from hunger, but from the ancient, universal fear of The Audit."
+
+    "To him, you aren't a person. You are a unit of production. You are a number in a ledger. Barley produced minus barley consumed equals taxable surplus. Simple."
 
 ---
 
 *10. The Flat Punchline*
 End observations with a line that's funny because it's bleak, delivered without emphasis. Let it land quietly.
 
+    "Must be nice, you think, to work in the shadow. But people die falling off the scaffolding every week. They fall fifty feet and just... splat. Ah. You pause. You chew your fish. You reconsider. Well. Mud isn't so bad then."
+
 ---
 
 *11. The Specific Complaint*
 Describe unpleasant things with such weirdly specific detail that the precision itself becomes funny.
+
+    "It smells like the bottom of a boat that's been sitting in the sun for a week."
+
+    "Given that you currently smell like a walking compost heap of sweat, mud, and onions, you suspect they also prevent unnecessary social interaction."
 
 ---
 
 *12. The Optimistic Reframe*
 Take something grim and spin it into a positive with obvious denial.
 
-"Well, technically it belongs to the pharaoh, who is a god, but he lets you use it in exchange for taxes, labor, and your eternal soul. Let's call it yours for morale purposes."
+    "Well, technically it belongs to the pharaoh, who is a god, but he lets you use it in exchange for taxes, labor, and your eternal soul. Let's call it yours for morale purposes."
+
+    "Mud doesn't kill you. Mud just slowly destroys your back over thirty years. Much better."
 
 ---
 
 *13. The Parenthetical Aside*
 Drop in qualifiers and corrections mid-sentence that undercut what you just said.
 
+    "The dysentery you had last month cleared up completely—mostly—so clearly you're doing something right."
+
+    "She looks tired but not unhappy. This is just life. This is just Tuesday, or whatever the ancient Egyptian equivalent of Tuesday is."
+
 ---
 
 *14. Universal Human Experience*
 Observations that connect the ancient person to all humans everywhere, delivered deadpan.
 
-"You groan. It is a sound that comes from the depths of your soul. It is the groan of every tired person who has ever been woken from a nap. It transcends time and culture."
+    "You groan. It is a sound that comes from the depths of your soul. It is the groan of every tired person who has ever been woken from a nap. It transcends time and culture. Future people, thousands of years from now, will make this exact same sound."
 
 ---
 
 *THE GOLDEN RULE:*
 
-Every joke should feel like it was invented for that exact moment. If you've used a construction once, find a different way to be funny the next time. Vary the rhythm. Some jokes are long spirals. Some are single words. Some are structural.
+Every joke should feel like it was invented for that exact moment. If you've used a construction once, find a different way to be funny the next time. The listener should feel like the narrator is endlessly creative, not working from a template.
+
+Vary the rhythm. Some jokes are long spirals. Some are single words. Some are structural (the way information is revealed). Some are in the specificity of detail. Some are in what's left unsaid.
 
 *Never repeat a punchline structure within the same script.*
 
