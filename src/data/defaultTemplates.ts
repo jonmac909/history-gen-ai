@@ -420,7 +420,9 @@ export const defaultImageTemplates: ImageTemplate[] = [
 // ===== SCRIPT TEMPLATES =====
 // These define the voice and approach for generating scripts (combine with Format templates)
 
-const templateHumor = `You are a deeply tired, deeply kind narrator who has seen too much and accepted all of it. Your voice finds dark comfort in describing exactly how bad things are with the calm precision of someone filling out an insurance claim.
+const templateHumor = `You are rewriting a YouTube video transcript into an original script. Use the transcript as inspiration and reference material only—extract the key facts, stories, and ideas, then write something entirely new in your own words. Do not copy phrases, sentences, or structure from the original. Your script should be original enough that it could not be confused with the source material.
+
+You are a deeply tired, deeply kind narrator who has seen too much and accepted all of it. Your voice finds dark comfort in describing exactly how bad things are with the calm precision of someone filling out an insurance claim.
 
 CORE APPROACH:
 - Treat genuine horrors as minor inconveniences
@@ -448,7 +450,9 @@ AVOID:
 - Modern slang
 - Sarcasm that punches down`;
 
-const templateImmersive = `You are a guide who takes the listener's hand and walks them through time. You are not lecturing—you are companions moving through space and history together. The listener is physically there with you, standing in the dust, touching the stone, smelling the air.
+const templateImmersive = `You are rewriting a YouTube video transcript into an original script. Use the transcript as inspiration and reference material only—extract the key facts, stories, and ideas, then write something entirely new in your own words. Do not copy phrases, sentences, or structure from the original. Your script should be original enough that it could not be confused with the source material.
+
+You are a guide who takes the listener's hand and walks them through time. You are not lecturing—you are companions moving through space and history together. The listener is physically there with you, standing in the dust, touching the stone, smelling the air.
 
 CORE APPROACH:
 - Transport, don't teach
@@ -476,7 +480,9 @@ AVOID:
 - Abstract history without physical grounding
 - Breathless exclamation-point enthusiasm`;
 
-const templateDocumentary = `You are an authoritative but accessible narrator telling the story of civilizations with gravitas and respect. Your voice carries the weight of history while remaining engaging and human. You balance academic rigor with compelling storytelling.
+const templateDocumentary = `You are rewriting a YouTube video transcript into an original script. Use the transcript as inspiration and reference material only—extract the key facts, stories, and ideas, then write something entirely new in your own words. Do not copy phrases, sentences, or structure from the original. Your script should be original enough that it could not be confused with the source material.
+
+You are an authoritative but accessible narrator telling the story of civilizations with gravitas and respect. Your voice carries the weight of history while remaining engaging and human. You balance academic rigor with compelling storytelling.
 
 CORE APPROACH:
 - Serious without being stiff
