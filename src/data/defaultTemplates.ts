@@ -106,99 +106,142 @@ Reflect on the full arc. What can we learn? What echoes into the present? A medi
 
 *OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
 
-const formatNarrative = `Write a 2-hour narrated script (approximately 18,000 words) telling the story of [PERSON/FAMILY/DYNASTY].
+const formatNarrative = `Write a 2-hour narrated script (approximately 18,000 words) covering the history of [SUBJECT/CIVILIZATION/PLACE].
 
-*Title:* The Story of [NAME]
-e.g., "The Story of Marie Antoinette" / "The Story of the Romanovs" / "The Story of Cleopatra" / "The Story of the Borgias"
+*Title:* [INSERT TITLE - e.g., "The Complete History of Ancient Egypt" / "The Rise and Fall of the Roman Empire" / "The History of the Samurai"]
 
 ---
 
 *STRUCTURE:*
 
 *THE HOOK (~300 words)*
-Open at the end. The execution. The fall. The final moment. Drop the listener into the most haunting, inevitable scene—visceral, sensory, tragic. Let them feel the weight of what's coming. Then pull back: "But she wasn't always here. She was once a child who had no idea what awaited her..."
+Open with a single, arresting moment. A scene. A death. A battle. A quiet detail that contains the whole story. Drop the listener into the most compelling, cinematic fragment—out of context, mysterious, visceral. Make them need to know more. Then pull back: "But to understand how we got here, we need to go back..."
 
-*PROLOGUE: THE WORLD BEFORE (~1,000 words)*
-Set the stage. What world are they about to be born into? The politics, the power structures, the tensions already simmering. The forces that will shape their fate before they take their first breath.
-
----
-
-*ACT ONE: THE BEGINNING (~4,000 words)*
-
-Birth, childhood, early formation
-
-- *The Birth / Origins* (~1,300 words) - Who were they born as? The family, the circumstances, the omens. What did their arrival mean?
-- *The Childhood* (~1,300 words) - What shaped them? The palace, the poverty, the education, the relationships. The small moments that echo later.
-- *The First Turning Point* (~1,400 words) - The marriage, the inheritance, the first step toward destiny. The door that opened and couldn't be closed.
+*INTRODUCTION (~1,000 words)*
+Set the stage. Where are we? What are we exploring? Transport the listener. Invite them to close their eyes. Establish why this matters, why this civilization/subject captivates us. A sweeping, cinematic opening that orients us in time and place.
 
 ---
 
-*ACT TWO: THE RISE (~4,500 words)*
+*ERA ONE: [NAME OF ERA] (~5,000 words total)*
 
-Power, glory, the height
+e.g., "The Early Kingdom" / "The Republic" / "The Rise"
 
-- *The Ascent* (~1,500 words) - How did they gain power? The coronation, the conquest, the seduction. The world bending toward them.
-- *The Golden Days* (~1,500 words) - What was life like at the peak? The luxury, the influence, the court, the lovers, the enemies. The intoxication of power.
-- *The Seeds of Destruction* (~1,500 words) - What went wrong while everything seemed right? The whispers, the mistakes, the blind spots. The cracks forming beneath the gilded surface.
+Introduce the era. When are we? What defines this period?
 
----
+- *[Subtopic 1]* (~1,500 words) - e.g., The founding myth, the first rulers, the origins
+- *[Subtopic 2]* (~1,500 words) - e.g., Daily life, society, how people lived
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, war, discovery, turning point
 
-*ACT THREE: THE FALL (~4,500 words)*
-
-Decline, struggle, unraveling
-
-- *The Troubles Begin* (~1,500 words) - The first real crisis. The moment the tide turned. The realization that something had changed.
-- *The Fight* (~1,500 words) - How did they respond? The desperate measures, the alliances, the betrayals. The attempt to hold on.
-- *The Collapse* (~1,500 words) - The final unraveling. The enemies closing in. The walls falling. The world they knew disappearing.
+Transition to the next era.
 
 ---
 
-*ACT FOUR: THE END (~3,000 words)*
+*ERA TWO: [NAME OF ERA] (~5,000 words total)*
 
-The final chapter
+e.g., "The Golden Age" / "The Empire" / "The Height of Power"
 
-- *The Last Days* (~1,500 words) - The imprisonment, the exile, the waiting. The small indignities and the strange moments of grace. What were they thinking? Feeling? Who were they at the end?
-- *The Death* (~1,500 words) - The execution, the assassination, the final breath. Minute by minute. Sensory, intimate, unflinching but not gratuitous. The silence after.
+Introduce the era. What changed? What defines this period?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The great leader, the expansion, the peak
+- *[Subtopic 2]* (~1,500 words) - e.g., Culture, art, religion, beliefs
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, conflict, innovation, crisis
+
+Transition to the next era.
 
 ---
 
-*EPILOGUE: THE LEGACY (~700 words)*
-What happened after? To the family, the country, the world? How do we remember them? The myths, the debates, the unanswered questions. Why their story still haunts us.
+*ERA THREE: [NAME OF ERA] (~5,000 words total)*
+
+e.g., "The Decline" / "The Fall" / "The Transformation"
+
+Introduce the era. What went wrong—or what changed?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The cracks forming, internal struggles
+- *[Subtopic 2]* (~1,500 words) - e.g., External threats, invasions, pressures
+- *[Subtopic 3]* (~1,500 words) - e.g., The end, the legacy, what remained
+
+---
+
+*CONCLUSION (~700 words)*
+Reflect on the full arc. What can we learn? What echoes into the present? A meditative closing that lets the listener drift, feeling connected to something ancient and vast.
 
 ---
 
 *STYLE:*
 
-- Third person narrative as the spine ("She walked into the room..." / "He knew this was the end...")
-- Second person POV for immersive moments ("Imagine standing in that cell..." / "You can almost hear the crowd...")
+- Second person POV where immersive ("You're standing in the Forum..." / "Imagine yourself...")
+- Third person for historical narrative ("The emperor knew..." / "The armies marched...")
 - Blend both seamlessly
-- Dreamy, cinematic, novelistic
-- Sensory immersion—what did the silk feel like? What did the prison smell like?
+- Dreamy, time-travelly, sensory
 - Flowing sentences, meditative pacing
-- Intimate access to thoughts and feelings (speculative but grounded)
 - Dark humor where appropriate
-- Sleep-friendly—tragic but not traumatizing, haunting but gentle
-- Human above all—these were real people, not symbols
+- Sleep-friendly—no jarring transitions
+- Reflective narration that lingers
+- Ground the narrative in specific, human details
+
+*OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
+
+const formatPOV = `Write a 2-hour narrated script (approximately 18,000 words) in immersive "Day in the Life" POV format.
+
+*Title:* A Day in the Life: The [TIME PERIOD] [PERSON/ROLE]
+e.g., "A Day in the Life: The Medieval Peasant" / "A Day in the Life: The Roman Slave" / "A Day in the Life: The Victorian Factory Worker"
+
+*Setting:* [TIME PERIOD, LOCATION, YEAR IF RELEVANT]
+
+*Character:* [WHO ARE WE? Age, role, social status, brief context]
+
+---
+
+*STRUCTURE:*
+
+*1. THE HOOK (~500 words)*
+Disorientation. Where am I? When am I? Drop the listener into a sensory moment before they understand what's happening—a sound, a smell, a texture. Then pull back and reveal the world. Invite the listener to close their eyes. Transport them.
+
+*2. THE WAKING (~1,500 words)*
+Pre-dawn. The first moments of consciousness. What wakes you? What do you feel beneath you, around you? The sounds of the household. The light (or lack of it). The first sensations of the body—aches, cold, thirst. Getting dressed. The simplicity or complexity of clothing.
+
+*3. THE MORNING MEAL (~1,500 words)*
+What is breakfast? Who prepared it? What does it taste like, smell like, feel like in your mouth? The staples of the diet. The things we take for granted that don't exist. The things that would horrify a modern person. The rhythm of eating with others.
+
+*4. THE COMMUTE (~1,000 words)*
+Leaving home. What does the world look like outside? The street, the village, the landscape. The sounds of civilization waking up. The smells. The people you pass. The journey to wherever the day's work happens.
+
+*5. THE WORK - MORNING (~2,500 words)*
+The labor itself. The repetitive motions. The tools. The physical toll. The mind wandering while the body works. The social dynamics—who else is there? What do you talk about? What do you worry about? The small dramas of daily life.
+
+*6. THE MIDDAY (~2,000 words)*
+The break. The heat or cold at its peak. Finding rest. The meal—quick, functional, eaten wherever you are. Conversations with others. Complaints. Gossip. The brief pause before the second half of the day.
+
+*7. THE WORK - AFTERNOON (~2,000 words)*
+The grind continues. The body tiring. The different quality of afternoon labor. Encounters—a visitor, an authority figure, an animal, a small crisis. Problem-solving with the tools and knowledge available.
+
+*8. THE RETURN (~1,500 words)*
+The end of work. The walk home. The changing light. The shift in energy. The sounds of evening beginning. The smell of home cooking in the distance. The relief of another day survived.
+
+*9. THE EVENING MEAL (~2,000 words)*
+The main meal. Family gathered. What's on the table? The flavors, the textures. Conversation. Stories. The dynamics of the household. The small joys. The lingering worries. Perhaps a game, a song, a ritual.
+
+*10. THE NIGHT (~2,000 words)*
+The world going dark. The sounds fading. Preparing for sleep. The bed—what is it really? The darkness without electricity. The sounds of the night. The thoughts that come before sleep. The body's exhaustion. The stars, if visible. The reflection on life, meaning, the cycle continuing. Drifting off.
+
+---
+
+*STYLE:*
+
+- Second person POV throughout ("You wake..." / "You feel..." / "You hear...")
+- Dreamy, time-travelly, hypnotic
+- Sensory immersion in every paragraph—smells, textures, sounds, temperatures, tastes
+- Flowing sentences, meditative pacing
+- Dark humor woven naturally, never forced
+- Reflective narration that lingers on small moments
+- Sleep-friendly—gentle transitions, no jarring shifts
+- "It's fine. Probably." energy
+- Empathy for historical people—they weren't primitive, they were surviving
+
+*RESEARCH ANCHORS:*
+Include historically accurate details: tools, food, clothing, architecture, social structures, beliefs, medicine, hygiene. Ground the dreaminess in real, specific, lived-in facts.
 
 *OUTPUT:* Pure narration only. No headers, no timestamps, no chapter titles, no stage directions. Just the script, ready to record.`;
-
-const formatPOV = `POV (Point of View) Layout for immersive first-person historical experience:
-
-THE HOOK (10 min): "Where are you?" - Sensory immersion. The smells, the sounds, the immediate surroundings. No names/dates yet—just the feeling of being there.
-
-THE INTRO (10 min): "When are you?" - Zoom out. The political era, the year, the technology. Anchor the viewer in time and place.
-
-MORNING (20 min): Task 1: Survival - The first priority of the day (getting water, opening the shop, preparing for battle). The "physicality" of history.
-
-MID-DAY (25 min): Task 2: The Core - The main work or the "Big Event" of the day. This is the heaviest historical/data section.
-
-AFTERNOON (25 min): Task 3: The Crisis - What goes wrong? The friction of the era (a tax collector arrives, a storm hits, news of war).
-
-EVENING (15 min): Winding Down - Coming home, the family dynamic, the food, the lack of light. The "Quiet History."
-
-NIGHT (10 min): Going to Bed - Reflection. The fears for tomorrow. The "Big Picture" legacy of this person's life.
-
-CLOSING (5 min): The Sources - Further reading for those who want to know more about this specific life.`;
 
 const formatWalkingTour = `Write a 2-hour narrated script (approximately 18,000 words) as an immersive walking tour through [PLACE/CITY/LOCATION].
 
@@ -275,91 +318,80 @@ Reflect on the full arc. What can we learn? What echoes into the present? A medi
 
 *OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
 
-const formatConcept = `Write a 2-hour narrated script (approximately 18,000 words) tracing the evolution of [CONCEPT/INVENTION/IDEA] across human history.
+const formatConcept = `Write a 2-hour narrated script (approximately 18,000 words) covering the history of [SUBJECT/CIVILIZATION/PLACE].
 
-*Title:* The History of [CONCEPT] / The Evolution of [CONCEPT] / How [CONCEPT] Changed the World
-e.g., "The History of Money" / "The Evolution of Medicine" / "How Weapons Changed the World" / "The Story of Writing" / "The History of Death"
+*Title:* [INSERT TITLE - e.g., "The Complete History of Ancient Egypt" / "The Rise and Fall of the Roman Empire" / "The History of the Samurai"]
 
 ---
 
 *STRUCTURE:*
 
 *THE HOOK (~300 words)*
-Start with the concept at its most extreme or surprising. A moment that reveals how far we've come—or how little has changed. A single image, scene, or fact that makes the listener realize they've never really thought about this thing they take for granted. Then pull back: "But it wasn't always this way. In fact, for most of human history..."
+Open with a single, arresting moment. A scene. A death. A battle. A quiet detail that contains the whole story. Drop the listener into the most compelling, cinematic fragment—out of context, mysterious, visceral. Make them need to know more. Then pull back: "But to understand how we got here, we need to go back..."
 
-*INTRODUCTION: WHY THIS MATTERS (~1,000 words)*
-What is this concept, really? Why does it matter? How does it touch every part of human life without us noticing? Set up the journey. Establish the scope—we're going from the beginning to now. Invite the listener to see the world differently.
-
----
-
-*ERA ONE: THE ORIGINS (~3,000 words)*
-
-The beginning. Before history. The first flickers.
-
-- *Before It Existed (~1,000 words)* - What was the world like without this thing? What problem did humans face? What need went unmet? The absence that created the necessity.
-- *The First Invention (~1,000 words)* - Who figured it out first? The moment of discovery or creation. The crude, beautiful first attempt. How it probably happened. What it felt like.
-- *The Early Spread (~1,000 words)* - How did it move? Who adopted it? How did it change the first communities who used it? The ripples beginning.
+*INTRODUCTION (~1,000 words)*
+Set the stage. Where are we? What are we exploring? Transport the listener. Invite them to close their eyes. Establish why this matters, why this civilization/subject captivates us. A sweeping, cinematic opening that orients us in time and place.
 
 ---
 
-*ERA TWO: THE ANCIENT WORLD (~3,000 words)*
+*ERA ONE: [NAME OF ERA] (~5,000 words total)*
 
-Civilizations take hold. The concept becomes essential.
+e.g., "The Early Kingdom" / "The Republic" / "The Rise"
 
-- *[Civilization One]'s Version (~1,000 words)* - e.g., Egypt, Mesopotamia, China. How did they use it? What did it look like? What did it mean to them?
-- *[Civilization Two]'s Version (~1,000 words)* - e.g., Greece, Rome, India. The variations. The innovations. The cultural differences.
-- *The Transformation (~1,000 words)* - How did the concept evolve during this era? What was gained? What was lost? The turning point that set up the next age.
+Introduce the era. When are we? What defines this period?
 
----
+- *[Subtopic 1]* (~1,500 words) - e.g., The founding myth, the first rulers, the origins
+- *[Subtopic 2]* (~1,500 words) - e.g., Daily life, society, how people lived
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, war, discovery, turning point
 
-*ERA THREE: THE MIDDLE AGES (~3,000 words)*
-
-Survival, stagnation, or quiet revolution.
-
-- *The Continuity (~1,000 words)* - What stayed the same? What persisted from the ancient world? The traditions, the superstitions, the methods that refused to die.
-- *The Innovations (~1,000 words)* - What changed in the shadows? The unsung inventors, the forgotten improvements, the slow progress no one noticed at the time.
-- *The Human Experience (~1,000 words)* - What was it like to live with this concept during this era? The daily reality. The sensory experience. Drop the listener into a moment.
+Transition to the next era.
 
 ---
 
-*ERA FOUR: THE EARLY MODERN PERIOD (~3,000 words)*
+*ERA TWO: [NAME OF ERA] (~5,000 words total)*
 
-The cracks appear. The old ways crumble. Something new is coming.
+e.g., "The Golden Age" / "The Empire" / "The Height of Power"
 
-- *The Disruption (~1,000 words)* - The discovery, the invention, the idea that changed everything. The printing press, the new world, the scientific method—whatever shattered the old understanding of this concept.
-- *The Resistance (~1,000 words)* - Who fought against the change? Why? The old guard, the fear, the valid concerns, the invalid ones.
-- *The New World (~1,000 words)* - How did the concept transform? What did it look like by the end of this era? The world reshaping itself.
+Introduce the era. What changed? What defines this period?
 
----
+- *[Subtopic 1]* (~1,500 words) - e.g., The great leader, the expansion, the peak
+- *[Subtopic 2]* (~1,500 words) - e.g., Culture, art, religion, beliefs
+- *[Subtopic 3]* (~1,500 words) - e.g., A key event, conflict, innovation, crisis
 
-*ERA FIVE: THE MODERN AGE (~2,500 words)*
-
-Acceleration. Industry. Revolution.
-
-- *The Explosion (~1,200 words)* - The industrial revolution, mass production, global systems. The concept reaching its modern form. The speed of change becoming dizzying.
-- *The Present Day (~1,300 words)* - Where are we now? What does this concept look like today? What would someone from the past recognize? What would horrify them? What would amaze them?
+Transition to the next era.
 
 ---
 
-*CONCLUSION: THE FUTURE & THE ETERNAL (~1,200 words)*
+*ERA THREE: [NAME OF ERA] (~5,000 words total)*
 
-Where is this going? What might the future hold? And beneath all the change, what has stayed the same? The human need that started it all—is it still there? The reflection on what this journey reveals about us. The listener drifting off with a new understanding of something they see every day.
+e.g., "The Decline" / "The Fall" / "The Transformation"
+
+Introduce the era. What went wrong—or what changed?
+
+- *[Subtopic 1]* (~1,500 words) - e.g., The cracks forming, internal struggles
+- *[Subtopic 2]* (~1,500 words) - e.g., External threats, invasions, pressures
+- *[Subtopic 3]* (~1,500 words) - e.g., The end, the legacy, what remained
+
+---
+
+*CONCLUSION (~700 words)*
+Reflect on the full arc. What can we learn? What echoes into the present? A meditative closing that lets the listener drift, feeling connected to something ancient and vast.
 
 ---
 
 *STYLE:*
 
-- Third person for historical narrative ("The Romans believed..." / "By 1450, everything changed...")
-- Second person for immersive drops ("Imagine holding the first coin..." / "You're standing in a medieval market...")
-- Blend seamlessly—zoom out for history, zoom in for humanity
-- Dreamy, flowing, meditative
-- Sensory details anchor every era—what did it smell like, feel like, sound like?
+- Second person POV where immersive ("You're standing in the Forum..." / "Imagine yourself...")
+- Third person for historical narrative ("The emperor knew..." / "The armies marched...")
+- Blend both seamlessly
+- Dreamy, time-travelly, sensory
+- Flowing sentences, meditative pacing
 - Dark humor where appropriate
-- Sleep-friendly—the sweep of time as a lullaby
-- Wonder at human ingenuity, honesty about human cruelty
-- The concept as a character—evolving, adapting, surviving
+- Sleep-friendly—no jarring transitions
+- Reflective narration that lingers
+- Ground the narrative in specific, human details
 
-*OUTPUT:* Pure narration only. No headers, no timestamps, no era labels, no section breaks. Just the script, ready to record. Transitions between eras should flow naturally within the narration.`;
+*OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
 
 export const defaultFormatTemplates: FormatTemplate[] = [
   { id: "format-a", template: formatListicle, name: "Listicle" },
