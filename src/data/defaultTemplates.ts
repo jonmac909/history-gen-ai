@@ -275,12 +275,99 @@ Reflect on the full arc. What can we learn? What echoes into the present? A medi
 
 *OUTPUT:* Pure narration only. No headers, no timestamps, no section labels. Just the script, ready to record.`;
 
+const formatConcept = `Write a 2-hour narrated script (approximately 18,000 words) tracing the evolution of [CONCEPT/INVENTION/IDEA] across human history.
+
+*Title:* The History of [CONCEPT] / The Evolution of [CONCEPT] / How [CONCEPT] Changed the World
+e.g., "The History of Money" / "The Evolution of Medicine" / "How Weapons Changed the World" / "The Story of Writing" / "The History of Death"
+
+---
+
+*STRUCTURE:*
+
+*THE HOOK (~300 words)*
+Start with the concept at its most extreme or surprising. A moment that reveals how far we've come—or how little has changed. A single image, scene, or fact that makes the listener realize they've never really thought about this thing they take for granted. Then pull back: "But it wasn't always this way. In fact, for most of human history..."
+
+*INTRODUCTION: WHY THIS MATTERS (~1,000 words)*
+What is this concept, really? Why does it matter? How does it touch every part of human life without us noticing? Set up the journey. Establish the scope—we're going from the beginning to now. Invite the listener to see the world differently.
+
+---
+
+*ERA ONE: THE ORIGINS (~3,000 words)*
+
+The beginning. Before history. The first flickers.
+
+- *Before It Existed (~1,000 words)* - What was the world like without this thing? What problem did humans face? What need went unmet? The absence that created the necessity.
+- *The First Invention (~1,000 words)* - Who figured it out first? The moment of discovery or creation. The crude, beautiful first attempt. How it probably happened. What it felt like.
+- *The Early Spread (~1,000 words)* - How did it move? Who adopted it? How did it change the first communities who used it? The ripples beginning.
+
+---
+
+*ERA TWO: THE ANCIENT WORLD (~3,000 words)*
+
+Civilizations take hold. The concept becomes essential.
+
+- *[Civilization One]'s Version (~1,000 words)* - e.g., Egypt, Mesopotamia, China. How did they use it? What did it look like? What did it mean to them?
+- *[Civilization Two]'s Version (~1,000 words)* - e.g., Greece, Rome, India. The variations. The innovations. The cultural differences.
+- *The Transformation (~1,000 words)* - How did the concept evolve during this era? What was gained? What was lost? The turning point that set up the next age.
+
+---
+
+*ERA THREE: THE MIDDLE AGES (~3,000 words)*
+
+Survival, stagnation, or quiet revolution.
+
+- *The Continuity (~1,000 words)* - What stayed the same? What persisted from the ancient world? The traditions, the superstitions, the methods that refused to die.
+- *The Innovations (~1,000 words)* - What changed in the shadows? The unsung inventors, the forgotten improvements, the slow progress no one noticed at the time.
+- *The Human Experience (~1,000 words)* - What was it like to live with this concept during this era? The daily reality. The sensory experience. Drop the listener into a moment.
+
+---
+
+*ERA FOUR: THE EARLY MODERN PERIOD (~3,000 words)*
+
+The cracks appear. The old ways crumble. Something new is coming.
+
+- *The Disruption (~1,000 words)* - The discovery, the invention, the idea that changed everything. The printing press, the new world, the scientific method—whatever shattered the old understanding of this concept.
+- *The Resistance (~1,000 words)* - Who fought against the change? Why? The old guard, the fear, the valid concerns, the invalid ones.
+- *The New World (~1,000 words)* - How did the concept transform? What did it look like by the end of this era? The world reshaping itself.
+
+---
+
+*ERA FIVE: THE MODERN AGE (~2,500 words)*
+
+Acceleration. Industry. Revolution.
+
+- *The Explosion (~1,200 words)* - The industrial revolution, mass production, global systems. The concept reaching its modern form. The speed of change becoming dizzying.
+- *The Present Day (~1,300 words)* - Where are we now? What does this concept look like today? What would someone from the past recognize? What would horrify them? What would amaze them?
+
+---
+
+*CONCLUSION: THE FUTURE & THE ETERNAL (~1,200 words)*
+
+Where is this going? What might the future hold? And beneath all the change, what has stayed the same? The human need that started it all—is it still there? The reflection on what this journey reveals about us. The listener drifting off with a new understanding of something they see every day.
+
+---
+
+*STYLE:*
+
+- Third person for historical narrative ("The Romans believed..." / "By 1450, everything changed...")
+- Second person for immersive drops ("Imagine holding the first coin..." / "You're standing in a medieval market...")
+- Blend seamlessly—zoom out for history, zoom in for humanity
+- Dreamy, flowing, meditative
+- Sensory details anchor every era—what did it smell like, feel like, sound like?
+- Dark humor where appropriate
+- Sleep-friendly—the sweep of time as a lullaby
+- Wonder at human ingenuity, honesty about human cruelty
+- The concept as a character—evolving, adapting, surviving
+
+*OUTPUT:* Pure narration only. No headers, no timestamps, no era labels, no section breaks. Just the script, ready to record. Transitions between eras should flow naturally within the narration.`;
+
 export const defaultFormatTemplates: FormatTemplate[] = [
   { id: "format-a", template: formatListicle, name: "Listicle" },
   { id: "format-b", template: formatDocumentary, name: "Documentary" },
   { id: "format-c", template: formatNarrative, name: "Narrative" },
   { id: "format-d", template: formatPOV, name: "POV" },
   { id: "format-e", template: formatWalkingTour, name: "Walking Tour" },
+  { id: "format-f", template: formatConcept, name: "Concept" },
 ];
 
 // ===== SCRIPT TONE TEMPLATES =====
