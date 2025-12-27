@@ -33,7 +33,81 @@ const formatListicle = `Write a 2-hour narrated script (approximately 18,000 wor
 
 const formatDocumentary = `Traditional documentary structure with clear narrative arc. Begin with context and background, build through key events and developments, reach a climax or turning point, then resolve with aftermath and legacy. Include expert-style commentary and analysis. Balanced, objective tone.`;
 
-const formatNarrative = `Story-driven approach that follows characters through events. Use narrative techniques like foreshadowing, tension building, and dramatic irony. Focus on human experiences and emotions. Create scenes with sensory details. Let the story unfold chronologically with occasional flashbacks for context.`;
+const formatNarrative = `Write a 2-hour narrated script (approximately 18,000 words) telling the story of [PERSON/FAMILY/DYNASTY].
+
+*Title:* The Story of [NAME]
+e.g., "The Story of Marie Antoinette" / "The Story of the Romanovs" / "The Story of Cleopatra" / "The Story of the Borgias"
+
+---
+
+*STRUCTURE:*
+
+*THE HOOK (~300 words)*
+Open at the end. The execution. The fall. The final moment. Drop the listener into the most haunting, inevitable scene—visceral, sensory, tragic. Let them feel the weight of what's coming. Then pull back: "But she wasn't always here. She was once a child who had no idea what awaited her..."
+
+*PROLOGUE: THE WORLD BEFORE (~1,000 words)*
+Set the stage. What world are they about to be born into? The politics, the power structures, the tensions already simmering. The forces that will shape their fate before they take their first breath.
+
+---
+
+*ACT ONE: THE BEGINNING (~4,000 words)*
+
+Birth, childhood, early formation
+
+- *The Birth / Origins* (~1,300 words) - Who were they born as? The family, the circumstances, the omens. What did their arrival mean?
+- *The Childhood* (~1,300 words) - What shaped them? The palace, the poverty, the education, the relationships. The small moments that echo later.
+- *The First Turning Point* (~1,400 words) - The marriage, the inheritance, the first step toward destiny. The door that opened and couldn't be closed.
+
+---
+
+*ACT TWO: THE RISE (~4,500 words)*
+
+Power, glory, the height
+
+- *The Ascent* (~1,500 words) - How did they gain power? The coronation, the conquest, the seduction. The world bending toward them.
+- *The Golden Days* (~1,500 words) - What was life like at the peak? The luxury, the influence, the court, the lovers, the enemies. The intoxication of power.
+- *The Seeds of Destruction* (~1,500 words) - What went wrong while everything seemed right? The whispers, the mistakes, the blind spots. The cracks forming beneath the gilded surface.
+
+---
+
+*ACT THREE: THE FALL (~4,500 words)*
+
+Decline, struggle, unraveling
+
+- *The Troubles Begin* (~1,500 words) - The first real crisis. The moment the tide turned. The realization that something had changed.
+- *The Fight* (~1,500 words) - How did they respond? The desperate measures, the alliances, the betrayals. The attempt to hold on.
+- *The Collapse* (~1,500 words) - The final unraveling. The enemies closing in. The walls falling. The world they knew disappearing.
+
+---
+
+*ACT FOUR: THE END (~3,000 words)*
+
+The final chapter
+
+- *The Last Days* (~1,500 words) - The imprisonment, the exile, the waiting. The small indignities and the strange moments of grace. What were they thinking? Feeling? Who were they at the end?
+- *The Death* (~1,500 words) - The execution, the assassination, the final breath. Minute by minute. Sensory, intimate, unflinching but not gratuitous. The silence after.
+
+---
+
+*EPILOGUE: THE LEGACY (~700 words)*
+What happened after? To the family, the country, the world? How do we remember them? The myths, the debates, the unanswered questions. Why their story still haunts us.
+
+---
+
+*STYLE:*
+
+- Third person narrative as the spine ("She walked into the room..." / "He knew this was the end...")
+- Second person POV for immersive moments ("Imagine standing in that cell..." / "You can almost hear the crowd...")
+- Blend both seamlessly
+- Dreamy, cinematic, novelistic
+- Sensory immersion—what did the silk feel like? What did the prison smell like?
+- Flowing sentences, meditative pacing
+- Intimate access to thoughts and feelings (speculative but grounded)
+- Dark humor where appropriate
+- Sleep-friendly—tragic but not traumatizing, haunting but gentle
+- Human above all—these were real people, not symbols
+
+*OUTPUT:* Pure narration only. No headers, no timestamps, no chapter titles, no stage directions. Just the script, ready to record.`;
 
 const formatPOV = `POV (Point of View) Layout for immersive first-person historical experience:
 
