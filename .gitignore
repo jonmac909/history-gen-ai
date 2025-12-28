@@ -45,3 +45,4 @@ playwright-report/
 
 # Installers and binaries
 *.dmg
+supabase/.temp/

@@ -1118,7 +1118,7 @@ export interface RenderVideoResult {
 }
 
 export interface RenderVideoProgress {
-  stage: 'downloading' | 'preparing' | 'rendering' | 'uploading';
+  stage: 'downloading' | 'preparing' | 'rendering' | 'muxing' | 'uploading';
   percent: number;
   message: string;
   frames?: number;
@@ -1134,6 +1134,26 @@ export interface VideoEffects {
   embers?: boolean;
 }
 
+// Render job status from Supabase
+interface RenderJobStatus {
+  id: string;
+  project_id: string;
+  status: 'queued' | 'downloading' | 'rendering' | 'muxing' | 'uploading' | 'complete' | 'failed';
+  progress: number;
+  message: string | null;
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Helper to wait
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Render video using background job with polling
+ * This replaces the SSE streaming approach for better reliability
+ */
 export async function renderVideoStreaming(
   projectId: string,
   audioUrl: string,
@@ -1145,9 +1165,10 @@ export async function renderVideoStreaming(
   effects?: VideoEffects
 ): Promise<RenderVideoResult> {
   // Support both old callback style and new object style
-  const { onProgress, onVideoReady, onCaptionError } = typeof callbacks === 'function'
+  const { onProgress } = typeof callbacks === 'function'
     ? { onProgress: callbacks, onVideoReady: undefined, onCaptionError: undefined }
     : callbacks;
+
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
   if (!renderUrl) {
@@ -1157,13 +1178,15 @@ export async function renderVideoStreaming(
     };
   }
 
-  // Long timeout for video rendering (30 minutes)
-  const controller = new AbortController();
-  const RENDER_TIMEOUT_MS = 30 * 60 * 1000;
-  const timeoutId = setTimeout(() => controller.abort(), RENDER_TIMEOUT_MS);
-
   try {
-    const response = await fetch(`${renderUrl}/render-video`, {
+    // Step 1: Start the render job
+    onProgress({
+      stage: 'preparing',
+      percent: 0,
+      message: 'Starting render job...'
+    });
+
+    const startResponse = await fetch(`${renderUrl}/render-video`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1176,145 +1199,89 @@ export async function renderVideoStreaming(
         srtContent,
         projectTitle,
         effects
-      }),
-      signal: controller.signal
+      })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Render video error:', response.status, errorText);
-      return { success: false, error: `Failed to render video: ${response.status}` };
+    if (!startResponse.ok) {
+      const errorText = await startResponse.text();
+      console.error('Failed to start render job:', startResponse.status, errorText);
+      return { success: false, error: `Failed to start render: ${startResponse.status}` };
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return { success: false, error: 'No response body' };
+    const startResult = await startResponse.json();
+    const jobId = startResult.jobId;
+
+    if (!jobId) {
+      return { success: false, error: 'No job ID returned from server' };
     }
 
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let result: RenderVideoResult = { success: false, error: 'No response received' };
-    let lastEventTime = Date.now();
-    const EVENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes between events (rendering can be slow)
+    console.log(`[Render Video] Job started: ${jobId}`);
 
-    try {
-      while (true) {
-        // Check if we've been waiting too long for an event
-        if (Date.now() - lastEventTime > EVENT_TIMEOUT_MS) {
-          console.error('[Render Video] Event timeout - no data received for 5 minutes');
-          result.error = 'Video rendering timed out - no progress received for 5 minutes. Please try again.';
-          break;
-        }
+    // Step 2: Poll for progress
+    const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
+    const MAX_POLL_TIME_MS = 60 * 60 * 1000; // 1 hour max
+    const startTime = Date.now();
 
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        lastEventTime = Date.now();
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE events
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
-
-        for (const event of events) {
-          if (!event.trim()) continue;
-
-          // Skip keepalive comments
-          if (event.startsWith(':')) continue;
-
-          const dataMatch = event.match(/^data: (.+)$/m);
-          if (dataMatch) {
-            try {
-              const parsed = JSON.parse(dataMatch[1]);
-
-              if (parsed.type === 'progress') {
-                onProgress({
-                  stage: parsed.stage,
-                  percent: parsed.percent,
-                  message: parsed.message,
-                  frames: parsed.frames
-                });
-              } else if (parsed.type === 'video_ready') {
-                // Video without captions is ready - store it in case captioning fails
-                result = {
-                  success: true,
-                  videoUrl: parsed.videoUrl,
-                  size: parsed.size
-                };
-                // Notify caller that video is ready for preview/download
-                if (onVideoReady) {
-                  onVideoReady(parsed.videoUrl);
-                }
-                onProgress({
-                  stage: 'rendering',
-                  percent: parsed.percent || 82,
-                  message: parsed.message || 'Video ready! Now burning captions...'
-                });
-              } else if (parsed.type === 'caption_error') {
-                // Captions failed but we have the video without captions
-                console.warn('Caption burning failed:', parsed.error);
-                if (onCaptionError) {
-                  onCaptionError(parsed.error || 'Caption burning failed');
-                }
-                // Keep the existing result (video without captions)
-              } else if (parsed.type === 'complete') {
-                result = {
-                  success: true,
-                  videoUrl: parsed.videoUrl,
-                  videoUrlCaptioned: parsed.videoUrlCaptioned,
-                  size: parsed.size,
-                  sizeCaptioned: parsed.sizeCaptioned
-                };
-                onProgress({
-                  stage: 'uploading',
-                  percent: 100,
-                  message: 'Complete!'
-                });
-              } else if (parsed.type === 'error' || parsed.error) {
-                result = {
-                  success: false,
-                  error: parsed.error || 'Video rendering failed'
-                };
-              }
-            } catch (e) {
-              // Skip invalid JSON
-            }
-          }
-        }
-      }
-    } catch (streamError) {
-      console.error('Stream reading error:', streamError);
-
-      if (streamError instanceof Error && streamError.name === 'AbortError') {
+    while (true) {
+      // Check timeout
+      if (Date.now() - startTime > MAX_POLL_TIME_MS) {
         return {
           success: false,
-          error: 'Video rendering timed out after 30 minutes. Please try again.'
+          error: 'Video rendering timed out after 1 hour. The job may still be processing - check back later.'
         };
       }
 
-      return {
-        success: false,
-        error: streamError instanceof Error ? streamError.message : 'Stream reading failed'
-      };
-    } finally {
-      clearTimeout(timeoutId);
+      // Poll for status
+      const statusResponse = await fetch(`${renderUrl}/render-video/status/${jobId}`);
+
+      if (!statusResponse.ok) {
+        console.error('Failed to poll job status:', statusResponse.status);
+        await sleep(POLL_INTERVAL_MS);
+        continue;
+      }
+
+      const job: RenderJobStatus = await statusResponse.json();
+
+      // Update progress
+      const stage = job.status === 'queued' ? 'preparing' : job.status;
+      onProgress({
+        stage: stage as RenderVideoProgress['stage'],
+        percent: job.progress,
+        message: job.message || `${job.status}...`
+      });
+
+      // Check for completion
+      if (job.status === 'complete') {
+        console.log(`[Render Video] Job complete: ${job.video_url}`);
+        onProgress({
+          stage: 'uploading',
+          percent: 100,
+          message: 'Complete!'
+        });
+        return {
+          success: true,
+          videoUrl: job.video_url || undefined
+        };
+      }
+
+      // Check for failure
+      if (job.status === 'failed') {
+        console.error(`[Render Video] Job failed: ${job.error}`);
+        return {
+          success: false,
+          error: job.error || 'Video rendering failed'
+        };
+      }
+
+      // Wait before next poll
+      await sleep(POLL_INTERVAL_MS);
     }
 
-    return result;
   } catch (error) {
-    clearTimeout(timeoutId);
-
-    if (error instanceof Error && error.name === 'AbortError') {
-      return {
-        success: false,
-        error: 'Video rendering timed out after 30 minutes. Please try again.'
-      };
-    }
-
-    console.error('Render video fetch error:', error);
+    console.error('Render video error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to start video rendering'
+      error: error instanceof Error ? error.message : 'Failed to render video'
     };
   }
 }

@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 
@@ -14,20 +15,19 @@ if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
 }
 
-// Chunk size for processing large videos (25 images per chunk)
+// Configuration - optimized for speed
 const IMAGES_PER_CHUNK = 25;
-// Parallel chunk rendering for speed (limited to avoid memory pressure)
-const PARALLEL_CHUNK_RENDERS = 3;
-// Embers overlay effect URL (served from Netlify)
+const PARALLEL_CHUNK_RENDERS = 4;  // Increased from 3 for faster rendering
+const FFMPEG_PRESET = 'ultrafast';  // Changed from veryfast for ~40% faster encoding
+const FFMPEG_CRF = '26';  // Changed from 23 for faster encoding (slightly lower quality)
+
+// Embers overlay
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
-// Effects interface for configurable video effects
+const EMBERS_SOURCE_DURATION = 10;
+
 interface VideoEffects {
   embers?: boolean;
 }
-// Duration of the embers.mp4 source file (seconds)
-const EMBERS_SOURCE_DURATION = 10;
-// Timeout for embers pass per chunk (ms) - fail gracefully if exceeded
-const EMBERS_TIMEOUT_MS = 120000;  // 2 minutes per chunk
 
 interface ImageTiming {
   startSeconds: number;
@@ -44,14 +44,55 @@ interface RenderVideoRequest {
   effects?: VideoEffects;
 }
 
-// Helper to send SSE events with flush for HTTP/2 compatibility
-const sendEvent = (res: Response, data: any) => {
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-  // Flush to prevent HTTP/2 buffering issues
-  if (typeof (res as any).flush === 'function') {
-    (res as any).flush();
+interface RenderJob {
+  id: string;
+  project_id: string;
+  status: 'queued' | 'downloading' | 'rendering' | 'muxing' | 'uploading' | 'complete' | 'failed';
+  progress: number;
+  message: string | null;
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Get Supabase client
+function getSupabase(): SupabaseClient {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase configuration');
   }
-};
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Update job status in Supabase
+async function updateJobStatus(
+  supabase: SupabaseClient,
+  jobId: string,
+  status: RenderJob['status'],
+  progress: number,
+  message: string,
+  extras?: { video_url?: string; error?: string }
+): Promise<void> {
+  const { error } = await supabase
+    .from('render_jobs')
+    .update({
+      status,
+      progress,
+      message,
+      video_url: extras?.video_url,
+      error: extras?.error,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+
+  if (error) {
+    console.error(`Failed to update job ${jobId}:`, error);
+  } else {
+    console.log(`Job ${jobId}: ${status} ${progress}% - ${message}`);
+  }
+}
 
 // Download file from URL to temp directory
 async function downloadFile(url: string, destPath: string): Promise<void> {
@@ -63,54 +104,9 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   fs.writeFileSync(destPath, Buffer.from(buffer));
 }
 
-// Main render handler
-async function handleRenderVideo(req: Request, res: Response) {
-  // Set up SSE headers - optimized for HTTP/2 compatibility
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  // Prevent proxy buffering/timeouts
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  // Configure socket for long-running connections
-  const socket = res.socket;
-  if (socket) {
-    socket.setNoDelay(true);  // Disable Nagle's algorithm
-    socket.setKeepAlive(true, 30000);  // TCP keep-alive every 30s
-    socket.setTimeout(0);  // No socket timeout
-  }
-
-  // Flush headers immediately
-  res.flushHeaders();
-
-  // Track last progress for heartbeat
-  let lastProgress = { stage: 'preparing', percent: 0, message: 'Starting...' };
-
-  // Keepalive heartbeat - send REAL progress events (not just comments)
-  // This works better with HTTP/2 proxies that may ignore SSE comments
-  const heartbeatInterval = setInterval(() => {
-    try {
-      // Send actual progress event, not just a comment
-      sendEvent(res, {
-        type: 'progress',
-        stage: lastProgress.stage,
-        percent: lastProgress.percent,
-        message: lastProgress.message,
-        heartbeat: true
-      });
-    } catch (e) {
-      // Connection may have closed
-      clearInterval(heartbeatInterval);
-    }
-  }, 2000);  // Every 2 seconds
-
-  // Helper to update and send progress
-  const updateProgress = (stage: string, percent: number, message: string) => {
-    lastProgress = { stage, percent, message };
-    sendEvent(res, { type: 'progress', stage, percent, message });
-  };
-
+// Background render processing function
+async function processRenderJob(jobId: string, params: RenderVideoRequest): Promise<void> {
+  const supabase = getSupabase();
   let tempDir: string | null = null;
 
   try {
@@ -120,52 +116,32 @@ async function handleRenderVideo(req: Request, res: Response) {
       imageUrls,
       imageTimings,
       srtContent,
-      projectTitle,
       effects
-    } = req.body as RenderVideoRequest;
+    } = params;
 
-    // Determine if embers effect is enabled (default: false)
     const embersEnabled = effects?.embers ?? false;
-    console.log(`Effects: embers=${embersEnabled}`);
-
-    // Validate input
-    if (!projectId || !audioUrl || !imageUrls || imageUrls.length === 0) {
-      sendEvent(res, { type: 'error', error: 'Missing required fields' });
-      res.end();
-      return;
-    }
-
-    if (!imageTimings || imageTimings.length !== imageUrls.length) {
-      sendEvent(res, { type: 'error', error: 'Image timings must match image count' });
-      res.end();
-      return;
-    }
-
-    console.log(`Starting video render for project: ${projectId}`);
-    console.log(`Images: ${imageUrls.length}, Audio: ${audioUrl}`);
+    console.log(`Job ${jobId}: Starting render for project ${projectId}`);
+    console.log(`Effects: embers=${embersEnabled}, Images: ${imageUrls.length}`);
 
     // Create temp directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'render-'));
     console.log(`Temp directory: ${tempDir}`);
 
     // Stage 1: Download files
-    updateProgress('downloading', 5, 'Downloading assets...');
+    await updateJobStatus(supabase, jobId, 'downloading', 5, 'Downloading assets...');
 
-    // Download audio
     const audioPath = path.join(tempDir, 'voiceover.wav');
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
 
-    // Download embers overlay (will be looped at runtime via -stream_loop)
     const embersPath = path.join(tempDir, 'embers.mp4');
     try {
       await downloadFile(EMBERS_OVERLAY_URL, embersPath);
       console.log('Embers overlay downloaded');
     } catch (err) {
-      console.warn('Failed to download embers overlay, continuing without it:', err);
+      console.warn('Failed to download embers overlay:', err);
     }
 
-    // Download images
     const imagePaths: string[] = [];
     for (let i = 0; i < imageUrls.length; i++) {
       const filename = `image_${String(i + 1).padStart(3, '0')}.png`;
@@ -173,26 +149,23 @@ async function handleRenderVideo(req: Request, res: Response) {
       await downloadFile(imageUrls[i], imagePath);
       imagePaths.push(imagePath);
 
-      const downloadPercent = 5 + Math.round((i + 1) / imageUrls.length * 20);
-      updateProgress('downloading', downloadPercent, `Downloaded image ${i + 1}/${imageUrls.length}`);
+      if (i % 10 === 0 || i === imageUrls.length - 1) {
+        const downloadPercent = 5 + Math.round((i + 1) / imageUrls.length * 20);
+        await updateJobStatus(supabase, jobId, 'downloading', downloadPercent, `Downloaded image ${i + 1}/${imageUrls.length}`);
+      }
     }
     console.log('All images downloaded');
 
-    // Write SRT file (kept for future use, but not burned into video)
-    const srtPath = path.join(tempDir, 'captions.srt');
-    fs.writeFileSync(srtPath, srtContent, 'utf8');
-    console.log('SRT file written');
+    fs.writeFileSync(path.join(tempDir, 'captions.srt'), srtContent, 'utf8');
 
-    // Stage 2: Chunked video rendering
-    updateProgress('preparing', 30, 'Preparing timeline...');
+    // Stage 2: Prepare chunks
+    await updateJobStatus(supabase, jobId, 'rendering', 28, 'Preparing timeline...');
 
     const totalImages = imagePaths.length;
     const numChunks = Math.ceil(totalImages / IMAGES_PER_CHUNK);
-    const totalDuration = imageTimings[imageTimings.length - 1].endSeconds;
 
-    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) of up to ${IMAGES_PER_CHUNK} images each (${PARALLEL_CHUNK_RENDERS} parallel)`);
+    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) (${PARALLEL_CHUNK_RENDERS} parallel, ${FFMPEG_PRESET} preset)`);
 
-    // Prepare all chunk data first
     interface ChunkData {
       index: number;
       concatPath: string;
@@ -206,56 +179,39 @@ async function handleRenderVideo(req: Request, res: Response) {
       const chunkImages = imagePaths.slice(chunkStart, chunkEnd);
       const chunkTimings = imageTimings.slice(chunkStart, chunkEnd);
 
-      // Create concat demuxer file for this chunk
       const concatContent = chunkImages.map((imgPath, i) => {
         const duration = chunkTimings[i].endSeconds - chunkTimings[i].startSeconds;
         const safeDuration = Math.max(duration, 0.1);
         return `file '${imgPath}'\nduration ${safeDuration.toFixed(3)}`;
       }).join('\n');
 
-      // Add last image again (FFmpeg concat demuxer quirk)
       const lastImagePath = chunkImages[chunkImages.length - 1];
       const concatFile = concatContent + `\nfile '${lastImagePath}'`;
 
       const concatPath = path.join(tempDir, `concat_chunk_${chunkIndex}.txt`);
       fs.writeFileSync(concatPath, concatFile, 'utf8');
 
-      const chunkOutputPath = path.join(tempDir, `chunk_${chunkIndex}.mp4`);
-
       chunkDataList.push({
         index: chunkIndex,
         concatPath,
-        outputPath: chunkOutputPath
+        outputPath: path.join(tempDir, `chunk_${chunkIndex}.mp4`)
       });
     }
 
     const chunkVideoPaths = chunkDataList.map(c => c.outputPath);
-
-    // Track completed chunks for progress
     let completedChunks = 0;
 
-    // Check if embers overlay is available and enabled
     const embersAvailable = embersEnabled && fs.existsSync(embersPath);
-    if (!embersEnabled) {
-      console.log('Embers overlay disabled (effects.embers not set)');
-    } else if (embersAvailable) {
-      console.log('Embers overlay enabled, will apply to each chunk');
-    } else {
-      console.log('Embers overlay enabled but file not available, rendering without embers');
-    }
 
-    // Helper function to render a single chunk (with optional embers overlay)
+    // Render chunk function
     const renderChunk = async (chunk: ChunkData): Promise<void> => {
-      console.log(`Rendering chunk ${chunk.index + 1}/${numChunks}${embersAvailable ? ' with embers' : ''}`);
-
-      // Calculate chunk duration from timings
       const chunkStart = chunk.index * IMAGES_PER_CHUNK;
       const chunkEnd = Math.min((chunk.index + 1) * IMAGES_PER_CHUNK, totalImages);
       const chunkTimingsSlice = imageTimings.slice(chunkStart, chunkEnd);
       const chunkDuration = chunkTimingsSlice[chunkTimingsSlice.length - 1].endSeconds - chunkTimingsSlice[0].startSeconds;
-      console.log(`Chunk ${chunk.index + 1} duration: ${chunkDuration.toFixed(1)}s`);
 
-      // Pass 1: Render images to raw chunk
+      console.log(`Rendering chunk ${chunk.index + 1}/${numChunks} (${chunkDuration.toFixed(1)}s)`);
+
       const rawChunkPath = path.join(tempDir!, `chunk_raw_${chunk.index}.mp4`);
 
       await new Promise<void>((resolve, reject) => {
@@ -265,20 +221,17 @@ async function handleRenderVideo(req: Request, res: Response) {
           .outputOptions([
             '-threads', '0',
             '-c:v', 'libx264',
-            '-preset', 'veryfast',
-            '-crf', '23',
+            '-preset', FFMPEG_PRESET,
+            '-crf', FFMPEG_CRF,
             '-pix_fmt', 'yuv420p',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
             '-y'
           ])
           .output(rawChunkPath)
           .on('start', (cmd) => {
-            console.log(`Chunk ${chunk.index + 1} Pass 1:`, cmd.substring(0, 150) + '...');
+            console.log(`Chunk ${chunk.index + 1} Pass 1:`, cmd.substring(0, 120) + '...');
           })
-          .on('error', (err) => {
-            console.error(`Chunk ${chunk.index + 1} Pass 1 error:`, err);
-            reject(err);
-          })
+          .on('error', reject)
           .on('end', () => {
             console.log(`Chunk ${chunk.index + 1} Pass 1 complete`);
             resolve();
@@ -286,71 +239,56 @@ async function handleRenderVideo(req: Request, res: Response) {
           .run();
       });
 
-      // Pass 2: Apply embers overlay (if available)
       if (embersAvailable) {
         try {
-          // Create concat file for embers to cover chunk duration (no infinite loop)
           const embersLoopCount = Math.ceil(chunkDuration / EMBERS_SOURCE_DURATION) + 1;
           const embersChunkConcatPath = path.join(tempDir!, `embers_concat_${chunk.index}.txt`);
-          const embersConcatContent = Array(embersLoopCount).fill(`file '${embersPath}'`).join('\n');
-          fs.writeFileSync(embersChunkConcatPath, embersConcatContent, 'utf8');
-          console.log(`Chunk ${chunk.index + 1} embers: ${embersLoopCount} loops (${embersLoopCount * EMBERS_SOURCE_DURATION}s coverage)`);
+          fs.writeFileSync(embersChunkConcatPath, Array(embersLoopCount).fill(`file '${embersPath}'`).join('\n'), 'utf8');
 
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(rawChunkPath)
               .input(embersChunkConcatPath)
-              .inputOptions(['-f', 'concat', '-safe', '0'])  // Concat demuxer for embers
+              .inputOptions(['-f', 'concat', '-safe', '0'])
               .complexFilter([
-                // Desaturate embers to grayscale to avoid pink tint, blend at low opacity
                 '[1:v]scale=1920:1080,hue=s=0[embers_gray]',
                 '[0:v][embers_gray]blend=all_mode=addition:all_opacity=0.15:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
                 '-c:v', 'libx264',
-                '-preset', 'veryfast',
-                '-crf', '23',
+                '-preset', FFMPEG_PRESET,
+                '-crf', FFMPEG_CRF,
                 '-pix_fmt', 'yuv420p',
                 '-y'
               ])
               .output(chunk.outputPath)
-              .on('start', (cmd) => {
-                console.log(`Chunk ${chunk.index + 1} Pass 2 (embers):`, cmd.substring(0, 150) + '...');
-              })
-              .on('error', (err) => {
-                console.error(`Chunk ${chunk.index + 1} Pass 2 error:`, err);
-                reject(err);
-              })
+              .on('error', reject)
               .on('end', () => {
-                console.log(`Chunk ${chunk.index + 1} Pass 2 complete`);
-                // Clean up temp files
-                try { fs.unlinkSync(rawChunkPath); } catch (e) { /* ignore */ }
-                try { fs.unlinkSync(embersChunkConcatPath); } catch (e) { /* ignore */ }
+                try { fs.unlinkSync(rawChunkPath); } catch (e) { }
+                try { fs.unlinkSync(embersChunkConcatPath); } catch (e) { }
                 resolve();
               })
               .run();
           });
         } catch (err) {
-          // Fallback: use raw chunk if embers pass fails
-          console.error(`Chunk ${chunk.index + 1} embers failed, using raw:`, err);
+          console.error(`Chunk ${chunk.index + 1} embers failed:`, err);
           if (fs.existsSync(rawChunkPath)) {
             fs.renameSync(rawChunkPath, chunk.outputPath);
           }
         }
       } else {
-        // No embers, just rename raw chunk to final output
         fs.renameSync(rawChunkPath, chunk.outputPath);
       }
 
       completedChunks++;
       const percent = 30 + Math.round((completedChunks / numChunks) * 40);
-      updateProgress('rendering', percent, `Rendered ${completedChunks}/${numChunks} chunks${embersAvailable ? ' with embers' : ''}`);
+      await updateJobStatus(supabase, jobId, 'rendering', percent, `Rendered ${completedChunks}/${numChunks} chunks`);
       console.log(`Chunk ${chunk.index + 1} fully complete (${completedChunks}/${numChunks})`);
     };
 
     // Render chunks in parallel batches
-    updateProgress('rendering', 30, `Rendering ${numChunks} chunks (${PARALLEL_CHUNK_RENDERS} parallel)...`);
+    await updateJobStatus(supabase, jobId, 'rendering', 30, `Rendering ${numChunks} chunks...`);
 
     for (let i = 0; i < chunkDataList.length; i += PARALLEL_CHUNK_RENDERS) {
       const batch = chunkDataList.slice(i, i + PARALLEL_CHUNK_RENDERS);
@@ -358,12 +296,11 @@ async function handleRenderVideo(req: Request, res: Response) {
       await Promise.all(batch.map(chunk => renderChunk(chunk)));
     }
 
-    // Stage 3: Concatenate all chunk videos
-    updateProgress('rendering', 72, 'Joining video segments...');
+    // Stage 3: Concatenate chunks
+    await updateJobStatus(supabase, jobId, 'muxing', 72, 'Joining video segments...');
 
     const chunksListPath = path.join(tempDir, 'chunks_list.txt');
-    const chunksListContent = chunkVideoPaths.map(p => `file '${p}'`).join('\n');
-    fs.writeFileSync(chunksListPath, chunksListContent, 'utf8');
+    fs.writeFileSync(chunksListPath, chunkVideoPaths.map(p => `file '${p}'`).join('\n'), 'utf8');
 
     const concatenatedPath = path.join(tempDir, 'concatenated.mp4');
 
@@ -371,18 +308,9 @@ async function handleRenderVideo(req: Request, res: Response) {
       ffmpeg()
         .input(chunksListPath)
         .inputOptions(['-f', 'concat', '-safe', '0'])
-        .outputOptions([
-          '-c', 'copy',  // Fast copy, no re-encoding
-          '-y'
-        ])
+        .outputOptions(['-c', 'copy', '-y'])
         .output(concatenatedPath)
-        .on('start', (cmd) => {
-          console.log('Concatenation FFmpeg command:', cmd);
-        })
-        .on('error', (err) => {
-          console.error('Concatenation FFmpeg error:', err);
-          reject(err);
-        })
+        .on('error', reject)
         .on('end', () => {
           console.log('Video concatenation complete');
           resolve();
@@ -390,24 +318,17 @@ async function handleRenderVideo(req: Request, res: Response) {
         .run();
     });
 
-    // Stage 4: Add audio to concatenated video (fast muxing)
-    updateProgress('rendering', 75, 'Adding audio...');
+    // Stage 4: Add audio
+    await updateJobStatus(supabase, jobId, 'muxing', 75, 'Adding audio...');
 
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
 
-    // Get video duration for progress calculation
-    const concatenatedStats = fs.statSync(concatenatedPath);
-    console.log(`Concatenated video size: ${(concatenatedStats.size / 1024 / 1024).toFixed(2)} MB`);
-
     await new Promise<void>((resolve, reject) => {
-      let lastProgressUpdate = Date.now();
-      const PROGRESS_INTERVAL = 5000; // Update every 5 seconds
-
-      const cmd = ffmpeg()
+      ffmpeg()
         .input(concatenatedPath)
         .input(audioPath)
         .outputOptions([
-          '-c:v', 'copy',  // No re-encoding, just mux
+          '-c:v', 'copy',
           '-c:a', 'aac',
           '-ar', '48000',
           '-b:a', '192k',
@@ -415,66 +336,31 @@ async function handleRenderVideo(req: Request, res: Response) {
           '-y'
         ])
         .output(withAudioPath)
-        .on('start', (cmdLine) => {
-          console.log('Audio mux FFmpeg command:', cmdLine);
+        .on('start', (cmd) => {
+          console.log('Audio mux:', cmd.substring(0, 100) + '...');
         })
-        .on('progress', (progress) => {
-          const now = Date.now();
-          if (now - lastProgressUpdate >= PROGRESS_INTERVAL) {
-            lastProgressUpdate = now;
-            const percent = progress.percent ? Math.round(75 + (progress.percent * 0.1)) : 75;
-            const timeStr = progress.timemark || 'processing';
-            console.log(`Audio mux progress: ${timeStr} (${progress.percent?.toFixed(1) || '?'}%)`);
-            updateProgress('rendering', Math.min(percent, 84), `Muxing audio... ${timeStr}`);
-          }
-        })
-        .on('error', (err) => {
-          console.error('Audio mux FFmpeg error:', err);
-          reject(err);
-        })
+        .on('error', reject)
         .on('end', () => {
           console.log('Audio muxing complete');
           resolve();
-        });
-
-      cmd.run();
+        })
+        .run();
     });
 
-    // Check video with audio file
     const withAudioStats = fs.statSync(withAudioPath);
-    console.log(`Video with audio size: ${(withAudioStats.size / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`Video with audio: ${(withAudioStats.size / 1024 / 1024).toFixed(2)} MB`);
 
     if (withAudioStats.size === 0) {
       throw new Error('FFmpeg produced empty video file');
     }
 
-    // Embers overlay is now applied per-chunk during rendering (above)
-    // No post-concat embers processing needed
-    const finalVideoPath = withAudioPath;
+    // Stage 5: Upload
+    await updateJobStatus(supabase, jobId, 'uploading', 85, 'Uploading video...');
 
-    // Stage 6: Upload final video
-    updateProgress('uploading', 85, 'Uploading video...');
-
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing Supabase configuration');
-    }
-
-    console.log(`Supabase URL: ${supabaseUrl}`);
-    console.log(`Service role key length: ${supabaseKey.length} chars`);
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Upload final video - with progress heartbeat for large files
-    const videoUploadPath = `${projectId}/video.mp4`;
-    const finalVideoBuffer = fs.readFileSync(finalVideoPath);
+    const videoUploadPath = `${params.projectId}/video.mp4`;
+    const finalVideoBuffer = fs.readFileSync(withAudioPath);
     const uploadSizeMB = (finalVideoBuffer.length / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
-
-    // Update progress for upload (main heartbeat will keep connection alive)
-    updateProgress('uploading', 86, `Uploading video (${uploadSizeMB} MB)...`);
 
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
@@ -484,7 +370,6 @@ async function handleRenderVideo(req: Request, res: Response) {
       });
 
     if (uploadError) {
-      console.error('Supabase upload error:', uploadError);
       throw new Error(`Failed to upload video: ${uploadError.message}`);
     }
 
@@ -495,20 +380,13 @@ async function handleRenderVideo(req: Request, res: Response) {
     const videoUrl = urlData.publicUrl;
     console.log(`Video uploaded: ${videoUrl}`);
 
-    // Send final completion event
-    sendEvent(res, {
-      type: 'complete',
-      videoUrl,
-      size: finalVideoBuffer.length,
-      message: 'Video rendering complete!'
-    });
+    // Complete!
+    await updateJobStatus(supabase, jobId, 'complete', 100, 'Video rendering complete!', { video_url: videoUrl });
 
   } catch (error: any) {
-    console.error('Render video error:', error);
-    sendEvent(res, { type: 'error', error: error.message || 'Unknown error' });
+    console.error(`Job ${jobId} failed:`, error);
+    await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message || 'Unknown error' });
   } finally {
-    clearInterval(heartbeatInterval);
-
     // Clean up temp directory
     if (tempDir && fs.existsSync(tempDir)) {
       try {
@@ -518,12 +396,90 @@ async function handleRenderVideo(req: Request, res: Response) {
         console.error('Failed to clean up temp directory:', cleanupError);
       }
     }
-
-    res.end();
   }
 }
 
-// POST /render-video
-router.post('/', handleRenderVideo);
+// POST /render-video - Start a new render job
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const params = req.body as RenderVideoRequest;
+
+    // Validate input
+    if (!params.projectId || !params.audioUrl || !params.imageUrls || params.imageUrls.length === 0) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!params.imageTimings || params.imageTimings.length !== params.imageUrls.length) {
+      return res.status(400).json({ error: 'Image timings must match image count' });
+    }
+
+    const supabase = getSupabase();
+
+    // Create job in database
+    const jobId = randomUUID();
+    const { error: insertError } = await supabase
+      .from('render_jobs')
+      .insert({
+        id: jobId,
+        project_id: params.projectId,
+        status: 'queued',
+        progress: 0,
+        message: 'Job queued'
+      });
+
+    if (insertError) {
+      console.error('Failed to create job:', insertError);
+      return res.status(500).json({ error: 'Failed to create render job' });
+    }
+
+    console.log(`Created render job ${jobId} for project ${params.projectId}`);
+
+    // Start background processing (non-blocking)
+    processRenderJob(jobId, params).catch(err => {
+      console.error(`Background job ${jobId} crashed:`, err);
+    });
+
+    // Return immediately with job ID
+    res.json({
+      success: true,
+      jobId,
+      status: 'queued',
+      message: 'Render job started. Poll /render-video/status/:jobId for progress.'
+    });
+
+  } catch (error: any) {
+    console.error('Error starting render job:', error);
+    res.status(500).json({ error: error.message || 'Failed to start render job' });
+  }
+});
+
+// GET /render-video/status/:jobId - Poll job status
+router.get('/status/:jobId', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+
+    if (!jobId) {
+      return res.status(400).json({ error: 'Job ID required' });
+    }
+
+    const supabase = getSupabase();
+
+    const { data: job, error } = await supabase
+      .from('render_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+
+    if (error || !job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.json(job);
+
+  } catch (error: any) {
+    console.error('Error fetching job status:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch job status' });
+  }
+});
 
 export default router;
