@@ -178,9 +178,11 @@ RULES:
 3. If narration is sparse, use the script context to infer appropriate visuals
 4. CRITICAL: ALL scenes MUST stay within the historical time period of the script. If the script is about medieval history, EVERY image must depict medieval scenes - never modern labs, computers, or contemporary settings
 5. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept. Example: for medieval sleep patterns, show a medieval bedroom at night, not a modern sleep lab
-6. Include specific details: setting, lighting, objects, people, actions, atmosphere
-7. 50-100 words per description
-8. Do NOT include any text, titles, or words in the image
+6. NEVER depict violence, blood, surgery, medical procedures, torture, death, corpses, executions, or anything scary/disturbing. Keep all scenes peaceful, serene, and suitable for relaxing/sleep content
+7. For topics like medieval medicine or trials: show the setting, tools, or aftermath (healed patient) - NOT the procedure itself
+8. Include specific details: setting, lighting, objects, people, actions, atmosphere
+9. 50-100 words per description
+10. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
