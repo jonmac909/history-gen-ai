@@ -389,8 +389,15 @@ async function handleRenderVideo(req: Request, res: Response) {
 
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
 
+    // Get video duration for progress calculation
+    const concatenatedStats = fs.statSync(concatenatedPath);
+    console.log(`Concatenated video size: ${(concatenatedStats.size / 1024 / 1024).toFixed(2)} MB`);
+
     await new Promise<void>((resolve, reject) => {
-      ffmpeg()
+      let lastProgressUpdate = Date.now();
+      const PROGRESS_INTERVAL = 5000; // Update every 5 seconds
+
+      const cmd = ffmpeg()
         .input(concatenatedPath)
         .input(audioPath)
         .outputOptions([
@@ -402,8 +409,23 @@ async function handleRenderVideo(req: Request, res: Response) {
           '-y'
         ])
         .output(withAudioPath)
-        .on('start', (cmd) => {
-          console.log('Audio mux FFmpeg command:', cmd);
+        .on('start', (cmdLine) => {
+          console.log('Audio mux FFmpeg command:', cmdLine);
+        })
+        .on('progress', (progress) => {
+          const now = Date.now();
+          if (now - lastProgressUpdate >= PROGRESS_INTERVAL) {
+            lastProgressUpdate = now;
+            const percent = progress.percent ? Math.round(75 + (progress.percent * 0.1)) : 75;
+            const timeStr = progress.timemark || 'processing';
+            console.log(`Audio mux progress: ${timeStr} (${progress.percent?.toFixed(1) || '?'}%)`);
+            sendEvent(res, {
+              type: 'progress',
+              stage: 'rendering',
+              percent: Math.min(percent, 84),
+              message: `Muxing audio... ${timeStr}`
+            });
+          }
         })
         .on('error', (err) => {
           console.error('Audio mux FFmpeg error:', err);
@@ -412,8 +434,9 @@ async function handleRenderVideo(req: Request, res: Response) {
         .on('end', () => {
           console.log('Audio muxing complete');
           resolve();
-        })
-        .run();
+        });
+
+      cmd.run();
     });
 
     // Check video with audio file
