@@ -251,8 +251,8 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .input(embersChunkConcatPath)
               .inputOptions(['-f', 'concat', '-safe', '0'])
               .complexFilter([
-                '[1:v]scale=1920:1080,hue=s=0[embers_gray]',
-                '[0:v][embers_gray]blend=all_mode=addition:all_opacity=0.15:shortest=1[out]'
+                '[1:v]scale=1920:1080,colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3:0[embers_gray]',
+                '[0:v][embers_gray]blend=all_mode=screen:all_opacity=0.12:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
