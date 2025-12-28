@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, FileText, Image, Volume2 } from "lucide-react";
+import { Settings, FileText, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,20 +19,11 @@ export interface ScriptTemplate {
   name?: string;
 }
 
-export interface FormatTemplate {
-  id: string;
-  template: string;
-  name?: string;
-}
-
 export interface ImageTemplate {
   id: string;
   template: string;
   name?: string;
 }
-
-// Alias for backward compatibility
-export type ToneTemplate = FormatTemplate;
 
 export interface CartesiaVoice {
   id: string;
@@ -45,10 +36,8 @@ export interface CartesiaVoice {
 }
 
 interface ConfigModalProps {
-  formatTemplates: FormatTemplate[];
-  onSaveFormatTemplates: (templates: FormatTemplate[]) => void;
-  scriptTemplates: FormatTemplate[];
-  onSaveScriptTemplates: (templates: FormatTemplate[]) => void;
+  scriptTemplates: ScriptTemplate[];
+  onSaveScriptTemplates: (templates: ScriptTemplate[]) => void;
   imageTemplates: ImageTemplate[];
   onSaveImageTemplates: (templates: ImageTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
@@ -56,8 +45,6 @@ interface ConfigModalProps {
 }
 
 export function ConfigModal({
-  formatTemplates,
-  onSaveFormatTemplates,
   scriptTemplates,
   onSaveScriptTemplates,
   imageTemplates,
@@ -66,26 +53,18 @@ export function ConfigModal({
   onSaveVoices,
 }: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [formats, setFormats] = useState<FormatTemplate[]>(formatTemplates);
-  const [scripts, setScripts] = useState<FormatTemplate[]>(scriptTemplates);
+  const [scripts, setScripts] = useState<ScriptTemplate[]>(scriptTemplates);
   const [images, setImages] = useState<ImageTemplate[]>(imageTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
 
   const handleSave = () => {
-    onSaveFormatTemplates(formats);
     onSaveScriptTemplates(scripts);
     onSaveImageTemplates(images);
     onSaveVoices(voices);
     setIsOpen(false);
   };
 
-  const updateFormatTemplate = (id: string, field: keyof FormatTemplate, value: string) => {
-    setFormats(prev => prev.map(t =>
-      t.id === id ? { ...t, [field]: value } : t
-    ));
-  };
-
-  const updateScriptTemplate = (id: string, field: keyof FormatTemplate, value: string) => {
+  const updateScriptTemplate = (id: string, field: keyof ScriptTemplate, value: string) => {
     setScripts(prev => prev.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
@@ -117,68 +96,29 @@ export function ConfigModal({
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="format" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="format">Format</TabsTrigger>
+        <Tabs defaultValue="script" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="script">Script</TabsTrigger>
             <TabsTrigger value="image">Image</TabsTrigger>
           </TabsList>
 
-          {/* Format Templates Tab */}
-          <TabsContent value="format" className="space-y-6 py-4">
-            <p className="text-sm text-muted-foreground">
-              Configure format templates to define the structure of your scripts.
-            </p>
-
-            {formats.map((format, index) => {
-              const defaultName = `Format ${String.fromCharCode(65 + index)}`;
-              return (
-                <div key={format.id} className="space-y-3 p-4 border border-border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary" />
-                    <span className="font-medium">{format.name || defaultName}</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Format Name</Label>
-                    <Input
-                      value={format.name || ""}
-                      onChange={(e) => updateFormatTemplate(format.id, "name", e.target.value)}
-                      placeholder={defaultName}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Format Description</Label>
-                    <Textarea
-                      value={format.template}
-                      onChange={(e) => updateFormatTemplate(format.id, "template", e.target.value)}
-                      placeholder="Describe the structure and format..."
-                      className="min-h-[150px]"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </TabsContent>
-
           {/* Script Templates Tab */}
           <TabsContent value="script" className="space-y-6 py-4">
             <p className="text-sm text-muted-foreground">
-              Configure script templates to define the voice and approach for narration.
+              Configure script templates to define the voice and structure for narration.
             </p>
 
             {scripts.map((script, index) => {
-              const defaultName = `Script ${String.fromCharCode(65 + index)}`;
+              const defaultName = `Template ${String.fromCharCode(65 + index)}`;
               return (
                 <div key={script.id} className="space-y-3 p-4 border border-border rounded-lg">
                   <div className="flex items-center gap-2">
-                    <Volume2 className="w-4 h-4 text-primary" />
+                    <FileText className="w-4 h-4 text-primary" />
                     <span className="font-medium">{script.name || defaultName}</span>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Script Name</Label>
+                    <Label>Template Name</Label>
                     <Input
                       value={script.name || ""}
                       onChange={(e) => updateScriptTemplate(script.id, "name", e.target.value)}
@@ -187,12 +127,12 @@ export function ConfigModal({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Script Description</Label>
+                    <Label>Template Instructions</Label>
                     <Textarea
                       value={script.template}
                       onChange={(e) => updateScriptTemplate(script.id, "template", e.target.value)}
                       placeholder="Describe the voice, approach, and techniques..."
-                      className="min-h-[100px]"
+                      className="min-h-[150px]"
                     />
                   </div>
                 </div>

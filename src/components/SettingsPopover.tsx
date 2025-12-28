@@ -21,12 +21,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
-import type { FormatTemplate, ImageTemplate } from "@/components/ConfigModal";
+import type { ScriptTemplate, ImageTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   projectTitle: string;
   fullAutomation: boolean;
-  formatTemplate: string;
   scriptTemplate: string;
   imageTemplate: string;
   aiModel: string;
@@ -42,36 +41,25 @@ export interface GenerationSettings {
 interface SettingsPopoverProps {
   settings: GenerationSettings;
   onSettingsChange: (settings: GenerationSettings) => void;
-  formatTemplates: FormatTemplate[];
-  scriptTemplates: FormatTemplate[];
+  scriptTemplates: ScriptTemplate[];
   imageTemplates: ImageTemplate[];
 }
 
-const defaultFormatLabels: Record<string, string> = {
-  "format-a": "Format A",
-  "format-b": "Format B",
-  "format-c": "Format C",
-  "format-d": "Format D",
-  "format-e": "Format E",
-  "format-f": "Format F",
-};
-
 const defaultScriptLabels: Record<string, string> = {
-  "template-humor": "Humor",
-  "template-immersive": "Immersive",
-  "template-documentary": "Documentary",
+  "template-a": "Complete Histories",
+  "template-b": "Lost Epoch",
+  "template-c": "Basic Documentary",
 };
 
 const defaultImageLabels: Record<string, string> = {
-  "image-a": "Image A",
-  "image-b": "Image B",
-  "image-c": "Image C",
+  "image-a": "Dutch Golden Age",
+  "image-b": "Italian Renaissance",
+  "image-c": "Medieval Style",
 };
 
 export function SettingsPopover({
   settings,
   onSettingsChange,
-  formatTemplates,
   scriptTemplates,
   imageTemplates,
 }: SettingsPopoverProps) {
@@ -84,12 +72,6 @@ export function SettingsPopover({
       setLocalSettings(settings);
     }
   }, [settings, isOpen]);
-
-  // Build template options from templates with custom names or defaults
-  const formatTemplateOptions = formatTemplates.map((template) => ({
-    value: template.id,
-    label: template.name || defaultFormatLabels[template.id] || template.id,
-  }));
 
   const scriptTemplateOptions = scriptTemplates.map((template) => ({
     value: template.id,
@@ -199,43 +181,15 @@ export function SettingsPopover({
             )}
           </div>
 
-          {/* Format Template */}
+          {/* Script Template */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Format:
+              Script Template:
             </label>
             <p className="text-xs text-muted-foreground text-center">
               {localSettings.customScript && localSettings.customScript.trim().length > 0
                 ? "(Ignored when using custom script)"
-                : "Script structure (Listicle, Documentary, etc.)"}
-            </p>
-            <Select
-              value={localSettings.formatTemplate}
-              onValueChange={(value) => updateSetting("formatTemplate", value)}
-              disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a format" />
-              </SelectTrigger>
-              <SelectContent>
-                {formatTemplateOptions.map((template) => (
-                  <SelectItem key={template.value} value={template.value}>
-                    {template.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Script Tone */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Script Tone:
-            </label>
-            <p className="text-xs text-muted-foreground text-center">
-              {localSettings.customScript && localSettings.customScript.trim().length > 0
-                ? "(Ignored when using custom script)"
-                : "Voice and mood (Immersive, Serious, Funny)"}
+                : "Voice, structure, and style for the script"}
             </p>
             <Select
               value={localSettings.scriptTemplate}
@@ -243,7 +197,7 @@ export function SettingsPopover({
               disabled={!!(localSettings.customScript && localSettings.customScript.trim().length > 0)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a script style" />
+                <SelectValue placeholder="Select a template" />
               </SelectTrigger>
               <SelectContent>
                 {scriptTemplateOptions.map((template) => (
