@@ -173,13 +173,14 @@ serve(async (req) => {
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
 RULES:
-1. READ the script context to understand the overall topic
+1. READ the script context to understand the overall topic AND TIME PERIOD
 2. For each image segment, create a visual scene that illustrates the content
 3. If narration is sparse, use the script context to infer appropriate visuals
-4. For technical/abstract topics: visualize people using technology, historical contexts, symbolic representations, or documentary-style scenes
-5. Include specific details: setting, lighting, objects, people, actions, atmosphere
-6. 50-100 words per description
-7. Do NOT include any text, titles, or words in the image
+4. CRITICAL: ALL scenes MUST stay within the historical time period of the script. If the script is about medieval history, EVERY image must depict medieval scenes - never modern labs, computers, or contemporary settings
+5. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept. Example: for medieval sleep patterns, show a medieval bedroom at night, not a modern sleep lab
+6. Include specific details: setting, lighting, objects, people, actions, atmosphere
+7. 50-100 words per description
+8. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
