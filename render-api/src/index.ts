@@ -76,6 +76,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server successfully bound and ready for connections`);
 });
 
+// Increase timeouts for long-running SSE connections (video rendering)
+server.keepAliveTimeout = 620000; // 10+ minutes
+server.headersTimeout = 625000; // Slightly higher than keepAliveTimeout
+server.timeout = 0; // Disable socket timeout for SSE
+
 server.on('error', (error: any) => {
   console.error('❌ Server error:', error);
   if (error.code === 'EADDRINUSE') {

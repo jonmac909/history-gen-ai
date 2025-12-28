@@ -44,9 +44,13 @@ interface RenderVideoRequest {
   effects?: VideoEffects;
 }
 
-// Helper to send SSE events
+// Helper to send SSE events with flush for HTTP/2 compatibility
 const sendEvent = (res: Response, data: any) => {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+  // Flush to prevent HTTP/2 buffering issues
+  if (typeof (res as any).flush === 'function') {
+    (res as any).flush();
+  }
 };
 
 // Download file from URL to temp directory
@@ -61,16 +65,30 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
 
 // Main render handler
 async function handleRenderVideo(req: Request, res: Response) {
-  // Set up SSE headers
+  // Set up SSE headers - optimized for HTTP/2 compatibility
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  // Prevent proxy buffering/timeouts
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
-  // Keepalive heartbeat - every 5 seconds to prevent connection drops
+  // Flush headers immediately
+  res.flushHeaders();
+
+  // Keepalive heartbeat - every 3 seconds to prevent connection drops
   const heartbeatInterval = setInterval(() => {
-    res.write(': keepalive\n\n');
-  }, 5000);
+    try {
+      res.write(': keepalive\n\n');
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
+      }
+    } catch (e) {
+      // Connection may have closed
+      clearInterval(heartbeatInterval);
+    }
+  }, 3000);
 
   let tempDir: string | null = null;
 
