@@ -238,7 +238,6 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
 
   const inputPayload: Record<string, unknown> = {
     text: text,
-    prompt: text,
   };
 
   if (referenceAudioBase64) {
