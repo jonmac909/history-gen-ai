@@ -82,23 +82,25 @@ const formatTimestamp = (startSec: number, endSec: number): string => {
   return `${formatTime(startSec)}-${formatTime(endSec)}`;
 };
 
-// Download file from URL
+// Download file from URL - triggers browser's native download with progress
 const downloadFromUrl = async (url: string, filename: string) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(blobUrl);
-  } catch (error) {
-    console.error('Download failed:', error);
-    throw error;
+  // For Supabase storage URLs, add download parameter to force download instead of preview
+  let downloadUrl = url;
+  if (url.includes('supabase.co/storage')) {
+    const separator = url.includes('?') ? '&' : '?';
+    downloadUrl = `${url}${separator}download=${encodeURIComponent(filename)}`;
   }
+
+  // Create a temporary anchor and click it to trigger native browser download
+  // This shows the browser's download progress bar instead of loading into memory first
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 // Download text content as file
