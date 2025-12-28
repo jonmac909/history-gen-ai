@@ -70,25 +70,46 @@ async function handleRenderVideo(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Transfer-Encoding', 'chunked');
   // Prevent proxy buffering/timeouts
   res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // Configure socket for long-running connections
+  const socket = res.socket;
+  if (socket) {
+    socket.setNoDelay(true);  // Disable Nagle's algorithm
+    socket.setKeepAlive(true, 30000);  // TCP keep-alive every 30s
+    socket.setTimeout(0);  // No socket timeout
+  }
 
   // Flush headers immediately
   res.flushHeaders();
 
-  // Keepalive heartbeat - every 3 seconds to prevent connection drops
+  // Track last progress for heartbeat
+  let lastProgress = { stage: 'preparing', percent: 0, message: 'Starting...' };
+
+  // Keepalive heartbeat - send REAL progress events (not just comments)
+  // This works better with HTTP/2 proxies that may ignore SSE comments
   const heartbeatInterval = setInterval(() => {
     try {
-      res.write(': keepalive\n\n');
-      if (typeof (res as any).flush === 'function') {
-        (res as any).flush();
-      }
+      // Send actual progress event, not just a comment
+      sendEvent(res, {
+        type: 'progress',
+        stage: lastProgress.stage,
+        percent: lastProgress.percent,
+        message: lastProgress.message,
+        heartbeat: true
+      });
     } catch (e) {
       // Connection may have closed
       clearInterval(heartbeatInterval);
     }
-  }, 3000);
+  }, 2000);  // Every 2 seconds
+
+  // Helper to update and send progress
+  const updateProgress = (stage: string, percent: number, message: string) => {
+    lastProgress = { stage, percent, message };
+    sendEvent(res, { type: 'progress', stage, percent, message });
+  };
 
   let tempDir: string | null = null;
 
@@ -128,7 +149,7 @@ async function handleRenderVideo(req: Request, res: Response) {
     console.log(`Temp directory: ${tempDir}`);
 
     // Stage 1: Download files
-    sendEvent(res, { type: 'progress', stage: 'downloading', percent: 5, message: 'Downloading assets...' });
+    updateProgress('downloading', 5, 'Downloading assets...');
 
     // Download audio
     const audioPath = path.join(tempDir, 'voiceover.wav');
@@ -153,12 +174,7 @@ async function handleRenderVideo(req: Request, res: Response) {
       imagePaths.push(imagePath);
 
       const downloadPercent = 5 + Math.round((i + 1) / imageUrls.length * 20);
-      sendEvent(res, {
-        type: 'progress',
-        stage: 'downloading',
-        percent: downloadPercent,
-        message: `Downloaded image ${i + 1}/${imageUrls.length}`
-      });
+      updateProgress('downloading', downloadPercent, `Downloaded image ${i + 1}/${imageUrls.length}`);
     }
     console.log('All images downloaded');
 
@@ -168,7 +184,7 @@ async function handleRenderVideo(req: Request, res: Response) {
     console.log('SRT file written');
 
     // Stage 2: Chunked video rendering
-    sendEvent(res, { type: 'progress', stage: 'preparing', percent: 30, message: 'Preparing timeline...' });
+    updateProgress('preparing', 30, 'Preparing timeline...');
 
     const totalImages = imagePaths.length;
     const numChunks = Math.ceil(totalImages / IMAGES_PER_CHUNK);
@@ -329,22 +345,12 @@ async function handleRenderVideo(req: Request, res: Response) {
 
       completedChunks++;
       const percent = 30 + Math.round((completedChunks / numChunks) * 40);
-      sendEvent(res, {
-        type: 'progress',
-        stage: 'rendering',
-        percent,
-        message: `Rendered ${completedChunks}/${numChunks} chunks${embersAvailable ? ' with embers' : ''}`
-      });
+      updateProgress('rendering', percent, `Rendered ${completedChunks}/${numChunks} chunks${embersAvailable ? ' with embers' : ''}`);
       console.log(`Chunk ${chunk.index + 1} fully complete (${completedChunks}/${numChunks})`);
     };
 
     // Render chunks in parallel batches
-    sendEvent(res, {
-      type: 'progress',
-      stage: 'rendering',
-      percent: 30,
-      message: `Rendering ${numChunks} chunks (${PARALLEL_CHUNK_RENDERS} parallel)...`
-    });
+    updateProgress('rendering', 30, `Rendering ${numChunks} chunks (${PARALLEL_CHUNK_RENDERS} parallel)...`);
 
     for (let i = 0; i < chunkDataList.length; i += PARALLEL_CHUNK_RENDERS) {
       const batch = chunkDataList.slice(i, i + PARALLEL_CHUNK_RENDERS);
@@ -353,7 +359,7 @@ async function handleRenderVideo(req: Request, res: Response) {
     }
 
     // Stage 3: Concatenate all chunk videos
-    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 72, message: 'Joining video segments...' });
+    updateProgress('rendering', 72, 'Joining video segments...');
 
     const chunksListPath = path.join(tempDir, 'chunks_list.txt');
     const chunksListContent = chunkVideoPaths.map(p => `file '${p}'`).join('\n');
@@ -385,7 +391,7 @@ async function handleRenderVideo(req: Request, res: Response) {
     });
 
     // Stage 4: Add audio to concatenated video (fast muxing)
-    sendEvent(res, { type: 'progress', stage: 'rendering', percent: 75, message: 'Adding audio...' });
+    updateProgress('rendering', 75, 'Adding audio...');
 
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
 
@@ -419,12 +425,7 @@ async function handleRenderVideo(req: Request, res: Response) {
             const percent = progress.percent ? Math.round(75 + (progress.percent * 0.1)) : 75;
             const timeStr = progress.timemark || 'processing';
             console.log(`Audio mux progress: ${timeStr} (${progress.percent?.toFixed(1) || '?'}%)`);
-            sendEvent(res, {
-              type: 'progress',
-              stage: 'rendering',
-              percent: Math.min(percent, 84),
-              message: `Muxing audio... ${timeStr}`
-            });
+            updateProgress('rendering', Math.min(percent, 84), `Muxing audio... ${timeStr}`);
           }
         })
         .on('error', (err) => {
@@ -452,7 +453,7 @@ async function handleRenderVideo(req: Request, res: Response) {
     const finalVideoPath = withAudioPath;
 
     // Stage 6: Upload final video
-    sendEvent(res, { type: 'progress', stage: 'uploading', percent: 85, message: 'Uploading video...' });
+    updateProgress('uploading', 85, 'Uploading video...');
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -472,15 +473,8 @@ async function handleRenderVideo(req: Request, res: Response) {
     const uploadSizeMB = (finalVideoBuffer.length / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
 
-    // Heartbeat during upload (large files can take minutes)
-    const uploadHeartbeat = setInterval(() => {
-      sendEvent(res, {
-        type: 'progress',
-        stage: 'uploading',
-        percent: 79,
-        message: `Uploading video (${uploadSizeMB} MB)...`
-      });
-    }, 3000);
+    // Update progress for upload (main heartbeat will keep connection alive)
+    updateProgress('uploading', 86, `Uploading video (${uploadSizeMB} MB)...`);
 
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
@@ -488,8 +482,6 @@ async function handleRenderVideo(req: Request, res: Response) {
         contentType: 'video/mp4',
         upsert: true
       });
-
-    clearInterval(uploadHeartbeat);
 
     if (uploadError) {
       console.error('Supabase upload error:', uploadError);
