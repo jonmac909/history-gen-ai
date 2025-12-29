@@ -1160,14 +1160,30 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
     }
 
-    // Clean script
+    // Clean script - remove markdown and metadata
     let cleanScript = script
+      // Remove markdown headers (entire lines starting with #)
+      .replace(/^#{1,6}\s+.*$/gm, '')
+      // Remove scene markers
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
-      .replace(/#{1,6}\s+/g, '')
+      // Remove markdown bold/italic but keep text
       .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+      // Remove parenthetical metadata like (5-10 minutes)
+      .replace(/\([^)]*minutes?\)/gi, '')
+      // Clean up excessive newlines
       .replace(/\n{3,}/g, '\n\n')
+      // Remove leading/trailing whitespace
       .trim();
+
+    // Log what was cleaned
+    const originalWordCount = script.split(/\s+/).filter(Boolean).length;
+    const cleanedWordCount = cleanScript.split(/\s+/).filter(Boolean).length;
+    const wordsRemoved = originalWordCount - cleanedWordCount;
+    if (wordsRemoved > 0) {
+      logger.info(`Cleaned script: removed ${wordsRemoved} words (headers, metadata, etc.)`);
+      logger.debug(`  Original: ${originalWordCount} words, Cleaned: ${cleanedWordCount} words`);
+    }
 
     cleanScript = normalizeText(cleanScript);
 
@@ -1181,6 +1197,7 @@ router.post('/', async (req: Request, res: Response) => {
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     logger.info(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
     logger.debug(`Normalized text length: ${cleanScript.length} chars`);
+    logger.debug(`First 200 chars: "${cleanScript.substring(0, 200)}..."`);
 
     const rawChunks = splitIntoChunks(cleanScript, MAX_TTS_CHUNK_LENGTH);
     logger.debug(`Split into ${rawChunks.length} chunks`);
