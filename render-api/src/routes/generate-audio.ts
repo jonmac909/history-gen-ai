@@ -1065,6 +1065,12 @@ async function generateTTSChunkWithRetry(
       const output = await pollJobStatus(jobId, apiKey);
       const audioData = base64ToBuffer(output.audio_base64);
 
+      // Check for excessive silence in the generated audio
+      const silenceCheck = detectSilentAudio(audioData);
+      if (silenceCheck.isSilent) {
+        logger.warn(`⚠️  Chunk ${chunkIndex + 1}/${totalChunks} has ${silenceCheck.silencePercent.toFixed(0)}% silence (${silenceCheck.durationSeconds.toFixed(1)}s) - text: "${chunkText.substring(0, 50)}..."`);
+      }
+
       if (attempt > 0) {
         logger.info(`✓ Chunk ${chunkIndex + 1}/${totalChunks} succeeded on attempt ${attempt + 1}`);
       }
@@ -1089,6 +1095,65 @@ async function generateTTSChunkWithRetry(
 // Convert base64 to buffer
 function base64ToBuffer(base64: string): Buffer {
   return Buffer.from(base64, 'base64');
+}
+
+// Detect if a WAV chunk contains excessive silence (>50% of duration)
+// Returns { isSilent: boolean, silencePercent: number, durationSeconds: number }
+function detectSilentAudio(wavBuffer: Buffer): { isSilent: boolean; silencePercent: number; durationSeconds: number } {
+  try {
+    // Find the data chunk
+    const dataMarker = Buffer.from('data', 'ascii');
+    let dataIdx = -1;
+    for (let i = 0; i <= wavBuffer.length - 4; i++) {
+      if (wavBuffer.slice(i, i + 4).equals(dataMarker)) {
+        dataIdx = i;
+        break;
+      }
+    }
+    if (dataIdx === -1) return { isSilent: false, silencePercent: 0, durationSeconds: 0 };
+
+    const dataStart = dataIdx + 8;
+    const dataSize = wavBuffer.readUInt32LE(dataIdx + 4);
+    const dataEnd = Math.min(wavBuffer.length, dataStart + dataSize);
+
+    // Read PCM samples (16-bit signed)
+    const samples: number[] = [];
+    for (let i = dataStart; i < dataEnd - 1; i += 2) {
+      samples.push(wavBuffer.readInt16LE(i));
+    }
+
+    if (samples.length === 0) return { isSilent: false, silencePercent: 0, durationSeconds: 0 };
+
+    // Calculate RMS in 100ms windows, count silent windows
+    const sampleRate = 24000; // Chatterbox outputs 24kHz
+    const windowSize = Math.floor(sampleRate * 0.1); // 100ms
+    const numWindows = Math.floor(samples.length / windowSize);
+    const silenceThreshold = 500; // RMS below this is considered silence
+
+    let silentWindows = 0;
+    for (let w = 0; w < numWindows; w++) {
+      const start = w * windowSize;
+      const end = start + windowSize;
+      const window = samples.slice(start, end);
+
+      // Calculate RMS
+      const sumSquares = window.reduce((sum, s) => sum + s * s, 0);
+      const rms = Math.sqrt(sumSquares / window.length);
+
+      if (rms < silenceThreshold) {
+        silentWindows++;
+      }
+    }
+
+    const silencePercent = numWindows > 0 ? (silentWindows / numWindows) * 100 : 0;
+    const durationSeconds = samples.length / sampleRate;
+    const isSilent = silencePercent > 50; // More than 50% silence is problematic
+
+    return { isSilent, silencePercent, durationSeconds };
+  } catch (err) {
+    // If we can't analyze, assume it's fine
+    return { isSilent: false, silencePercent: 0, durationSeconds: 0 };
+  }
 }
 
 // Concatenate multiple WAV files
