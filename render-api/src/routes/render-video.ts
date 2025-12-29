@@ -15,11 +15,11 @@ if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
 }
 
-// Configuration - optimized for speed
+// Configuration - balanced for speed and quality
 const IMAGES_PER_CHUNK = 25;
-const PARALLEL_CHUNK_RENDERS = 4;  // Increased from 3 for faster rendering
-const FFMPEG_PRESET = 'ultrafast';  // Changed from veryfast for ~40% faster encoding
-const FFMPEG_CRF = '26';  // Changed from 23 for faster encoding (slightly lower quality)
+const PARALLEL_CHUNK_RENDERS = 4;
+const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
+const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
 // Embers overlay
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
@@ -372,15 +372,47 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     const uploadSizeMB = (finalVideoBuffer.length / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
 
-    const { error: uploadError } = await supabase.storage
-      .from('generated-assets')
-      .upload(videoUploadPath, finalVideoBuffer, {
-        contentType: 'video/mp4',
-        upsert: true
-      });
+    // For large files (>50MB), use signed URL upload to avoid size limits
+    const fileSizeBytes = finalVideoBuffer.length;
+    const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
 
-    if (uploadError) {
-      throw new Error(`Failed to upload video: ${uploadError.message}`);
+    if (fileSizeBytes > LARGE_FILE_THRESHOLD) {
+      console.log(`Large file detected (${uploadSizeMB}MB), using signed URL upload...`);
+
+      // First, try to delete any existing file
+      await supabase.storage.from('generated-assets').remove([videoUploadPath]);
+
+      // Create signed upload URL
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('generated-assets')
+        .createSignedUploadUrl(videoUploadPath);
+
+      if (signedError || !signedData) {
+        throw new Error(`Failed to create signed upload URL: ${signedError?.message || 'Unknown error'}`);
+      }
+
+      // Upload using signed URL
+      const { error: uploadError } = await supabase.storage
+        .from('generated-assets')
+        .uploadToSignedUrl(videoUploadPath, signedData.token, finalVideoBuffer, {
+          contentType: 'video/mp4',
+        });
+
+      if (uploadError) {
+        throw new Error(`Failed to upload video via signed URL: ${uploadError.message}`);
+      }
+    } else {
+      // Standard upload for smaller files
+      const { error: uploadError } = await supabase.storage
+        .from('generated-assets')
+        .upload(videoUploadPath, finalVideoBuffer, {
+          contentType: 'video/mp4',
+          upsert: true
+        });
+
+      if (uploadError) {
+        throw new Error(`Failed to upload video: ${uploadError.message}`);
+      }
     }
 
     const { data: urlData } = supabase.storage
