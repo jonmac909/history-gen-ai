@@ -92,15 +92,74 @@ function validateTTSInput(text: string): boolean {
   return true;
 }
 
+// Convert numbers to words for better TTS pronunciation
+const ONES = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+const ORDINALS: Record<string, string> = {
+  '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth', '5th': 'fifth',
+  '6th': 'sixth', '7th': 'seventh', '8th': 'eighth', '9th': 'ninth', '10th': 'tenth',
+  '11th': 'eleventh', '12th': 'twelfth', '13th': 'thirteenth', '14th': 'fourteenth',
+  '15th': 'fifteenth', '16th': 'sixteenth', '17th': 'seventeenth', '18th': 'eighteenth',
+  '19th': 'nineteenth', '20th': 'twentieth', '21st': 'twenty-first'
+};
+
+function numberToWords(n: number): string {
+  if (n < 0) return 'negative ' + numberToWords(-n);
+  if (n < 20) return ONES[n];
+  if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? '-' + ONES[n % 10] : '');
+  if (n < 1000) return ONES[Math.floor(n / 100)] + ' hundred' + (n % 100 ? ' ' + numberToWords(n % 100) : '');
+  if (n < 10000) {
+    // For years like 1347, say "thirteen forty-seven" not "one thousand..."
+    const century = Math.floor(n / 100);
+    const remainder = n % 100;
+    if (remainder === 0) return numberToWords(century) + ' hundred';
+    return numberToWords(century) + ' ' + (remainder < 10 ? 'oh-' + ONES[remainder] : numberToWords(remainder));
+  }
+  if (n < 1000000) return numberToWords(Math.floor(n / 1000)) + ' thousand' + (n % 1000 ? ' ' + numberToWords(n % 1000) : '');
+  return numberToWords(Math.floor(n / 1000000)) + ' million' + (n % 1000000 ? ' ' + numberToWords(n % 1000000) : '');
+}
+
+function convertNumbersToWords(text: string): string {
+  // Convert ordinals first (1st, 2nd, 3rd, etc.)
+  text = text.replace(/\b(\d+)(st|nd|rd|th)\b/gi, (match) => {
+    const lower = match.toLowerCase();
+    return ORDINALS[lower] || match;
+  });
+
+  // Convert "ACT 5" patterns to "Act Five" (case-insensitive, preserve case of ACT)
+  text = text.replace(/\b(ACT|Act|act)\s+(\d+)\b/gi, (_, word, num) => {
+    const n = parseInt(num, 10);
+    const wordForm = numberToWords(n);
+    // Capitalize first letter of number word
+    const capitalizedWord = wordForm.charAt(0).toUpperCase() + wordForm.slice(1);
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() + ' ' + capitalizedWord;
+  });
+
+  // Convert standalone numbers (but not in URLs or technical contexts)
+  text = text.replace(/\b(\d{1,7})\b/g, (match) => {
+    const n = parseInt(match, 10);
+    if (n > 9999999) return match; // Keep very large numbers as-is
+    return numberToWords(n);
+  });
+
+  return text;
+}
+
 // Mandatory normalization before sending to API
 function normalizeText(text: string): string {
-  return text
+  let result = text
     .normalize("NFKD")
     // IMPORTANT: Convert smart quotes/dashes BEFORE removing non-ASCII
     .replace(/[""]/g, '"')
     .replace(/['']/g, "'")
     .replace(/[–—]/g, "-")
-    .replace(/…/g, "...")
+    .replace(/…/g, "...");
+
+  // Convert numbers to words for better TTS pronunciation
+  result = convertNumbersToWords(result);
+
+  return result
     .replace(/[^\x00-\x7F]/g, "") // Remove remaining non-ASCII AFTER conversions
     .replace(/\s+/g, " ")
     .trim();
