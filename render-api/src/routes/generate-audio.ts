@@ -826,10 +826,11 @@ async function downloadVoiceSample(url: string): Promise<string> {
         // Write input file
         fs.writeFileSync(tempInputPath, bytes);
 
-        // Convert to WAV using ffmpeg (24000Hz mono 16-bit to match ChatterboxTTS output)
+        // Convert to WAV using ffmpeg (preserve native sample rate, mono 16-bit)
+        // CRITICAL: Do NOT resample - preserving native sample rate prevents mel spectrogram mismatch
         await new Promise<void>((resolve, reject) => {
           ffmpeg(tempInputPath)
-            .audioFrequency(24000)  // Match ChatterboxTTS output
+            // NO .audioFrequency() - preserve native sample rate!
             .audioChannels(1)       // Mono
             .audioCodec('pcm_s16le') // 16-bit PCM
             .format('wav')

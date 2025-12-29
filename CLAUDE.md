@@ -181,7 +181,8 @@ Multi-step generation with user review at each stage:
 **ChatterboxTurboTTS** (Endpoint: `eitsgz3gndkh3s`):
 - Input: `{ text, reference_audio_base64 }`
   - **Critical:** `reference_audio_base64` MUST be WAV format base64
-  - MP3/other formats are auto-converted to 24000Hz mono 16-bit WAV via ffmpeg
+  - MP3/other formats are auto-converted to mono 16-bit WAV via ffmpeg
+  - **Sample rate preserved** - NO resampling (prevents mel spectrogram mismatch)
 - Output: 24000Hz mono 16-bit WAV (not 44100Hz!)
 - 500 char limit per chunk, 5+ second voice samples required
 - GitHub repo: `jonmac909/chatterbox`
@@ -404,13 +405,15 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - If retry attempts exhausted, individual chunks are skipped (not fatal)
 
 ### Audio quality issues (garbled transcriptions, silence gaps, unintelligible speech)
-- **Symptom:** Audio has 1-second silence gaps, garbled/unintelligible speech, poor transcription quality
-- **Root cause:** Voice sample format incompatibility
+- **Symptom:** Audio has 1-second silence gaps, garbled/unintelligible speech, 24-26% silence, poor transcription quality
+- **Root cause:** Voice sample format/sample rate incompatibility
   - ChatterboxTTS requires WAV format base64 for `reference_audio_base64`
-  - MP3 voice samples caused intermittent TTS failures → silence gaps → garbled audio
-- **Solution (implemented):** Auto-convert MP3→WAV before TTS (line 819 in `generate-audio.ts`)
-  - Uses ffmpeg to convert any non-WAV format to 24000Hz mono 16-bit WAV
-  - Matches ChatterboxTTS output format exactly
+  - **Critical:** Resampling voice samples causes mel spectrogram mismatch → massive silence padding
+  - RunPod logs show: `Reference mel length is not equal to 2 * reference token length`
+  - Results in chunks 5-8x larger than expected (1.5MB vs 200KB)
+- **Solution (implemented):** Auto-convert MP3→WAV **preserving native sample rate** (line 829 in `generate-audio.ts`)
+  - Uses ffmpeg to convert any non-WAV format to mono 16-bit WAV
+  - **Preserves original sample rate** - NO resampling (critical!)
   - Logs show: "⚠️ Voice sample is MP3 format. ChatterboxTTS requires WAV - will convert."
 - **Voice sample quality** best practices:
   - Minimum 5 seconds duration (warns if <3s)
