@@ -23,7 +23,7 @@ const logger = {
 };
 
 // TTS Configuration Constants
-const MAX_TTS_CHUNK_LENGTH = 500; // Max chars per chunk (RunPod handler limit is 500) - fewer chunks = faster
+const MAX_TTS_CHUNK_LENGTH = 250; // Reduced from 500 to prevent repetition buildup within chunks
 const MIN_TEXT_LENGTH = 5;
 const MAX_TEXT_LENGTH = 500; // Match chunk length
 const MAX_VOICE_SAMPLE_SIZE = 10 * 1024 * 1024;
