@@ -140,21 +140,21 @@ export function ProjectResults({
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers'>('basic');
   const autoRenderTriggered = useRef(false);
 
-  // Auto-render video when in full automation mode
+  // Auto-render video when in full automation mode (renders with embers)
   useEffect(() => {
-    if (autoRender && !autoRenderTriggered.current && !basicVideoUrl && !isRenderingBasic) {
+    if (autoRender && !autoRenderTriggered.current && !embersVideoUrl && !isRenderingEmbers) {
       // Check if we have all required data for rendering
       const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
       if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
-        console.log("[Full Automation] Auto-starting video render...");
+        console.log("[Full Automation] Auto-starting video render with embers...");
         autoRenderTriggered.current = true;
         // Small delay to let the UI render first
         setTimeout(() => {
-          handleRenderVideo('basic');
+          handleRenderVideo('embers');
         }, 1000);
       }
     }
-  }, [autoRender, projectId, audioUrl, srtContent, assets, basicVideoUrl, isRenderingBasic]);
+  }, [autoRender, projectId, audioUrl, srtContent, assets, embersVideoUrl, isRenderingEmbers]);
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {
