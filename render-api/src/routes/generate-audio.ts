@@ -155,13 +155,31 @@ function convertNumbersToWords(text: string): string {
 }
 
 // Common proper nouns and technical terms that TTS often mispronounces
+// NOTE: This is a workaround - the real fix is using a better voice sample
 const PRONUNCIATION_FIXES: Record<string, string> = {
-  // French place names
-  'Clermont': 'Clair-mawn',
+  // Place names
+  'Clermont': 'Clair-mont',
+  'Jerusalem': 'Jeh-roo-sah-lem',
+  'Piacenza': 'Pee-ah-chen-zah',
+  'Bouillon': 'Boo-ee-yon',
+  'Nicaea': 'Nye-see-ah',
+  'Dorylaeum': 'Dor-ee-lay-um',
+  'Anatolia': 'An-ah-toe-lee-ah',
+
   // Historical terms
-  'Byzantine': 'Biz-an-teen',
+  'Byzantine': 'Biz-an-tine',
+  'Papal': 'Pay-pal',
+  'Manzikert': 'Man-zee-kert',
+  'Crusade': 'Crew-sade',
   'ecclesiastical': 'eh-klee-zee-as-ti-cal',
-  // Common mispronunciations (add more as needed)
+  'Alexios': 'Ah-lex-ee-os',
+  'Kerbogha': 'Ker-bow-gah',
+
+  // Common words that get garbled
+  'courts': 'korts',
+  'preachers': 'pree-chers',
+  'Jewish': 'Jew-ish',
+  'Armenian': 'Ar-mee-nee-an',
 };
 
 // Mandatory normalization before sending to API
