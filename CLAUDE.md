@@ -234,6 +234,13 @@ Multi-step generation with user review at each stage:
 - Model: `claude-sonnet-4-5`
 - Max tokens: 16000, Words per iteration: 12000
 
+**Script Output Format (CRITICAL):**
+- Scripts must be ONLY plain text prose narration - no markdown formatting
+- System prompt explicitly forbids: `#` headers, `**bold**`, section markers, brackets, hashtags
+- Script templates (`src/data/defaultTemplates.ts`) include warnings that structural labels (OPENING, ACT 1, etc.) are instructions only
+- Defense-in-depth: Audio generation also strips formatting if it slips through
+- Templates have prominent warnings: "DO NOT INCLUDE ANY OF THIS MARKDOWN FORMATTING IN YOUR OUTPUT"
+
 ### Scene Description (Image Prompts) Architecture
 
 **Uses Claude Sonnet with prompt caching and parallel batching.**
