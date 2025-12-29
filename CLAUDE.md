@@ -160,11 +160,12 @@ Multi-step generation with user review at each stage:
 - **Script cleaning** removes markdown headers, scene markers, and metadata BEFORE TTS:
   - Removes entire lines starting with `#` (both `#TheMedievalTavern` and `# Title`)
   - Removes standalone ALL CAPS lines (section headers like `OPENING`, `CONCLUSION`)
+  - Removes markdown horizontal rules (`---`, `***`, `___`) - these cause TTS silence
   - Removes inline hashtags (e.g., `#TheMedievalTavern` in middle of text)
   - Removes markdown bold/italic markers `*`, `**`, `***` (keeps text content)
   - Removes parenthetical time markers like `(5-10 minutes)`
   - Removes scene markers `[SCENE X]` and other bracketed content
-  - Critical: Failing to remove headers causes dead air/silence or unwanted narration
+  - Critical: Failing to remove formatting causes dead air/silence or unwanted narration
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
 - Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
 - Wrong order will strip quotes entirely instead of converting them

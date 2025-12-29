@@ -1260,6 +1260,8 @@ router.post('/', async (req: Request, res: Response) => {
       .replace(/^[A-Z\s]{3,}$/gm, '')
       // Remove markdown headers (entire lines starting with #)
       .replace(/^#{1,6}\s+.*$/gm, '')
+      // Remove markdown horizontal rules (---, ***, ___) - these cause TTS silence
+      .replace(/^[-*_]{3,}$/gm, '')
       // Remove scene markers
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
@@ -2093,6 +2095,8 @@ router.post('/segment', async (req: Request, res: Response) => {
       .replace(/^[A-Z\s]{3,}$/gm, '')
       // Remove markdown headers (entire lines starting with #)
       .replace(/^#{1,6}\s+.*$/gm, '')
+      // Remove markdown horizontal rules (---, ***, ___) - these cause TTS silence
+      .replace(/^[-*_]{3,}$/gm, '')
       // Remove scene markers
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
