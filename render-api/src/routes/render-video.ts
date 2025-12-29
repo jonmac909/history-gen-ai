@@ -251,8 +251,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .input(embersChunkConcatPath)
               .inputOptions(['-f', 'concat', '-safe', '0'])
               .complexFilter([
-                '[1:v]scale=1920:1080,format=gray,format=yuv420p[embers_gray]',
-                '[0:v][embers_gray]blend=all_mode=softlight:all_opacity=0.35:shortest=1[out]'
+                // Remove dark background from embers using colorkey, then overlay
+                '[1:v]scale=1920:1080,colorkey=black:similarity=0.3:blend=0.2[embers_keyed]',
+                '[0:v][embers_keyed]overlay=0:0:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
