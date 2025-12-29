@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
 import { Readable, PassThrough } from 'stream';
 import { promisify } from 'util';
 import FormData from 'form-data';
@@ -11,9 +12,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-// Set FFmpeg path
+// Set FFmpeg and FFprobe paths
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
+}
+if (ffprobeStatic?.path) {
+  ffmpeg.setFfprobePath(ffprobeStatic.path);
 }
 
 const router = Router();
