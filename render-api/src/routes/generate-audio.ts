@@ -388,10 +388,10 @@ function detectRepetitions(segments: WhisperSegment[], minWords: number = 4): Re
     for (let j = i + 1; j < Math.min(i + 5, sentences.length); j++) {
       const next = sentences[j];
 
-      // Check for exact or near-exact match
+      // Check for exact or near-exact match (lowered from 0.85 to 0.70 to catch more repetitions)
       const similarity = calculateSimilarity(current.normalized, next.normalized);
 
-      if (similarity > 0.85) {
+      if (similarity > 0.70) {
         const rangeKey = `${next.start.toFixed(2)}-${next.end.toFixed(2)}`;
         if (!processedRanges.has(rangeKey)) {
           processedRanges.add(rangeKey);
@@ -600,6 +600,67 @@ async function postProcessAudio(audioBuffer: Buffer): Promise<Buffer> {
 // Split script into N equal segments by word count
 const DEFAULT_SEGMENT_COUNT = 10; // Match RunPod max workers for audio endpoint
 
+// Detect and remove repeated phrases in source text BEFORE TTS generation
+function removeTextRepetitions(text: string, minWords: number = 4): { cleaned: string; removedCount: number } {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+  const normalized = sentences.map(s => normalizeForComparison(s));
+  const toRemove = new Set<number>();
+
+  // Find repeated sentences
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const currentWords = normalized[i].split(' ').filter(Boolean);
+    if (currentWords.length < minWords) continue;
+
+    // Check next few sentences for repetition
+    for (let j = i + 1; j < Math.min(i + 3, sentences.length); j++) {
+      const similarity = calculateSimilarity(normalized[i], normalized[j]);
+      if (similarity > 0.70) {
+        toRemove.add(j); // Remove the duplicate occurrence
+        logger.info(`Removing duplicate sentence before TTS: "${sentences[j].substring(0, 50)}..." (${(similarity * 100).toFixed(0)}% similar)`);
+      }
+    }
+  }
+
+  // Also check for repeated phrases within sentences
+  const cleanedSentences: string[] = [];
+  for (let i = 0; i < sentences.length; i++) {
+    if (toRemove.has(i)) continue; // Skip removed sentences
+
+    const sentence = sentences[i];
+    const words = sentence.split(/\s+/);
+    const cleanedWords: string[] = [];
+    const seen = new Set<string>();
+
+    // Look for repeated 4+ word phrases
+    for (let w = 0; w < words.length; w++) {
+      const phrase = words.slice(w, Math.min(w + 6, words.length)).join(' ').toLowerCase();
+
+      // Check if this phrase was seen recently (within last 10 words)
+      let isDuplicate = false;
+      const recentPhrases = cleanedWords.slice(-10).join(' ').toLowerCase();
+
+      for (let len = 4; len <= 6 && w + len <= words.length; len++) {
+        const checkPhrase = words.slice(w, w + len).join(' ').toLowerCase();
+        if (recentPhrases.includes(checkPhrase) && checkPhrase.split(' ').length >= 4) {
+          isDuplicate = true;
+          logger.info(`Removing in-sentence repetition: "${checkPhrase}"`);
+          w += len - 1; // Skip these words
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        cleanedWords.push(words[w]);
+      }
+    }
+
+    cleanedSentences.push(cleanedWords.join(' '));
+  }
+
+  const cleaned = cleanedSentences.join(' ');
+  return { cleaned, removedCount: toRemove.size };
+}
+
 function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_COUNT): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
@@ -698,16 +759,33 @@ async function downloadVoiceSample(url: string): Promise<string> {
       throw new Error(`Voice sample too large: ${bytes.length} bytes (max ${MAX_VOICE_SAMPLE_SIZE / 1024 / 1024}MB)`);
     }
 
+    // Validate audio format
     const header = Buffer.from(bytes.subarray(0, 4)).toString('ascii');
-    if (header === 'RIFF' || header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
-      console.log(`Voice sample format detected: ${header === 'RIFF' ? 'WAV' : header.startsWith('ID3') ? 'MP3' : 'MP3'}`);
+    let format = 'Unknown';
+    if (header === 'RIFF') {
+      format = 'WAV';
+      // Check WAV quality - should be at least 5 seconds for good cloning
+      const wavInfo = extractWavInfo(Buffer.from(bytes));
+      const durationSeconds = wavInfo.pcmData.length / (wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8));
+      logger.info(`Voice sample: ${format}, ${wavInfo.sampleRate}Hz, ${wavInfo.channels}ch, ${wavInfo.bitsPerSample}-bit, ${durationSeconds.toFixed(1)}s`);
+
+      if (durationSeconds < 3) {
+        logger.warn(`⚠️  Voice sample is very short (${durationSeconds.toFixed(1)}s). Recommend at least 5 seconds for better voice cloning quality.`);
+      }
+      if (wavInfo.sampleRate < 16000) {
+        logger.warn(`⚠️  Voice sample has low sample rate (${wavInfo.sampleRate}Hz). Recommend at least 16000Hz for better quality.`);
+      }
+    } else if (header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
+      format = 'MP3';
+      logger.info(`Voice sample: ${format}`);
     } else {
-      console.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+      logger.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
     }
 
     const base64 = Buffer.from(bytes).toString('base64');
 
     console.log(`Voice sample downloaded successfully:`);
+    console.log(`  - Format: ${format}`);
     console.log(`  - Size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
     console.log(`  - Base64 length: ${base64.length} chars`);
     console.log(`  - URL: ${url.substring(0, 100)}...`);
@@ -1055,6 +1133,13 @@ router.post('/', async (req: Request, res: Response) => {
 
     cleanScript = normalizeText(cleanScript);
 
+    // Remove repetitions from source text BEFORE TTS generation (proactive)
+    const { cleaned, removedCount } = removeTextRepetitions(cleanScript);
+    if (removedCount > 0) {
+      logger.info(`Removed ${removedCount} duplicate sentences before TTS generation`);
+      cleanScript = cleaned;
+    }
+
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     logger.info(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
     logger.debug(`Normalized text length: ${cleanScript.length} chars`);
@@ -1066,6 +1151,16 @@ router.post('/', async (req: Request, res: Response) => {
     for (let i = 0; i < rawChunks.length; i++) {
       if (!validateTTSInput(rawChunks[i])) {
         logger.warn(`Skipping chunk ${i + 1} (invalid): "${rawChunks[i].substring(0, 50)}..."`);
+        const reasons: string[] = [];
+        if (!rawChunks[i]) reasons.push('empty');
+        else if (rawChunks[i].trim().length < MIN_TEXT_LENGTH) reasons.push(`too short (${rawChunks[i].trim().length} chars)`);
+        else if (rawChunks[i].length > MAX_TEXT_LENGTH) reasons.push(`too long (${rawChunks[i].length} chars)`);
+        else if (/[^\x00-\x7F]/.test(rawChunks[i])) {
+          const nonAscii = rawChunks[i].match(/[^\x00-\x7F]/g) || [];
+          reasons.push(`non-ASCII chars: ${[...new Set(nonAscii)].slice(0, 10).join(', ')}`);
+        }
+        else if (!/[a-zA-Z0-9]/.test(rawChunks[i])) reasons.push('no alphanumeric chars');
+        logger.warn(`  Reasons: ${reasons.join(', ')}`);
         continue;
       }
       chunks.push(rawChunks[i]);
@@ -1080,6 +1175,13 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     logger.info(`Using ${chunks.length} valid chunks (skipped ${rawChunks.length - chunks.length} invalid)`);
+
+    // Log first 3 chunks for debugging
+    if (chunks.length > 0) {
+      logger.info(`First chunk preview: "${chunks[0].substring(0, 100)}..."`);
+      if (chunks.length > 1) logger.debug(`Second chunk preview: "${chunks[1].substring(0, 100)}..."`);
+      if (chunks.length > 2) logger.debug(`Third chunk preview: "${chunks[2].substring(0, 100)}..."`);
+    }
 
     // Voice cloning support - now generates 10 separate segments
     if (voiceSampleUrl && stream) {
