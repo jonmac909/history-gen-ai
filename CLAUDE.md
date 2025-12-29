@@ -133,7 +133,10 @@ Multi-step generation with user review at each stage:
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
-- **Post-processing**: Whisper transcribes audio, detects repeated phrases (>85% similarity), FFmpeg removes duplicates
+- **Post-processing**:
+  - **Proactive repetition removal**: Detects and removes duplicate sentences in source text BEFORE TTS (70% similarity threshold)
+  - **Reactive repetition removal**: Whisper transcribes audio, detects repeated phrases in generated audio (70% similarity), FFmpeg removes duplicates
+  - Requires both `ffmpeg-static` and `ffprobe-static` packages for post-processing
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
@@ -144,6 +147,7 @@ Multi-step generation with user review at each stage:
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
+- `PRONUNCIATION_FIXES` dictionary for phonetic replacements of commonly mispronounced words
 
 **Polling & Retry Logic:**
 - 5-minute timeout per TTS job (300 attempts, increased from 2 min for slow workers)
@@ -152,11 +156,17 @@ Multi-step generation with user review at each stage:
 - Exponential backoff retry for failed chunks (3 attempts max)
 - Continues processing if individual chunks fail (skips instead of failing entire job)
 
-**Text Normalization:**
+**Text Normalization & Cleaning:**
+- **Script cleaning** removes markdown headers, scene markers, and metadata BEFORE TTS:
+  - Removes entire lines starting with `#` (not just the symbols)
+  - Removes parenthetical time markers like `(5-10 minutes)`
+  - Removes scene markers `[SCENE X]` and other bracketed content
+  - Critical: Failing to remove headers causes dead air/silence in audio
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
 - Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
 - Wrong order will strip quotes entirely instead of converting them
 - **Number-to-words conversion**: "ACT 5" → "Act Five", years like "1347" → "thirteen forty-seven"
+- **Pronunciation fixes**: Dictionary-based phonetic replacements for difficult proper nouns (e.g., "Byzantine" → "Biz-an-tine")
 
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
@@ -369,6 +379,27 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - For very long scripts (1000+ words), processing time increases linearly
 - Check RunPod worker logs: `npm run monitor:runpod:errors`
 - If retry attempts exhausted, individual chunks are skipped (not fatal)
+
+### Audio quality issues (garbled transcriptions)
+- **Voice sample quality** is the most common cause of poor TTS quality:
+  - Minimum 5 seconds duration (warns if <3s)
+  - Minimum 16kHz sample rate (warns if <16kHz)
+  - Clear speech, no background noise
+  - Formal narration style matching content
+- Check Railway logs for voice sample diagnostics (format, duration, sample rate, warnings)
+- **Pronunciation fixes**: Add difficult words to `PRONUNCIATION_FIXES` dictionary in `generate-audio.ts`
+- **Test without voice cloning**: Generate short test without voice sample to isolate TTS model vs. voice sample issues
+
+### Dead air or silence in audio
+- Usually caused by markdown headers not being fully removed
+- Verify script cleaning removes entire header lines (not just `#` symbols)
+- Check Railway logs for "Cleaned script: removed X words" message
+- Headers like `# Title` or `## Subtitle` should be completely stripped
+
+### Post-processing errors ("Cannot find ffprobe")
+- Requires both `ffmpeg-static` AND `ffprobe-static` packages
+- Install: `npm install ffprobe-static @types/ffprobe-static`
+- Configure: `ffmpeg.setFfprobePath(ffprobeStatic.path)`
 
 ### Image generation 401 Unauthorized
 - Add function to `supabase/config.toml` with `verify_jwt = false`
