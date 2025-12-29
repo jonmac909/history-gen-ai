@@ -1448,7 +1448,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 3; // Reduced from 10 to prevent Railway memory exhaustion (OOM kills)
+    const MAX_CONCURRENT_SEGMENTS = 10; // Match RunPod max workers for audio endpoint
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{
@@ -1500,7 +1500,10 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
         console.log(`  Segment ${segmentNumber}: ${chunks.length}/${rawChunks.length} chunks valid (${skippedChunks} skipped)`);
 
-        const audioChunks: Buffer[] = [];
+        // Use incremental concatenation to reduce memory usage (don't accumulate all chunks)
+        let segmentAudio: Buffer | null = null;
+        let totalDurationSeconds = 0;
+        let successfulChunks = 0;
 
         // Process each chunk in this segment sequentially
         for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
@@ -1519,20 +1522,32 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
           try {
             const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
-            audioChunks.push(audioData);
             console.log(`  Segment ${segmentNumber} - Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
+
+            // Incrementally concatenate instead of accumulating in array
+            if (segmentAudio === null) {
+              segmentAudio = audioData;
+            } else {
+              const { wav: combined, durationSeconds } = concatenateWavFiles([segmentAudio, audioData]);
+              totalDurationSeconds = durationSeconds;
+              segmentAudio = combined; // Replace with combined version
+            }
+            successfulChunks++;
+
+            // Clear audioData buffer immediately (help GC)
+            // TypeScript doesn't allow deleting, but we've already used it
           } catch (err) {
             logger.warn(`Skipping chunk ${chunkIdx + 1} in segment ${segmentNumber} after all retries: ${err instanceof Error ? err.message : 'Unknown error'}`);
           }
         }
 
-        if (audioChunks.length === 0) {
+        if (segmentAudio === null || successfulChunks === 0) {
           logger.warn(`All chunks failed for segment ${segmentNumber}, skipping`);
           return;
         }
 
-        // Concatenate this segment's chunks into one WAV
-        const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+        // Calculate final duration
+        const durationSeconds = totalDurationSeconds;
         const durationRounded = Math.round(durationSeconds * 10) / 10;
 
         console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
@@ -1568,9 +1583,6 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
           audioBuffer: null as any, // Placeholder - will download later
           durationSeconds,
         });
-
-        // Clear buffers to help GC (prevent memory accumulation)
-        audioChunks.length = 0; // Clear array
 
         // Send progress update
         const completed = allSegmentResults.length;

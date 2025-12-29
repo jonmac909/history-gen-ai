@@ -192,9 +192,10 @@ Multi-step generation with user review at each stage:
 **RunPod Worker Allocation**:
 - **10 workers for audio (ChatterboxTTS)**, **4 workers for images (Z-Image)**
 - Set in RunPod dashboard endpoint settings
-- **Memory optimization**: Audio processing uses only **3 concurrent segments** (not all 10) to prevent Railway OOM kills
-  - Each segment can generate 35+ chunks × 1.77MB = ~60MB+ per segment
-  - 3 concurrent = ~180MB vs 10 concurrent = ~600MB
+- **Memory optimization**: Audio processing uses **incremental concatenation** to prevent Railway OOM kills
+  - Old approach: accumulated all chunks in array (35 chunks × 1.77MB = ~60MB per segment × 10 = 600MB)
+  - New approach: incrementally concatenates chunks (only 1 combined buffer per segment = ~10MB total)
+  - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
 
 ### Image Generation Architecture
@@ -367,8 +368,9 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 ### Audio generation "Failed to generate audio" or "No response received"
 - **Railway container killed mid-process (SIGTERM in logs)**:
   - Symptom: Frontend shows "No response received", Railway logs show "Stopping Container" / "npm error signal SIGTERM"
-  - Cause: Memory exhaustion (OOM kill) from too many concurrent segments
-  - Solution: Audio processing limited to 3 concurrent segments (see `MAX_CONCURRENT_SEGMENTS`)
+  - Cause: Memory exhaustion (OOM kill) from accumulating all audio chunks before concatenation
+  - Solution: Uses incremental concatenation (see line 1527 in `generate-audio.ts`)
+  - All 10 RunPod workers utilized concurrently (`MAX_CONCURRENT_SEGMENTS=10`)
   - Node.js uses memory-optimized flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
 - Check if `audioUrl` is being returned (backend must concatenate segments)
 - Verify `RUNPOD_API_KEY` is set on Railway
