@@ -158,10 +158,13 @@ Multi-step generation with user review at each stage:
 
 **Text Normalization & Cleaning:**
 - **Script cleaning** removes markdown headers, scene markers, and metadata BEFORE TTS:
-  - Removes entire lines starting with `#` (not just the symbols)
+  - Removes entire lines starting with `#` (both `#TheMedievalTavern` and `# Title`)
+  - Removes standalone ALL CAPS lines (section headers like `OPENING`, `CONCLUSION`)
+  - Removes inline hashtags (e.g., `#TheMedievalTavern` in middle of text)
+  - Removes markdown bold/italic markers `*`, `**`, `***` (keeps text content)
   - Removes parenthetical time markers like `(5-10 minutes)`
   - Removes scene markers `[SCENE X]` and other bracketed content
-  - Critical: Failing to remove headers causes dead air/silence in audio
+  - Critical: Failing to remove headers causes dead air/silence or unwanted narration
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
 - Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
 - Wrong order will strip quotes entirely instead of converting them
@@ -390,11 +393,17 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - **Pronunciation fixes**: Add difficult words to `PRONUNCIATION_FIXES` dictionary in `generate-audio.ts`
 - **Test without voice cloning**: Generate short test without voice sample to isolate TTS model vs. voice sample issues
 
-### Dead air or silence in audio
-- Usually caused by markdown headers not being fully removed
-- Verify script cleaning removes entire header lines (not just `#` symbols)
+### Dead air or unwanted narration of headers/formatting
+- Usually caused by markdown headers, hashtags, or section markers not being fully removed
+- Symptoms:
+  - Dead air/silence: Headers removed but left blank lines
+  - Narrating formatting: TTS reads "#TheMedievalTavern", "OPENING", "**bold text**"
+- Verify script cleaning removes:
+  - Entire lines starting with `#` (both `#Hashtag` and `# Title`)
+  - ALL CAPS section headers (e.g., `OPENING`, `CONCLUSION`)
+  - Inline hashtags and markdown formatting markers
 - Check Railway logs for "Cleaned script: removed X words" message
-- Headers like `# Title` or `## Subtitle` should be completely stripped
+- Headers like `# Title`, `## Subtitle`, or `#TheMedievalTavern` should be completely stripped
 
 ### Post-processing errors ("Cannot find ffprobe")
 - Requires both `ffmpeg-static` AND `ffprobe-static` packages

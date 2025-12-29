@@ -1162,13 +1162,19 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Clean script - remove markdown and metadata
     let cleanScript = script
+      // Remove hashtags (with or without spaces) - entire lines
+      .replace(/^#.*$/gm, '')
+      // Remove standalone ALL CAPS lines (section headers like OPENING, CONCLUSION, etc.)
+      .replace(/^[A-Z\s]{3,}$/gm, '')
       // Remove markdown headers (entire lines starting with #)
       .replace(/^#{1,6}\s+.*$/gm, '')
       // Remove scene markers
       .replace(/\[SCENE \d+\]/g, '')
       .replace(/\[[^\]]+\]/g, '')
-      // Remove markdown bold/italic but keep text
-      .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+      // Remove markdown bold/italic markers (keep text)
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+      // Remove inline hashtags (like #TheMedievalTavern in middle of text)
+      .replace(/#\S+/g, '')
       // Remove parenthetical metadata like (5-10 minutes)
       .replace(/\([^)]*minutes?\)/gi, '')
       // Clean up excessive newlines
@@ -1972,8 +1978,30 @@ router.post('/segment', async (req: Request, res: Response) => {
     const referenceAudioBase64 = await downloadVoiceSample(voiceSampleUrl);
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
 
+    // Clean segment text - remove markdown and metadata (same as main endpoint)
+    let cleanSegmentText = segmentText
+      // Remove hashtags (with or without spaces) - entire lines
+      .replace(/^#.*$/gm, '')
+      // Remove standalone ALL CAPS lines (section headers like OPENING, CONCLUSION, etc.)
+      .replace(/^[A-Z\s]{3,}$/gm, '')
+      // Remove markdown headers (entire lines starting with #)
+      .replace(/^#{1,6}\s+.*$/gm, '')
+      // Remove scene markers
+      .replace(/\[SCENE \d+\]/g, '')
+      .replace(/\[[^\]]+\]/g, '')
+      // Remove markdown bold/italic markers (keep text)
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+      // Remove inline hashtags (like #TheMedievalTavern in middle of text)
+      .replace(/#\S+/g, '')
+      // Remove parenthetical metadata like (5-10 minutes)
+      .replace(/\([^)]*minutes?\)/gi, '')
+      // Clean up excessive newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Remove leading/trailing whitespace
+      .trim();
+
     // Normalize and chunk the segment text
-    const normalizedText = normalizeText(segmentText);
+    const normalizedText = normalizeText(cleanSegmentText);
     const rawChunks = splitIntoChunks(normalizedText, MAX_TTS_CHUNK_LENGTH);
     const chunks: string[] = [];
 
