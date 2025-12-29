@@ -131,11 +131,20 @@ router.post('/', async (req: Request, res: Response) => {
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
 
-CRITICAL RULES:
-- Write ONLY pure prose narration - no headers, no scene markers, no formatting
-- The output should be word-for-word narration that can be read aloud directly
+CRITICAL FORMATTING RULES - THE SCRIPT WILL BE READ ALOUD BY TEXT-TO-SPEECH:
+- Write ONLY plain text prose narration that can be spoken word-for-word
+- NO markdown formatting whatsoever (no *, **, ***, etc.)
+- NO hashtags (no #Title, #Section, etc.)
+- NO section headers (no "OPENING", "CONCLUSION", "ACT 1", etc.)
+- NO scene markers (no [SCENE 1], no timestamps, no brackets)
+- NO special characters or symbols that aren't meant to be spoken
+- NO title lines at the beginning
+- Just pure narrative prose from start to finish
+
+CONTENT RULES:
 - Make it dramatic, captivating, and educational
 - Use vivid descriptions and emotional storytelling
+- Write as if you're narrating directly to the listener
 - When continuing a script, seamlessly continue from where you left off`;
 
     const targetWords = wordCount || 3000;
