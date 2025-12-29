@@ -1068,7 +1068,16 @@ async function generateTTSChunkWithRetry(
       // Check for excessive silence in the generated audio
       const silenceCheck = detectSilentAudio(audioData);
       if (silenceCheck.isSilent) {
-        logger.warn(`⚠️  Chunk ${chunkIndex + 1}/${totalChunks} has ${silenceCheck.silencePercent.toFixed(0)}% silence (${silenceCheck.durationSeconds.toFixed(1)}s) - text: "${chunkText.substring(0, 50)}..."`);
+        // Treat excessive silence as a failure and retry
+        logger.warn(`⚠️  Chunk ${chunkIndex + 1}/${totalChunks} has ${silenceCheck.silencePercent.toFixed(0)}% silence (${silenceCheck.durationSeconds.toFixed(1)}s) - retrying...`);
+        logger.debug(`Silent chunk text: "${chunkText.substring(0, 100)}..."`);
+
+        // If this is not the last attempt, throw to trigger retry
+        if (attempt < RETRY_MAX_ATTEMPTS - 1) {
+          throw new Error(`Chunk produced ${silenceCheck.silencePercent.toFixed(0)}% silence`);
+        }
+        // On last attempt, log warning but accept the result
+        logger.warn(`⚠️  Chunk ${chunkIndex + 1}/${totalChunks} still has ${silenceCheck.silencePercent.toFixed(0)}% silence after ${RETRY_MAX_ATTEMPTS} attempts - accepting result`);
       }
 
       if (attempt > 0) {
@@ -1079,15 +1088,11 @@ async function generateTTSChunkWithRetry(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       logger.warn(`Attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS} failed for chunk ${chunkIndex + 1}/${totalChunks}: ${lastError.message}`);
-
-      // Don't sleep on the last attempt
-      if (attempt === RETRY_MAX_ATTEMPTS - 1) {
-        break;
-      }
+      // Loop will continue and delay is handled at the start of next iteration
     }
   }
 
-  // All retries exhausted
+  // All retries exhausted - return null to skip this chunk rather than failing entirely
   logger.error(`✗ Chunk ${chunkIndex + 1}/${totalChunks} FAILED after ${RETRY_MAX_ATTEMPTS} attempts: ${lastError?.message}`);
   throw lastError || new Error('TTS chunk generation failed after all retries');
 }
