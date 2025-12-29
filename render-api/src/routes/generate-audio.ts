@@ -800,10 +800,69 @@ async function downloadVoiceSample(url: string): Promise<string> {
     // Validate audio format
     const header = Buffer.from(bytes.subarray(0, 4)).toString('ascii');
     let format = 'Unknown';
+    let needsConversion = false;
+
     if (header === 'RIFF') {
       format = 'WAV';
-      // Check WAV quality - should be at least 5 seconds for good cloning
-      const wavInfo = extractWavInfo(Buffer.from(bytes));
+    } else if (header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
+      format = 'MP3';
+      needsConversion = true;
+      logger.warn(`⚠️  Voice sample is MP3 format. ChatterboxTTS requires WAV - will convert.`);
+    } else {
+      logger.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+      needsConversion = true; // Try to convert anyway
+    }
+
+    let finalBytes = Buffer.from(bytes);
+
+    // Convert non-WAV formats to WAV using ffmpeg
+    if (needsConversion) {
+      logger.info(`Converting ${format} voice sample to WAV format...`);
+
+      const tempInputPath = path.join(os.tmpdir(), `voice_input_${crypto.randomBytes(8).toString('hex')}.${format.toLowerCase()}`);
+      const tempOutputPath = path.join(os.tmpdir(), `voice_output_${crypto.randomBytes(8).toString('hex')}.wav`);
+
+      try {
+        // Write input file
+        fs.writeFileSync(tempInputPath, bytes);
+
+        // Convert to WAV using ffmpeg (24000Hz mono 16-bit to match ChatterboxTTS output)
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(tempInputPath)
+            .audioFrequency(24000)  // Match ChatterboxTTS output
+            .audioChannels(1)       // Mono
+            .audioCodec('pcm_s16le') // 16-bit PCM
+            .format('wav')
+            .on('error', (err) => {
+              logger.error('FFmpeg conversion error:', err);
+              reject(new Error(`Failed to convert voice sample to WAV: ${err.message}`));
+            })
+            .on('end', () => {
+              logger.debug('Voice sample conversion complete');
+              resolve();
+            })
+            .save(tempOutputPath);
+        });
+
+        // Read converted WAV
+        finalBytes = fs.readFileSync(tempOutputPath);
+        format = 'WAV (converted)';
+        logger.info(`✓ Converted to WAV: ${finalBytes.length} bytes`);
+
+      } finally {
+        // Cleanup temp files
+        try {
+          if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+          if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+        } catch (cleanupErr) {
+          logger.warn('Failed to cleanup temp files:', cleanupErr);
+        }
+      }
+    }
+
+    // Validate final WAV quality
+    if (format.includes('WAV')) {
+      const wavInfo = extractWavInfo(finalBytes);
       const durationSeconds = wavInfo.pcmData.length / (wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8));
       logger.info(`Voice sample: ${format}, ${wavInfo.sampleRate}Hz, ${wavInfo.channels}ch, ${wavInfo.bitsPerSample}-bit, ${durationSeconds.toFixed(1)}s`);
 
@@ -813,20 +872,14 @@ async function downloadVoiceSample(url: string): Promise<string> {
       if (wavInfo.sampleRate < 16000) {
         logger.warn(`⚠️  Voice sample has low sample rate (${wavInfo.sampleRate}Hz). Recommend at least 16000Hz for better quality.`);
       }
-    } else if (header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
-      format = 'MP3';
-      logger.info(`Voice sample: ${format}`);
-    } else {
-      logger.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
     }
 
-    const base64 = Buffer.from(bytes).toString('base64');
+    const base64 = finalBytes.toString('base64');
 
-    console.log(`Voice sample downloaded successfully:`);
+    console.log(`Voice sample ready for TTS:`);
     console.log(`  - Format: ${format}`);
-    console.log(`  - Size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
+    console.log(`  - Size: ${finalBytes.length} bytes (${(finalBytes.length / 1024).toFixed(2)} KB)`);
     console.log(`  - Base64 length: ${base64.length} chars`);
-    console.log(`  - URL: ${url.substring(0, 100)}...`);
 
     return base64;
   } catch (error) {
