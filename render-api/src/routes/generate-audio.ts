@@ -1448,7 +1448,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 10; // Match RunPod max workers for audio endpoint
+    const MAX_CONCURRENT_SEGMENTS = 3; // Reduced from 10 to prevent Railway memory exhaustion (OOM kills)
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{
@@ -1568,6 +1568,9 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
           audioBuffer: null as any, // Placeholder - will download later
           durationSeconds,
         });
+
+        // Clear buffers to help GC (prevent memory accumulation)
+        audioChunks.length = 0; // Clear array
 
         // Send progress update
         const completed = allSegmentResults.length;
