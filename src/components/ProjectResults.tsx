@@ -8,8 +8,6 @@ import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 
 export interface GeneratedAsset {
   id: string;
@@ -133,19 +131,18 @@ export function ProjectResults({
   onCaptionedVideoRendered,
   autoRender
 }: ProjectResultsProps) {
-  // State for video rendering - initialize from props if available
-  const [isRendering, setIsRendering] = useState(false);
+  // State for video rendering - two separate videos (basic and embers)
+  const [isRenderingBasic, setIsRenderingBasic] = useState(false);
+  const [isRenderingEmbers, setIsRenderingEmbers] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
-  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(videoUrl || null);
+  const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(videoUrl || null);
+  const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(null);
+  const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers'>('basic');
   const autoRenderTriggered = useRef(false);
-
-  // State for effects modal
-  const [showEffectsModal, setShowEffectsModal] = useState(false);
-  const [effectsSettings, setEffectsSettings] = useState<VideoEffects>({ embers: false });
 
   // Auto-render video when in full automation mode
   useEffect(() => {
-    if (autoRender && !autoRenderTriggered.current && !renderedVideoUrl && !isRendering) {
+    if (autoRender && !autoRenderTriggered.current && !basicVideoUrl && !isRenderingBasic) {
       // Check if we have all required data for rendering
       const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
       if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
@@ -153,11 +150,11 @@ export function ProjectResults({
         autoRenderTriggered.current = true;
         // Small delay to let the UI render first
         setTimeout(() => {
-          handleRenderVideo();
+          handleRenderVideo('basic');
         }, 1000);
       }
     }
-  }, [autoRender, projectId, audioUrl, srtContent, assets, renderedVideoUrl, isRendering]);
+  }, [autoRender, projectId, audioUrl, srtContent, assets, basicVideoUrl, isRenderingBasic]);
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {
@@ -401,8 +398,8 @@ export function ProjectResults({
     }
   };
 
-  // Handle Render Video (MP4)
-  const handleRenderVideo = async (effects?: VideoEffects) => {
+  // Handle Render Video (MP4) - type determines basic or embers
+  const handleRenderVideo = async (type: 'basic' | 'embers') => {
     // Validate required data
     if (!projectId) {
       toast({
@@ -461,10 +458,19 @@ export function ProjectResults({
       }));
     }
 
+    // Set effects based on type
+    const effects: VideoEffects = { embers: type === 'embers' };
+
     // Start rendering
-    setIsRendering(true);
+    setCurrentRenderType(type);
+    if (type === 'basic') {
+      setIsRenderingBasic(true);
+      setBasicVideoUrl(null);
+    } else {
+      setIsRenderingEmbers(true);
+      setEmbersVideoUrl(null);
+    }
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
-    setRenderedVideoUrl(null);
 
     try {
       const result = await renderVideoStreaming(
@@ -478,14 +484,18 @@ export function ProjectResults({
           onProgress: (progress) => setRenderProgress(progress),
           onVideoReady: (url) => {
             // Video is ready - show preview immediately
-            setRenderedVideoUrl(url);
+            if (type === 'basic') {
+              setBasicVideoUrl(url);
+            } else {
+              setEmbersVideoUrl(url);
+            }
             // Notify parent to save the video URL
             if (onVideoRendered) {
               onVideoRendered(url);
             }
             toast({
               title: "Video Ready",
-              description: effects?.embers ? "Your video with embers effect has been rendered!" : "Your video has been rendered successfully!",
+              description: type === 'embers' ? "Your video with embers effect has been rendered!" : "Your video has been rendered successfully!",
             });
           },
           onCaptionError: (error) => {
@@ -498,19 +508,28 @@ export function ProjectResults({
 
       // Final result
       if (result.success && result.videoUrl) {
-        setRenderedVideoUrl(result.videoUrl);
+        if (type === 'basic') {
+          setBasicVideoUrl(result.videoUrl);
+          setIsRenderingBasic(false);
+        } else {
+          setEmbersVideoUrl(result.videoUrl);
+          setIsRenderingEmbers(false);
+        }
         // Notify parent to save the video URL
         if (onVideoRendered) {
           onVideoRendered(result.videoUrl);
         }
-        setIsRendering(false);
         toast({
           title: "Video Complete",
           description: "Your video is ready to download!",
         });
-      } else if (!renderedVideoUrl) {
-        // Only show error if we don't have any video
-        setIsRendering(false);
+      } else {
+        // Show error
+        if (type === 'basic') {
+          setIsRenderingBasic(false);
+        } else {
+          setIsRenderingEmbers(false);
+        }
         toast({
           title: "Render Failed",
           description: result.error || "Failed to render video. Please try again.",
@@ -519,7 +538,11 @@ export function ProjectResults({
       }
     } catch (error) {
       console.error('Render video error:', error);
-      setIsRendering(false);
+      if (type === 'basic') {
+        setIsRenderingBasic(false);
+      } else {
+        setIsRenderingEmbers(false);
+      }
       toast({
         title: "Render Failed",
         description: error instanceof Error ? error.message : "Failed to render video. Please try again.",
@@ -534,18 +557,20 @@ export function ProjectResults({
     return suffix ? `${base}_${suffix}.mp4` : `${base}.mp4`;
   };
 
-  // Download rendered video (without captions)
-  const handleDownloadVideo = async () => {
-    if (!renderedVideoUrl) return;
+  // Download rendered video
+  const handleDownloadVideo = async (type: 'basic' | 'embers') => {
+    const url = type === 'basic' ? basicVideoUrl : embersVideoUrl;
+    if (!url) return;
 
-    const filename = getSafeFilename(projectTitle);
+    const suffix = type === 'embers' ? 'embers' : '';
+    const filename = getSafeFilename(projectTitle, suffix);
     toast({
       title: "Downloading...",
-      description: "Downloading video without captions...",
+      description: `Downloading ${type === 'embers' ? 'video with embers...' : 'video...'}`,
     });
 
     try {
-      await downloadFromUrl(renderedVideoUrl, filename);
+      await downloadFromUrl(url, filename);
       toast({
         title: "Download Complete",
         description: `${filename} downloaded successfully.`,
@@ -561,10 +586,12 @@ export function ProjectResults({
 
   // Close render modal
   const handleCloseRenderModal = () => {
-    if (!isRendering || renderedVideoUrl) {
-      setIsRendering(false);
+    const isRendering = isRenderingBasic || isRenderingEmbers;
+    const hasVideo = currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl;
+    if (!isRendering || hasVideo) {
+      setIsRenderingBasic(false);
+      setIsRenderingEmbers(false);
       setRenderProgress(null);
-      // Don't clear renderedVideoUrl so user can still download
     }
   };
 
@@ -748,7 +775,7 @@ export function ProjectResults({
             </div>
           )}
 
-          {/* Render Video (MP4) */}
+          {/* Render Video (Basic - no effects) */}
           {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
             <div
               className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
@@ -759,24 +786,24 @@ export function ProjectResults({
                 </div>
                 <div>
                   <p className="font-medium text-foreground">
-                    {renderedVideoUrl ? 'Video' : 'Render Video'}
+                    {basicVideoUrl ? 'Video' : 'Render Video'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {renderedVideoUrl ? 'MP4 video' : 'Generate MP4 video'}
+                    {basicVideoUrl ? 'MP4 video (no effects)' : 'Generate MP4 video'}
                   </p>
                 </div>
               </div>
-              {renderedVideoUrl ? (
+              {basicVideoUrl ? (
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleRenderVideo()}
-                    disabled={isRendering}
+                    onClick={() => handleRenderVideo('basic')}
+                    disabled={isRenderingBasic || isRenderingEmbers}
                     className="text-muted-foreground hover:text-foreground"
                     title="Re-render Video"
                   >
-                    {isRendering ? (
+                    {isRenderingBasic ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
                       <RefreshCw className="w-5 h-5" />
@@ -785,17 +812,7 @@ export function ProjectResults({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setShowEffectsModal(true)}
-                    disabled={isRendering}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Add Effects"
-                  >
-                    <Sparkles className="w-5 h-5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleDownloadVideo}
+                    onClick={() => handleDownloadVideo('basic')}
                     className="text-muted-foreground hover:text-foreground"
                     title="Download Video"
                   >
@@ -806,12 +823,75 @@ export function ProjectResults({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleRenderVideo()}
-                  disabled={isRendering}
+                  onClick={() => handleRenderVideo('basic')}
+                  disabled={isRenderingBasic || isRenderingEmbers}
                   className="text-muted-foreground hover:text-foreground"
                   title="Render Video"
                 >
-                  {isRendering ? (
+                  {isRenderingBasic ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    "Render"
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Render Video with Embers */}
+          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">
+                    {embersVideoUrl ? 'Video + Embers' : 'Render with Embers'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {embersVideoUrl ? 'MP4 video with embers overlay' : 'Video with animated embers effect'}
+                  </p>
+                </div>
+              </div>
+              {embersVideoUrl ? (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRenderVideo('embers')}
+                    disabled={isRenderingBasic || isRenderingEmbers}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Re-render Video"
+                  >
+                    {isRenderingEmbers ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-5 h-5" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDownloadVideo('embers')}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Download Video"
+                  >
+                    <Download className="w-5 h-5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRenderVideo('embers')}
+                  disabled={isRenderingBasic || isRenderingEmbers}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Render Video with Embers"
+                >
+                  {isRenderingEmbers ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     "Render"
@@ -830,24 +910,28 @@ export function ProjectResults({
       </div>
 
       {/* Render Progress Modal */}
-      <Dialog open={isRendering} onOpenChange={handleCloseRenderModal}>
+      <Dialog open={isRenderingBasic || isRenderingEmbers} onOpenChange={handleCloseRenderModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Video className="w-5 h-5" />
-              {renderedVideoUrl ? 'Video Ready' : 'Rendering Video'}
+              {currentRenderType === 'embers' ? <Sparkles className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)
+                ? 'Video Ready'
+                : `Rendering ${currentRenderType === 'embers' ? 'with Embers' : 'Video'}`}
             </DialogTitle>
             <DialogDescription>
-              {renderedVideoUrl ? 'Your video has been rendered successfully.' : 'Please wait while your video is being rendered.'}
+              {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)
+                ? 'Your video has been rendered successfully.'
+                : 'Please wait while your video is being rendered.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Video Preview Player */}
-            {renderedVideoUrl && (
+            {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl) && (
               <div className="space-y-3">
                 <video
-                  src={renderedVideoUrl}
+                  src={currentRenderType === 'basic' ? basicVideoUrl! : embersVideoUrl!}
                   controls
                   preload="auto"
                   crossOrigin="anonymous"
@@ -855,7 +939,7 @@ export function ProjectResults({
                   style={{ maxHeight: '300px' }}
                 />
 
-                <Button onClick={handleDownloadVideo} className="w-full gap-2">
+                <Button onClick={() => handleDownloadVideo(currentRenderType)} className="w-full gap-2">
                   <Download className="w-4 h-4" />
                   Download Video
                 </Button>
@@ -863,7 +947,7 @@ export function ProjectResults({
             )}
 
             {/* Initial rendering progress (before video is ready) */}
-            {!renderedVideoUrl && renderProgress && (
+            {!(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl) && renderProgress && (
               <>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -884,61 +968,6 @@ export function ProjectResults({
                 )}
               </>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Effects Modal */}
-      <Dialog open={showEffectsModal} onOpenChange={setShowEffectsModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5" />
-              Video Effects
-            </DialogTitle>
-            <DialogDescription>
-              Apply effects to your video. This will re-render the video with the selected effects.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            {/* Embers Effect Toggle */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="embers-toggle" className="text-base font-medium">
-                  Embers Overlay
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Add a subtle animated embers effect over the entire video
-                </p>
-              </div>
-              <Switch
-                id="embers-toggle"
-                checked={effectsSettings.embers}
-                onCheckedChange={(checked) => setEffectsSettings({ ...effectsSettings, embers: checked })}
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setShowEffectsModal(false)}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                setShowEffectsModal(false);
-                handleRenderVideo(effectsSettings);
-              }}
-              disabled={!effectsSettings.embers}
-              className="flex-1 gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              Apply Effects
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
