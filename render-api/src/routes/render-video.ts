@@ -364,56 +364,49 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       throw new Error('FFmpeg produced empty video file');
     }
 
-    // Stage 5: Upload
+    // Stage 5: Upload using streaming to avoid memory issues with large files
     await updateJobStatus(supabase, jobId, 'uploading', 85, 'Uploading video...');
 
     const videoUploadPath = `${params.projectId}/video.mp4`;
-    const finalVideoBuffer = fs.readFileSync(withAudioPath);
-    const uploadSizeMB = (finalVideoBuffer.length / 1024 / 1024).toFixed(1);
+    const fileStats = fs.statSync(withAudioPath);
+    const fileSizeBytes = fileStats.size;
+    const uploadSizeMB = (fileSizeBytes / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
 
-    // For large files (>50MB), use signed URL upload to avoid size limits
-    const fileSizeBytes = finalVideoBuffer.length;
-    const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+    // Delete any existing file first
+    await supabase.storage.from('generated-assets').remove([videoUploadPath]);
 
-    if (fileSizeBytes > LARGE_FILE_THRESHOLD) {
-      console.log(`Large file detected (${uploadSizeMB}MB), using signed URL upload...`);
+    // Use direct REST API upload with streaming for memory efficiency
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-      // First, try to delete any existing file
-      await supabase.storage.from('generated-assets').remove([videoUploadPath]);
-
-      // Create signed upload URL
-      const { data: signedData, error: signedError } = await supabase.storage
-        .from('generated-assets')
-        .createSignedUploadUrl(videoUploadPath);
-
-      if (signedError || !signedData) {
-        throw new Error(`Failed to create signed upload URL: ${signedError?.message || 'Unknown error'}`);
-      }
-
-      // Upload using signed URL
-      const { error: uploadError } = await supabase.storage
-        .from('generated-assets')
-        .uploadToSignedUrl(videoUploadPath, signedData.token, finalVideoBuffer, {
-          contentType: 'video/mp4',
-        });
-
-      if (uploadError) {
-        throw new Error(`Failed to upload video via signed URL: ${uploadError.message}`);
-      }
-    } else {
-      // Standard upload for smaller files
-      const { error: uploadError } = await supabase.storage
-        .from('generated-assets')
-        .upload(videoUploadPath, finalVideoBuffer, {
-          contentType: 'video/mp4',
-          upsert: true
-        });
-
-      if (uploadError) {
-        throw new Error(`Failed to upload video: ${uploadError.message}`);
-      }
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase credentials not configured');
     }
+
+    // Stream upload using fetch with file stream
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${videoUploadPath}`;
+    const fileStream = fs.createReadStream(withAudioPath);
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'video/mp4',
+        'Content-Length': fileSizeBytes.toString(),
+        'x-upsert': 'true',
+      },
+      body: fileStream as any,
+      // @ts-ignore - duplex is needed for streaming
+      duplex: 'half',
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to upload video: ${uploadResponse.status} - ${errorText}`);
+    }
+
+    console.log(`Video uploaded successfully via streaming`)
 
     const { data: urlData } = supabase.storage
       .from('generated-assets')
