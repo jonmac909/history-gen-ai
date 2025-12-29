@@ -826,11 +826,11 @@ async function downloadVoiceSample(url: string): Promise<string> {
         // Write input file
         fs.writeFileSync(tempInputPath, bytes);
 
-        // Convert to WAV using ffmpeg (preserve native sample rate, mono 16-bit)
-        // CRITICAL: Do NOT resample - preserving native sample rate prevents mel spectrogram mismatch
+        // Convert to WAV using ffmpeg - MUST resample to 24000Hz to match ChatterboxTTS output
+        // ChatterboxTTS internally uses 24000Hz for mel spectrograms, so voice sample must match
         await new Promise<void>((resolve, reject) => {
           ffmpeg(tempInputPath)
-            // NO .audioFrequency() - preserve native sample rate!
+            .audioFrequency(24000)  // MUST be 24000Hz to match ChatterboxTTS mel spectrogram
             .audioChannels(1)       // Mono
             .audioCodec('pcm_s16le') // 16-bit PCM
             .format('wav')
@@ -861,7 +861,7 @@ async function downloadVoiceSample(url: string): Promise<string> {
       }
     }
 
-    // Validate final WAV quality
+    // Validate and resample WAV to 24000Hz if needed (ChatterboxTTS requires 24000Hz)
     if (format.includes('WAV')) {
       const wavInfo = extractWavInfo(finalBytes);
       const durationSeconds = wavInfo.pcmData.length / (wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8));
@@ -870,8 +870,46 @@ async function downloadVoiceSample(url: string): Promise<string> {
       if (durationSeconds < 3) {
         logger.warn(`⚠️  Voice sample is very short (${durationSeconds.toFixed(1)}s). Recommend at least 5 seconds for better voice cloning quality.`);
       }
-      if (wavInfo.sampleRate < 16000) {
-        logger.warn(`⚠️  Voice sample has low sample rate (${wavInfo.sampleRate}Hz). Recommend at least 16000Hz for better quality.`);
+
+      // CRITICAL: ChatterboxTTS requires 24000Hz sample rate for mel spectrogram alignment
+      // Resample if not already at 24000Hz
+      if (wavInfo.sampleRate !== 24000) {
+        logger.info(`Resampling voice sample from ${wavInfo.sampleRate}Hz to 24000Hz for ChatterboxTTS...`);
+
+        const tempInputPath = path.join(os.tmpdir(), `voice_resample_in_${crypto.randomBytes(8).toString('hex')}.wav`);
+        const tempOutputPath = path.join(os.tmpdir(), `voice_resample_out_${crypto.randomBytes(8).toString('hex')}.wav`);
+
+        try {
+          fs.writeFileSync(tempInputPath, finalBytes);
+
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg(tempInputPath)
+              .audioFrequency(24000)  // Resample to 24000Hz
+              .audioChannels(1)       // Mono
+              .audioCodec('pcm_s16le') // 16-bit PCM
+              .format('wav')
+              .on('error', (err) => {
+                logger.error('FFmpeg resample error:', err);
+                reject(new Error(`Failed to resample voice sample: ${err.message}`));
+              })
+              .on('end', () => {
+                logger.debug('Voice sample resampling complete');
+                resolve();
+              })
+              .save(tempOutputPath);
+          });
+
+          finalBytes = fs.readFileSync(tempOutputPath);
+          format = 'WAV (resampled to 24000Hz)';
+          logger.info(`✓ Resampled to 24000Hz: ${finalBytes.length} bytes`);
+        } finally {
+          try {
+            if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+            if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+          } catch (cleanupErr) {
+            logger.warn('Failed to cleanup resample temp files:', cleanupErr);
+          }
+        }
       }
     }
 
