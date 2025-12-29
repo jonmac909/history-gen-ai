@@ -6,6 +6,10 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { Readable, PassThrough } from 'stream';
 import { promisify } from 'util';
+import FormData from 'form-data';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 // Set FFmpeg path
 if (ffmpegStatic) {
@@ -164,6 +168,329 @@ function normalizeText(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// ============================================================
+// POST-PROCESSING: Detect and remove repeated audio segments
+// ============================================================
+
+// Note: FormData, fs, path, os are imported at top of file
+
+interface WhisperSegment {
+  text: string;
+  start: number;
+  end: number;
+}
+
+interface RepetitionRange {
+  start: number;
+  end: number;
+  text: string;
+}
+
+// Transcribe audio using Groq Whisper to get segments with timestamps
+async function transcribeForRepetitionDetection(audioBuffer: Buffer): Promise<WhisperSegment[]> {
+  const groqApiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  if (!groqApiKey) {
+    logger.warn('No Groq/OpenAI API key for repetition detection, skipping post-processing');
+    return [];
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBuffer, { filename: 'audio.wav', contentType: 'audio/wav' });
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('response_format', 'verbose_json');
+    formData.append('language', 'en');
+
+    logger.info('Transcribing audio for repetition detection...');
+
+    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqApiKey}`,
+        ...formData.getHeaders(),
+      },
+      body: formData as any,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Whisper API error: ${response.status} - ${errorText}`);
+      return [];
+    }
+
+    const result = await response.json() as any;
+    logger.info(`Transcription complete: ${result.segments?.length || 0} segments`);
+    return result.segments || [];
+  } catch (error) {
+    logger.error('Transcription for repetition detection failed:', error);
+    return [];
+  }
+}
+
+// Normalize text for comparison (lowercase, remove punctuation)
+function normalizeForComparison(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Detect repeated segments in transcription
+function detectRepetitions(segments: WhisperSegment[], minWords: number = 4): RepetitionRange[] {
+  if (segments.length < 2) return [];
+
+  const repetitions: RepetitionRange[] = [];
+  const processedRanges = new Set<string>();
+
+  // Build a list of sentences from segments
+  const sentences: { text: string; normalized: string; start: number; end: number }[] = [];
+
+  for (const seg of segments) {
+    // Split segment into sentences if it contains multiple
+    const sentenceParts = seg.text.split(/(?<=[.!?])\s+/);
+    const segDuration = seg.end - seg.start;
+    const timePerChar = segDuration / seg.text.length;
+
+    let currentPos = 0;
+    for (const part of sentenceParts) {
+      if (part.trim().length > 0) {
+        const partStart = seg.start + (currentPos * timePerChar);
+        const partEnd = partStart + (part.length * timePerChar);
+        sentences.push({
+          text: part.trim(),
+          normalized: normalizeForComparison(part),
+          start: partStart,
+          end: partEnd,
+        });
+      }
+      currentPos += part.length + 1;
+    }
+  }
+
+  logger.info(`Analyzing ${sentences.length} sentences for repetitions...`);
+
+  // Look for consecutive repeated sentences
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const current = sentences[i];
+    const words = current.normalized.split(' ').filter(w => w.length > 0);
+
+    // Skip very short segments
+    if (words.length < minWords) continue;
+
+    // Check next sentences for repetition
+    for (let j = i + 1; j < Math.min(i + 5, sentences.length); j++) {
+      const next = sentences[j];
+
+      // Check for exact or near-exact match
+      const similarity = calculateSimilarity(current.normalized, next.normalized);
+
+      if (similarity > 0.85) {
+        const rangeKey = `${next.start.toFixed(2)}-${next.end.toFixed(2)}`;
+        if (!processedRanges.has(rangeKey)) {
+          processedRanges.add(rangeKey);
+          repetitions.push({
+            start: next.start,
+            end: next.end,
+            text: next.text,
+          });
+          logger.info(`Found repetition: "${next.text.substring(0, 50)}..." at ${next.start.toFixed(2)}s-${next.end.toFixed(2)}s (similarity: ${(similarity * 100).toFixed(1)}%)`);
+        }
+      }
+    }
+  }
+
+  // Also check for repeated phrases within the same segment
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const normalized = normalizeForComparison(seg.text);
+    const words = normalized.split(' ');
+
+    // Look for repeated 4+ word phrases within the segment
+    for (let phraseLen = 4; phraseLen <= Math.min(10, Math.floor(words.length / 2)); phraseLen++) {
+      for (let start = 0; start <= words.length - phraseLen * 2; start++) {
+        const phrase1 = words.slice(start, start + phraseLen).join(' ');
+
+        for (let start2 = start + phraseLen; start2 <= words.length - phraseLen; start2++) {
+          const phrase2 = words.slice(start2, start2 + phraseLen).join(' ');
+
+          if (phrase1 === phrase2) {
+            // Found repeated phrase - mark the second occurrence for removal
+            const segDuration = seg.end - seg.start;
+            const wordDuration = segDuration / words.length;
+            const repStart = seg.start + (start2 * wordDuration);
+            const repEnd = repStart + (phraseLen * wordDuration);
+
+            const rangeKey = `${repStart.toFixed(2)}-${repEnd.toFixed(2)}`;
+            if (!processedRanges.has(rangeKey)) {
+              processedRanges.add(rangeKey);
+              repetitions.push({
+                start: repStart,
+                end: repEnd,
+                text: phrase2,
+              });
+              logger.info(`Found in-segment repetition: "${phrase2}" at ${repStart.toFixed(2)}s-${repEnd.toFixed(2)}s`);
+            }
+            break; // Move to next phrase length
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by start time and merge overlapping ranges
+  repetitions.sort((a, b) => a.start - b.start);
+
+  const merged: RepetitionRange[] = [];
+  for (const rep of repetitions) {
+    if (merged.length === 0) {
+      merged.push(rep);
+    } else {
+      const last = merged[merged.length - 1];
+      if (rep.start <= last.end + 0.1) {
+        // Merge overlapping ranges
+        last.end = Math.max(last.end, rep.end);
+        last.text += ' ' + rep.text;
+      } else {
+        merged.push(rep);
+      }
+    }
+  }
+
+  logger.info(`Detected ${merged.length} repetition ranges to remove`);
+  return merged;
+}
+
+// Calculate similarity between two strings (Jaccard-like similarity)
+function calculateSimilarity(str1: string, str2: string): number {
+  const words1 = new Set(str1.split(' '));
+  const words2 = new Set(str2.split(' '));
+
+  const intersection = new Set([...words1].filter(w => words2.has(w)));
+  const union = new Set([...words1, ...words2]);
+
+  return intersection.size / union.size;
+}
+
+// Remove audio segments using FFmpeg
+async function removeAudioSegments(audioBuffer: Buffer, repetitions: RepetitionRange[]): Promise<Buffer> {
+  if (repetitions.length === 0) {
+    return audioBuffer;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-cleanup-'));
+  const inputPath = path.join(tempDir, 'input.wav');
+  const outputPath = path.join(tempDir, 'output.wav');
+
+  try {
+    // Write input buffer to temp file
+    fs.writeFileSync(inputPath, audioBuffer);
+
+    // Get audio duration
+    const duration = await getAudioDuration(inputPath);
+    logger.info(`Audio duration: ${duration.toFixed(2)}s, removing ${repetitions.length} segments`);
+
+    // Build list of segments to KEEP (inverse of repetitions)
+    const keepSegments: { start: number; end: number }[] = [];
+    let currentStart = 0;
+
+    for (const rep of repetitions) {
+      if (rep.start > currentStart + 0.05) {
+        keepSegments.push({ start: currentStart, end: rep.start });
+      }
+      currentStart = rep.end;
+    }
+
+    // Add final segment if there's remaining audio
+    if (currentStart < duration - 0.05) {
+      keepSegments.push({ start: currentStart, end: duration });
+    }
+
+    if (keepSegments.length === 0) {
+      logger.warn('No segments to keep after repetition removal, returning original');
+      return audioBuffer;
+    }
+
+    logger.info(`Keeping ${keepSegments.length} segments, total removed: ${repetitions.reduce((sum, r) => sum + (r.end - r.start), 0).toFixed(2)}s`);
+
+    // Build FFmpeg filter to select and concatenate kept segments
+    const filterParts: string[] = [];
+    const concatInputs: string[] = [];
+
+    for (let i = 0; i < keepSegments.length; i++) {
+      const seg = keepSegments[i];
+      filterParts.push(`[0:a]atrim=start=${seg.start.toFixed(3)}:end=${seg.end.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
+      concatInputs.push(`[a${i}]`);
+    }
+
+    const filterComplex = filterParts.join(';') + `;${concatInputs.join('')}concat=n=${keepSegments.length}:v=0:a=1[out]`;
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .complexFilter(filterComplex)
+        .outputOptions(['-map', '[out]'])
+        .output(outputPath)
+        .on('error', (err) => reject(err))
+        .on('end', () => resolve())
+        .run();
+    });
+
+    const outputBuffer = fs.readFileSync(outputPath);
+    logger.info(`Post-processed audio: ${audioBuffer.length} -> ${outputBuffer.length} bytes`);
+
+    return outputBuffer;
+
+  } finally {
+    // Cleanup temp files
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      fs.rmdirSync(tempDir);
+    } catch (e) {
+      logger.warn('Failed to cleanup temp files:', e);
+    }
+  }
+}
+
+// Get audio duration using FFmpeg
+function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) reject(err);
+      else resolve(metadata.format.duration || 0);
+    });
+  });
+}
+
+// Main post-processing function
+async function postProcessAudio(audioBuffer: Buffer): Promise<Buffer> {
+  try {
+    // Step 1: Transcribe to detect repetitions
+    const segments = await transcribeForRepetitionDetection(audioBuffer);
+    if (segments.length === 0) {
+      logger.info('No transcription available, skipping post-processing');
+      return audioBuffer;
+    }
+
+    // Step 2: Detect repetitions
+    const repetitions = detectRepetitions(segments);
+    if (repetitions.length === 0) {
+      logger.info('No repetitions detected');
+      return audioBuffer;
+    }
+
+    // Step 3: Remove repeated segments
+    return await removeAudioSegments(audioBuffer, repetitions);
+  } catch (error) {
+    logger.error('Post-processing failed, returning original audio:', error);
+    return audioBuffer;
+  }
+}
+
+// ============================================================
+// END POST-PROCESSING
+// ============================================================
 
 // Split script into N equal segments by word count
 const DEFAULT_SEGMENT_COUNT = 10; // Match RunPod max workers for audio endpoint
@@ -728,6 +1055,11 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     console.log(`Concatenated audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
+    // Post-process to remove repeated audio segments
+    sendEvent({ type: 'progress', progress: 75, message: 'Removing repeated segments...' });
+    finalAudio = await postProcessAudio(finalAudio);
+    console.log(`Post-processed audio: ${finalAudio.length} bytes`);
+
     // Apply speed adjustment if not 1.0
     if (speed !== 1.0) {
       sendEvent({ type: 'progress', progress: 80, message: `Adjusting speed to ${speed}x...` });
@@ -1140,11 +1472,15 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
 
+    // Post-process to remove repeated audio segments
+    sendEvent({ type: 'progress', progress: 90, message: 'Removing repeated segments...' });
+    let finalAudio: Buffer = await postProcessAudio(combinedAudio);
+    console.log(`Post-processed audio: ${finalAudio.length} bytes`);
+
     // Apply speed adjustment if not 1.0
-    let finalAudio: Buffer = combinedAudio;
     if (speed !== 1.0) {
       sendEvent({ type: 'progress', progress: 92, message: `Adjusting speed to ${speed}x...` });
-      finalAudio = await adjustAudioSpeed(combinedAudio, speed);
+      finalAudio = await adjustAudioSpeed(finalAudio, speed);
       // Adjust duration based on speed (slower = longer, faster = shorter)
       combinedDuration = combinedDuration / speed;
       totalDuration = totalDuration / speed;
@@ -1252,9 +1588,14 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
 
   console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
-  let { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+  let { wav: combinedAudio, durationSeconds } = concatenateWavFiles(audioChunks);
 
-  console.log(`Concatenated audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
+  console.log(`Concatenated audio: ${combinedAudio.length} bytes from ${audioChunks.length} chunks`);
+
+  // Post-process to remove repeated audio segments
+  console.log('Post-processing to remove repeated segments...');
+  let finalAudio = await postProcessAudio(combinedAudio);
+  console.log(`Post-processed audio: ${finalAudio.length} bytes`);
 
   // Apply speed adjustment if not 1.0
   if (speed !== 1.0) {
