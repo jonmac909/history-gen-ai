@@ -187,6 +187,85 @@ interface RepetitionRange {
   text: string;
 }
 
+// Whisper API limit - chunk audio to stay under this
+const WHISPER_MAX_BYTES = 20 * 1024 * 1024; // 20MB to be safe (limit is 25MB)
+
+// Extract audio format and PCM data from WAV
+function extractWavInfo(wavBuffer: Buffer): { pcmData: Buffer; sampleRate: number; channels: number; bitsPerSample: number; dataOffset: number } {
+  const findChunk = (fourcc: string) => {
+    const needle = Buffer.from(fourcc, 'ascii');
+    for (let i = 0; i <= wavBuffer.length - 4; i++) {
+      if (wavBuffer.slice(i, i + 4).equals(needle)) return i;
+    }
+    return -1;
+  };
+
+  const fmtIdx = findChunk('fmt ');
+  const dataIdx = findChunk('data');
+  if (fmtIdx === -1 || dataIdx === -1) throw new Error('Invalid WAV format');
+
+  const fmtDataStart = fmtIdx + 8;
+  const sampleRate = wavBuffer.readUInt32LE(fmtDataStart + 4);
+  const channels = wavBuffer.readUInt16LE(fmtDataStart + 2);
+  const bitsPerSample = wavBuffer.readUInt16LE(fmtDataStart + 14);
+
+  const dataSize = wavBuffer.readUInt32LE(dataIdx + 4);
+  const dataOffset = dataIdx + 8;
+  const pcmData = wavBuffer.slice(dataOffset, Math.min(wavBuffer.length, dataOffset + dataSize));
+
+  return { pcmData, sampleRate, channels, bitsPerSample, dataOffset };
+}
+
+// Create WAV from PCM chunk
+function createWavFromPcm(pcmData: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+  const bytesPerSample = bitsPerSample / 8;
+  const byteRate = sampleRate * channels * bytesPerSample;
+  const blockAlign = channels * bytesPerSample;
+
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcmData.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16); // fmt chunk size
+  header.writeUInt16LE(1, 20);  // PCM format
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(pcmData.length, 40);
+
+  return Buffer.concat([header, pcmData]);
+}
+
+// Transcribe a single audio chunk
+async function transcribeChunk(audioBuffer: Buffer, apiKey: string): Promise<WhisperSegment[]> {
+  const formData = new FormData();
+  formData.append('file', audioBuffer, { filename: 'audio.wav', contentType: 'audio/wav' });
+  formData.append('model', 'whisper-large-v3-turbo');
+  formData.append('response_format', 'verbose_json');
+  formData.append('language', 'en');
+
+  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      ...formData.getHeaders(),
+    },
+    body: formData as any,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Whisper API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json() as any;
+  return result.segments || [];
+}
+
 // Transcribe audio using Groq Whisper to get segments with timestamps
 async function transcribeForRepetitionDetection(audioBuffer: Buffer): Promise<WhisperSegment[]> {
   const groqApiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
@@ -196,32 +275,58 @@ async function transcribeForRepetitionDetection(audioBuffer: Buffer): Promise<Wh
   }
 
   try {
-    const formData = new FormData();
-    formData.append('file', audioBuffer, { filename: 'audio.wav', contentType: 'audio/wav' });
-    formData.append('model', 'whisper-large-v3-turbo');
-    formData.append('response_format', 'verbose_json');
-    formData.append('language', 'en');
+    logger.info(`Transcribing audio for repetition detection (${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB)...`);
 
-    logger.info('Transcribing audio for repetition detection...');
-
-    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqApiKey}`,
-        ...formData.getHeaders(),
-      },
-      body: formData as any,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error(`Whisper API error: ${response.status} - ${errorText}`);
-      return [];
+    // If audio is small enough, transcribe directly
+    if (audioBuffer.length <= WHISPER_MAX_BYTES) {
+      const segments = await transcribeChunk(audioBuffer, groqApiKey);
+      logger.info(`Transcription complete: ${segments.length} segments`);
+      return segments;
     }
 
-    const result = await response.json() as any;
-    logger.info(`Transcription complete: ${result.segments?.length || 0} segments`);
-    return result.segments || [];
+    // Audio too large - need to chunk it
+    logger.info('Audio exceeds 20MB, chunking for transcription...');
+
+    const { pcmData, sampleRate, channels, bitsPerSample } = extractWavInfo(audioBuffer);
+    const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
+    const maxChunkPcmBytes = WHISPER_MAX_BYTES - 1000; // Leave room for header
+    const chunkDuration = maxChunkPcmBytes / bytesPerSecond;
+
+    const totalDuration = pcmData.length / bytesPerSecond;
+    const numChunks = Math.ceil(pcmData.length / maxChunkPcmBytes);
+
+    logger.info(`Splitting ${totalDuration.toFixed(1)}s audio into ${numChunks} chunks (~${chunkDuration.toFixed(0)}s each)`);
+
+    const allSegments: WhisperSegment[] = [];
+
+    for (let i = 0; i < numChunks; i++) {
+      const startByte = i * maxChunkPcmBytes;
+      const endByte = Math.min((i + 1) * maxChunkPcmBytes, pcmData.length);
+      const chunkPcm = pcmData.slice(startByte, endByte);
+      const chunkWav = createWavFromPcm(chunkPcm, sampleRate, channels, bitsPerSample);
+
+      const timeOffset = startByte / bytesPerSecond;
+      logger.info(`Transcribing chunk ${i + 1}/${numChunks} (offset: ${timeOffset.toFixed(1)}s)...`);
+
+      try {
+        const chunkSegments = await transcribeChunk(chunkWav, groqApiKey);
+
+        // Adjust timestamps by chunk offset
+        for (const seg of chunkSegments) {
+          allSegments.push({
+            text: seg.text,
+            start: seg.start + timeOffset,
+            end: seg.end + timeOffset,
+          });
+        }
+      } catch (err) {
+        logger.warn(`Chunk ${i + 1} transcription failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    logger.info(`Transcription complete: ${allSegments.length} segments from ${numChunks} chunks`);
+    return allSegments;
+
   } catch (error) {
     logger.error('Transcription for repetition detection failed:', error);
     return [];
