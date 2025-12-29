@@ -154,6 +154,16 @@ function convertNumbersToWords(text: string): string {
   return text;
 }
 
+// Common proper nouns and technical terms that TTS often mispronounces
+const PRONUNCIATION_FIXES: Record<string, string> = {
+  // French place names
+  'Clermont': 'Clair-mawn',
+  // Historical terms
+  'Byzantine': 'Biz-an-teen',
+  'ecclesiastical': 'eh-klee-zee-as-ti-cal',
+  // Common mispronunciations (add more as needed)
+};
+
 // Mandatory normalization before sending to API
 function normalizeText(text: string): string {
   let result = text
@@ -163,6 +173,12 @@ function normalizeText(text: string): string {
     .replace(/['']/g, "'")
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...");
+
+  // Apply pronunciation fixes for difficult words (case-insensitive)
+  for (const [word, phonetic] of Object.entries(PRONUNCIATION_FIXES)) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    result = result.replace(regex, phonetic);
+  }
 
   // Convert numbers to words for better TTS pronunciation
   result = convertNumbersToWords(result);
