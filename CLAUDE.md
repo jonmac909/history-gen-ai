@@ -126,20 +126,21 @@ Multi-step generation with user review at each stage:
 
 ### Audio Generation Architecture
 
-**Critical: Uses parallel processing with 6 segments to match RunPod worker allocation.**
+**Critical: Uses parallel processing with 10 segments to match RunPod worker allocation.**
 
-- Script split into **6 equal segments** by word count
-- **All 6 segments processed in parallel** (utilizing 6 RunPod workers)
+- Script split into **10 equal segments** by word count
+- **All 10 segments processed in parallel** (utilizing 10 RunPod workers)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
+- **Post-processing**: Whisper transcribes audio, detects repeated phrases (>85% similarity), FFmpeg removes duplicates
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
-- `MAX_TTS_CHUNK_LENGTH = 500` chars per TTS chunk
-- `DEFAULT_SEGMENT_COUNT = 6` segments (match RunPod max workers for audio)
-- `MAX_CONCURRENT_SEGMENTS = 6` (parallel processing)
+- `MAX_TTS_CHUNK_LENGTH = 250` chars per TTS chunk (reduced to prevent repetition)
+- `DEFAULT_SEGMENT_COUNT = 10` segments (match RunPod max workers for audio)
+- `MAX_CONCURRENT_SEGMENTS = 10` (parallel processing)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
@@ -155,6 +156,7 @@ Multi-step generation with user review at each stage:
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
 - Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
 - Wrong order will strip quotes entirely instead of converting them
+- **Number-to-words conversion**: "ACT 5" → "Act Five", years like "1347" → "thirteen forty-seven"
 
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
@@ -174,9 +176,8 @@ Multi-step generation with user review at each stage:
 - Dimensions must be divisible by 16
 - Uses `guidance_scale=0.0` (no negative prompts)
 
-**RunPod Worker Allocation** (10 workers total across both endpoints):
-- RunPod enforces a **global 10-worker limit** across all endpoints
-- Fixed allocation: **6 workers for audio (ChatterboxTTS), 4 workers for images (Z-Image)**
+**RunPod Worker Allocation**:
+- **10 workers for audio (ChatterboxTTS)**, **4 workers for images (Z-Image)**
 - Set in RunPod dashboard endpoint settings
 
 ### Image Generation Architecture
@@ -246,15 +247,20 @@ Multi-step generation with user review at each stage:
 **Embers Overlay:**
 - Source: `public/overlays/embers.mp4` (~10s, served from Netlify)
 - Applied per-chunk using concat demuxer (NOT -stream_loop which crashes on long videos)
-- Each chunk calculates duration, creates concat file with exact loop count needed
-- Uses desaturated grayscale at 15% opacity: `hue=s=0` → `blend=addition:0.15:shortest=1`
+- Uses `colorkey` to remove black background, then `overlay` (not blend mode)
+- Filter: `colorkey=black:similarity=0.3:blend=0.2` → transparent embers over video
 - Graceful fallback: if embers pass fails, uses raw chunk without embers
 
 **Key constants** in `render-api/src/routes/render-video.ts`:
 - `IMAGES_PER_CHUNK = 25` images per chunk
-- `PARALLEL_CHUNK_RENDERS = 2` parallel chunks (reduced for two-pass rendering)
-- `EMBERS_ENABLED = true` toggle for debugging
-- `EMBERS_TIMEOUT_MS = 120000` (2 min timeout per chunk)
+- `PARALLEL_CHUNK_RENDERS = 4` parallel chunk renders
+- `FFMPEG_PRESET = 'fast'` (better compression than ultrafast)
+- `FFMPEG_CRF = '26'` (good quality, reasonable file size)
+
+**Large Video Upload:**
+- Videos >50MB use streaming upload via REST API (avoids memory exhaustion)
+- `fs.createReadStream()` streams directly to Supabase (no full file in RAM)
+- Supabase bucket must have file size limit set (default 50MB, increase to 5GB for Pro)
 
 **SSE Progress Stages:**
 - Downloading (5-25%), Preparing (30%), Rendering chunks (30-70%), Concatenating (72%), Audio mux (75%), Uploading (85-100%)
@@ -384,7 +390,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 ## File Naming Conventions
 
 Generated images: `{projectId}/images/image_001_00-00-00_to_00-00-45.png`
-Audio segments: `{projectId}/voiceover-segment-{1-6}.wav`
+Audio segments: `{projectId}/voiceover-segment-{1-10}.wav`
 Combined audio: `{projectId}/voiceover.wav`
 Rendered video: `{projectId}/video.mp4` (with embers overlay)
 
@@ -395,6 +401,11 @@ New projects initialize with:
 - Script template: `template-a`
 - AI model: `claude-sonnet-4-5`
 - Word count: 1000, Image count: 10, Speed: 1x
+
+**Full Automation Mode** (`settings.fullAutomation`):
+- Auto-confirms each pipeline step without user review
+- Ends with embers video render (not basic)
+- Triggered via Settings popover toggle
 
 ## Security
 
