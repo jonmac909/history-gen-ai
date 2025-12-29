@@ -1559,6 +1559,11 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       throw new Error('All segments failed to generate');
     }
 
+    logger.info(`All ${segmentResults.length} segments uploaded successfully`);
+    segmentResults.forEach((seg, idx) => {
+      logger.debug(`  Segment ${seg.index}: ${seg.audioUrl} (${seg.size} bytes, ${seg.duration}s)`);
+    });
+
     sendEvent({ type: 'progress', progress: 88 });
 
     // True streaming concatenation: process ONE segment at a time
@@ -1594,12 +1599,17 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     // Step 1: Download first segment to get header and calculate total size
     console.log(`Step 1: Downloading first segment for header info...`);
     const firstFileName = `${actualProjectId}/voiceover-segment-${segmentResults[0].index}.wav`;
+    console.log(`Attempting to download: ${firstFileName} from generated-assets bucket`);
+
     const { data: firstData, error: firstError } = await supabase.storage
       .from('generated-assets')
       .download(firstFileName);
 
     if (firstError || !firstData) {
-      throw new Error(`Failed to download first segment: ${firstError?.message}`);
+      const errorDetails = firstError ? JSON.stringify(firstError, null, 2) : 'No error details';
+      logger.error(`Download failed for ${firstFileName}:`, errorDetails);
+      logger.error(`First data exists: ${!!firstData}, Error exists: ${!!firstError}`);
+      throw new Error(`Failed to download first segment (${firstFileName}): ${firstError?.message || errorDetails}`);
     }
 
     const firstBuffer = Buffer.from(await firstData.arrayBuffer());
@@ -1650,7 +1660,9 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
         .download(fileName);
 
       if (error || !data) {
-        throw new Error(`Failed to download segment ${result.index}: ${error?.message}`);
+        const errorDetails = error ? JSON.stringify(error, null, 2) : 'No error details';
+        logger.error(`Download failed for segment ${result.index} (${fileName}):`, errorDetails);
+        throw new Error(`Failed to download segment ${result.index} (${fileName}): ${error?.message || errorDetails}`);
       }
 
       const buffer = Buffer.from(await data.arrayBuffer());
