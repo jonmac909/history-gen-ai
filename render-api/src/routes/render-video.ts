@@ -75,16 +75,25 @@ async function updateJobStatus(
   message: string,
   extras?: { video_url?: string; error?: string }
 ): Promise<void> {
+  // Build update object - only include video_url/error if explicitly provided
+  const updateData: Record<string, unknown> = {
+    status,
+    progress,
+    message,
+    updated_at: new Date().toISOString()
+  };
+
+  // Only set video_url if explicitly provided (don't overwrite with null)
+  if (extras?.video_url !== undefined) {
+    updateData.video_url = extras.video_url;
+  }
+  if (extras?.error !== undefined) {
+    updateData.error = extras.error;
+  }
+
   const { error } = await supabase
     .from('render_jobs')
-    .update({
-      status,
-      progress,
-      message,
-      video_url: extras?.video_url,
-      error: extras?.error,
-      updated_at: new Date().toISOString()
-    })
+    .update(updateData)
     .eq('id', jobId);
 
   if (error) {
