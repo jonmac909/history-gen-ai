@@ -1601,15 +1601,37 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const firstFileName = `${actualProjectId}/voiceover-segment-${segmentResults[0].index}.wav`;
     console.log(`Attempting to download: ${firstFileName} from generated-assets bucket`);
 
+    // First, verify the file exists
+    const { data: listData, error: listError } = await supabase.storage
+      .from('generated-assets')
+      .list(actualProjectId);
+
+    if (listError) {
+      logger.error(`Failed to list files in ${actualProjectId}:`, listError);
+    } else {
+      logger.info(`Files in ${actualProjectId}:`, listData?.map(f => f.name).join(', '));
+    }
+
     const { data: firstData, error: firstError } = await supabase.storage
       .from('generated-assets')
       .download(firstFileName);
 
     if (firstError || !firstData) {
-      const errorDetails = firstError ? JSON.stringify(firstError, null, 2) : 'No error details';
-      logger.error(`Download failed for ${firstFileName}:`, errorDetails);
-      logger.error(`First data exists: ${!!firstData}, Error exists: ${!!firstError}`);
-      throw new Error(`Failed to download first segment (${firstFileName}): ${firstError?.message || errorDetails}`);
+      // Log all possible error properties
+      logger.error(`Download failed for ${firstFileName}`);
+      logger.error(`  Error object type: ${typeof firstError}`);
+      logger.error(`  Error constructor: ${firstError?.constructor?.name}`);
+      logger.error(`  Error message: ${firstError?.message}`);
+      logger.error(`  Error name: ${(firstError as any)?.name}`);
+      logger.error(`  Error statusCode: ${(firstError as any)?.statusCode}`);
+      logger.error(`  Error error: ${(firstError as any)?.error}`);
+      logger.error(`  Full error: ${JSON.stringify(firstError)}`);
+      logger.error(`  Error keys: ${firstError ? Object.keys(firstError).join(', ') : 'none'}`);
+      logger.error(`  Error getOwnPropertyNames: ${firstError ? Object.getOwnPropertyNames(firstError).join(', ') : 'none'}`);
+      logger.error(`  Data exists: ${!!firstData}, Error exists: ${!!firstError}`);
+
+      const errorMsg = firstError?.message || (firstError as any)?.error || JSON.stringify(firstError) || 'Unknown error';
+      throw new Error(`Failed to download first segment (${firstFileName}): ${errorMsg}`);
     }
 
     const firstBuffer = Buffer.from(await firstData.arrayBuffer());
