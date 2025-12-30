@@ -131,12 +131,14 @@ export function ProjectResults({
   onCaptionedVideoRendered,
   autoRender
 }: ProjectResultsProps) {
-  // State for video rendering - two separate videos (basic and embers)
+  // State for video rendering - three separate videos (basic, embers, smoke_embers)
   const [isRenderingBasic, setIsRenderingBasic] = useState(false);
   const [isRenderingEmbers, setIsRenderingEmbers] = useState(false);
+  const [isRenderingSmokeEmbers, setIsRenderingSmokeEmbers] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(videoUrl || null);
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(null);
+  const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
   const autoRenderTriggered = useRef(false);
 
@@ -469,10 +471,12 @@ export function ProjectResults({
     if (type === 'basic') {
       setIsRenderingBasic(true);
       setBasicVideoUrl(null);
-    } else {
-      // Both embers and smoke_embers use the same state
+    } else if (type === 'embers') {
       setIsRenderingEmbers(true);
       setEmbersVideoUrl(null);
+    } else {
+      setIsRenderingSmokeEmbers(true);
+      setSmokeEmbersVideoUrl(null);
     }
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
 
@@ -515,9 +519,12 @@ export function ProjectResults({
         if (type === 'basic') {
           setBasicVideoUrl(result.videoUrl);
           setIsRenderingBasic(false);
-        } else {
+        } else if (type === 'embers') {
           setEmbersVideoUrl(result.videoUrl);
           setIsRenderingEmbers(false);
+        } else {
+          setSmokeEmbersVideoUrl(result.videoUrl);
+          setIsRenderingSmokeEmbers(false);
         }
         // Notify parent to save the video URL
         if (onVideoRendered) {
@@ -531,8 +538,10 @@ export function ProjectResults({
         // Show error
         if (type === 'basic') {
           setIsRenderingBasic(false);
-        } else {
+        } else if (type === 'embers') {
           setIsRenderingEmbers(false);
+        } else {
+          setIsRenderingSmokeEmbers(false);
         }
         toast({
           title: "Render Failed",
@@ -544,8 +553,10 @@ export function ProjectResults({
       console.error('Render video error:', error);
       if (type === 'basic') {
         setIsRenderingBasic(false);
-      } else {
+      } else if (type === 'embers') {
         setIsRenderingEmbers(false);
+      } else {
+        setIsRenderingSmokeEmbers(false);
       }
       toast({
         title: "Render Failed",
@@ -563,7 +574,7 @@ export function ProjectResults({
 
   // Download rendered video
   const handleDownloadVideo = async (type: 'basic' | 'embers' | 'smoke_embers') => {
-    const url = type === 'basic' ? basicVideoUrl : embersVideoUrl;
+    const url = type === 'basic' ? basicVideoUrl : (type === 'embers' ? embersVideoUrl : smokeEmbersVideoUrl);
     if (!url) return;
 
     const suffix = type === 'embers' ? 'embers' : (type === 'smoke_embers' ? 'smoke_embers' : '');
@@ -907,7 +918,7 @@ export function ProjectResults({
           )}
 
           {/* Smoke + Embers Video */}
-          {(srtContent || embersVideoUrl) && (
+          {(srtContent || smokeEmbersVideoUrl) && (
             <div className="flex items-center justify-between p-4 bg-card rounded-lg border">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
@@ -915,27 +926,39 @@ export function ProjectResults({
                 </div>
                 <div>
                   <p className="font-medium text-foreground">
-                    Smoke + Embers
+                    {smokeEmbersVideoUrl ? 'Smoke + Embers Video' : 'Smoke + Embers'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Video with smoke and embers overlay
+                    {smokeEmbersVideoUrl ? 'MP4 video with smoke and embers overlay' : 'Video with smoke and embers overlay'}
                   </p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleRenderVideo('smoke_embers')}
-                disabled={isRenderingBasic || isRenderingEmbers}
-                className="text-muted-foreground hover:text-foreground"
-                title="Render Video with Smoke + Embers"
-              >
-                {isRenderingEmbers && currentRenderType === 'smoke_embers' ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  "Render"
-                )}
-              </Button>
+              {smokeEmbersVideoUrl ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownloadVideo('smoke_embers')}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download Video"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRenderVideo('smoke_embers')}
+                  disabled={isRenderingBasic || isRenderingEmbers || isRenderingSmokeEmbers}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Render Video with Smoke + Embers"
+                >
+                  {isRenderingSmokeEmbers ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    "Render"
+                  )}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -948,17 +971,17 @@ export function ProjectResults({
       </div>
 
       {/* Render Progress Modal */}
-      <Dialog open={isRenderingBasic || isRenderingEmbers} onOpenChange={handleCloseRenderModal}>
+      <Dialog open={isRenderingBasic || isRenderingEmbers || isRenderingSmokeEmbers} onOpenChange={handleCloseRenderModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {currentRenderType !== 'basic' ? <Sparkles className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-              {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)
+              {(currentRenderType === 'basic' ? basicVideoUrl : (currentRenderType === 'embers' ? embersVideoUrl : smokeEmbersVideoUrl))
                 ? 'Video Ready'
                 : `Rendering ${currentRenderType === 'smoke_embers' ? 'with Smoke + Embers' : currentRenderType === 'embers' ? 'with Embers' : 'Video'}`}
             </DialogTitle>
             <DialogDescription>
-              {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)
+              {(currentRenderType === 'basic' ? basicVideoUrl : (currentRenderType === 'embers' ? embersVideoUrl : smokeEmbersVideoUrl))
                 ? 'Your video has been rendered successfully.'
                 : 'Please wait while your video is being rendered.'}
             </DialogDescription>
@@ -966,10 +989,10 @@ export function ProjectResults({
 
           <div className="space-y-4">
             {/* Video Preview Player */}
-            {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl) && (
+            {(currentRenderType === 'basic' ? basicVideoUrl : (currentRenderType === 'embers' ? embersVideoUrl : smokeEmbersVideoUrl)) && (
               <div className="space-y-3">
                 <video
-                  src={currentRenderType === 'basic' ? basicVideoUrl! : embersVideoUrl!}
+                  src={currentRenderType === 'basic' ? basicVideoUrl! : (currentRenderType === 'embers' ? embersVideoUrl! : smokeEmbersVideoUrl!)}
                   controls
                   preload="auto"
                   crossOrigin="anonymous"
@@ -985,7 +1008,7 @@ export function ProjectResults({
             )}
 
             {/* Initial rendering progress (before video is ready) */}
-            {!(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl) && renderProgress && (
+            {!(currentRenderType === 'basic' ? basicVideoUrl : (currentRenderType === 'embers' ? embersVideoUrl : smokeEmbersVideoUrl)) && renderProgress && (
               <>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
