@@ -367,6 +367,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               ];
             }
 
+            // Log the filter chain for debugging
+            console.log(`[Chunk ${chunk.index}] Filter chain:`, filterChain.join('; '));
+
             cmd
               .complexFilter(filterChain)
               .outputOptions([
@@ -378,6 +381,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
                 '-y'
               ])
               .output(chunk.outputPath)
+              .on('start', (cmdLine) => {
+                console.log(`[Chunk ${chunk.index}] FFmpeg command:`, cmdLine);
+              })
               .on('progress', (p) => {
                 // Pass 2 is 50-100% of chunk progress
                 const pass2Pct = 50 + Math.min(p.percent || 0, 100) * 0.5;
