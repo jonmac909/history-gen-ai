@@ -2196,29 +2196,48 @@ router.post('/segment', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No valid text chunks in segment' });
     }
 
-    console.log(`Segment ${segmentIndex}: processing ${chunks.length} chunks`);
+    // Process chunks in parallel batches to speed up regeneration
+    // Use 5 concurrent workers (half of max 10 to leave capacity for other jobs)
+    const PARALLEL_CHUNKS = 5;
+    console.log(`Segment ${segmentIndex}: processing ${chunks.length} chunks in batches of ${PARALLEL_CHUNKS}`);
 
-    const audioChunks: Buffer[] = [];
+    const results: { index: number; audio: Buffer }[] = [];
 
-    // Process each chunk sequentially
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkText = chunks[i];
-      console.log(`Processing chunk ${i + 1}/${chunks.length}: "${chunkText.substring(0, 50)}..."`);
+    for (let batch = 0; batch < chunks.length; batch += PARALLEL_CHUNKS) {
+      const batchChunks = chunks.slice(batch, batch + PARALLEL_CHUNKS);
+      const batchEnd = Math.min(batch + PARALLEL_CHUNKS, chunks.length);
+      console.log(`Processing batch ${Math.floor(batch / PARALLEL_CHUNKS) + 1}: chunks ${batch + 1}-${batchEnd}/${chunks.length}`);
 
-      try {
-        const jobId = await startTTSJob(chunkText, RUNPOD_API_KEY, referenceAudioBase64);
-        const output = await pollJobStatus(jobId, RUNPOD_API_KEY);
-        const audioData = base64ToBuffer(output.audio_base64);
-        audioChunks.push(audioData);
-        console.log(`Chunk ${i + 1}/${chunks.length}: ${audioData.length} bytes`);
-      } catch (err) {
-        logger.warn(`Skipping chunk ${i + 1}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const batchPromises = batchChunks.map(async (chunkText, i) => {
+        const chunkIndex = batch + i;
+        try {
+          const jobId = await startTTSJob(chunkText, RUNPOD_API_KEY, referenceAudioBase64);
+          const output = await pollJobStatus(jobId, RUNPOD_API_KEY);
+          const audioData = base64ToBuffer(output.audio_base64);
+          console.log(`  Chunk ${chunkIndex + 1}/${chunks.length}: ${audioData.length} bytes`);
+          return { index: chunkIndex, audio: audioData };
+        } catch (err) {
+          logger.warn(`Skipping chunk ${chunkIndex + 1}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          return null;
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      for (const result of batchResults) {
+        if (result !== null) {
+          results.push(result);
+        }
       }
     }
 
-    if (audioChunks.length === 0) {
+    if (results.length === 0) {
       return res.status(500).json({ error: 'All chunks failed to generate' });
     }
+
+    // Sort by index to maintain correct order, then extract audio buffers
+    results.sort((a, b) => a.index - b.index);
+    const audioChunks = results.map(r => r.audio);
+    console.log(`Successfully processed ${audioChunks.length}/${chunks.length} chunks`)
 
     // Concatenate chunks into segment audio
     const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
