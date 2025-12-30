@@ -21,6 +21,13 @@ const PARALLEL_CHUNK_RENDERS = 4;
 const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
+// Progress tracking state (shared across chunks for accurate progress)
+interface RenderProgress {
+  totalChunks: number;
+  chunksCompleted: number;
+  chunkProgress: Map<number, number>;  // chunk index -> percent complete (0-100)
+}
+
 // Embers overlay
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 const EMBERS_SOURCE_DURATION = 10;
@@ -208,9 +215,38 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     }
 
     const chunkVideoPaths = chunkDataList.map(c => c.outputPath);
-    let completedChunks = 0;
 
     const embersAvailable = embersEnabled && fs.existsSync(embersPath);
+
+    // Progress tracking
+    const progress: RenderProgress = {
+      totalChunks: numChunks,
+      chunksCompleted: 0,
+      chunkProgress: new Map()
+    };
+
+    // Calculate overall render progress (30-70% range = 40% spread)
+    const calculateOverallProgress = (): number => {
+      let totalProgress = 0;
+      for (let i = 0; i < numChunks; i++) {
+        const chunkPct = progress.chunkProgress.get(i) || 0;
+        totalProgress += chunkPct;
+      }
+      const avgProgress = totalProgress / numChunks;
+      // Map 0-100 chunk progress to 30-70% overall progress
+      return 30 + Math.round(avgProgress * 0.4);
+    };
+
+    // Throttle progress updates to avoid DB spam
+    let lastProgressUpdate = 0;
+    const updateProgressThrottled = async (message: string) => {
+      const now = Date.now();
+      if (now - lastProgressUpdate > 1000) {  // Max 1 update per second
+        lastProgressUpdate = now;
+        const pct = calculateOverallProgress();
+        await updateJobStatus(supabase, jobId, 'rendering', pct, message);
+      }
+    };
 
     // Render chunk function
     const renderChunk = async (chunk: ChunkData): Promise<void> => {
@@ -220,6 +256,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       const chunkDuration = chunkTimingsSlice[chunkTimingsSlice.length - 1].endSeconds - chunkTimingsSlice[0].startSeconds;
 
       console.log(`Rendering chunk ${chunk.index + 1}/${numChunks} (${chunkDuration.toFixed(1)}s)`);
+      progress.chunkProgress.set(chunk.index, 0);
 
       const rawChunkPath = path.join(tempDir!, `chunk_raw_${chunk.index}.mp4`);
 
@@ -240,9 +277,16 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
           .on('start', (cmd) => {
             console.log(`Chunk ${chunk.index + 1} Pass 1:`, cmd.substring(0, 120) + '...');
           })
+          .on('progress', (p) => {
+            // Pass 1 is 0-50% of chunk progress (Pass 2 with embers is 50-100%)
+            const pass1Pct = embersAvailable ? Math.min(p.percent || 0, 100) * 0.5 : Math.min(p.percent || 0, 100);
+            progress.chunkProgress.set(chunk.index, pass1Pct);
+            updateProgressThrottled(`Rendering chunk ${chunk.index + 1}/${numChunks} (${Math.round(pass1Pct)}%)`);
+          })
           .on('error', reject)
           .on('end', () => {
             console.log(`Chunk ${chunk.index + 1} Pass 1 complete`);
+            progress.chunkProgress.set(chunk.index, embersAvailable ? 50 : 100);
             resolve();
           })
           .run();
@@ -273,10 +317,17 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
                 '-y'
               ])
               .output(chunk.outputPath)
+              .on('progress', (p) => {
+                // Pass 2 is 50-100% of chunk progress
+                const pass2Pct = 50 + Math.min(p.percent || 0, 100) * 0.5;
+                progress.chunkProgress.set(chunk.index, pass2Pct);
+                updateProgressThrottled(`Adding effects to chunk ${chunk.index + 1}/${numChunks}`);
+              })
               .on('error', reject)
               .on('end', () => {
                 try { fs.unlinkSync(rawChunkPath); } catch (e) { }
                 try { fs.unlinkSync(embersChunkConcatPath); } catch (e) { }
+                progress.chunkProgress.set(chunk.index, 100);
                 resolve();
               })
               .run();
@@ -289,12 +340,13 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
         }
       } else {
         fs.renameSync(rawChunkPath, chunk.outputPath);
+        progress.chunkProgress.set(chunk.index, 100);
       }
 
-      completedChunks++;
-      const percent = 30 + Math.round((completedChunks / numChunks) * 40);
-      await updateJobStatus(supabase, jobId, 'rendering', percent, `Rendered ${completedChunks}/${numChunks} chunks`);
-      console.log(`Chunk ${chunk.index + 1} fully complete (${completedChunks}/${numChunks})`);
+      progress.chunksCompleted++;
+      const pct = calculateOverallProgress();
+      await updateJobStatus(supabase, jobId, 'rendering', pct, `Rendered ${progress.chunksCompleted}/${numChunks} chunks`);
+      console.log(`Chunk ${chunk.index + 1} fully complete (${progress.chunksCompleted}/${numChunks})`);
     };
 
     // Render chunks in parallel batches
@@ -365,7 +417,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     }
 
     // Stage 5: Upload using streaming to avoid memory issues with large files
-    await updateJobStatus(supabase, jobId, 'uploading', 85, 'Uploading video...');
+    await updateJobStatus(supabase, jobId, 'uploading', 80, 'Uploading video...');
 
     const videoUploadPath = `${params.projectId}/video.mp4`;
     const fileStats = fs.statSync(withAudioPath);
@@ -384,9 +436,26 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       throw new Error('Supabase credentials not configured');
     }
 
-    // Stream upload using fetch with file stream
+    // Stream upload using fetch with file stream + progress tracking
     const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${videoUploadPath}`;
     const fileStream = fs.createReadStream(withAudioPath);
+
+    // Track upload progress
+    let bytesUploaded = 0;
+    let lastUploadProgressUpdate = 0;
+    fileStream.on('data', async (chunk: Buffer | string) => {
+      const chunkLength = typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
+      bytesUploaded += chunkLength;
+      const now = Date.now();
+      if (now - lastUploadProgressUpdate > 2000) {  // Update every 2 seconds
+        lastUploadProgressUpdate = now;
+        const uploadPct = Math.round((bytesUploaded / fileSizeBytes) * 100);
+        // Map upload progress to 80-98% overall
+        const overallPct = 80 + Math.round(uploadPct * 0.18);
+        const mbUploaded = (bytesUploaded / 1024 / 1024).toFixed(1);
+        await updateJobStatus(supabase, jobId, 'uploading', overallPct, `Uploading ${mbUploaded}/${uploadSizeMB} MB`);
+      }
+    });
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
