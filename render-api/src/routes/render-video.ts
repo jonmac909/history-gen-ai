@@ -313,8 +313,8 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .input(overlayChunkConcatPath)
               .inputOptions(['-f', 'concat', '-safe', '0'])
               .complexFilter([
-                // Remove dark background from overlay using colorkey, then overlay onto video
-                '[1:v]scale=1920:1080,colorkey=black:similarity=0.3:blend=0.2[overlay_keyed]',
+                // Use colorkey with low similarity to preserve dark smoke while removing pure black background
+                '[1:v]scale=1920:1080,colorkey=black:similarity=0.1:blend=0.1[overlay_keyed]',
                 '[0:v][overlay_keyed]overlay=0:0:shortest=1[out]'
               ])
               .outputOptions([
