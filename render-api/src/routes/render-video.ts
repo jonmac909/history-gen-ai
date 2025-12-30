@@ -30,7 +30,7 @@ interface RenderProgress {
 
 // Effect overlays
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
-const SMOKE_EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_embers.mp4';
+const SMOKE_GRAY_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_gray.mp4';
 const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
 
 type EffectType = 'none' | 'embers' | 'smoke_embers';
@@ -155,15 +155,31 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
 
-    // Download overlay based on effect type
-    const overlayPath = path.join(tempDir, 'overlay.mp4');
+    // Download overlay(s) based on effect type
+    const embersOverlayPath = path.join(tempDir, 'embers_overlay.mp4');
+    const smokeOverlayPath = path.join(tempDir, 'smoke_overlay.mp4');
+    let hasEmbersOverlay = false;
+    let hasSmokeOverlay = false;
+
     if (effectType !== 'none') {
+      // Always download embers for both 'embers' and 'smoke_embers' effects
       try {
-        const overlayUrl = effectType === 'smoke_embers' ? SMOKE_EMBERS_OVERLAY_URL : EMBERS_OVERLAY_URL;
-        await downloadFile(overlayUrl, overlayPath);
-        console.log(`${effectType} overlay downloaded`);
+        await downloadFile(EMBERS_OVERLAY_URL, embersOverlayPath);
+        hasEmbersOverlay = true;
+        console.log('Embers overlay downloaded');
       } catch (err) {
-        console.warn(`Failed to download ${effectType} overlay:`, err);
+        console.warn('Failed to download embers overlay:', err);
+      }
+
+      // Download smoke overlay only for 'smoke_embers' effect
+      if (effectType === 'smoke_embers') {
+        try {
+          await downloadFile(SMOKE_GRAY_OVERLAY_URL, smokeOverlayPath);
+          hasSmokeOverlay = true;
+          console.log('Smoke overlay downloaded');
+        } catch (err) {
+          console.warn('Failed to download smoke overlay:', err);
+        }
       }
     }
 
@@ -225,7 +241,8 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
     const chunkVideoPaths = chunkDataList.map(c => c.outputPath);
 
-    const overlayAvailable = effectType !== 'none' && fs.existsSync(overlayPath);
+    // Check which overlays are available
+    const overlayAvailable = effectType !== 'none' && (hasEmbersOverlay || hasSmokeOverlay);
 
     // Progress tracking
     const progress: RenderProgress = {
@@ -304,19 +321,54 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       if (overlayAvailable) {
         try {
           const overlayLoopCount = Math.ceil(chunkDuration / OVERLAY_SOURCE_DURATION) + 1;
-          const overlayChunkConcatPath = path.join(tempDir!, `overlay_concat_${chunk.index}.txt`);
-          fs.writeFileSync(overlayChunkConcatPath, Array(overlayLoopCount).fill(`file '${overlayPath}'`).join('\n'), 'utf8');
+
+          // Create concat files for looping overlays
+          const smokeLoopPath = path.join(tempDir!, `smoke_concat_${chunk.index}.txt`);
+          const embersLoopPath = path.join(tempDir!, `embers_concat_${chunk.index}.txt`);
+
+          if (hasSmokeOverlay) {
+            fs.writeFileSync(smokeLoopPath, Array(overlayLoopCount).fill(`file '${smokeOverlayPath}'`).join('\n'), 'utf8');
+          }
+          if (hasEmbersOverlay) {
+            fs.writeFileSync(embersLoopPath, Array(overlayLoopCount).fill(`file '${embersOverlayPath}'`).join('\n'), 'utf8');
+          }
 
           await new Promise<void>((resolve, reject) => {
-            ffmpeg()
-              .input(rawChunkPath)
-              .input(overlayChunkConcatPath)
-              .inputOptions(['-f', 'concat', '-safe', '0'])
-              .complexFilter([
-                // Use colorkey with low similarity to preserve dark smoke while removing pure black background
-                '[1:v]scale=1920:1080,colorkey=black:similarity=0.1:blend=0.1[overlay_keyed]',
-                '[0:v][overlay_keyed]overlay=0:0:shortest=1[out]'
-              ])
+            const cmd = ffmpeg().input(rawChunkPath);
+
+            // Build filter chain based on available overlays
+            let filterChain: string[];
+
+            if (hasSmokeOverlay && hasEmbersOverlay) {
+              // Both smoke and embers: smoke (multiply grayscale) + embers (colorkey)
+              cmd.input(smokeLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
+              cmd.input(embersLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
+              filterChain = [
+                // Smoke: convert to grayscale, multiply blend for darkening effect
+                '[1:v]scale=1920:1080,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
+                '[0:v][smoke_gray]blend=all_mode=multiply[with_smoke]',
+                // Embers: colorkey to remove black, overlay on top
+                '[2:v]scale=1920:1080,colorkey=black:similarity=0.2:blend=0.2[embers_keyed]',
+                '[with_smoke][embers_keyed]overlay=0:0:shortest=1[out]'
+              ];
+            } else if (hasEmbersOverlay) {
+              // Embers only: colorkey overlay
+              cmd.input(embersLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
+              filterChain = [
+                '[1:v]scale=1920:1080,colorkey=black:similarity=0.2:blend=0.2[embers_keyed]',
+                '[0:v][embers_keyed]overlay=0:0:shortest=1[out]'
+              ];
+            } else {
+              // Smoke only (shouldn't happen with current logic, but handle it)
+              cmd.input(smokeLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
+              filterChain = [
+                '[1:v]scale=1920:1080,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
+                '[0:v][smoke_gray]blend=all_mode=multiply[out]'
+              ];
+            }
+
+            cmd
+              .complexFilter(filterChain)
               .outputOptions([
                 '-map', '[out]',
                 '-c:v', 'libx264',
@@ -335,7 +387,8 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .on('error', reject)
               .on('end', () => {
                 try { fs.unlinkSync(rawChunkPath); } catch (e) { }
-                try { fs.unlinkSync(overlayChunkConcatPath); } catch (e) { }
+                try { fs.unlinkSync(smokeLoopPath); } catch (e) { }
+                try { fs.unlinkSync(embersLoopPath); } catch (e) { }
                 progress.chunkProgress.set(chunk.index, 100);
                 resolve();
               })
