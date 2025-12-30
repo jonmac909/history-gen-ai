@@ -2297,6 +2297,12 @@ router.post('/recombine', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'projectId is required' });
   }
 
+  const credentials = getSupabaseCredentials();
+  if (!credentials) {
+    return res.status(500).json({ error: 'Supabase credentials not configured' });
+  }
+
+  const supabase = createClient(credentials.url, credentials.key);
   const numSegments = segmentCount || 10;
 
   try {
