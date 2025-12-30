@@ -172,7 +172,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       }
 
       // Download smoke overlay only for 'smoke_embers' effect
-      if (effectType === 'smoke_embers') {
+      // DISABLED: multiply blend causes green tint on Linux ffmpeg-static
+      // TODO: Fix by pre-baking smoke effect or finding alternative blend mode
+      if (false && effectType === 'smoke_embers') {
         try {
           await downloadFile(SMOKE_GRAY_OVERLAY_URL, smokeOverlayPath);
           hasSmokeOverlay = true;
