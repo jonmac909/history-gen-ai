@@ -137,7 +137,7 @@ export function ProjectResults({
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(videoUrl || null);
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(null);
-  const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers'>('basic');
+  const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
   const autoRenderTriggered = useRef(false);
 
   // Auto-render video when in full automation mode (renders with embers)
@@ -398,8 +398,8 @@ export function ProjectResults({
     }
   };
 
-  // Handle Render Video (MP4) - type determines basic or embers
-  const handleRenderVideo = async (type: 'basic' | 'embers') => {
+  // Handle Render Video (MP4) - type determines basic, embers, or smoke_embers
+  const handleRenderVideo = async (type: 'basic' | 'embers' | 'smoke_embers') => {
     // Validate required data
     if (!projectId) {
       toast({
@@ -459,7 +459,10 @@ export function ProjectResults({
     }
 
     // Set effects based on type
-    const effects: VideoEffects = { embers: type === 'embers' };
+    const effects: VideoEffects = {
+      embers: type === 'embers',
+      smoke_embers: type === 'smoke_embers'
+    };
 
     // Start rendering
     setCurrentRenderType(type);
@@ -467,6 +470,7 @@ export function ProjectResults({
       setIsRenderingBasic(true);
       setBasicVideoUrl(null);
     } else {
+      // Both embers and smoke_embers use the same state
       setIsRenderingEmbers(true);
       setEmbersVideoUrl(null);
     }
@@ -900,6 +904,39 @@ export function ProjectResults({
               )}
             </div>
           )}
+
+          {/* Smoke + Embers Video */}
+          {(srtContent || embersVideoUrl) && (
+            <div className="flex items-center justify-between p-4 bg-card rounded-lg border">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-orange-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">
+                    Smoke + Embers
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Video with smoke and embers overlay
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRenderVideo('smoke_embers')}
+                disabled={isRenderingBasic || isRenderingEmbers}
+                className="text-muted-foreground hover:text-foreground"
+                title="Render Video with Smoke + Embers"
+              >
+                {isRenderingEmbers && currentRenderType === 'smoke_embers' ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  "Render"
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
         {assets.length === 0 && (
@@ -914,10 +951,10 @@ export function ProjectResults({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {currentRenderType === 'embers' ? <Sparkles className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              {currentRenderType !== 'basic' ? <Sparkles className="w-5 h-5" /> : <Video className="w-5 h-5" />}
               {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)
                 ? 'Video Ready'
-                : `Rendering ${currentRenderType === 'embers' ? 'with Embers' : 'Video'}`}
+                : `Rendering ${currentRenderType === 'smoke_embers' ? 'with Smoke + Embers' : currentRenderType === 'embers' ? 'with Embers' : 'Video'}`}
             </DialogTitle>
             <DialogDescription>
               {(currentRenderType === 'basic' ? basicVideoUrl : embersVideoUrl)

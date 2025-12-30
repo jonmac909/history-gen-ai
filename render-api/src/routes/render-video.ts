@@ -28,12 +28,16 @@ interface RenderProgress {
   chunkProgress: Map<number, number>;  // chunk index -> percent complete (0-100)
 }
 
-// Embers overlay
+// Effect overlays
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
-const EMBERS_SOURCE_DURATION = 10;
+const SMOKE_EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_embers.mp4';
+const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
+
+type EffectType = 'none' | 'embers' | 'smoke_embers';
 
 interface VideoEffects {
   embers?: boolean;
+  smoke_embers?: boolean;
 }
 
 interface ImageTiming {
@@ -135,9 +139,10 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       effects
     } = params;
 
-    const embersEnabled = effects?.embers ?? false;
+    // Determine which effect to use (smoke_embers takes priority over embers)
+    const effectType: EffectType = effects?.smoke_embers ? 'smoke_embers' : (effects?.embers ? 'embers' : 'none');
     console.log(`Job ${jobId}: Starting render for project ${projectId}`);
-    console.log(`Effects: embers=${embersEnabled}, Images: ${imageUrls.length}`);
+    console.log(`Effects: ${effectType}, Images: ${imageUrls.length}`);
 
     // Create temp directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'render-'));
@@ -150,12 +155,16 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
 
-    const embersPath = path.join(tempDir, 'embers.mp4');
-    try {
-      await downloadFile(EMBERS_OVERLAY_URL, embersPath);
-      console.log('Embers overlay downloaded');
-    } catch (err) {
-      console.warn('Failed to download embers overlay:', err);
+    // Download overlay based on effect type
+    const overlayPath = path.join(tempDir, 'overlay.mp4');
+    if (effectType !== 'none') {
+      try {
+        const overlayUrl = effectType === 'smoke_embers' ? SMOKE_EMBERS_OVERLAY_URL : EMBERS_OVERLAY_URL;
+        await downloadFile(overlayUrl, overlayPath);
+        console.log(`${effectType} overlay downloaded`);
+      } catch (err) {
+        console.warn(`Failed to download ${effectType} overlay:`, err);
+      }
     }
 
     const imagePaths: string[] = [];
@@ -216,7 +225,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
     const chunkVideoPaths = chunkDataList.map(c => c.outputPath);
 
-    const embersAvailable = embersEnabled && fs.existsSync(embersPath);
+    const overlayAvailable = effectType !== 'none' && fs.existsSync(overlayPath);
 
     // Progress tracking
     const progress: RenderProgress = {
@@ -278,35 +287,35 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
             console.log(`Chunk ${chunk.index + 1} Pass 1:`, cmd.substring(0, 120) + '...');
           })
           .on('progress', (p) => {
-            // Pass 1 is 0-50% of chunk progress (Pass 2 with embers is 50-100%)
-            const pass1Pct = embersAvailable ? Math.min(p.percent || 0, 100) * 0.5 : Math.min(p.percent || 0, 100);
+            // Pass 1 is 0-50% of chunk progress (Pass 2 with overlay is 50-100%)
+            const pass1Pct = overlayAvailable ? Math.min(p.percent || 0, 100) * 0.5 : Math.min(p.percent || 0, 100);
             progress.chunkProgress.set(chunk.index, pass1Pct);
             updateProgressThrottled(`Rendering chunk ${chunk.index + 1}/${numChunks} (${Math.round(pass1Pct)}%)`);
           })
           .on('error', reject)
           .on('end', () => {
             console.log(`Chunk ${chunk.index + 1} Pass 1 complete`);
-            progress.chunkProgress.set(chunk.index, embersAvailable ? 50 : 100);
+            progress.chunkProgress.set(chunk.index, overlayAvailable ? 50 : 100);
             resolve();
           })
           .run();
       });
 
-      if (embersAvailable) {
+      if (overlayAvailable) {
         try {
-          const embersLoopCount = Math.ceil(chunkDuration / EMBERS_SOURCE_DURATION) + 1;
-          const embersChunkConcatPath = path.join(tempDir!, `embers_concat_${chunk.index}.txt`);
-          fs.writeFileSync(embersChunkConcatPath, Array(embersLoopCount).fill(`file '${embersPath}'`).join('\n'), 'utf8');
+          const overlayLoopCount = Math.ceil(chunkDuration / OVERLAY_SOURCE_DURATION) + 1;
+          const overlayChunkConcatPath = path.join(tempDir!, `overlay_concat_${chunk.index}.txt`);
+          fs.writeFileSync(overlayChunkConcatPath, Array(overlayLoopCount).fill(`file '${overlayPath}'`).join('\n'), 'utf8');
 
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(rawChunkPath)
-              .input(embersChunkConcatPath)
+              .input(overlayChunkConcatPath)
               .inputOptions(['-f', 'concat', '-safe', '0'])
               .complexFilter([
-                // Remove dark background from embers using colorkey, then overlay
-                '[1:v]scale=1920:1080,colorkey=black:similarity=0.3:blend=0.2[embers_keyed]',
-                '[0:v][embers_keyed]overlay=0:0:shortest=1[out]'
+                // Remove dark background from overlay using colorkey, then overlay onto video
+                '[1:v]scale=1920:1080,colorkey=black:similarity=0.3:blend=0.2[overlay_keyed]',
+                '[0:v][overlay_keyed]overlay=0:0:shortest=1[out]'
               ])
               .outputOptions([
                 '-map', '[out]',
@@ -326,14 +335,14 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .on('error', reject)
               .on('end', () => {
                 try { fs.unlinkSync(rawChunkPath); } catch (e) { }
-                try { fs.unlinkSync(embersChunkConcatPath); } catch (e) { }
+                try { fs.unlinkSync(overlayChunkConcatPath); } catch (e) { }
                 progress.chunkProgress.set(chunk.index, 100);
                 resolve();
               })
               .run();
           });
         } catch (err) {
-          console.error(`Chunk ${chunk.index + 1} embers failed:`, err);
+          console.error(`Chunk ${chunk.index + 1} overlay effect failed:`, err);
           if (fs.existsSync(rawChunkPath)) {
             fs.renameSync(rawChunkPath, chunk.outputPath);
           }

@@ -1177,6 +1177,7 @@ export interface RenderVideoCallbacks {
 
 export interface VideoEffects {
   embers?: boolean;
+  smoke_embers?: boolean;
 }
 
 // Render job status from Supabase
