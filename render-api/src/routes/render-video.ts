@@ -172,9 +172,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       }
 
       // Download smoke overlay only for 'smoke_embers' effect
-      // DISABLED: multiply blend causes green tint on Linux ffmpeg-static
-      // TODO: Fix by pre-baking smoke effect or finding alternative blend mode
-      if (false && effectType === 'smoke_embers') {
+      if (effectType === 'smoke_embers') {
         try {
           await downloadFile(SMOKE_GRAY_OVERLAY_URL, smokeOverlayPath);
           hasSmokeOverlay = true;
@@ -343,12 +341,15 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
             if (hasSmokeOverlay && hasEmbersOverlay) {
               // Both smoke and embers: smoke (multiply grayscale) + embers (colorkey)
+              // Note: flags=full_chroma_int+accurate_rnd fixes green tint on Linux ffmpeg-static
               cmd.input(smokeLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
               cmd.input(embersLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
               filterChain = [
+                // Scale base video with accurate color conversion flags
+                '[0:v]scale=1920:1080:flags=full_chroma_int+accurate_rnd[base]',
                 // Smoke: convert to grayscale, multiply blend for darkening effect
-                '[1:v]scale=1920:1080,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
-                '[0:v][smoke_gray]blend=all_mode=multiply[with_smoke]',
+                '[1:v]scale=1920:1080:flags=full_chroma_int+accurate_rnd,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
+                '[base][smoke_gray]blend=all_mode=multiply[with_smoke]',
                 // Embers: colorkey to remove black, overlay on top
                 '[2:v]scale=1920:1080,colorkey=black:similarity=0.2:blend=0.2[embers_keyed]',
                 '[with_smoke][embers_keyed]overlay=0:0:shortest=1[out]'
@@ -362,10 +363,12 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               ];
             } else {
               // Smoke only (shouldn't happen with current logic, but handle it)
+              // Note: flags=full_chroma_int+accurate_rnd fixes green tint on Linux ffmpeg-static
               cmd.input(smokeLoopPath).inputOptions(['-f', 'concat', '-safe', '0']);
               filterChain = [
-                '[1:v]scale=1920:1080,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
-                '[0:v][smoke_gray]blend=all_mode=multiply[out]'
+                '[0:v]scale=1920:1080:flags=full_chroma_int+accurate_rnd[base]',
+                '[1:v]scale=1920:1080:flags=full_chroma_int+accurate_rnd,colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11:0[smoke_gray]',
+                '[base][smoke_gray]blend=all_mode=multiply[out]'
               ];
             }
 
