@@ -689,6 +689,51 @@ export async function regenerateAudioSegment(
   }
 }
 
+export async function recombineAudioSegments(
+  projectId: string,
+  segmentCount: number = 10
+): Promise<{ success: boolean; audioUrl?: string; duration?: number; size?: number; error?: string }> {
+  const renderApiUrl = import.meta.env.VITE_RENDER_API_URL || 'https://history-gen-ai-production-f1d4.up.railway.app';
+
+  try {
+    const response = await fetch(`${renderApiUrl}/generate-audio/recombine`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId,
+        segmentCount
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Recombine error:', response.status, errorText);
+      return { success: false, error: `Failed to recombine: ${response.status}` };
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      return { success: false, error: data.error };
+    }
+
+    return {
+      success: true,
+      audioUrl: data.audioUrl,
+      duration: data.duration,
+      size: data.size
+    };
+  } catch (error) {
+    console.error('Recombine error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Recombine failed'
+    };
+  }
+}
+
 export async function generateImagePrompts(
   script: string,
   srtContent: string,

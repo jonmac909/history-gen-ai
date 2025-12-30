@@ -2289,4 +2289,79 @@ router.post('/segment', async (req: Request, res: Response) => {
   }
 });
 
+// Recombine segments into a new combined audio file
+router.post('/recombine', async (req: Request, res: Response) => {
+  const { projectId, segmentCount } = req.body;
+
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId is required' });
+  }
+
+  const numSegments = segmentCount || 10;
+
+  try {
+    console.log(`Recombining ${numSegments} segments for project ${projectId}...`);
+
+    // Download all segment WAV files
+    const segmentBuffers: Buffer[] = [];
+
+    for (let i = 1; i <= numSegments; i++) {
+      const segmentPath = `${projectId}/voiceover-segment-${i}.wav`;
+
+      const { data, error } = await supabase.storage
+        .from('generated-assets')
+        .download(segmentPath);
+
+      if (error || !data) {
+        console.error(`Failed to download segment ${i}: ${error?.message}`);
+        return res.status(404).json({ error: `Segment ${i} not found` });
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      segmentBuffers.push(Buffer.from(arrayBuffer));
+      console.log(`Downloaded segment ${i}: ${segmentBuffers[i-1].length} bytes`);
+    }
+
+    // Concatenate all segments
+    const { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
+    console.log(`Combined audio: ${combinedAudio.length} bytes, ${durationSeconds.toFixed(1)}s`);
+
+    // Upload combined audio
+    const combinedFileName = `${projectId}/voiceover.wav`;
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(combinedFileName, combinedAudio, {
+        contentType: 'audio/wav',
+        upsert: true
+      });
+
+    if (uploadError) {
+      logger.error(`Failed to upload combined audio: ${uploadError.message}`);
+      return res.status(500).json({ error: `Upload failed: ${uploadError.message}` });
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(combinedFileName);
+
+    // Add cache-busting timestamp
+    const cacheBustedUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+    console.log(`Recombined audio uploaded: ${cacheBustedUrl}`);
+
+    return res.json({
+      success: true,
+      audioUrl: cacheBustedUrl,
+      duration: Math.round(durationSeconds * 10) / 10,
+      size: combinedAudio.length
+    });
+
+  } catch (error) {
+    logger.error('Error recombining segments:', error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Recombine failed'
+    });
+  }
+});
+
 export default router;

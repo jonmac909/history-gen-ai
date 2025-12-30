@@ -28,6 +28,7 @@ import {
   rewriteScriptStreaming,
   generateAudioStreaming,
   regenerateAudioSegment,
+  recombineAudioSegments,
   generateImagesStreaming,
   generateImagePrompts,
   generateCaptions,
@@ -86,6 +87,8 @@ const Index = () => {
   // New: Audio segments state
   const [pendingAudioSegments, setPendingAudioSegments] = useState<AudioSegment[]>([]);
   const [regeneratingSegmentIndex, setRegeneratingSegmentIndex] = useState<number | null>(null);
+  const [segmentsNeedRecombine, setSegmentsNeedRecombine] = useState(false);
+  const [isRecombining, setIsRecombining] = useState(false);
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
@@ -549,9 +552,12 @@ const Index = () => {
       }, 0);
       setPendingAudioDuration(newTotalDuration);
 
+      // Mark that combined audio needs to be recombined before generating captions
+      setSegmentsNeedRecombine(true);
+
       toast({
         title: "Segment Regenerated",
-        description: `Segment ${segmentIndex} has been regenerated successfully.`,
+        description: `Segment ${segmentIndex} has been regenerated. Click "Confirm Audio" to update captions.`,
       });
 
     } catch (error) {
@@ -594,17 +600,44 @@ const Index = () => {
 
   // Step 3: After audio confirmed, generate captions
   const handleAudioConfirm = async () => {
-    const steps: GenerationStep[] = [
-      { id: "captions", label: "Generating SRT Captions", status: "pending" },
-    ];
+    const steps: GenerationStep[] = [];
+
+    // Add recombine step if segments were modified
+    if (segmentsNeedRecombine) {
+      steps.push({ id: "recombine", label: "Recombining audio segments", status: "pending" });
+    }
+    steps.push({ id: "captions", label: "Generating SRT Captions", status: "pending" });
 
     setProcessingSteps(steps);
     setViewState("processing");
 
     try {
+      let audioUrlToUse = pendingAudioUrl;
+
+      // Recombine segments if any were regenerated
+      if (segmentsNeedRecombine) {
+        updateStep("recombine", "active");
+        console.log("Recombining audio segments...");
+
+        const recombineResult = await recombineAudioSegments(projectId, pendingAudioSegments.length);
+
+        if (!recombineResult.success || !recombineResult.audioUrl) {
+          throw new Error(recombineResult.error || "Failed to recombine audio segments");
+        }
+
+        audioUrlToUse = recombineResult.audioUrl;
+        setPendingAudioUrl(audioUrlToUse);
+        if (recombineResult.duration) setPendingAudioDuration(recombineResult.duration);
+        if (recombineResult.size) setPendingAudioSize(recombineResult.size);
+        setSegmentsNeedRecombine(false);
+
+        updateStep("recombine", "completed");
+        console.log(`Recombined audio: ${audioUrlToUse}`);
+      }
+
       updateStep("captions", "active");
       const captionsRes = await generateCaptions(
-        pendingAudioUrl,
+        audioUrlToUse,
         projectId,
         (progress, message) => {
           // Update progress in real-time as chunks are transcribed
