@@ -2265,13 +2265,16 @@ router.post('/segment', async (req: Request, res: Response) => {
       .from('generated-assets')
       .getPublicUrl(fileName);
 
-    console.log(`Segment ${segmentIndex} regenerated: ${urlData.publicUrl}`);
+    // Add cache-busting timestamp to URL to force browser to reload
+    const cacheBustedUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+    console.log(`Segment ${segmentIndex} regenerated: ${cacheBustedUrl}`);
 
     return res.json({
       success: true,
       segment: {
         index: segmentIndex,
-        audioUrl: urlData.publicUrl,
+        audioUrl: cacheBustedUrl,
         duration: durationRounded,
         size: segmentAudio.length,
         text: segmentText,
