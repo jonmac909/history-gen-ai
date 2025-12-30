@@ -562,15 +562,16 @@ export function ProjectResults({
   };
 
   // Download rendered video
-  const handleDownloadVideo = async (type: 'basic' | 'embers') => {
+  const handleDownloadVideo = async (type: 'basic' | 'embers' | 'smoke_embers') => {
     const url = type === 'basic' ? basicVideoUrl : embersVideoUrl;
     if (!url) return;
 
-    const suffix = type === 'embers' ? 'embers' : '';
+    const suffix = type === 'embers' ? 'embers' : (type === 'smoke_embers' ? 'smoke_embers' : '');
     const filename = getSafeFilename(projectTitle, suffix);
+    const description = type === 'smoke_embers' ? 'video with smoke + embers...' : (type === 'embers' ? 'video with embers...' : 'video...');
     toast({
       title: "Downloading...",
-      description: `Downloading ${type === 'embers' ? 'video with embers...' : 'video...'}`,
+      description: `Downloading ${description}`,
     });
 
     try {
