@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (6 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (10 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
@@ -187,6 +187,10 @@ Multi-step generation with user review at each stage:
 - Output: 24000Hz mono 16-bit WAV (not 44100Hz!)
 - 500 char limit per chunk, 5+ second voice samples required
 - GitHub repo: `jonmac909/chatterbox`
+- **TTS Generation Parameters** (in `handler.py`):
+  - `temperature: 0.7` - Balanced (default 0.8, <0.6 causes silence)
+  - `repetition_penalty: 1.5` - Moderate (default 1.2, >1.8 causes silence)
+  - **Turbo-specific:** `cfg_weight`, `min_p`, `exaggeration` are IGNORED (non-Turbo only)
 
 **Z-Image-Turbo**:
 - Input: `{ prompt, quality: "basic"|"high", aspectRatio: "16:9"|"1:1"|"9:16" }`
@@ -407,7 +411,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 
 ### Audio quality issues (garbled transcriptions, silence gaps, unintelligible speech)
 - **Symptom:** Audio has 1-second silence gaps, garbled/unintelligible speech, 24-26% silence, poor transcription quality
-- **Root cause:** Voice sample format/sample rate incompatibility
+- **Root cause 1: Voice sample format/sample rate incompatibility**
   - ChatterboxTTS requires WAV format base64 for `reference_audio_base64`
   - **Critical:** Resampling voice samples causes mel spectrogram mismatch → massive silence padding
   - RunPod logs show: `Reference mel length is not equal to 2 * reference token length`
@@ -416,6 +420,13 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
   - Uses ffmpeg to convert any non-WAV format to mono 16-bit WAV
   - **Preserves original sample rate** - NO resampling (critical!)
   - Logs show: "⚠️ Voice sample is MP3 format. ChatterboxTTS requires WAV - will convert."
+- **Root cause 2: TTS temperature parameter**
+  - **Symptom:** Excessive silence in audio (10-30 second gaps)
+  - Temperature testing results:
+    - `temperature: 0.8` (default) → 25% silence (bad)
+    - `temperature: 0.7` → 5% silence (optimal)
+    - `temperature: 0.5` → Generation gets stuck (silence bug from Release #9)
+  - **Solution:** Use `temperature: 0.7` in `handler.py` (sweet spot for ChatterboxTurboTTS)
 - **Voice sample quality** best practices:
   - Minimum 5 seconds duration (warns if <3s)
   - Minimum 16kHz sample rate (warns if <16kHz)
