@@ -23,6 +23,7 @@ import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModa
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal";
+import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
@@ -42,7 +43,7 @@ import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHisto
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "results";
+type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const Index = () => {
@@ -92,6 +93,7 @@ const Index = () => {
   const [pendingSrtContent, setPendingSrtContent] = useState("");
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
@@ -937,6 +939,18 @@ const Index = () => {
   };
 
   const handleImagesConfirm = () => {
+    // Go to thumbnail generation step
+    setViewState("review-thumbnails");
+  };
+
+  // Thumbnail handlers
+  const handleThumbnailsConfirm = (thumbnails: string[]) => {
+    setGeneratedThumbnails(thumbnails);
+    handleImagesConfirmWithImages(pendingImages);
+  };
+
+  const handleThumbnailsSkip = () => {
+    setGeneratedThumbnails([]);
     handleImagesConfirmWithImages(pendingImages);
   };
 
@@ -954,6 +968,7 @@ const Index = () => {
     setPendingSrtContent("");
     setPendingSrtUrl("");
     setPendingImages([]);
+    setGeneratedThumbnails([]);
     setVideoUrl(undefined);
     setImagePrompts([]);
   };
@@ -1849,6 +1864,17 @@ const Index = () => {
         onBack={handleBackToPrompts}
         onRegenerate={handleRegenerateImage}
         regeneratingIndex={regeneratingImageIndex}
+      />
+
+      {/* Thumbnail Generator Modal */}
+      <ThumbnailGeneratorModal
+        isOpen={viewState === "review-thumbnails"}
+        projectId={projectId}
+        projectTitle={videoTitle}
+        onConfirm={handleThumbnailsConfirm}
+        onCancel={handleCancelRequest}
+        onBack={handleBackToImages}
+        onSkip={handleThumbnailsSkip}
       />
 
       {/* Exit Confirmation Dialog */}

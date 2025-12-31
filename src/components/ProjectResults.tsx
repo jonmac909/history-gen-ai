@@ -8,7 +8,6 @@ import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
-import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 
 export interface GeneratedAsset {
   id: string;
@@ -970,16 +969,6 @@ export function ProjectResults({
           </div>
         )}
       </div>
-
-      {/* Thumbnail Generator Section */}
-      {projectId && (
-        <div className="mt-8 pt-6 border-t border-border">
-          <ThumbnailGenerator
-            projectId={projectId}
-            projectTitle={projectTitle}
-          />
-        </div>
-      )}
 
       {/* Render Progress Modal */}
       <Dialog open={isRenderingBasic || isRenderingEmbers || isRenderingSmokeEmbers} onOpenChange={handleCloseRenderModal}>
