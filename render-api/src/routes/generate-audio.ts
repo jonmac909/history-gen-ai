@@ -732,19 +732,50 @@ function removeTextRepetitions(text: string, minWords: number = 4): { cleaned: s
 }
 
 function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_COUNT): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
+  // Split into sentences first (preserving sentence boundaries)
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length === 0) return [];
 
-  const wordsPerSegment = Math.ceil(words.length / segmentCount);
+  // Count total words to calculate target per segment
+  const totalWords = text.split(/\s+/).filter(Boolean).length;
+  const targetWordsPerSegment = Math.ceil(totalWords / segmentCount);
+
   const segments: string[] = [];
+  let currentSegment: string[] = [];
+  let currentWordCount = 0;
 
-  for (let i = 0; i < segmentCount; i++) {
-    const start = i * wordsPerSegment;
-    const end = (i === segmentCount - 1) ? words.length : (i + 1) * wordsPerSegment;
-    const segmentWords = words.slice(start, end);
-    if (segmentWords.length > 0) {
-      segments.push(segmentWords.join(' '));
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
+    const sentenceWordCount = sentence.split(/\s+/).filter(Boolean).length;
+
+    // Add sentence to current segment
+    currentSegment.push(sentence);
+    currentWordCount += sentenceWordCount;
+
+    // Check if we should start a new segment
+    // Start new segment if we've reached target AND we haven't filled all segments yet
+    const segmentsRemaining = segmentCount - segments.length - 1;
+    const sentencesRemaining = sentences.length - i - 1;
+
+    if (currentWordCount >= targetWordsPerSegment &&
+        segmentsRemaining > 0 &&
+        sentencesRemaining >= segmentsRemaining) {
+      segments.push(currentSegment.join(' '));
+      currentSegment = [];
+      currentWordCount = 0;
     }
+  }
+
+  // Add any remaining sentences to the last segment
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment.join(' '));
+  }
+
+  // If we have fewer segments than requested (rare), return what we have
+  // If we have more (shouldn't happen), merge last ones
+  while (segments.length > segmentCount && segments.length > 1) {
+    const last = segments.pop()!;
+    segments[segments.length - 1] += ' ' + last;
   }
 
   return segments;
