@@ -245,6 +245,68 @@ router.post('/analyze', async (req: Request, res: Response) => {
   }
 });
 
+// Remix a prompt with small variations
+router.post('/remix', async (req: Request, res: Response) => {
+  try {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    }
+
+    const { prompt } = req.body;
+
+    if (!prompt || prompt.trim().length === 0) {
+      return res.status(400).json({ error: 'No prompt provided' });
+    }
+
+    console.log('Remixing prompt...');
+
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: `Take this image generation prompt and create a variation of it by making small creative changes. Keep the overall style, mood, and quality but vary specific elements.
+
+Changes to make (pick 2-4 of these):
+- Swap gender (man → woman, woman → man)
+- Change hair color/style
+- Adjust color palette (warm → cool, blue → red, etc.)
+- Shift time of day (dawn → dusk, day → night)
+- Alter weather/atmosphere (sunny → stormy, clear → foggy)
+- Change age (young → old, child → adult)
+- Swap similar objects or animals
+- Adjust clothing style or era
+- Change expression/emotion
+- Vary background elements
+
+Original prompt:
+${prompt}
+
+Output ONLY the remixed prompt with variations applied. Keep the same length and detail level as the original. Do not explain what you changed.`
+      }]
+    });
+
+    const textContent = response.content.find(c => c.type === 'text');
+    if (!textContent || textContent.type !== 'text') {
+      throw new Error('No text response from Claude');
+    }
+
+    console.log('Remix complete:', textContent.text.substring(0, 100) + '...');
+
+    return res.json({
+      success: true,
+      remixedPrompt: textContent.text.trim()
+    });
+  } catch (error) {
+    console.error('Error in remix:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ success: false, error: errorMessage });
+  }
+});
+
 // Generate content prompt from script
 router.post('/suggest-content', async (req: Request, res: Response) => {
   try {

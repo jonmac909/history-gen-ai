@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check } from "lucide-react";
+import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check, Shuffle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { generateThumbnailsStreaming, analyzeThumbnailStyle, type ThumbnailGenerationProgress } from "@/lib/api";
+import { generateThumbnailsStreaming, analyzeThumbnailStyle, remixThumbnailPrompt, type ThumbnailGenerationProgress } from "@/lib/api";
 import JSZip from "jszip";
 
 interface ThumbnailGeneratorModalProps {
@@ -44,6 +44,7 @@ export function ThumbnailGeneratorModal({
   const [imagePrompt, setImagePrompt] = useState("");
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isRemixing, setIsRemixing] = useState(false);
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
 
@@ -142,6 +143,44 @@ export function ThumbnailGeneratorModal({
     setGeneratedThumbnails([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemix = async () => {
+    if (!imagePrompt.trim()) {
+      toast({
+        title: "No Prompt",
+        description: "Upload an image first to generate a prompt.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRemixing(true);
+    try {
+      const result = await remixThumbnailPrompt(imagePrompt);
+      if (result.success && result.remixedPrompt) {
+        setImagePrompt(result.remixedPrompt);
+        toast({
+          title: "Prompt Remixed",
+          description: "The prompt has been varied with small creative changes.",
+        });
+      } else {
+        toast({
+          title: "Remix Failed",
+          description: result.error || "Failed to remix prompt.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Remix error:", error);
+      toast({
+        title: "Remix Failed",
+        description: error instanceof Error ? error.message : "Failed to remix prompt.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRemixing(false);
     }
   };
 
@@ -400,10 +439,31 @@ export function ThumbnailGeneratorModal({
 
           {/* Single Image Prompt (editable) */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Image Prompt:
-              {isAnalyzing && <span className="ml-2 text-muted-foreground">(analyzing...)</span>}
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Image Prompt:
+                {isAnalyzing && <span className="ml-2 text-muted-foreground">(analyzing...)</span>}
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRemix}
+                disabled={!imagePrompt.trim() || isRemixing || isAnalyzing || isGenerating}
+                className="gap-1.5 h-7 text-xs"
+              >
+                {isRemixing ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Remixing...
+                  </>
+                ) : (
+                  <>
+                    <Shuffle className="w-3 h-3" />
+                    Remix
+                  </>
+                )}
+              </Button>
+            </div>
             <Textarea
               placeholder={isAnalyzing ? "Reverse-engineering the uploaded image..." : "Upload an image to auto-generate a prompt, or write your own..."}
               value={imagePrompt}
