@@ -1862,6 +1862,7 @@ const Index = () => {
         onConfirm={handleImagesConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToPrompts}
+        onForward={() => setViewState("review-thumbnails")}
         onRegenerate={handleRegenerateImage}
         regeneratingIndex={regeneratingImageIndex}
       />
