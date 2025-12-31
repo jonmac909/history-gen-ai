@@ -2364,32 +2364,11 @@ router.post('/recombine', async (req: Request, res: Response) => {
     const { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${durationSeconds.toFixed(1)}s`);
 
-    // Post-process for repetition removal (catches cross-segment duplicates)
-    let finalAudio = combinedAudio;
-    let finalDuration = durationSeconds;
-    try {
-      console.log(`[Recombine] Running post-processing for repetition detection...`);
-      const processedAudio = await postProcessAudio(combinedAudio);
-      if (processedAudio.length > 0 && processedAudio.length < combinedAudio.length) {
-        finalAudio = processedAudio;
-        // Recalculate duration from processed audio
-        const wavInfo = extractWavInfo(processedAudio);
-        const bytesPerSecond = wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8);
-        finalDuration = wavInfo.pcmData.length / bytesPerSecond;
-        console.log(`[Recombine] Post-processing removed ${(combinedAudio.length - processedAudio.length) / 1024}KB, new duration: ${finalDuration.toFixed(1)}s`);
-      } else {
-        console.log(`[Recombine] No repetitions detected`);
-      }
-    } catch (postProcessError) {
-      console.error(`[Recombine] Post-processing failed, using original audio:`, postProcessError);
-      // Continue with original audio if post-processing fails
-    }
-
-    // Upload combined audio (using finalAudio after post-processing)
+    // Upload combined audio
     const combinedFileName = `${projectId}/voiceover.wav`;
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(combinedFileName, finalAudio, {
+      .upload(combinedFileName, combinedAudio, {
         contentType: 'audio/wav',
         upsert: true
       });
@@ -2411,8 +2390,8 @@ router.post('/recombine', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       audioUrl: cacheBustedUrl,
-      duration: Math.round(finalDuration * 10) / 10,
-      size: finalAudio.length
+      duration: Math.round(durationSeconds * 10) / 10,
+      size: combinedAudio.length
     });
 
   } catch (error) {
