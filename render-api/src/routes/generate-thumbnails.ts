@@ -188,18 +188,13 @@ async function analyzeExampleThumbnail(anthropicApiKey: string, imageBase64: str
         },
         {
           type: 'text',
-          text: `Analyze this YouTube thumbnail and describe its visual style in detail for recreating similar thumbnails. Focus on:
+          text: `Analyze this YouTube thumbnail and describe its visual style for recreating similar thumbnails.
 
-1. **Color palette**: Dominant colors, color grading, saturation levels, warm/cool tones
-2. **Composition**: Subject placement, rule of thirds usage, visual hierarchy, focal points
-3. **Typography style** (if present): Font style (bold, serif, sans-serif), size, colors, effects (shadows, outlines, glows)
-4. **Lighting and mood**: Dramatic, bright, dark, cinematic, natural, studio-lit
-5. **Visual effects**: Borders, vignettes, glows, shadows, gradients, overlays
-6. **Overall aesthetic**: Professional, casual, dramatic, documentary, historical, cinematic
+Focus on: color palette, color grading, saturation, warm/cool tones, composition, visual hierarchy, typography style (if present), lighting, mood, visual effects (vignettes, glows, shadows, gradients), and overall aesthetic.
 
-Output a detailed style prompt (150-250 words) that can be used to generate similar thumbnails. Write it as a comma-separated list of style descriptors, suitable for image generation. Do NOT describe the specific content/subject - only the visual STYLE.
+Output ONLY a comma-separated list of style descriptors (150-250 words), suitable for an image generator. Do NOT include any headers, labels, or introductory text. Do NOT describe the specific content/subject - only the visual STYLE.
 
-Example format: "Cinematic documentary style, warm golden color grading, dramatic chiaroscuro lighting, rule of thirds composition, bold sans-serif white text with black outline, slight vignette effect, professional photography aesthetic, rich contrast with deep shadows and bright highlights"`
+Example output: "Cinematic documentary style, warm golden color grading, dramatic chiaroscuro lighting, rule of thirds composition, bold sans-serif white text with black outline, slight vignette effect, professional photography aesthetic, rich contrast with deep shadows and bright highlights"`
         }
       ]
     }]
