@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { generateThumbnailsStreaming, type ThumbnailGenerationProgress } from "@/lib/api";
+import { generateThumbnailsStreaming, analyzeThumbnailStyle, type ThumbnailGenerationProgress } from "@/lib/api";
 import JSZip from "jszip";
 
 interface ThumbnailGeneratorModalProps {
@@ -38,10 +38,11 @@ export function ThumbnailGeneratorModal({
   const [exampleImage, setExampleImage] = useState<File | null>(null);
   const [examplePreview, setExamplePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Generation state
-  const [stylePrompt, setStylePrompt] = useState<string | null>(null);
+  const [stylePrompt, setStylePrompt] = useState("");
   const [contentPrompt, setContentPrompt] = useState("");
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -51,7 +52,7 @@ export function ThumbnailGeneratorModal({
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -81,9 +82,45 @@ export function ThumbnailGeneratorModal({
 
     // Create preview
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setExamplePreview(e.target?.result as string);
+    reader.onload = async (e) => {
+      const dataUrl = e.target?.result as string;
+      setExamplePreview(dataUrl);
       setIsUploading(false);
+
+      // Auto-analyze the image
+      setIsAnalyzing(true);
+      try {
+        // Extract base64 from data URL
+        const base64Match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+        if (!base64Match) {
+          throw new Error("Invalid image format");
+        }
+        const base64Data = base64Match[1];
+
+        const result = await analyzeThumbnailStyle(base64Data);
+        if (result.success && result.stylePrompt) {
+          setStylePrompt(result.stylePrompt);
+          toast({
+            title: "Style Analyzed",
+            description: "Style prompt extracted from the example thumbnail.",
+          });
+        } else {
+          toast({
+            title: "Analysis Failed",
+            description: result.error || "Failed to analyze thumbnail style.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Style analysis error:", error);
+        toast({
+          title: "Analysis Failed",
+          description: error instanceof Error ? error.message : "Failed to analyze thumbnail style.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsAnalyzing(false);
+      }
     };
     reader.onerror = () => {
       toast({
@@ -96,14 +133,14 @@ export function ThumbnailGeneratorModal({
     reader.readAsDataURL(file);
 
     // Clear previous results
-    setStylePrompt(null);
+    setStylePrompt("");
     setGeneratedThumbnails([]);
   };
 
   const handleRemoveImage = () => {
     setExampleImage(null);
     setExamplePreview(null);
-    setStylePrompt(null);
+    setStylePrompt("");
     setGeneratedThumbnails([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -115,6 +152,15 @@ export function ThumbnailGeneratorModal({
       toast({
         title: "No Example Image",
         description: "Please upload an example thumbnail first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!stylePrompt.trim()) {
+      toast({
+        title: "No Style Prompt",
+        description: "Please wait for style analysis or enter a style prompt.",
         variant: "destructive",
       });
       return;
@@ -146,14 +192,12 @@ export function ThumbnailGeneratorModal({
         contentPrompt,
         thumbnailCount,
         projectId,
-        (progress) => setProgress(progress)
+        (progress) => setProgress(progress),
+        stylePrompt // Pass the pre-analyzed (and possibly edited) style prompt
       );
 
       if (result.success && result.thumbnails) {
         setGeneratedThumbnails(result.thumbnails);
-        if (result.stylePrompt) {
-          setStylePrompt(result.stylePrompt);
-        }
         toast({
           title: "Thumbnails Generated",
           description: `${result.thumbnails.length} thumbnails created successfully.`,
@@ -321,9 +365,15 @@ export function ThumbnailGeneratorModal({
                   size="icon"
                   className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
                   onClick={handleRemoveImage}
+                  disabled={isAnalyzing}
                 >
                   <X className="w-4 h-4" />
                 </Button>
+                {isAnalyzing && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-lg">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -358,19 +408,28 @@ export function ThumbnailGeneratorModal({
             />
           </div>
 
-          {/* Extracted Style (shown after generation) */}
-          {stylePrompt && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Extracted Style:</label>
-              <div className="p-3 bg-secondary/50 rounded-lg text-sm text-muted-foreground max-h-32 overflow-y-auto">
-                {stylePrompt}
-              </div>
-            </div>
-          )}
+          {/* Style Prompt (editable) */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Style Prompt:
+              {isAnalyzing && <span className="ml-2 text-muted-foreground">(analyzing...)</span>}
+            </label>
+            <Textarea
+              placeholder={isAnalyzing ? "Analyzing example thumbnail..." : "Style will be extracted from uploaded image, or enter manually..."}
+              value={stylePrompt}
+              onChange={(e) => setStylePrompt(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="min-h-[100px] resize-y"
+              disabled={isAnalyzing}
+            />
+            <p className="text-xs text-muted-foreground">
+              Describes the visual style: colors, composition, lighting, effects
+            </p>
+          </div>
 
           {/* Content Prompt */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">What should the thumbnail show?</label>
+            <label className="text-sm font-medium">Content Direction:</label>
             <Textarea
               placeholder="Describe the subject, scene, or concept for your thumbnail..."
               value={contentPrompt}
@@ -378,6 +437,9 @@ export function ThumbnailGeneratorModal({
               onKeyDown={(e) => e.stopPropagation()}
               className="min-h-[80px] resize-y"
             />
+            <p className="text-xs text-muted-foreground">
+              Describes what should appear in the thumbnail
+            </p>
           </div>
 
           {/* Thumbnail Count */}
@@ -401,7 +463,7 @@ export function ThumbnailGeneratorModal({
           {/* Generate Button */}
           <Button
             onClick={handleGenerate}
-            disabled={!examplePreview || !contentPrompt.trim() || isGenerating}
+            disabled={!examplePreview || !stylePrompt.trim() || !contentPrompt.trim() || isGenerating || isAnalyzing}
             className="w-full gap-2"
           >
             {isGenerating ? (

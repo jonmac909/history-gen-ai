@@ -13,6 +13,7 @@ const RUNPOD_API_URL = RUNPOD_ENDPOINT_ID ? `https://api.runpod.ai/v2/${RUNPOD_E
 interface GenerateThumbnailsRequest {
   exampleImageBase64: string;
   contentPrompt: string;
+  stylePrompt?: string; // Pre-analyzed style prompt (skips vision analysis if provided)
   thumbnailCount: number;
   projectId: string;
   stream?: boolean;
@@ -213,6 +214,34 @@ Example format: "Cinematic documentary style, warm golden color grading, dramati
   return textContent.text;
 }
 
+// Analyze endpoint - just extract style from an image
+router.post('/analyze', async (req: Request, res: Response) => {
+  try {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    }
+
+    const { imageBase64 } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'No image provided' });
+    }
+
+    console.log('Analyzing thumbnail style...');
+    const stylePrompt = await analyzeExampleThumbnail(anthropicApiKey, imageBase64);
+
+    return res.json({
+      success: true,
+      stylePrompt
+    });
+  } catch (error) {
+    console.error('Error in analyze:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ success: false, error: errorMessage });
+  }
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const runpodApiKey = process.env.RUNPOD_API_KEY;
@@ -235,7 +264,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Supabase configuration missing' });
     }
 
-    const { exampleImageBase64, contentPrompt, thumbnailCount, projectId, stream = true }: GenerateThumbnailsRequest = req.body;
+    const { exampleImageBase64, contentPrompt, stylePrompt: providedStylePrompt, thumbnailCount, projectId, stream = true }: GenerateThumbnailsRequest = req.body;
 
     if (!exampleImageBase64) {
       return res.status(400).json({ error: 'No example image provided' });
@@ -252,12 +281,16 @@ router.post('/', async (req: Request, res: Response) => {
     const count = Math.min(Math.max(thumbnailCount || 3, 1), 10); // Clamp to 1-10
 
     console.log(`\n=== Generating ${count} thumbnails for project ${projectId} ===`);
+    if (providedStylePrompt) {
+      console.log('Using pre-analyzed style prompt (skipping vision analysis)');
+    }
 
     if (stream) {
       return handleStreamingThumbnails(
         req, res,
         exampleImageBase64,
         contentPrompt,
+        providedStylePrompt,
         count,
         projectId,
         runpodApiKey,
@@ -281,6 +314,7 @@ async function handleStreamingThumbnails(
   res: Response,
   exampleImageBase64: string,
   contentPrompt: string,
+  providedStylePrompt: string | undefined,
   count: number,
   projectId: string,
   runpodApiKey: string,
@@ -306,22 +340,34 @@ async function handleStreamingThumbnails(
   };
 
   try {
-    // Phase 1: Analyze example thumbnail
-    sendEvent({
-      type: 'progress',
-      stage: 'analyzing',
-      percent: 5,
-      message: 'Analyzing example thumbnail style...'
-    });
+    let stylePrompt: string;
 
-    const stylePrompt = await analyzeExampleThumbnail(anthropicApiKey, exampleImageBase64);
+    // Phase 1: Analyze example thumbnail (skip if already provided)
+    if (providedStylePrompt) {
+      stylePrompt = providedStylePrompt;
+      sendEvent({
+        type: 'progress',
+        stage: 'analyzing',
+        percent: 20,
+        message: 'Using pre-analyzed style prompt'
+      });
+    } else {
+      sendEvent({
+        type: 'progress',
+        stage: 'analyzing',
+        percent: 5,
+        message: 'Analyzing example thumbnail style...'
+      });
 
-    sendEvent({
-      type: 'progress',
-      stage: 'analyzing',
-      percent: 20,
-      message: 'Style analysis complete'
-    });
+      stylePrompt = await analyzeExampleThumbnail(anthropicApiKey, exampleImageBase64);
+
+      sendEvent({
+        type: 'progress',
+        stage: 'analyzing',
+        percent: 20,
+        message: 'Style analysis complete'
+      });
+    }
 
     // Phase 2: Generate thumbnails
     sendEvent({

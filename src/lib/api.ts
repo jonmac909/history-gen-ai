@@ -1349,12 +1349,62 @@ export interface ThumbnailGenerationResult {
   error?: string;
 }
 
+export interface ThumbnailStyleAnalysisResult {
+  success: boolean;
+  stylePrompt?: string;
+  error?: string;
+}
+
+// Analyze thumbnail style without generating
+export async function analyzeThumbnailStyle(
+  imageBase64: string
+): Promise<ThumbnailStyleAnalysisResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-thumbnails/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ imageBase64 })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Thumbnail style analysis error:', response.status, errorText);
+      return { success: false, error: `Failed to analyze thumbnail: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      stylePrompt: data.stylePrompt,
+      error: data.error
+    };
+  } catch (error) {
+    console.error('Thumbnail style analysis error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze thumbnail style'
+    };
+  }
+}
+
 export async function generateThumbnailsStreaming(
   exampleImageBase64: string,
   contentPrompt: string,
   thumbnailCount: number,
   projectId: string,
-  onProgress: (progress: ThumbnailGenerationProgress) => void
+  onProgress: (progress: ThumbnailGenerationProgress) => void,
+  stylePrompt?: string // Optional pre-analyzed style prompt
 ): Promise<ThumbnailGenerationResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -1374,6 +1424,7 @@ export async function generateThumbnailsStreaming(
       body: JSON.stringify({
         exampleImageBase64,
         contentPrompt,
+        stylePrompt,
         thumbnailCount,
         projectId,
         stream: true
