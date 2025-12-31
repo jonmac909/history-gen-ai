@@ -1355,6 +1355,56 @@ export interface ThumbnailStyleAnalysisResult {
   error?: string;
 }
 
+export interface ThumbnailContentSuggestionResult {
+  success: boolean;
+  contentPrompt?: string;
+  error?: string;
+}
+
+// Suggest thumbnail content based on script
+export async function suggestThumbnailContent(
+  script: string,
+  title?: string
+): Promise<ThumbnailContentSuggestionResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-thumbnails/suggest-content`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ script, title })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Thumbnail content suggestion error:', response.status, errorText);
+      return { success: false, error: `Failed to suggest content: ${response.status}` };
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      contentPrompt: data.contentPrompt,
+      error: data.error
+    };
+  } catch (error) {
+    console.error('Thumbnail content suggestion error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to suggest thumbnail content'
+    };
+  }
+}
+
 // Analyze thumbnail style without generating
 export async function analyzeThumbnailStyle(
   imageBase64: string

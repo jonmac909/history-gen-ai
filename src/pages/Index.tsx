@@ -1876,6 +1876,7 @@ const Index = () => {
         isOpen={viewState === "review-thumbnails"}
         projectId={projectId}
         projectTitle={videoTitle}
+        script={confirmedScript}
         onConfirm={handleThumbnailsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToImages}

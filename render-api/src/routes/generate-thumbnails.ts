@@ -242,6 +242,66 @@ router.post('/analyze', async (req: Request, res: Response) => {
   }
 });
 
+// Generate content prompt from script
+router.post('/suggest-content', async (req: Request, res: Response) => {
+  try {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    }
+
+    const { script, title } = req.body;
+
+    if (!script || script.trim().length === 0) {
+      return res.status(400).json({ error: 'No script provided' });
+    }
+
+    console.log('Generating thumbnail content suggestion from script...');
+
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+    // Truncate script if too long (use first ~2000 chars for context)
+    const truncatedScript = script.length > 2000 ? script.substring(0, 2000) + '...' : script;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `Based on this video script${title ? ` titled "${title}"` : ''}, suggest a compelling YouTube thumbnail concept. The thumbnail should capture the essence of the content and be visually striking.
+
+Script:
+${truncatedScript}
+
+Provide a concise thumbnail description (2-3 sentences) focusing on:
+- The main subject/scene to show
+- Key visual elements that would grab attention
+- The mood/atmosphere
+
+Write it as a direct description for an image generator, NOT as suggestions. Example: "A dramatic close-up of a Roman emperor in golden armor, standing before a burning city at sunset, with smoke rising in the background."
+
+Output ONLY the thumbnail description, nothing else.`
+      }]
+    });
+
+    const textContent = response.content.find(c => c.type === 'text');
+    if (!textContent || textContent.type !== 'text') {
+      throw new Error('No text response from Claude');
+    }
+
+    console.log('Content suggestion generated:', textContent.text.substring(0, 100) + '...');
+
+    return res.json({
+      success: true,
+      contentPrompt: textContent.text.trim()
+    });
+  } catch (error) {
+    console.error('Error in suggest-content:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ success: false, error: errorMessage });
+  }
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const runpodApiKey = process.env.RUNPOD_API_KEY;
