@@ -173,16 +173,22 @@ serve(async (req) => {
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
 
 RULES:
-1. READ the script context to understand the overall topic AND TIME PERIOD
-2. For each image segment, create a visual scene that illustrates the content
-3. If narration is sparse, use the script context to infer appropriate visuals
-4. CRITICAL: ALL scenes MUST stay within the historical time period of the script. If the script is about medieval history, EVERY image must depict medieval scenes - never modern labs, computers, or contemporary settings
-5. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept. Example: for medieval sleep patterns, show a medieval bedroom at night, not a modern sleep lab
-6. NEVER depict violence, blood, surgery, medical procedures, torture, death, corpses, executions, or anything scary/disturbing. Keep all scenes peaceful, serene, and suitable for relaxing/sleep content
-7. For topics like medieval medicine or trials: show the setting, tools, or aftermath (healed patient) - NOT the procedure itself
-8. Include specific details: setting, lighting, objects, people, actions, atmosphere
-9. 50-100 words per description
-10. Do NOT include any text, titles, or words in the image
+1. FIRST, analyze the MASTER STYLE PROMPT to understand the visual art style being requested
+2. SECOND, READ the script context carefully to identify the EXACT historical time period and geographic location (e.g., "Ancient Rome 100 AD", "Victorian England 1880s", "Tang Dynasty China", "Renaissance Florence", "Ancient Egypt", "Colonial America 1700s")
+3. For each image segment, create a visual scene that illustrates the narration content
+4. If narration is sparse, use the script context to infer appropriate visuals
+5. CRITICAL: ALL scenes MUST match the EXACT historical era from the script. Examples:
+   - Script about Ancient Rome → Roman architecture, togas, forums, temples
+   - Script about Victorian era → Gas lamps, corsets, horse carriages, industrial cities
+   - Script about Renaissance → Merchant guilds, cathedrals, early printing, artistic workshops
+   - Script about Ancient Egypt → Pyramids, pharaohs, Nile river, hieroglyphics
+   - NEVER show scenes from the wrong era (no medieval castles in Roman scripts, no Victorian clothing in Egyptian scripts)
+6. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept using settings, objects, and people from that SPECIFIC era
+7. NEVER depict violence, blood, surgery, medical procedures, torture, death, corpses, executions, or anything scary/disturbing. Keep all scenes peaceful, serene, and suitable for relaxing/sleep content
+8. For topics like medicine or trials: show the setting, tools, or aftermath (healed patient) - NOT the procedure itself
+9. Include specific details: setting, lighting, objects, people, actions, atmosphere - all accurate to the historical period
+10. 50-100 words per description
+11. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
@@ -196,13 +202,19 @@ Output format:
             role: 'user',
             content: `Generate exactly ${imageCount} visual scene descriptions. Return ONLY the JSON array, nothing else.
 
-SCRIPT CONTEXT:
+MASTER STYLE PROMPT (defines the visual art style):
+${stylePrompt || 'Classical oil painting style'}
+
+SCRIPT CONTEXT (read this to determine the historical era):
 ${script.substring(0, 12000)}
 
 TIME-CODED SEGMENTS:
 ${windowDescriptions}
 
-Remember: Output ONLY a JSON array with ${imageCount} items. No explanations.`
+Remember:
+1. Identify the historical era from the SCRIPT CONTEXT above
+2. Every scene MUST be set in that exact era - not medieval unless the script is about medieval times
+3. Output ONLY a JSON array with ${imageCount} items. No explanations.`
           }
         ],
       }),
