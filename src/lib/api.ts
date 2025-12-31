@@ -1345,19 +1345,6 @@ export interface ThumbnailGenerationProgress {
 export interface ThumbnailGenerationResult {
   success: boolean;
   thumbnails?: string[];
-  stylePrompt?: string;
-  error?: string;
-}
-
-export interface ThumbnailStyleAnalysisResult {
-  success: boolean;
-  stylePrompt?: string;
-  error?: string;
-}
-
-export interface ThumbnailContentSuggestionResult {
-  success: boolean;
-  contentPrompt?: string;
   error?: string;
 }
 
@@ -1405,104 +1392,12 @@ export async function suggestThumbnailContent(
   }
 }
 
-// Analyze thumbnail style without generating
-export async function analyzeThumbnailStyle(
-  imageBase64: string
-): Promise<ThumbnailStyleAnalysisResult> {
-  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
-
-  if (!renderUrl) {
-    return {
-      success: false,
-      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
-    };
-  }
-
-  try {
-    const response = await fetch(`${renderUrl}/generate-thumbnails/analyze`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ imageBase64 })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Thumbnail style analysis error:', response.status, errorText);
-      return { success: false, error: `Failed to analyze thumbnail: ${response.status}` };
-    }
-
-    const data = await response.json();
-    return {
-      success: data.success,
-      stylePrompt: data.stylePrompt,
-      error: data.error
-    };
-  } catch (error) {
-    console.error('Thumbnail style analysis error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to analyze thumbnail style'
-    };
-  }
-}
-
-export interface RemixPromptResult {
-  success: boolean;
-  remixedPrompt?: string;
-  error?: string;
-}
-
-export async function remixThumbnailPrompt(
-  prompt: string
-): Promise<RemixPromptResult> {
-  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
-
-  if (!renderUrl) {
-    return {
-      success: false,
-      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
-    };
-  }
-
-  try {
-    const response = await fetch(`${renderUrl}/generate-thumbnails/remix`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ prompt })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Remix prompt error:', response.status, errorText);
-      return { success: false, error: `Failed to remix prompt: ${response.status}` };
-    }
-
-    const data = await response.json();
-    return {
-      success: data.success,
-      remixedPrompt: data.remixedPrompt,
-      error: data.error
-    };
-  } catch (error) {
-    console.error('Remix prompt error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to remix prompt'
-    };
-  }
-}
-
 export async function generateThumbnailsStreaming(
   exampleImageBase64: string,
-  contentPrompt: string,
+  prompt: string,
   thumbnailCount: number,
   projectId: string,
-  onProgress: (progress: ThumbnailGenerationProgress) => void,
-  stylePrompt?: string // Optional pre-analyzed style prompt
+  onProgress: (progress: ThumbnailGenerationProgress) => void
 ): Promise<ThumbnailGenerationResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -1521,8 +1416,7 @@ export async function generateThumbnailsStreaming(
       },
       body: JSON.stringify({
         exampleImageBase64,
-        contentPrompt,
-        stylePrompt,
+        prompt,
         thumbnailCount,
         projectId,
         stream: true
@@ -1570,8 +1464,7 @@ export async function generateThumbnailsStreaming(
             } else if (parsed.type === 'complete') {
               result = {
                 success: parsed.success,
-                thumbnails: parsed.thumbnails,
-                stylePrompt: parsed.stylePrompt
+                thumbnails: parsed.thumbnails
               };
               onProgress({
                 stage: 'generating',

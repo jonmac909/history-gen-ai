@@ -1,8 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
-import crypto from 'crypto';
 
 const router = Router();
 
@@ -11,8 +9,7 @@ const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
 
 interface GenerateThumbnailsRequest {
   exampleImageBase64: string;
-  contentPrompt: string;
-  stylePrompt?: string; // Pre-analyzed style prompt (skips vision analysis if provided)
+  prompt: string; // User-provided prompt describing what to generate
   thumbnailCount: number;
   projectId: string;
   stream?: boolean;
@@ -260,229 +257,11 @@ async function uploadThumbnailToStorage(
   return data.publicUrl;
 }
 
-// Analyze example thumbnail with Claude Vision
-async function analyzeExampleThumbnail(anthropicApiKey: string, imageBase64: string): Promise<string> {
-  console.log('Analyzing example thumbnail with Claude Vision...');
-
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
-
-  // Detect media type from base64 header or default to png
-  let mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' = 'image/png';
-  if (imageBase64.startsWith('/9j/')) {
-    mediaType = 'image/jpeg';
-  } else if (imageBase64.startsWith('UklGR')) {
-    mediaType = 'image/webp';
-  } else if (imageBase64.startsWith('R0lGOD')) {
-    mediaType = 'image/gif';
-  }
-
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: mediaType,
-            data: imageBase64
-          }
-        },
-        {
-          type: 'text',
-          text: `Reverse-engineer this YouTube thumbnail into a detailed image generation prompt that could recreate it.
-
-Describe EVERYTHING in the image:
-1. Subject/content: What is shown? People, objects, scene, setting, actions, expressions
-2. Composition: Layout, framing, focal point, rule of thirds, foreground/background
-3. Art style: Realistic, illustrated, painterly, cartoon, etc.
-4. Colors: Specific palette, color grading, saturation, warm/cool tones
-5. Lighting: Direction, mood, shadows, highlights
-6. Texture and rendering: Smooth, rough, crosshatched, cel-shaded, etc.
-7. Mood/atmosphere: Dramatic, peaceful, mysterious, etc.
-8. Text/Typography: If there is any text, describe what it says, its font style (bold, serif, sans-serif, handwritten, etc.), color, size, placement, and any effects (shadow, outline, glow)
-
-Output a single detailed prompt (200-400 words) that an image generator could use to recreate this exact image. Write it as direct descriptive text, not a list. Include text/typography details if present.
-
-Example: "A weathered medieval peasant man in his 40s sits huddled on a wooden bench inside a rustic cabin, clutching a thick wool blanket around his shoulders. His expression shows worry and exhaustion, with wide eyes and furrowed brows. Through a frosted window behind him, snow and icicles are visible. The scene is rendered in an editorial illustration style with bold black outlines, muted blue-gray color palette, and subtle crosshatching for texture. The lighting is cool and dim, suggesting a cold winter morning. The composition places the man in the right third of the frame, with the window providing visual interest on the left. Large bold white text reading 'MEDIEVAL LIFE' with black outline spans the top of the image."`
-        }
-      ]
-    }]
-  });
-
-  const textContent = response.content.find(c => c.type === 'text');
-  if (!textContent || textContent.type !== 'text') {
-    throw new Error('No text response from Claude Vision');
-  }
-
-  console.log('Style analysis complete:', textContent.text.substring(0, 100) + '...');
-  return textContent.text;
-}
-
-// Analyze endpoint - just extract style from an image
-router.post('/analyze', async (req: Request, res: Response) => {
-  try {
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-    }
-
-    const { imageBase64 } = req.body;
-
-    if (!imageBase64) {
-      return res.status(400).json({ error: 'No image provided' });
-    }
-
-    console.log('Analyzing thumbnail style...');
-    const stylePrompt = await analyzeExampleThumbnail(anthropicApiKey, imageBase64);
-
-    return res.json({
-      success: true,
-      stylePrompt
-    });
-  } catch (error) {
-    console.error('Error in analyze:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({ success: false, error: errorMessage });
-  }
-});
-
-// Remix a prompt with small variations
-router.post('/remix', async (req: Request, res: Response) => {
-  try {
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-    }
-
-    const { prompt } = req.body;
-
-    if (!prompt || prompt.trim().length === 0) {
-      return res.status(400).json({ error: 'No prompt provided' });
-    }
-
-    console.log('Remixing prompt...');
-
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: `Take this image generation prompt and create a variation of it by making small creative changes. Keep the overall style, mood, and quality but vary specific elements.
-
-Changes to make (pick 2-4 of these):
-- Swap gender (man → woman, woman → man)
-- Change hair color/style
-- Adjust color palette (warm → cool, blue → red, etc.)
-- Shift time of day (dawn → dusk, day → night)
-- Alter weather/atmosphere (sunny → stormy, clear → foggy)
-- Change age (young → old, child → adult)
-- Swap similar objects or animals
-- Adjust clothing style or era
-- Change expression/emotion
-- Vary background elements
-
-Original prompt:
-${prompt}
-
-Output ONLY the remixed prompt with variations applied. Keep the same length and detail level as the original. Do not explain what you changed.`
-      }]
-    });
-
-    const textContent = response.content.find(c => c.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from Claude');
-    }
-
-    console.log('Remix complete:', textContent.text.substring(0, 100) + '...');
-
-    return res.json({
-      success: true,
-      remixedPrompt: textContent.text.trim()
-    });
-  } catch (error) {
-    console.error('Error in remix:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({ success: false, error: errorMessage });
-  }
-});
-
-// Generate content prompt from script
-router.post('/suggest-content', async (req: Request, res: Response) => {
-  try {
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-    }
-
-    const { script, title } = req.body;
-
-    if (!script || script.trim().length === 0) {
-      return res.status(400).json({ error: 'No script provided' });
-    }
-
-    console.log('Generating thumbnail content suggestion from script...');
-
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
-
-    // Truncate script if too long (use first ~2000 chars for context)
-    const truncatedScript = script.length > 2000 ? script.substring(0, 2000) + '...' : script;
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: `Based on this video script${title ? ` titled "${title}"` : ''}, suggest a compelling YouTube thumbnail concept. The thumbnail should capture the essence of the content and be visually striking.
-
-Script:
-${truncatedScript}
-
-Provide a concise thumbnail description (2-3 sentences) focusing on:
-- The main subject/scene to show
-- Key visual elements that would grab attention
-- The mood/atmosphere
-
-IMPORTANT: Do NOT mention any text, titles, words, or typography in your description. The image generator cannot reliably create text, so describe ONLY the visual artwork/scene.
-
-Write it as a direct description for an image generator, NOT as suggestions. Example: "A dramatic close-up of a Roman emperor in golden armor, standing before a burning city at sunset, with smoke rising in the background."
-
-Output ONLY the thumbnail description, nothing else.`
-      }]
-    });
-
-    const textContent = response.content.find(c => c.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from Claude');
-    }
-
-    console.log('Content suggestion generated:', textContent.text.substring(0, 100) + '...');
-
-    return res.json({
-      success: true,
-      contentPrompt: textContent.text.trim()
-    });
-  } catch (error) {
-    console.error('Error in suggest-content:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({ success: false, error: errorMessage });
-  }
-});
-
 router.post('/', async (req: Request, res: Response) => {
   try {
     const kieApiKey = process.env.KIE_API_KEY;
     if (!kieApiKey) {
       return res.status(500).json({ error: 'KIE_API_KEY not configured' });
-    }
-
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -491,14 +270,14 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Supabase configuration missing' });
     }
 
-    const { exampleImageBase64, contentPrompt, stylePrompt: providedStylePrompt, thumbnailCount, projectId, stream = true }: GenerateThumbnailsRequest = req.body;
+    const { exampleImageBase64, prompt, thumbnailCount, projectId, stream = true }: GenerateThumbnailsRequest = req.body;
 
     if (!exampleImageBase64) {
       return res.status(400).json({ error: 'No example image provided' });
     }
 
-    if (!contentPrompt || contentPrompt.trim().length === 0) {
-      return res.status(400).json({ error: 'No content prompt provided' });
+    if (!prompt || prompt.trim().length === 0) {
+      return res.status(400).json({ error: 'No prompt provided' });
     }
 
     if (!projectId) {
@@ -508,20 +287,15 @@ router.post('/', async (req: Request, res: Response) => {
     const count = Math.min(Math.max(thumbnailCount || 3, 1), 10); // Clamp to 1-10
 
     console.log(`\n=== Generating ${count} thumbnails for project ${projectId} ===`);
-    if (providedStylePrompt) {
-      console.log('Using pre-analyzed style prompt (skipping vision analysis)');
-    }
 
     if (stream) {
       return handleStreamingThumbnails(
         req, res,
         exampleImageBase64,
-        contentPrompt,
-        providedStylePrompt,
+        prompt,
         count,
         projectId,
         kieApiKey,
-        anthropicApiKey,
         supabaseUrl,
         supabaseKey
       );
@@ -540,12 +314,10 @@ async function handleStreamingThumbnails(
   req: Request,
   res: Response,
   exampleImageBase64: string,
-  contentPrompt: string,
-  providedStylePrompt: string | undefined,
+  prompt: string,
   count: number,
   projectId: string,
   kieApiKey: string,
-  anthropicApiKey: string,
   supabaseUrl: string,
   supabaseKey: string
 ) {
@@ -567,36 +339,7 @@ async function handleStreamingThumbnails(
   };
 
   try {
-    let stylePrompt: string;
-
-    // Phase 1: Analyze example thumbnail (skip if already provided)
-    if (providedStylePrompt) {
-      stylePrompt = providedStylePrompt;
-      sendEvent({
-        type: 'progress',
-        stage: 'analyzing',
-        percent: 20,
-        message: 'Using pre-analyzed style prompt'
-      });
-    } else {
-      sendEvent({
-        type: 'progress',
-        stage: 'analyzing',
-        percent: 5,
-        message: 'Analyzing example thumbnail style...'
-      });
-
-      stylePrompt = await analyzeExampleThumbnail(anthropicApiKey, exampleImageBase64);
-
-      sendEvent({
-        type: 'progress',
-        stage: 'analyzing',
-        percent: 20,
-        message: 'Style analysis complete'
-      });
-    }
-
-    // Phase 2: Upload reference image to get a public URL for Kie.ai
+    // Phase 1: Upload reference image to get a public URL for Kie.ai
     sendEvent({
       type: 'progress',
       stage: 'uploading',
@@ -613,8 +356,8 @@ async function handleStreamingThumbnails(
       message: `Starting thumbnail generation (${count} images)...`
     });
 
-    // Use the prompt directly (already contains full description including any text/typography)
-    const combinedPrompt = `${stylePrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional.`;
+    // Use the prompt directly (user provides the full description)
+    const combinedPrompt = `${prompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional.`;
 
     // Generate thumbnails with rolling concurrency
     const MAX_CONCURRENT = 4;
@@ -719,7 +462,6 @@ async function handleStreamingThumbnails(
       type: 'complete',
       success: true,
       thumbnails,
-      stylePrompt,
       total: thumbnails.length,
       failed: failedCount
     });

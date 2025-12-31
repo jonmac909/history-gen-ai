@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check, Shuffle } from "lucide-react";
+import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { generateThumbnailsStreaming, analyzeThumbnailStyle, remixThumbnailPrompt, type ThumbnailGenerationProgress } from "@/lib/api";
+import { generateThumbnailsStreaming, type ThumbnailGenerationProgress } from "@/lib/api";
 import JSZip from "jszip";
 
 interface ThumbnailGeneratorModalProps {
@@ -37,14 +37,12 @@ export function ThumbnailGeneratorModal({
   const [exampleImage, setExampleImage] = useState<File | null>(null);
   const [examplePreview, setExamplePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Generation state - single prompt for everything
   const [imagePrompt, setImagePrompt] = useState("");
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isRemixing, setIsRemixing] = useState(false);
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
 
@@ -81,45 +79,10 @@ export function ThumbnailGeneratorModal({
 
     // Create preview
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
       setExamplePreview(dataUrl);
       setIsUploading(false);
-
-      // Auto-analyze the image (now reverse-engineers the full image)
-      setIsAnalyzing(true);
-      try {
-        // Extract base64 from data URL
-        const base64Match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-        if (!base64Match) {
-          throw new Error("Invalid image format");
-        }
-        const base64Data = base64Match[1];
-
-        const result = await analyzeThumbnailStyle(base64Data);
-        if (result.success && result.stylePrompt) {
-          setImagePrompt(result.stylePrompt);
-          toast({
-            title: "Image Analyzed",
-            description: "Prompt extracted from the uploaded thumbnail. Edit as needed.",
-          });
-        } else {
-          toast({
-            title: "Analysis Failed",
-            description: result.error || "Failed to analyze thumbnail.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.error("Image analysis error:", error);
-        toast({
-          title: "Analysis Failed",
-          description: error instanceof Error ? error.message : "Failed to analyze thumbnail.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsAnalyzing(false);
-      }
     };
     reader.onerror = () => {
       toast({
@@ -132,7 +95,6 @@ export function ThumbnailGeneratorModal({
     reader.readAsDataURL(file);
 
     // Clear previous results
-    setImagePrompt("");
     setGeneratedThumbnails([]);
   };
 
@@ -143,44 +105,6 @@ export function ThumbnailGeneratorModal({
     setGeneratedThumbnails([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
-    }
-  };
-
-  const handleRemix = async () => {
-    if (!imagePrompt.trim()) {
-      toast({
-        title: "No Prompt",
-        description: "Upload an image first to generate a prompt.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsRemixing(true);
-    try {
-      const result = await remixThumbnailPrompt(imagePrompt);
-      if (result.success && result.remixedPrompt) {
-        setImagePrompt(result.remixedPrompt);
-        toast({
-          title: "Prompt Remixed",
-          description: "The prompt has been varied with small creative changes.",
-        });
-      } else {
-        toast({
-          title: "Remix Failed",
-          description: result.error || "Failed to remix prompt.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Remix error:", error);
-      toast({
-        title: "Remix Failed",
-        description: error instanceof Error ? error.message : "Failed to remix prompt.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsRemixing(false);
     }
   };
 
@@ -215,14 +139,13 @@ export function ThumbnailGeneratorModal({
       }
       const base64Data = base64Match[1];
 
-      // Pass the single prompt as both content and style (backend now uses just stylePrompt)
+      // Call the thumbnail generation API with the user's prompt
       const result = await generateThumbnailsStreaming(
         base64Data,
-        "generate", // Placeholder - backend ignores contentPrompt when stylePrompt is provided
+        imagePrompt,
         thumbnailCount,
         projectId,
-        (progress) => setProgress(progress),
-        imagePrompt // This is the full prompt that will be used
+        (progress) => setProgress(progress)
       );
 
       if (result.success && result.thumbnails) {
@@ -368,7 +291,7 @@ export function ThumbnailGeneratorModal({
             Generate Thumbnails
           </DialogTitle>
           <DialogDescription>
-            Upload a thumbnail to reverse-engineer it into a prompt, then customize and generate variations
+            Upload a reference thumbnail and describe what you want to generate
           </DialogDescription>
         </DialogHeader>
 
@@ -377,7 +300,7 @@ export function ThumbnailGeneratorModal({
           <div className="space-y-2">
             <label className="text-sm font-medium">Upload Reference Thumbnail:</label>
             <p className="text-xs text-muted-foreground">
-              Upload any thumbnail and we'll reverse-engineer it into a prompt
+              This image will be used as a base for generating variations
             </p>
 
             {examplePreview ? (
@@ -394,15 +317,9 @@ export function ThumbnailGeneratorModal({
                   size="icon"
                   className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
                   onClick={handleRemoveImage}
-                  disabled={isAnalyzing}
                 >
                   <X className="w-4 h-4" />
                 </Button>
-                {isAnalyzing && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-lg">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  </div>
-                )}
               </div>
             ) : (
               <div
@@ -437,43 +354,18 @@ export function ThumbnailGeneratorModal({
             />
           </div>
 
-          {/* Single Image Prompt (editable) */}
+          {/* Image Prompt */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Image Prompt:
-                {isAnalyzing && <span className="ml-2 text-muted-foreground">(analyzing...)</span>}
-              </label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRemix}
-                disabled={!imagePrompt.trim() || isRemixing || isAnalyzing || isGenerating}
-                className="gap-1.5 h-7 text-xs"
-              >
-                {isRemixing ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Remixing...
-                  </>
-                ) : (
-                  <>
-                    <Shuffle className="w-3 h-3" />
-                    Remix
-                  </>
-                )}
-              </Button>
-            </div>
+            <label className="text-sm font-medium">Image Prompt:</label>
             <Textarea
-              placeholder={isAnalyzing ? "Reverse-engineering the uploaded image..." : "Upload an image to auto-generate a prompt, or write your own..."}
+              placeholder="Describe what you want to generate. Include style, colors, composition, mood, and any text/typography..."
               value={imagePrompt}
               onChange={(e) => setImagePrompt(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
               className="min-h-[150px] resize-y font-mono text-sm"
-              disabled={isAnalyzing}
             />
             <p className="text-xs text-muted-foreground">
-              Edit this prompt to customize the thumbnails. Describes content, style, colors, composition, mood - everything.
+              Describe the content, style, colors, composition, mood, and any text you want on the thumbnail.
             </p>
           </div>
 
@@ -498,7 +390,7 @@ export function ThumbnailGeneratorModal({
           {/* Generate Button */}
           <Button
             onClick={handleGenerate}
-            disabled={!examplePreview || !imagePrompt.trim() || isGenerating || isAnalyzing}
+            disabled={!examplePreview || !imagePrompt.trim() || isGenerating}
             className="w-full gap-2"
           >
             {isGenerating ? (
