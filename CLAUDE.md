@@ -2,6 +2,143 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## Augmented Coding Patterns (ACP)
+
+> Teaching AI what you would do - externalizing reasoning step by step so the agent can pick it up and run with it.
+
+### Ground Rules
+
+**Communication:**
+- Be extremely succinct - avoid verbose explanations
+- One question at a time - never overwhelm with multiple questions
+- Warn proactively if you detect potential issues or mistakes
+
+**Process:**
+- Work in small, verifiable steps - never make large changes at once
+- State expectations before running code (Hypothesize pattern)
+- Run tests before AND after changes
+- Commit frequently at stable checkpoints
+- Ask "what would you recommend?" before proposing solutions (Reverse Direction)
+
+**Context Management:**
+- When context gets large, summarize and save to files
+- Focus on one task at a time
+- Track progress using the TodoWrite tool
+
+### Key Patterns
+
+| Pattern | Description |
+|---------|-------------|
+| **Hypothesize** | State expectations before running code: "I expect this to fail with X because Y" |
+| **Reverse Direction** | Ask "what would you recommend?" instead of telling the solution |
+| **Test First** | No production code without a failing test; tests provide feedback |
+| **One Problem at a Time** | Break big steps into smaller ones; solve one before moving to next |
+| **Cross-Context Memory** | Use persistent files (`memory/goal.md`, `memory/state.md`) for state |
+| **Stop** | When things go wrong, stop immediately; don't let bad output contaminate context |
+| **Feedback Flip** | After generating output, immediately review: "Did I miss anything? Any issues?" |
+| **Semantic Zoom** | Adjust detail level: zoomed out for architecture, zoomed in for line-by-line |
+| **Split Process** | When processes are too long, break into smaller files with orchestrator |
+| **Refactor Guard** | Make smallest change → AI review → run tests → commit if safe |
+| **Algorithmify** | Automate repetitive tasks with scripts; deterministic beats stochastic |
+| **CLI First** | Prefer command-line tools; text in/out matches LLM nature |
+| **Knowledge Checkpoint** | Save important learnings to `memory/learnings/*.md` |
+
+### Process Files
+
+Reference these for structured workflows:
+- `process/tdd.md` - TDD red-green-refactor cycle
+- `process/feature.md` - New feature workflow
+- `process/bugfix.md` - Bug investigation workflow
+
+### Memory Files
+
+Update these as work progresses:
+- `memory/goal.md` - Current objective and task list
+- `memory/state.md` - TDD phase, blockers, current task
+- `memory/learnings/` - Decisions and knowledge to preserve
+
+### Anti-Patterns to Avoid
+
+| Anti-Pattern | Description |
+|--------------|-------------|
+| AI Slop | Never accept low-quality output without review |
+| Answer Injection | Don't embed expected answers in prompts |
+| Distracted Agent | Don't overload with too much context or tasks |
+| Flying Blind | Never work without tests or feedback mechanisms |
+| Perfect Recall Fallacy | Don't assume AI remembers earlier conversation |
+| Silent Misalignment | Always verify AI understanding matches intent |
+| Sunk Cost | Know when to stop and start fresh |
+| Tell Me a Lie | Always verify AI claims - it hallucinates confidently |
+| Unvalidated Leaps | Never allow large changes without incremental validation |
+
+### AI Limitations
+
+| Obstacle | Mitigation |
+|----------|------------|
+| Black Box (can't see reasoning) | Use hypothesize pattern, state expectations |
+| Cannot Learn (forgets between sessions) | Cross-context memory files |
+| Compliance Bias (tends to agree) | Ask for alternatives, use reverse direction |
+| Context Rot (earlier context fades) | Save to files, fresh contexts |
+| Degrades Under Complexity | Split into smaller tasks |
+| Limited Context (fixed window) | Manage context actively, summarize |
+| Limited Focus | One thing at a time |
+| Non-Determinism | Use tests for validation |
+| Hallucinations | Always verify claims |
+
+### TDD ZOMBIES (Test Order)
+
+| Letter | Meaning | Example |
+|--------|---------|---------|
+| Z | Zero | Empty list, null, zero |
+| O | One | Single item, one user |
+| M | Many | Multiple items, edge cases |
+| B | Boundary | Min/max values, limits |
+| I | Interface | Public API contracts |
+| E | Exception | Error handling, failures |
+| S | Simple | Happy path scenarios |
+
+### 3-Layer Architecture (DEO)
+
+When automations emerge, use this pattern:
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| **Directives** | `directives/` | SOPs in Markdown defining goals, inputs, tools, outputs, edge cases |
+| **Orchestration** | You/Claude | Read directives, call execution scripts in order, handle errors |
+| **Execution** | `execution/` | Deterministic Python scripts for API calls, data processing, file operations |
+
+**Key principles:**
+- **Push complexity into deterministic code** - 90% accuracy per step = 59% success over 5 steps
+- **Self-annealing loop** - When something breaks: Fix → Update script → Test → Update directive → System is stronger
+- **Check for existing tools first** - Before writing a script, check `execution/` and the directive
+- **Deliverables vs Intermediates** - Deliverables go to cloud/user; intermediates go to `.tmp/` (gitignored)
+
+### Directory Structure (ACP + DEO)
+
+```
+project/
+├── CLAUDE.md              # Ground rules (this file)
+├── process/               # ACP: Workflow files
+│   ├── tdd.md            # TDD red-green-refactor
+│   ├── feature.md        # New feature workflow
+│   └── bugfix.md         # Bug investigation
+├── docs/
+│   ├── architecture.md   # System overview
+│   ├── decisions.md      # ADRs - why we chose X over Y
+│   └── requirements.md   # Current requirements
+├── memory/
+│   ├── goal.md           # Current goal and tasks
+│   ├── state.md          # Current state indicator
+│   └── learnings/        # Accumulated knowledge
+├── directives/           # DEO: SOPs (add when needed)
+├── execution/            # DEO: Scripts (add when needed)
+└── .tmp/                 # Intermediate files (gitignored)
+```
+
+---
+
 ## Project Overview
 
 HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (5 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
@@ -180,7 +317,7 @@ Multi-step generation with user review at each stage:
 
 ### RunPod Endpoints
 
-**Fish Speech OpenAudio S1-mini** (Endpoint: `gzcf1p8uwltoyo`):
+**Fish Speech OpenAudio S1-mini** (Endpoint: `8alx1p4khk1cg8`):
 - Input: `{ text, reference_audio_base64 }`
   - Voice sample: 10-30 seconds recommended for best quality
   - MP3/other formats auto-converted to WAV via ffmpeg
@@ -404,7 +541,7 @@ SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
-RUNPOD_ENDPOINT_ID=gzcf1p8uwltoyo
+RUNPOD_ENDPOINT_ID=8alx1p4khk1cg8
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 GOOGLE_CLIENT_ID=<google-oauth-client-id>
