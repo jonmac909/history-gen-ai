@@ -190,11 +190,18 @@ async function analyzeExampleThumbnail(anthropicApiKey: string, imageBase64: str
           type: 'text',
           text: `Analyze this YouTube thumbnail and describe its visual style for recreating similar thumbnails.
 
-Focus on: color palette, color grading, saturation, warm/cool tones, composition, visual hierarchy, typography style (if present), lighting, mood, visual effects (vignettes, glows, shadows, gradients), and overall aesthetic.
+CRITICAL - First identify the art style category:
+- Is it REALISTIC/PHOTOGRAPHIC (like a photograph or photorealistic render)?
+- Is it ILLUSTRATED/CARTOON (like a comic, anime, editorial illustration, graphic novel)?
+- Is it PAINTERLY (like an oil painting, watercolor, digital painting)?
 
-Output ONLY a comma-separated list of style descriptors (150-250 words), suitable for an image generator. Do NOT include any headers, labels, or introductory text. Do NOT describe the specific content/subject - only the visual STYLE.
+Focus on: art style (realistic vs illustrated vs painterly), rendering technique (photorealistic, cel-shaded, line art, crosshatching), color palette, saturation level, warm/cool tones, composition, lighting style, mood, outline/linework style (thick black outlines, no outlines, soft edges), texture (smooth, hatched, grainy), and overall aesthetic.
 
-Example output: "Cinematic documentary style, warm golden color grading, dramatic chiaroscuro lighting, rule of thirds composition, bold sans-serif white text with black outline, slight vignette effect, professional photography aesthetic, rich contrast with deep shadows and bright highlights"`
+Output ONLY a comma-separated list of style descriptors (150-250 words), suitable for an image generator. Do NOT include any headers, labels, or introductory text. Do NOT describe the specific content/subject - only the visual STYLE. Do NOT mention any text/typography in your analysis.
+
+Example output for illustrated style: "Editorial illustration style, comic book aesthetic, bold black outlines, cel-shaded coloring, exaggerated expressive faces, muted blue-gray color palette, crosshatching texture, flat background colors, graphic novel rendering, stylized proportions, dramatic expressions, ink drawing technique"
+
+Example output for realistic style: "Cinematic photography style, photorealistic rendering, warm golden color grading, dramatic chiaroscuro lighting, shallow depth of field, professional photography aesthetic, rich contrast with deep shadows"`
         }
       ]
     }]
@@ -433,7 +440,8 @@ async function handleStreamingThumbnails(
     });
 
     // Combine style + content prompts
-    const combinedPrompt = `${stylePrompt}\n\nSubject/Content: ${contentPrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional`;
+    // IMPORTANT: Explicitly tell the model NO TEXT to avoid random characters/gibberish
+    const combinedPrompt = `${stylePrompt}\n\nSubject/Content: ${contentPrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional. IMPORTANT: Do NOT include any text, letters, words, or typography in the image. Generate ONLY the visual artwork with no text overlays.`;
 
     // Generate thumbnails with rolling concurrency
     const MAX_CONCURRENT = 4;
