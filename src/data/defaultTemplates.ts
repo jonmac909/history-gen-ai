@@ -257,8 +257,11 @@ const imageItalianRenaissance = `Warm classical oil-painting style, inspired by 
 
 const imageMedieval = `Warm classical oil-painting style, inspired by Medieval illuminated manuscripts.. Rich jewel tones and gold leaf accents. Flat, stylized figures with expressive gestures. Decorative borders with intricate patterns, vines, and symbolic imagery. Deep blues, ruby reds, forest greens, and burnished gold. Gothic architectural elements and heraldic motifs. Sacred and mystical atmosphere. Ornate details and symbolic storytelling. The aesthetic of Books of Hours and medieval chronicles. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no gouache or watercolor, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism, no high saturation`;
 
+const imageCustom = ``;
+
 export const defaultImageTemplates: ImageTemplate[] = [
   { id: "image-a", template: imageDutch, name: "Dutch Golden Age" },
   { id: "image-b", template: imageItalianRenaissance, name: "Italian Renaissance" },
   { id: "image-c", template: imageMedieval, name: "Medieval Style" },
+  { id: "image-custom", template: imageCustom, name: "Custom" },
 ];
