@@ -660,7 +660,7 @@ async function postProcessAudio(audioBuffer: Buffer): Promise<Buffer> {
 // ============================================================
 
 // Split script into N equal segments by word count
-const DEFAULT_SEGMENT_COUNT = 10; // Match RunPod max workers for audio endpoint
+const DEFAULT_SEGMENT_COUNT = 5; // Match Fish Speech RunPod worker allocation
 
 // Detect and remove repeated phrases in source text BEFORE TTS generation
 function removeTextRepetitions(text: string, minWords: number = 4): { cleaned: string; removedCount: number } {
@@ -889,11 +889,9 @@ async function downloadVoiceSample(url: string): Promise<string> {
         // Write input file
         fs.writeFileSync(tempInputPath, bytes);
 
-        // Convert to WAV using ffmpeg - MUST resample to 24000Hz to match ChatterboxTTS output
-        // ChatterboxTTS internally uses 24000Hz for mel spectrograms, so voice sample must match
+        // Convert to WAV using ffmpeg (Fish Speech accepts various formats but WAV is most reliable)
         await new Promise<void>((resolve, reject) => {
           ffmpeg(tempInputPath)
-            .audioFrequency(24000)  // MUST be 24000Hz to match ChatterboxTTS mel spectrogram
             .audioChannels(1)       // Mono
             .audioCodec('pcm_s16le') // 16-bit PCM
             .format('wav')
@@ -924,56 +922,17 @@ async function downloadVoiceSample(url: string): Promise<string> {
       }
     }
 
-    // Validate and resample WAV to 24000Hz if needed (ChatterboxTTS requires 24000Hz)
+    // Log WAV info for debugging (Fish Speech handles various sample rates)
     if (format.includes('WAV')) {
       const wavInfo = extractWavInfo(finalBytes);
       const durationSeconds = wavInfo.pcmData.length / (wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8));
       logger.info(`Voice sample: ${format}, ${wavInfo.sampleRate}Hz, ${wavInfo.channels}ch, ${wavInfo.bitsPerSample}-bit, ${durationSeconds.toFixed(1)}s`);
 
       if (durationSeconds < 3) {
-        logger.warn(`⚠️  Voice sample is very short (${durationSeconds.toFixed(1)}s). Recommend at least 5 seconds for better voice cloning quality.`);
+        logger.warn(`⚠️  Voice sample is very short (${durationSeconds.toFixed(1)}s). Recommend 10-30 seconds for best voice cloning quality.`);
       }
 
-      // CRITICAL: ChatterboxTTS requires 24000Hz sample rate for mel spectrogram alignment
-      // Resample if not already at 24000Hz
-      if (wavInfo.sampleRate !== 24000) {
-        logger.info(`Resampling voice sample from ${wavInfo.sampleRate}Hz to 24000Hz for ChatterboxTTS...`);
-
-        const tempInputPath = path.join(os.tmpdir(), `voice_resample_in_${crypto.randomBytes(8).toString('hex')}.wav`);
-        const tempOutputPath = path.join(os.tmpdir(), `voice_resample_out_${crypto.randomBytes(8).toString('hex')}.wav`);
-
-        try {
-          fs.writeFileSync(tempInputPath, finalBytes);
-
-          await new Promise<void>((resolve, reject) => {
-            ffmpeg(tempInputPath)
-              .audioFrequency(24000)  // Resample to 24000Hz
-              .audioChannels(1)       // Mono
-              .audioCodec('pcm_s16le') // 16-bit PCM
-              .format('wav')
-              .on('error', (err) => {
-                logger.error('FFmpeg resample error:', err);
-                reject(new Error(`Failed to resample voice sample: ${err.message}`));
-              })
-              .on('end', () => {
-                logger.debug('Voice sample resampling complete');
-                resolve();
-              })
-              .save(tempOutputPath);
-          });
-
-          finalBytes = fs.readFileSync(tempOutputPath);
-          format = 'WAV (resampled to 24000Hz)';
-          logger.info(`✓ Resampled to 24000Hz: ${finalBytes.length} bytes`);
-        } finally {
-          try {
-            if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
-            if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
-          } catch (cleanupErr) {
-            logger.warn('Failed to cleanup resample temp files:', cleanupErr);
-          }
-        }
-      }
+      // Fish Speech accepts various sample rates - no resampling needed
     }
 
     const base64 = finalBytes.toString('base64');
@@ -1675,7 +1634,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 10; // Match RunPod max workers for audio endpoint
+    const MAX_CONCURRENT_SEGMENTS = 5; // Match Fish Speech RunPod worker allocation
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{

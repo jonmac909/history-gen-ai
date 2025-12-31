@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (10 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
+HistoryGen AI generates AI-powered historical video content from YouTube URLs. It processes transcripts, rewrites them into scripts, generates voice-cloned audio (5 segments with individual regeneration), creates captions, and produces AI images with timing-based filenames.
 
 **Stack:**
 - Frontend: React + TypeScript + Vite + shadcn-ui + Tailwind CSS
 - Backend API: Express + TypeScript on Railway (long-running operations, usage-based pricing)
 - Quick Functions: Supabase Edge Functions (Deno)
 - Storage: Supabase Storage
-- TTS: RunPod serverless with ChatterboxTurboTTS voice cloning
+- TTS: RunPod serverless with Fish Speech OpenAudio S1-mini voice cloning
 - Image Generation: RunPod serverless with Z-Image-Turbo
 - Deployment: Netlify (frontend), Railway (API), Supabase (storage + quick functions)
 
@@ -76,7 +76,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | Route | Purpose |
 |-------|---------|
 | `/rewrite-script` | Streaming script generation with Claude API |
-| `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
+| `/generate-audio` | Voice cloning TTS, splits into 5 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
 | `/generate-audio/recombine` | Re-concatenate segments after regeneration |
 | `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
@@ -131,32 +131,30 @@ Multi-step generation with user review at each stage:
 
 ### Audio Generation Architecture
 
-**Critical: Uses parallel processing with 10 segments to match RunPod worker allocation.**
+**Uses parallel processing with 5 segments to match Fish Speech RunPod worker allocation.**
 
-- Script split into **10 equal segments** by word count
-- **All 10 segments processed in parallel** (utilizing 10 RunPod workers)
+- Script split into **5 segments at sentence boundaries** (never mid-sentence)
+- **All 5 segments processed in parallel** (utilizing 5 RunPod workers)
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
-- Voice sample (~117KB = 156KB base64) sent with each TTS job
+- Voice sample sent with each TTS job (10-30 seconds recommended)
 - Individual segment WAVs uploaded, then concatenated into combined file
 - **Repetition Prevention**:
-  - **Primary: TTS-level** - `repetition_penalty: 1.5` in ChatterboxTTS handler prevents phrase repetitions at generation time
+  - **Primary: TTS-level** - Fish Speech has built-in `repetition_penalty: 1.2`
   - **Secondary: Proactive text cleaning** - `removeTextRepetitions()` removes duplicate sentences BEFORE TTS (70% Jaccard similarity OR 80% containment)
-  - **Tertiary: Reactive post-processing** - Whisper transcribes audio, detects repeated phrases, FFmpeg removes duplicates (main `/generate-audio` only)
-  - Requires both `ffmpeg-static` and `ffprobe-static` packages for post-processing
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
-- `MAX_TTS_CHUNK_LENGTH = 250` chars per TTS chunk (reduced to prevent repetition)
-- `DEFAULT_SEGMENT_COUNT = 10` segments (match RunPod max workers for audio)
-- `MAX_CONCURRENT_SEGMENTS = 10` (parallel processing)
+- `MAX_TTS_CHUNK_LENGTH = 250` chars per TTS chunk
+- `DEFAULT_SEGMENT_COUNT = 5` segments (match Fish Speech RunPod workers)
+- `MAX_CONCURRENT_SEGMENTS = 5` (parallel processing)
 - `TTS_JOB_POLL_INTERVAL_INITIAL = 250` ms (fast initial polling)
 - `TTS_JOB_POLL_INTERVAL_MAX = 1000` ms (adaptive polling cap)
 - `RETRY_MAX_ATTEMPTS = 3` (exponential backoff: 1s → 2s → 4s, max 10s)
 - `PRONUNCIATION_FIXES` dictionary for phonetic replacements of commonly mispronounced words
 
 **Polling & Retry Logic:**
-- 5-minute timeout per TTS job (300 attempts, increased from 2 min for slow workers)
+- 5-minute timeout per TTS job (300 attempts)
 - Adaptive polling: starts at 250ms, increases to 1s max after 3 attempts
 - Uses RunPod's `delayTime` hint when available (capped at 1.5s)
 - Exponential backoff retry for failed chunks (3 attempts max)
@@ -171,39 +169,35 @@ Multi-step generation with user review at each stage:
   - Removes markdown bold/italic markers `*`, `**`, `***` (keeps text content)
   - Removes parenthetical time markers like `(5-10 minutes)`
   - Removes scene markers `[SCENE X]` and other bracketed content
-  - Critical: Failing to remove formatting causes dead air/silence or unwanted narration
 - `normalizeText()` converts smart quotes/dashes to ASCII BEFORE removing non-ASCII
-- Order matters: convert `""` → `"`, `''` → `'`, `–—` → `-`, then remove remaining non-ASCII
-- Wrong order will strip quotes entirely instead of converting them
 - **Number-to-words conversion**: "ACT 5" → "Act Five", years like "1347" → "thirteen forty-seven"
 - **Pronunciation fixes**: Dictionary-based phonetic replacements for difficult proper nouns (e.g., "Byzantine" → "Biz-an-tine")
 
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
 - Frontend calls `onRegenerate(segmentIndex)` to regenerate specific segment
-- POST `/generate-audio/recombine` re-concatenates segments after regeneration (no post-processing)
-- Repetitions prevented at TTS level via `repetition_penalty: 1.5`
+- POST `/generate-audio/recombine` re-concatenates segments after regeneration
 
 ### RunPod Endpoints
 
-**ChatterboxTurboTTS** (Endpoint: `eitsgz3gndkh3s`):
+**Fish Speech OpenAudio S1-mini** (Endpoint: `eitsgz3gndkh3s`):
 - Input: `{ text, reference_audio_base64 }`
-  - **Critical:** `reference_audio_base64` MUST be WAV format base64
-  - MP3/other formats are auto-converted to mono 16-bit WAV via ffmpeg
-  - **Sample rate preserved** - NO resampling (prevents mel spectrogram mismatch)
-- Output: 24000Hz mono 16-bit WAV (not 44100Hz!)
-- 500 char limit per chunk, 5+ second voice samples required
-- GitHub repo: `jonmac909/chatterbox`
+  - Voice sample: 10-30 seconds recommended for best quality
+  - MP3/other formats auto-converted to WAV via ffmpeg
+  - Fish Speech accepts various sample rates (no strict resampling required)
+- Output: 24000Hz mono 16-bit WAV
+- 2000 char limit per request
+- GitHub repo: `jonmac909/fish-speech-runpod`
 - **TTS Generation Parameters** (in `handler.py`):
-  - `temperature: 0.7` - Balanced (default 0.8, <0.6 causes silence)
-  - `repetition_penalty: 1.5` - Prevents phrase repetitions (default 1.2, max 2.0)
-  - **Turbo-specific:** `cfg_weight`, `min_p`, `exaggeration` are IGNORED (non-Turbo only)
-- **Parameter History** (for troubleshooting):
-  - temp=0.5 + rep_penalty=2.0 → Silence (temp too low)
-  - temp=0.6 + rep_penalty=2.0 → Stuck generation
-  - temp=0.8 + rep_penalty=1.2 → 25% silence
-  - temp=0.7 + rep_penalty=1.2 → Works but repetitions occur
-  - **temp=0.7 + rep_penalty=1.5 → Optimal (current)**
+  - `temperature: 0.7` - Balanced expressiveness
+  - `top_p: 0.8` - Nucleus sampling
+  - `repetition_penalty: 1.2` - Prevents phrase repetitions
+  - `normalize: True` - Text normalization for numbers
+  - `chunk_length: 200` - Processing chunk size
+- **Model Info**:
+  - OpenAudio S1-mini: 0.5B parameters
+  - Quality: 0.008 WER, 0.004 CER on English
+  - ~150 tokens/second on RTX 4090
 
 **Z-Image-Turbo**:
 - Input: `{ prompt, quality: "basic"|"high", aspectRatio: "16:9"|"1:1"|"9:16" }`
@@ -211,12 +205,11 @@ Multi-step generation with user review at each stage:
 - Uses `guidance_scale=0.0` (no negative prompts)
 
 **RunPod Worker Allocation**:
-- **10 workers for audio (ChatterboxTTS)**, **4 workers for images (Z-Image)**
+- **5 workers for audio (Fish Speech)**, **4 workers for images (Z-Image)**
 - Set in RunPod dashboard endpoint settings
 - **Memory optimization**: Audio processing uses **incremental concatenation** to prevent Railway OOM kills
-  - Old approach: accumulated all chunks in array (35 chunks × 1.77MB = ~60MB per segment × 10 = 600MB)
-  - New approach: incrementally concatenates chunks (only 1 combined buffer per segment = ~10MB total)
-  - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
+  - Incrementally concatenates chunks (only 1 combined buffer per segment)
+  - All 5 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=5`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
 
 ### Image Generation Architecture
@@ -460,7 +453,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 
 ### RunPod Workers
 
-**ChatterboxTurboTTS:** GitHub integration auto-rebuilds `jonmac909/chatterbox` (5-10 min)
+**Fish Speech:** GitHub integration auto-rebuilds `jonmac909/fish-speech-runpod` (5-10 min)
 
 ## Common Issues
 
@@ -468,8 +461,8 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - **Railway container killed mid-process (SIGTERM in logs)**:
   - Symptom: Frontend shows "No response received", Railway logs show "Stopping Container" / "npm error signal SIGTERM"
   - Cause: Memory exhaustion (OOM kill) from accumulating all audio chunks before concatenation
-  - Solution: Uses incremental concatenation (see line 1527 in `generate-audio.ts`)
-  - All 10 RunPod workers utilized concurrently (`MAX_CONCURRENT_SEGMENTS=10`)
+  - Solution: Uses incremental concatenation in `generate-audio.ts`
+  - All 5 RunPod workers utilized concurrently (`MAX_CONCURRENT_SEGMENTS=5`)
   - Node.js uses memory-optimized flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
 - Check if `audioUrl` is being returned (backend must concatenate segments)
 - Verify `RUNPOD_API_KEY` is set on Railway
@@ -479,10 +472,8 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Captions must use combined `audioUrl`, not `segments[0].audioUrl`
 - Check `pendingAudioUrl` is set from `audioRes.audioUrl`, not first segment
 - WAV parsing must find actual 'data' chunk (not assume 44-byte header)
-- **Sample rate mismatch**: Chatterbox outputs 24000Hz, not 44100Hz
+- **Sample rate**: Fish Speech outputs 24000Hz
   - `createWavFromPcm()` must use actual audio format from `extractPcmFromWav()`
-  - Hardcoded 44100Hz causes Whisper to transcribe at wrong speed (1.84x faster)
-- Progress should start at 5%, not 100% (was bug when only 1 chunk)
 - See `extractPcmFromWav()` and `createWavFromPcm()` in `generate-captions.ts`
 
 ### Audio preview too short
@@ -490,8 +481,8 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use parallel processing (10 concurrent segments matching 10 RunPod workers)
-- If all RunPod workers busy → check worker allocation in RunPod dashboard (10 audio + 4 images = 14 total)
+- Segments use parallel processing (5 concurrent segments matching 5 RunPod workers)
+- If all RunPod workers busy → check worker allocation in RunPod dashboard (5 audio + 4 images = 9 total)
 - Railway charges only for actual usage time
 
 ### Audio timeouts on long scripts
@@ -500,32 +491,14 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Check RunPod worker logs: `npm run monitor:runpod:errors`
 - If retry attempts exhausted, individual chunks are skipped (not fatal)
 
-### Audio quality issues (garbled transcriptions, silence gaps, unintelligible speech)
-- **Symptom:** Audio has 1-second silence gaps, garbled/unintelligible speech, 24-26% silence, poor transcription quality
-- **Root cause 1: Voice sample format/sample rate incompatibility**
-  - ChatterboxTTS requires WAV format base64 for `reference_audio_base64`
-  - **Critical:** Resampling voice samples causes mel spectrogram mismatch → massive silence padding
-  - RunPod logs show: `Reference mel length is not equal to 2 * reference token length`
-  - Results in chunks 5-8x larger than expected (1.5MB vs 200KB)
-- **Solution (implemented):** Auto-convert MP3→WAV **preserving native sample rate** (line 829 in `generate-audio.ts`)
-  - Uses ffmpeg to convert any non-WAV format to mono 16-bit WAV
-  - **Preserves original sample rate** - NO resampling (critical!)
-  - Logs show: "⚠️ Voice sample is MP3 format. ChatterboxTTS requires WAV - will convert."
-- **Root cause 2: TTS temperature parameter**
-  - **Symptom:** Excessive silence in audio (10-30 second gaps)
-  - Temperature testing results:
-    - `temperature: 0.8` (default) → 25% silence (bad)
-    - `temperature: 0.7` → 5% silence (optimal)
-    - `temperature: 0.5` → Generation gets stuck (silence bug from Release #9)
-  - **Solution:** Use `temperature: 0.7` in `handler.py` (sweet spot for ChatterboxTurboTTS)
+### Audio quality issues
 - **Voice sample quality** best practices:
-  - Minimum 5 seconds duration (warns if <3s)
-  - Minimum 16kHz sample rate (warns if <16kHz)
+  - 10-30 seconds duration recommended for best voice cloning
   - Clear speech, no background noise
   - Formal narration style matching content
 - Check Railway logs for voice sample diagnostics (format, duration, sample rate, warnings)
 - **Pronunciation fixes**: Add difficult words to `PRONUNCIATION_FIXES` dictionary in `generate-audio.ts`
-- **Test without voice cloning**: Generate short test without voice sample to isolate TTS model vs. voice sample issues
+- Fish Speech has built-in `repetition_penalty: 1.2` to prevent repetition issues
 
 ### Dead air or unwanted narration of headers/formatting
 - Usually caused by markdown headers, hashtags, or section markers not being fully removed
