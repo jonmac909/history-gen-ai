@@ -1016,6 +1016,10 @@ const Index = () => {
     setViewState("review-images");
   };
 
+  const handleBackToThumbnails = () => {
+    setViewState("review-thumbnails");
+  };
+
   // Forward navigation handlers (to skip ahead if data already exists)
   const handleForwardToAudio = () => {
     if (pendingAudioUrl || pendingAudioSegments.length > 0) {
@@ -1449,7 +1453,7 @@ const Index = () => {
         <ProjectResults
           sourceUrl={sourceUrl}
           onNewProject={handleNewProject}
-          onBack={handleBackToImages}
+          onBack={handleBackToThumbnails}
           assets={generatedAssets}
           srtContent={srtContent}
           imagePrompts={imagePrompts}
