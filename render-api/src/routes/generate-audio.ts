@@ -425,11 +425,17 @@ function detectRepetitions(segments: WhisperSegment[], minWords: number = 4): Re
     // Check next sentences for repetition
     for (let j = i + 1; j < Math.min(i + 5, sentences.length); j++) {
       const next = sentences[j];
+      const nextWords = next.normalized.split(' ').filter(w => w.length > 0);
 
-      // Check for exact or near-exact match (lowered from 0.85 to 0.70 to catch more repetitions)
+      // Skip if next sentence is too short
+      if (nextWords.length < minWords) continue;
+
+      // Check for similarity OR containment (catches subset duplicates)
       const similarity = calculateSimilarity(current.normalized, next.normalized);
+      const contained = isContainedIn(next.normalized, current.normalized, minWords) ||
+                        isContainedIn(current.normalized, next.normalized, minWords);
 
-      if (similarity > 0.70) {
+      if (similarity > 0.70 || contained) {
         const rangeKey = `${next.start.toFixed(2)}-${next.end.toFixed(2)}`;
         if (!processedRanges.has(rangeKey)) {
           processedRanges.add(rangeKey);
@@ -438,7 +444,8 @@ function detectRepetitions(segments: WhisperSegment[], minWords: number = 4): Re
             end: next.end,
             text: next.text,
           });
-          logger.info(`Found repetition: "${next.text.substring(0, 50)}..." at ${next.start.toFixed(2)}s-${next.end.toFixed(2)}s (similarity: ${(similarity * 100).toFixed(1)}%)`);
+          const detectionType = contained && similarity <= 0.70 ? 'containment' : 'similarity';
+          logger.info(`Found repetition: "${next.text.substring(0, 50)}..." at ${next.start.toFixed(2)}s-${next.end.toFixed(2)}s (${detectionType}: ${(similarity * 100).toFixed(1)}%)`);
         }
       }
     }
@@ -514,6 +521,23 @@ function calculateSimilarity(str1: string, str2: string): number {
   const union = new Set([...words1, ...words2]);
 
   return intersection.size / union.size;
+}
+
+// Check if one sentence is contained within another (catches subset duplicates)
+// This fixes cases where Jaccard fails due to extra words in the longer sentence
+function isContainedIn(shorter: string, longer: string, minWords: number = 4): boolean {
+  const shortWords = shorter.split(' ').filter(w => w.length > 0);
+  const longWords = longer.split(' ').filter(w => w.length > 0);
+
+  // Ensure shorter is actually shorter and has enough words
+  if (shortWords.length < minWords) return false;
+  if (shortWords.length >= longWords.length) return false;
+
+  // Check if 80%+ of shorter's words appear in longer
+  const longSet = new Set(longWords);
+  const matchCount = shortWords.filter(w => longSet.has(w)).length;
+
+  return matchCount / shortWords.length >= 0.80;
 }
 
 // Remove audio segments using FFmpeg
@@ -651,10 +675,18 @@ function removeTextRepetitions(text: string, minWords: number = 4): { cleaned: s
 
     // Check next few sentences for repetition
     for (let j = i + 1; j < Math.min(i + 3, sentences.length); j++) {
+      const nextWords = normalized[j].split(' ').filter(Boolean);
+      if (nextWords.length < minWords) continue;
+
+      // Check for similarity OR containment (catches subset duplicates)
       const similarity = calculateSimilarity(normalized[i], normalized[j]);
-      if (similarity > 0.70) {
+      const contained = isContainedIn(normalized[j], normalized[i], minWords) ||
+                        isContainedIn(normalized[i], normalized[j], minWords);
+
+      if (similarity > 0.70 || contained) {
         toRemove.add(j); // Remove the duplicate occurrence
-        logger.info(`Removing duplicate sentence before TTS: "${sentences[j].substring(0, 50)}..." (${(similarity * 100).toFixed(0)}% similar)`);
+        const detectionType = contained && similarity <= 0.70 ? 'containment' : 'similarity';
+        logger.info(`Removing duplicate sentence before TTS: "${sentences[j].substring(0, 50)}..." (${detectionType}: ${(similarity * 100).toFixed(0)}%)`);
       }
     }
   }
@@ -2332,11 +2364,32 @@ router.post('/recombine', async (req: Request, res: Response) => {
     const { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${durationSeconds.toFixed(1)}s`);
 
-    // Upload combined audio
+    // Post-process for repetition removal (catches cross-segment duplicates)
+    let finalAudio = combinedAudio;
+    let finalDuration = durationSeconds;
+    try {
+      console.log(`[Recombine] Running post-processing for repetition detection...`);
+      const processedAudio = await postProcessAudio(combinedAudio);
+      if (processedAudio.length > 0 && processedAudio.length < combinedAudio.length) {
+        finalAudio = processedAudio;
+        // Recalculate duration from processed audio
+        const wavInfo = extractWavInfo(processedAudio);
+        const bytesPerSecond = wavInfo.sampleRate * wavInfo.channels * (wavInfo.bitsPerSample / 8);
+        finalDuration = wavInfo.pcmData.length / bytesPerSecond;
+        console.log(`[Recombine] Post-processing removed ${(combinedAudio.length - processedAudio.length) / 1024}KB, new duration: ${finalDuration.toFixed(1)}s`);
+      } else {
+        console.log(`[Recombine] No repetitions detected`);
+      }
+    } catch (postProcessError) {
+      console.error(`[Recombine] Post-processing failed, using original audio:`, postProcessError);
+      // Continue with original audio if post-processing fails
+    }
+
+    // Upload combined audio (using finalAudio after post-processing)
     const combinedFileName = `${projectId}/voiceover.wav`;
     const { error: uploadError } = await supabase.storage
       .from('generated-assets')
-      .upload(combinedFileName, combinedAudio, {
+      .upload(combinedFileName, finalAudio, {
         contentType: 'audio/wav',
         upsert: true
       });
@@ -2358,8 +2411,8 @@ router.post('/recombine', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       audioUrl: cacheBustedUrl,
-      duration: Math.round(durationSeconds * 10) / 10,
-      size: combinedAudio.length
+      duration: Math.round(finalDuration * 10) / 10,
+      size: finalAudio.length
     });
 
   } catch (error) {

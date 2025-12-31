@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2, Sparkles } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2, Sparkles, Youtube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -8,6 +8,7 @@ import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+import { YouTubeUploadModal } from "./YouTubeUploadModal";
 
 export interface GeneratedAsset {
   id: string;
@@ -36,6 +37,7 @@ interface ProjectResultsProps {
   onVideoRendered?: (videoUrl: string) => void;  // Callback when video is rendered
   onCaptionedVideoRendered?: (videoUrl: string) => void;  // Callback when captioned video is rendered
   autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
+  thumbnails?: string[];  // Generated thumbnails for YouTube upload
 }
 
 // Parse SRT to get timing info
@@ -129,7 +131,8 @@ export function ProjectResults({
   videoUrlCaptioned,
   onVideoRendered,
   onCaptionedVideoRendered,
-  autoRender
+  autoRender,
+  thumbnails
 }: ProjectResultsProps) {
   // State for video rendering - three separate videos (basic, embers, smoke_embers)
   const [isRenderingBasic, setIsRenderingBasic] = useState(false);
@@ -141,6 +144,9 @@ export function ProjectResults({
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
   const autoRenderTriggered = useRef(false);
+
+  // State for YouTube upload
+  const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
 
   // Auto-render video when in full automation mode (renders with embers)
   useEffect(() => {
@@ -961,6 +967,34 @@ export function ProjectResults({
               )}
             </div>
           )}
+
+          {/* YouTube Upload */}
+          {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl) && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <Youtube className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Upload to YouTube</p>
+                  <p className="text-sm text-muted-foreground">
+                    Upload as private draft for review
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsYouTubeModalOpen(true)}
+                className="text-red-600 hover:text-red-700 hover:bg-red-100/50"
+                title="Upload to YouTube"
+              >
+                Upload
+              </Button>
+            </div>
+          )}
         </div>
 
         {assets.length === 0 && (
@@ -1032,6 +1066,19 @@ export function ProjectResults({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* YouTube Upload Modal */}
+      <YouTubeUploadModal
+        isOpen={isYouTubeModalOpen}
+        videoUrl={embersVideoUrl || smokeEmbersVideoUrl || basicVideoUrl || ''}
+        projectTitle={projectTitle}
+        thumbnails={thumbnails}
+        onClose={() => setIsYouTubeModalOpen(false)}
+        onSuccess={(youtubeUrl) => {
+          console.log('Video uploaded to YouTube:', youtubeUrl);
+          setIsYouTubeModalOpen(false);
+        }}
+      />
     </div>
   );
 }

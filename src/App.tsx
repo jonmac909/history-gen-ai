@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import YouTubeOAuthCallback from "./pages/YouTubeOAuthCallback";
 
 const queryClient = new QueryClient();
 
@@ -71,7 +72,10 @@ const App = () => {
     return null; // Loading state
   }
 
-  if (!isAuthenticated) {
+  // OAuth callback must be accessible without authentication (it's a popup)
+  const isOAuthCallback = window.location.pathname.startsWith("/oauth/");
+
+  if (!isAuthenticated && !isOAuthCallback) {
     return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
   }
 
@@ -83,6 +87,7 @@ const App = () => {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/oauth/youtube/callback" element={<YouTubeOAuthCallback />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

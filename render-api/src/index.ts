@@ -9,6 +9,7 @@ import generateCaptionsRouter from './routes/generate-captions';
 import renderVideoRouter from './routes/render-video';
 import generateImagePromptsRouter from './routes/generate-image-prompts';
 import generateThumbnailsRouter from './routes/generate-thumbnails';
+import youtubeUploadRouter from './routes/youtube-upload';
 
 dotenv.config();
 
@@ -48,6 +49,7 @@ app.use('/generate-captions', generateCaptionsRouter);
 app.use('/render-video', renderVideoRouter);
 app.use('/generate-image-prompts', generateImagePromptsRouter);
 app.use('/generate-thumbnails', generateThumbnailsRouter);
+app.use('/youtube-upload', youtubeUploadRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

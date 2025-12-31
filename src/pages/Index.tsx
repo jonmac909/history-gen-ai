@@ -1476,6 +1476,7 @@ const Index = () => {
             updateProjectInHistory(projectId, { videoUrlCaptioned: url });
           }}
           autoRender={settings.fullAutomation}
+          thumbnails={generatedThumbnails}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

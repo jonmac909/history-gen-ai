@@ -1348,6 +1348,12 @@ export interface ThumbnailGenerationResult {
   error?: string;
 }
 
+export interface ThumbnailContentSuggestionResult {
+  success: boolean;
+  contentPrompt?: string;
+  error?: string;
+}
+
 // Suggest thumbnail content based on script
 export async function suggestThumbnailContent(
   script: string,
@@ -1491,6 +1497,137 @@ export async function generateThumbnailsStreaming(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to generate thumbnails'
+    };
+  }
+}
+
+// ============================================================================
+// YouTube Upload
+// ============================================================================
+
+export interface YouTubeUploadProgress {
+  stage: 'downloading' | 'initializing' | 'uploading' | 'complete';
+  percent: number;
+  message: string;
+}
+
+export interface YouTubeUploadParams {
+  videoUrl: string;
+  accessToken: string;
+  title: string;
+  description: string;
+  tags: string[];
+  categoryId: string;
+  privacyStatus: 'private' | 'unlisted' | 'public';
+  publishAt?: string; // ISO 8601 date for scheduled publish
+  thumbnailUrl?: string; // URL of custom thumbnail to set
+}
+
+export interface YouTubeUploadResult {
+  success: boolean;
+  videoId?: string;
+  youtubeUrl?: string;
+  studioUrl?: string;
+  error?: string;
+}
+
+export async function uploadToYouTube(
+  params: YouTubeUploadParams,
+  onProgress: (progress: YouTubeUploadProgress) => void
+): Promise<YouTubeUploadResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('YouTube upload error:', response.status, errorText);
+      return { success: false, error: `Failed to upload to YouTube: ${response.status}` };
+    }
+
+    // Handle SSE streaming response
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: YouTubeUploadResult = { success: false, error: 'No response received' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+
+        // Skip keepalive comments
+        if (event.startsWith(':')) continue;
+
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+
+            if (parsed.type === 'progress') {
+              onProgress({
+                stage: parsed.stage,
+                percent: parsed.percent,
+                message: parsed.message
+              });
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: parsed.success,
+                videoId: parsed.videoId,
+                youtubeUrl: parsed.youtubeUrl,
+                studioUrl: parsed.studioUrl
+              };
+              onProgress({
+                stage: 'complete',
+                percent: 100,
+                message: 'Upload complete!'
+              });
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'YouTube upload failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error('YouTube upload error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to upload to YouTube'
     };
   }
 }

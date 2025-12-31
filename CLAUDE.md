@@ -82,6 +82,9 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
 | `/render-video` | FFmpeg video rendering (no captions), SSE progress |
+| `/youtube-upload` | YouTube upload with resumable chunks, SSE progress |
+| `/youtube-upload/auth` | Exchange OAuth code for tokens |
+| `/youtube-upload/token` | Refresh access token |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -123,6 +126,7 @@ Multi-step generation with user review at each stage:
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
   - **Render Video (MP4)**: Server-side FFmpeg rendering via `/render-video`
+  - **YouTube Upload**: Direct upload to YouTube as private draft with thumbnail selection
 
 ### Audio Generation Architecture
 
@@ -315,6 +319,70 @@ Multi-step generation with user review at each stage:
 - `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay (for multiply blend)
 - `public/overlays/embers.mp4`: Embers overlay (for colorkey overlay)
 
+### YouTube Upload Architecture
+
+**Direct upload to YouTube with OAuth 2.0 and resumable uploads.**
+
+**OAuth 2.0 Flow:**
+1. User clicks "Upload to YouTube" → Opens popup with Google OAuth consent screen
+2. User grants `youtube.upload` scope → Popup receives authorization code
+3. Popup posts code to parent window via `postMessage`
+4. Frontend exchanges code for tokens via `/youtube-upload/auth`
+5. Refresh token stored in Supabase, access token used for upload
+6. Access token refreshed via `/youtube-upload/token` when expired
+
+**Upload Flow:**
+1. Frontend calls `uploadToYouTube()` with video URL, metadata, and optional thumbnail
+2. Backend downloads video from Supabase storage
+3. Initiates resumable upload session with YouTube Data API v3
+4. Uploads video in 5MB chunks with progress streaming via SSE
+5. Sets video metadata (title, description, tags, category, privacy)
+6. Optionally uploads custom thumbnail via Thumbnails API
+7. Returns YouTube video ID and URLs (watch + studio)
+
+**Key files:**
+- `render-api/src/routes/youtube-upload.ts`: Backend upload endpoint
+- `src/components/YouTubeUploadModal.tsx`: Upload form with thumbnail selection
+- `src/lib/youtubeAuth.ts`: OAuth popup flow and token management
+- `src/pages/YouTubeOAuthCallback.tsx`: OAuth callback handler (popup)
+- `src/lib/api.ts`: `uploadToYouTube()` SSE client
+
+**Upload Parameters:**
+- `title` (required): Video title (max 100 chars)
+- `description`: Video description
+- `tags`: Array of keyword tags
+- `categoryId`: YouTube category (default: "27" = Education)
+- `privacyStatus`: "private" | "unlisted" (public requires verification)
+- `publishAt`: ISO timestamp for scheduled publishing
+- `thumbnailUrl`: URL of generated thumbnail to set
+
+**Thumbnail Selection:**
+- Previously generated thumbnails passed to modal via `thumbnails` prop
+- User can select any thumbnail or leave unselected (YouTube auto-generates)
+- Selected thumbnail uploaded after video via YouTube Thumbnails API
+- Supports JPEG, PNG, GIF, BMP formats (max 2MB)
+
+**Privacy Options:**
+- **Private (Draft)**: Only visible to uploader, review in YouTube Studio
+- **Unlisted**: Shareable via link but not in search/recommendations
+- **Scheduled**: Private until `publishAt` timestamp, then public
+
+**SSE Progress Events:**
+- `progress`: Upload percentage (0-100)
+- `complete`: Success with `{ videoId, youtubeUrl, studioUrl }`
+- `error`: Upload failed with error message
+
+**Environment Variables (Railway):**
+```
+GOOGLE_CLIENT_ID=<oauth-client-id>
+GOOGLE_CLIENT_SECRET=<oauth-client-secret>
+GOOGLE_REDIRECT_URI=https://historygenai.netlify.app/oauth/youtube/callback
+```
+
+**Supabase Table:** `youtube_tokens`
+- Stores encrypted refresh tokens for token refresh flow
+- Single-row table (app uses shared password auth)
+
 ## Configuration
 
 ### Frontend Environment (`.env`)
@@ -323,6 +391,7 @@ VITE_SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<key>
 VITE_SUPABASE_PROJECT_ID=udqfdeoullsxttqguupz
 VITE_RENDER_API_URL=<railway-production-url>
+VITE_GOOGLE_CLIENT_ID=<google-oauth-client-id>
 ```
 
 ### Railway API Environment Variables
@@ -336,6 +405,9 @@ RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=eitsgz3gndkh3s
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
+GOOGLE_CLIENT_ID=<google-oauth-client-id>
+GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+GOOGLE_REDIRECT_URI=https://historygenai.netlify.app/oauth/youtube/callback
 PORT=10000
 ```
 
@@ -479,6 +551,24 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 ### Frontend not updating after deploy
 - Clear cache: `Cmd+Shift+R` or Incognito
 - Check Netlify build status
+
+### YouTube upload fails or OAuth errors
+- **"redirect_uri_mismatch" error**: Verify `GOOGLE_REDIRECT_URI` matches exactly in:
+  - Railway environment variables
+  - Google Cloud Console → Credentials → Authorized redirect URIs
+  - Must include full path: `https://historygenai.netlify.app/oauth/youtube/callback`
+- **"access_denied" error**: User must be added as test user in Google Cloud Console
+  - Go to OAuth consent screen → Test users → Add your Google email
+  - Or publish app for public access (requires verification)
+- **Token refresh fails**: Check `youtube_tokens` table in Supabase has valid refresh token
+  - Tokens expire if user revokes access in Google Account settings
+  - Solution: Disconnect and reconnect YouTube account
+- **Upload quota exceeded**: YouTube API has 10,000 units/day default
+  - Video upload costs 1,600 units (~6 videos/day)
+  - Request quota increase in Google Cloud Console if needed
+- **Thumbnail upload fails**: Non-blocking, video still uploads successfully
+  - Check thumbnail URL is accessible and < 2MB
+  - Supported formats: JPEG, PNG, GIF, BMP
 
 ## File Naming Conventions
 
