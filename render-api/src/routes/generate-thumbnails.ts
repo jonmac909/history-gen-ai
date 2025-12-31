@@ -280,6 +280,8 @@ Provide a concise thumbnail description (2-3 sentences) focusing on:
 - Key visual elements that would grab attention
 - The mood/atmosphere
 
+IMPORTANT: Do NOT mention any text, titles, words, or typography in your description. The image generator cannot reliably create text, so describe ONLY the visual artwork/scene.
+
 Write it as a direct description for an image generator, NOT as suggestions. Example: "A dramatic close-up of a Roman emperor in golden armor, standing before a burning city at sunset, with smoke rising in the background."
 
 Output ONLY the thumbnail description, nothing else.`
