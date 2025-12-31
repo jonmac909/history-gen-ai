@@ -6,9 +6,8 @@ import crypto from 'crypto';
 
 const router = Router();
 
-// RunPod Z-Image endpoint configuration
-const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ZIMAGE_ENDPOINT_ID;
-const RUNPOD_API_URL = RUNPOD_ENDPOINT_ID ? `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}` : null;
+// Kie.ai API configuration for Seedream 4.5
+const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
 
 interface GenerateThumbnailsRequest {
   exampleImageBase64: string;
@@ -19,52 +18,54 @@ interface GenerateThumbnailsRequest {
   stream?: boolean;
 }
 
-// Start a RunPod job for Z-Image generation
+// Start a Kie.ai Seedream 4.5 task
 async function startImageJob(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
-  console.log(`Starting RunPod thumbnail job: ${prompt.substring(0, 80)}...`);
+  console.log(`Starting Kie.ai Seedream 4.5 job: ${prompt.substring(0, 80)}...`);
 
-  const response = await fetch(`${RUNPOD_API_URL}/run`, {
+  const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
+      model: 'seedream/4.5-text-to-image',
       input: {
         prompt,
-        quality,
-        aspectRatio,
+        aspect_ratio: aspectRatio,
+        quality: quality.toLowerCase(), // 'basic' for 2K, 'high' for 4K
       },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('RunPod job creation error:', response.status, errorText);
-    throw new Error(`Failed to start thumbnail job: ${response.status}`);
+    console.error('Kie.ai task creation error:', response.status, errorText);
+    throw new Error(`Failed to start thumbnail task: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json() as any;
 
-  if (!data.id) {
-    throw new Error('RunPod job creation failed: no job ID returned');
+  if (data.code !== 200 || !data.data?.taskId) {
+    console.error('Kie.ai task creation failed:', data);
+    throw new Error(`Kie.ai task creation failed: ${data.msg || 'no task ID returned'}`);
   }
 
-  console.log(`RunPod thumbnail job created: ${data.id}`);
-  return data.id;
+  console.log(`Kie.ai Seedream 4.5 task created: ${data.data.taskId}`);
+  return data.data.taskId;
 }
 
-// Check RunPod job status and upload image if complete
+// Check Kie.ai task status and download/upload image if complete
 async function checkJobStatus(
   apiKey: string,
-  jobId: string,
+  taskId: string,
   supabaseUrl: string,
   supabaseKey: string,
   filename: string,
   projectId: string
 ): Promise<{ state: string; imageUrl?: string; error?: string }> {
   try {
-    const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+    const response = await fetch(`${KIE_API_URL}/recordInfo?taskId=${taskId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -72,46 +73,105 @@ async function checkJobStatus(
     });
 
     if (!response.ok) {
-      console.error(`RunPod status check failed: ${response.status}`);
+      console.error(`Kie.ai status check failed: ${response.status}`);
       return { state: 'pending' };
     }
 
     const data = await response.json() as any;
 
-    if (data.status === 'COMPLETED' && data.output) {
-      if (data.output.error) {
-        console.error(`Thumbnail job ${jobId} completed with error:`, data.output.error);
-        return { state: 'fail', error: data.output.error };
-      }
-
-      const imageBase64 = data.output.image_base64;
-      if (!imageBase64) {
-        console.error(`Thumbnail job ${jobId} completed but no image_base64 in output`);
-        return { state: 'fail', error: 'No image data returned' };
-      }
-
-      try {
-        const imageUrl = await uploadThumbnailToStorage(imageBase64, supabaseUrl, supabaseKey, filename, projectId);
-        console.log(`Thumbnail job ${jobId} completed, uploaded to: ${imageUrl}`);
-        return { state: 'success', imageUrl };
-      } catch (uploadErr) {
-        console.error(`Failed to upload thumbnail for job ${jobId}:`, uploadErr);
-        return { state: 'fail', error: `Upload failed: ${uploadErr instanceof Error ? uploadErr.message : 'Unknown error'}` };
-      }
-    } else if (data.status === 'FAILED') {
-      const errorMsg = data.error || data.output?.error || 'Job failed';
-      console.error(`Thumbnail job ${jobId} failed:`, errorMsg);
-      return { state: 'fail', error: errorMsg };
-    } else if (data.status === 'CANCELLED' || data.status === 'TIMED_OUT') {
-      console.error(`Thumbnail job ${jobId} ${data.status.toLowerCase()}`);
-      return { state: 'fail', error: `Job ${data.status.toLowerCase()}` };
+    if (data.code !== 200) {
+      console.error(`Kie.ai status check error:`, data);
+      return { state: 'pending' };
     }
 
+    const taskData = data.data;
+    const state = taskData.state;
+
+    if (state === 'success') {
+      // Parse resultJson to get image URLs
+      let resultUrls: string[] = [];
+      try {
+        const resultJson = JSON.parse(taskData.resultJson || '{}');
+        resultUrls = resultJson.resultUrls || [];
+      } catch (parseErr) {
+        console.error(`Failed to parse resultJson for task ${taskId}:`, parseErr);
+        return { state: 'fail', error: 'Failed to parse result' };
+      }
+
+      if (resultUrls.length === 0) {
+        console.error(`Task ${taskId} completed but no image URLs in result`);
+        return { state: 'fail', error: 'No image URL returned' };
+      }
+
+      const imageUrl = resultUrls[0];
+      console.log(`Task ${taskId} completed, downloading from: ${imageUrl}`);
+
+      try {
+        // Download image from Kie.ai URL and upload to Supabase
+        const uploadedUrl = await downloadAndUploadImage(imageUrl, supabaseUrl, supabaseKey, filename, projectId);
+        console.log(`Task ${taskId} completed, uploaded to: ${uploadedUrl}`);
+        return { state: 'success', imageUrl: uploadedUrl };
+      } catch (uploadErr) {
+        console.error(`Failed to upload thumbnail for task ${taskId}:`, uploadErr);
+        return { state: 'fail', error: `Upload failed: ${uploadErr instanceof Error ? uploadErr.message : 'Unknown error'}` };
+      }
+    } else if (state === 'fail') {
+      const errorMsg = taskData.failMsg || taskData.failCode || 'Task failed';
+      console.error(`Task ${taskId} failed:`, errorMsg);
+      return { state: 'fail', error: errorMsg };
+    }
+
+    // States: waiting, queuing, generating - all treated as pending
     return { state: 'pending' };
   } catch (err) {
-    console.error(`Error checking thumbnail job ${jobId}:`, err);
+    console.error(`Error checking task ${taskId}:`, err);
     return { state: 'pending' };
   }
+}
+
+// Download image from URL and upload to Supabase
+async function downloadAndUploadImage(
+  imageUrl: string,
+  supabaseUrl: string,
+  supabaseKey: string,
+  filename: string,
+  projectId: string
+): Promise<string> {
+  // Download image from Kie.ai
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to download image: ${imageResponse.status}`);
+  }
+
+  const arrayBuffer = await imageResponse.arrayBuffer();
+  const imageBuffer = Buffer.from(arrayBuffer);
+
+  // Upload to Supabase
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const filePath = `${projectId}/thumbnails/${filename}`;
+  console.log(`Uploading thumbnail to storage: ${filePath} (${imageBuffer.length} bytes)`);
+
+  const { error } = await supabase.storage
+    .from('generated-assets')
+    .upload(filePath, imageBuffer, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+
+  if (error) {
+    console.error('Supabase storage upload error:', error);
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage
+    .from('generated-assets')
+    .getPublicUrl(filePath);
+
+  if (!data?.publicUrl) {
+    throw new Error('Failed to get public URL for uploaded thumbnail');
+  }
+
+  return data.publicUrl;
 }
 
 // Upload base64 image to Supabase storage
@@ -371,13 +431,9 @@ Output ONLY the thumbnail description, nothing else.`
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const runpodApiKey = process.env.RUNPOD_API_KEY;
-    if (!runpodApiKey) {
-      return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
-    }
-
-    if (!RUNPOD_ENDPOINT_ID || !RUNPOD_API_URL) {
-      return res.status(500).json({ error: 'RUNPOD_ZIMAGE_ENDPOINT_ID not configured' });
+    const kieApiKey = process.env.KIE_API_KEY;
+    if (!kieApiKey) {
+      return res.status(500).json({ error: 'KIE_API_KEY not configured' });
     }
 
     const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
@@ -420,7 +476,7 @@ router.post('/', async (req: Request, res: Response) => {
         providedStylePrompt,
         count,
         projectId,
-        runpodApiKey,
+        kieApiKey,
         anthropicApiKey,
         supabaseUrl,
         supabaseKey
@@ -444,7 +500,7 @@ async function handleStreamingThumbnails(
   providedStylePrompt: string | undefined,
   count: number,
   projectId: string,
-  runpodApiKey: string,
+  kieApiKey: string,
   anthropicApiKey: string,
   supabaseUrl: string,
   supabaseKey: string
@@ -528,7 +584,7 @@ async function handleStreamingThumbnails(
       const filename = `thumbnail_${batchTimestamp}_${String(index + 1).padStart(3, '0')}.png`;
 
       try {
-        const jobId = await startImageJob(runpodApiKey, combinedPrompt, 'high', '16:9');
+        const jobId = await startImageJob(kieApiKey, combinedPrompt, 'high', '16:9');
         activeJobs.set(jobId, { index, startTime: Date.now() });
         console.log(`Started thumbnail job ${index + 1}/${count}: ${filename}`);
       } catch (err) {
@@ -549,7 +605,7 @@ async function handleStreamingThumbnails(
         jobIds.map(async (jobId) => {
           const jobData = activeJobs.get(jobId)!;
           const filename = `thumbnail_${batchTimestamp}_${String(jobData.index + 1).padStart(3, '0')}.png`;
-          const status = await checkJobStatus(runpodApiKey, jobId, supabaseUrl, supabaseKey, filename, projectId);
+          const status = await checkJobStatus(kieApiKey, jobId, supabaseUrl, supabaseKey, filename, projectId);
           return { jobId, jobData, status };
         })
       );
