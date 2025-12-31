@@ -18,9 +18,10 @@ interface GenerateThumbnailsRequest {
   stream?: boolean;
 }
 
-// Start a Kie.ai Seedream 4.5 task
-async function startImageJob(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
-  console.log(`Starting Kie.ai Seedream 4.5 job: ${prompt.substring(0, 80)}...`);
+// Start a Kie.ai Seedream 4.5-edit task (image-to-image)
+async function startImageJob(apiKey: string, prompt: string, quality: string, aspectRatio: string, referenceImageUrl: string): Promise<string> {
+  console.log(`Starting Kie.ai Seedream 4.5-edit job: ${prompt.substring(0, 80)}...`);
+  console.log(`Reference image: ${referenceImageUrl}`);
 
   const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
@@ -29,9 +30,10 @@ async function startImageJob(apiKey: string, prompt: string, quality: string, as
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'seedream/4.5-text-to-image',
+      model: 'seedream/4.5-edit',
       input: {
         prompt,
+        image_urls: [referenceImageUrl],
         aspect_ratio: aspectRatio,
         quality: quality.toLowerCase(), // 'basic' for 2K, 'high' for 4K
       },
@@ -51,8 +53,50 @@ async function startImageJob(apiKey: string, prompt: string, quality: string, as
     throw new Error(`Kie.ai task creation failed: ${data.msg || 'no task ID returned'}`);
   }
 
-  console.log(`Kie.ai Seedream 4.5 task created: ${data.data.taskId}`);
+  console.log(`Kie.ai Seedream 4.5-edit task created: ${data.data.taskId}`);
   return data.data.taskId;
+}
+
+// Upload base64 image to Supabase and return public URL (for Kie.ai reference)
+async function uploadReferenceImage(
+  base64: string,
+  supabaseUrl: string,
+  supabaseKey: string,
+  projectId: string
+): Promise<string> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Decode base64 to buffer
+  const imageBuffer = Buffer.from(base64, 'base64');
+
+  // Generate unique filename for reference image
+  const filename = `reference_${Date.now()}.png`;
+  const filePath = `${projectId}/thumbnails/${filename}`;
+
+  console.log(`Uploading reference image to storage: ${filePath} (${imageBuffer.length} bytes)`);
+
+  const { error } = await supabase.storage
+    .from('generated-assets')
+    .upload(filePath, imageBuffer, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+
+  if (error) {
+    console.error('Supabase storage upload error:', error);
+    throw new Error(`Reference image upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage
+    .from('generated-assets')
+    .getPublicUrl(filePath);
+
+  if (!data?.publicUrl) {
+    throw new Error('Failed to get public URL for reference image');
+  }
+
+  console.log(`Reference image uploaded: ${data.publicUrl}`);
+  return data.publicUrl;
 }
 
 // Check Kie.ai task status and download/upload image if complete
@@ -552,7 +596,16 @@ async function handleStreamingThumbnails(
       });
     }
 
-    // Phase 2: Generate thumbnails
+    // Phase 2: Upload reference image to get a public URL for Kie.ai
+    sendEvent({
+      type: 'progress',
+      stage: 'uploading',
+      percent: 22,
+      message: 'Uploading reference image...'
+    });
+
+    const referenceImageUrl = await uploadReferenceImage(exampleImageBase64, supabaseUrl, supabaseKey, projectId);
+
     sendEvent({
       type: 'progress',
       stage: 'generating',
@@ -584,7 +637,7 @@ async function handleStreamingThumbnails(
       const filename = `thumbnail_${batchTimestamp}_${String(index + 1).padStart(3, '0')}.png`;
 
       try {
-        const jobId = await startImageJob(kieApiKey, combinedPrompt, 'high', '16:9');
+        const jobId = await startImageJob(kieApiKey, combinedPrompt, 'high', '16:9', referenceImageUrl);
         activeJobs.set(jobId, { index, startTime: Date.now() });
         console.log(`Started thumbnail job ${index + 1}/${count}: ${filename}`);
       } catch (err) {
