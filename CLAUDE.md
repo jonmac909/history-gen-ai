@@ -76,8 +76,9 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | Route | Purpose |
 |-------|---------|
 | `/rewrite-script` | Streaming script generation with Claude API |
-| `/generate-audio` | Voice cloning TTS, splits into 6 segments, returns combined + individual URLs |
+| `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
+| `/generate-audio/recombine` | Re-concatenate segments after regeneration, runs post-processing |
 | `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
@@ -99,7 +100,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 Multi-step generation with user review at each stage:
 1. **Transcript Fetch** → Review Script
 2. **Script Generation** (streaming) → Review Audio
-3. **Audio Generation** (6 segments with voice cloning) → Review Captions
+3. **Audio Generation** (10 segments with voice cloning) → Review Captions
 4. **Captions Generation** → Review Image Prompts
 5. **Image Prompts Review** (editable scene descriptions) → Generate Images
 6. **Image Generation** (streaming, parallel) → Final Results (with video export options)
@@ -138,8 +139,10 @@ Multi-step generation with user review at each stage:
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
 - **Post-processing**:
-  - **Proactive repetition removal**: Detects and removes duplicate sentences in source text BEFORE TTS (70% similarity threshold)
-  - **Reactive repetition removal**: Whisper transcribes audio, detects repeated phrases in generated audio (70% similarity), FFmpeg removes duplicates
+  - **Proactive repetition removal**: Detects and removes duplicate sentences in source text BEFORE TTS (70% Jaccard similarity OR 80% containment threshold)
+  - **Reactive repetition removal**: Whisper transcribes audio, detects repeated phrases in generated audio, FFmpeg removes duplicates
+  - **Containment check**: Catches subset duplicates that Jaccard misses (e.g., "because it basically is liquid bread" inside longer sentence)
+  - `/recombine` endpoint runs post-processing after segment regeneration to catch cross-segment duplicates
   - Requires both `ffmpeg-static` and `ffprobe-static` packages for post-processing
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
@@ -179,7 +182,15 @@ Multi-step generation with user review at each stage:
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
 - Frontend calls `onRegenerate(segmentIndex)` to regenerate specific segment
-- Combined audio must be re-concatenated after any regeneration
+- POST `/generate-audio/recombine` re-concatenates segments after regeneration
+- Recombine runs `postProcessAudio()` to catch cross-segment duplicates
+
+**Repetition Detection Algorithm:**
+- **Jaccard Similarity**: `intersection(words1, words2) / union(words1, words2)`
+- **Containment Check**: `isContainedIn(shorter, longer)` - true if 80%+ of shorter's words exist in longer
+- **Why both?**: Jaccard fails on subset duplicates (e.g., 6-word phrase inside 9-word sentence = 66.7%)
+- Detection runs on sentences within 5 positions of each other (reactive) or 3 positions (proactive)
+- Key functions: `calculateSimilarity()`, `isContainedIn()`, `detectRepetitions()`, `removeTextRepetitions()`
 
 ### RunPod Endpoints
 
@@ -481,8 +492,8 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Modal should show "Play All" player for combined audio
 
 ### Audio generation slow or workers at capacity
-- Segments use parallel processing (6 concurrent segments matching 6 RunPod workers)
-- If all RunPod workers busy → check worker allocation in RunPod dashboard (6 audio + 4 images = 10 total)
+- Segments use parallel processing (10 concurrent segments matching 10 RunPod workers)
+- If all RunPod workers busy → check worker allocation in RunPod dashboard (10 audio + 4 images = 14 total)
 - Railway charges only for actual usage time
 
 ### Audio timeouts on long scripts
