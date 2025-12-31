@@ -450,6 +450,9 @@ async function handleStreamingThumbnails(
     const POLL_INTERVAL = 2000;
     const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes
 
+    // Use a batch timestamp to ensure unique filenames (prevents browser caching old versions)
+    const batchTimestamp = Date.now();
+
     const results: { state: string; imageUrl?: string; error?: string }[] = [];
     const activeJobs = new Map<string, { index: number; startTime: number }>();
     let nextIndex = 0;
@@ -460,7 +463,7 @@ async function handleStreamingThumbnails(
 
       const index = nextIndex;
       nextIndex++;
-      const filename = `thumbnail_${String(index + 1).padStart(3, '0')}.png`;
+      const filename = `thumbnail_${batchTimestamp}_${String(index + 1).padStart(3, '0')}.png`;
 
       try {
         const jobId = await startImageJob(runpodApiKey, combinedPrompt, 'high', '16:9');
@@ -483,7 +486,7 @@ async function handleStreamingThumbnails(
       const checkResults = await Promise.all(
         jobIds.map(async (jobId) => {
           const jobData = activeJobs.get(jobId)!;
-          const filename = `thumbnail_${String(jobData.index + 1).padStart(3, '0')}.png`;
+          const filename = `thumbnail_${batchTimestamp}_${String(jobData.index + 1).padStart(3, '0')}.png`;
           const status = await checkJobStatus(runpodApiKey, jobId, supabaseUrl, supabaseKey, filename, projectId);
           return { jobId, jobData, status };
         })
