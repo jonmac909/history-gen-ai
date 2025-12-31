@@ -78,7 +78,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/rewrite-script` | Streaming script generation with Claude API |
 | `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
-| `/generate-audio/recombine` | Re-concatenate segments after regeneration, runs post-processing |
+| `/generate-audio/recombine` | Re-concatenate segments after regeneration |
 | `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
@@ -138,11 +138,10 @@ Multi-step generation with user review at each stage:
 - Each segment's chunks processed **sequentially** within the worker (avoids memory issues)
 - Voice sample (~117KB = 156KB base64) sent with each TTS job
 - Individual segment WAVs uploaded, then concatenated into combined file
-- **Post-processing**:
-  - **Proactive repetition removal**: Detects and removes duplicate sentences in source text BEFORE TTS (70% Jaccard similarity OR 80% containment threshold)
-  - **Reactive repetition removal**: Whisper transcribes audio, detects repeated phrases in generated audio, FFmpeg removes duplicates
-  - **Containment check**: Catches subset duplicates that Jaccard misses (e.g., "because it basically is liquid bread" inside longer sentence)
-  - `/recombine` endpoint runs post-processing after segment regeneration to catch cross-segment duplicates
+- **Repetition Prevention**:
+  - **Primary: TTS-level** - `repetition_penalty: 1.5` in ChatterboxTTS handler prevents phrase repetitions at generation time
+  - **Secondary: Proactive text cleaning** - `removeTextRepetitions()` removes duplicate sentences BEFORE TTS (70% Jaccard similarity OR 80% containment)
+  - **Tertiary: Reactive post-processing** - Whisper transcribes audio, detects repeated phrases, FFmpeg removes duplicates (main `/generate-audio` only)
   - Requires both `ffmpeg-static` and `ffprobe-static` packages for post-processing
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
@@ -182,15 +181,8 @@ Multi-step generation with user review at each stage:
 **Individual Segment Regeneration:**
 - POST `/generate-audio/segment` regenerates a single segment
 - Frontend calls `onRegenerate(segmentIndex)` to regenerate specific segment
-- POST `/generate-audio/recombine` re-concatenates segments after regeneration
-- Recombine runs `postProcessAudio()` to catch cross-segment duplicates
-
-**Repetition Detection Algorithm:**
-- **Jaccard Similarity**: `intersection(words1, words2) / union(words1, words2)`
-- **Containment Check**: `isContainedIn(shorter, longer)` - true if 80%+ of shorter's words exist in longer
-- **Why both?**: Jaccard fails on subset duplicates (e.g., 6-word phrase inside 9-word sentence = 66.7%)
-- Detection runs on sentences within 5 positions of each other (reactive) or 3 positions (proactive)
-- Key functions: `calculateSimilarity()`, `isContainedIn()`, `detectRepetitions()`, `removeTextRepetitions()`
+- POST `/generate-audio/recombine` re-concatenates segments after regeneration (no post-processing)
+- Repetitions prevented at TTS level via `repetition_penalty: 1.5`
 
 ### RunPod Endpoints
 
@@ -204,8 +196,14 @@ Multi-step generation with user review at each stage:
 - GitHub repo: `jonmac909/chatterbox`
 - **TTS Generation Parameters** (in `handler.py`):
   - `temperature: 0.7` - Balanced (default 0.8, <0.6 causes silence)
-  - `repetition_penalty: 1.5` - Moderate (default 1.2, >1.8 causes silence)
+  - `repetition_penalty: 1.5` - Prevents phrase repetitions (default 1.2, max 2.0)
   - **Turbo-specific:** `cfg_weight`, `min_p`, `exaggeration` are IGNORED (non-Turbo only)
+- **Parameter History** (for troubleshooting):
+  - temp=0.5 + rep_penalty=2.0 → Silence (temp too low)
+  - temp=0.6 + rep_penalty=2.0 → Stuck generation
+  - temp=0.8 + rep_penalty=1.2 → 25% silence
+  - temp=0.7 + rep_penalty=1.2 → Works but repetitions occur
+  - **temp=0.7 + rep_penalty=1.5 → Optimal (current)**
 
 **Z-Image-Turbo**:
 - Input: `{ prompt, quality: "basic"|"high", aspectRatio: "16:9"|"1:1"|"9:16" }`
