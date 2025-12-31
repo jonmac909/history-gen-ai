@@ -67,9 +67,14 @@ const Index = () => {
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
 
   // Get the selected image template content for image generation
+  // Appends custom image prompt if provided
   const getSelectedImageStyle = () => {
     const selected = imageTemplates.find(t => t.id === settings.imageTemplate);
-    return selected?.template || imageTemplates[0]?.template || "";
+    let style = selected?.template || imageTemplates[0]?.template || "";
+    if (settings.customImagePrompt?.trim()) {
+      style = style + "\n\n" + settings.customImagePrompt.trim();
+    }
+    return style;
   };
   const [sourceUrl, setSourceUrl] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);

@@ -265,30 +265,39 @@ Multi-step generation with user review at each stage:
 
 ### Video Rendering Architecture
 
-**Server-side FFmpeg rendering with chunked processing and embers overlay.**
+**Server-side FFmpeg rendering with chunked processing and smoke+embers overlay.**
 
 **Chunked Rendering Pipeline:**
-1. Download audio + images + embers overlay from Supabase/Netlify
+1. Download audio + images + overlay files from Supabase/Netlify
 2. Split images into chunks (25 images per chunk)
 3. Render each chunk with two-pass approach:
    - Pass 1: Images → raw chunk video (scale, letterbox)
-   - Pass 2: Apply embers overlay via screen blend
+   - Pass 2: Apply smoke (multiply blend) + embers (colorkey overlay)
 4. Concatenate chunks (fast copy, no re-encode)
 5. Add audio (fast mux)
 6. Upload final MP4 to Supabase
 
-**Embers Overlay:**
-- Source: `public/overlays/embers.mp4` (~10s, served from Netlify)
+**Smoke+Embers Overlay System:**
+- **Two-overlay approach** to avoid color tint issues:
+  - `smoke_gray.mp4`: Inverted grayscale smoke (white background, dark smoke)
+  - `embers.mp4`: Orange embers on pure black background
+- **Filter chain** (for `smoke_embers` effect):
+  ```
+  [smoke]colorchannelmixer → grayscale → [base]multiply blend → [embers]colorkey → overlay
+  ```
+  - Smoke: Convert to grayscale, multiply blend darkens image naturally
+  - Embers: Colorkey removes black, overlays bright particles on top
+- **Why two overlays?** Single overlays with colored smoke cause purple/green tint artifacts
+- Overlay files served from Netlify: `https://historygenai.netlify.app/overlays/`
 - Applied per-chunk using concat demuxer (NOT -stream_loop which crashes on long videos)
-- Uses `colorkey` to remove black background, then `overlay` (not blend mode)
-- Filter: `colorkey=black:similarity=0.3:blend=0.2` → transparent embers over video
-- Graceful fallback: if embers pass fails, uses raw chunk without embers
+- Graceful fallback: if overlay pass fails, uses raw chunk without effects
 
 **Key constants** in `render-api/src/routes/render-video.ts`:
 - `IMAGES_PER_CHUNK = 25` images per chunk
 - `PARALLEL_CHUNK_RENDERS = 4` parallel chunk renders
 - `FFMPEG_PRESET = 'fast'` (better compression than ultrafast)
 - `FFMPEG_CRF = '26'` (good quality, reasonable file size)
+- Colorkey settings: `similarity=0.2:blend=0.2` for embers
 
 **Large Video Upload:**
 - Videos >50MB use streaming upload via REST API (avoids memory exhaustion)
@@ -303,7 +312,8 @@ Multi-step generation with user review at each stage:
 - `render-api/src/routes/render-video.ts`: FFmpeg rendering endpoint
 - `src/lib/fcpxmlGenerator.ts`: Client-side FCPXML generation for NLE import
 - `src/lib/api.ts`: `renderVideoStreaming()` with SSE progress parsing
-- `public/overlays/embers.mp4`: Embers overlay asset
+- `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay (for multiply blend)
+- `public/overlays/embers.mp4`: Embers overlay (for colorkey overlay)
 
 ## Configuration
 

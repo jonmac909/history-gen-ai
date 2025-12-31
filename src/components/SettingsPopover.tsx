@@ -35,6 +35,7 @@ export interface GenerationSettings {
   wordCount: number;
   quality: string;
   customScript?: string;
+  customImagePrompt?: string;
 }
 
 
@@ -232,6 +233,23 @@ export function SettingsPopover({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Custom Image Prompt */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Custom Image Prompt (Optional):
+            </label>
+            <p className="text-xs text-muted-foreground text-center">
+              Additional style instructions appended to every image
+            </p>
+            <Textarea
+              placeholder="e.g. cinematic lighting, 4k, highly detailed..."
+              value={localSettings.customImagePrompt || ""}
+              onChange={(e) => updateSetting("customImagePrompt", e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="min-h-[80px] resize-y"
+            />
           </div>
 
           {/* Voice Sample Upload */}
