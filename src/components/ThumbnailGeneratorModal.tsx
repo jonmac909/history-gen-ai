@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check } from "lucide-react";
 import {
   Dialog,
@@ -29,10 +29,7 @@ interface ThumbnailGeneratorModalProps {
 export function ThumbnailGeneratorModal({
   isOpen,
   projectId,
-  projectTitle,
-  script,
   onConfirm,
-  onCancel,
   onBack,
   onSkip,
 }: ThumbnailGeneratorModalProps) {
@@ -43,9 +40,8 @@ export function ThumbnailGeneratorModal({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Generation state
-  const [stylePrompt, setStylePrompt] = useState("");
-  const [contentPrompt, setContentPrompt] = useState("");
+  // Generation state - single prompt for everything
+  const [imagePrompt, setImagePrompt] = useState("");
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
@@ -89,7 +85,7 @@ export function ThumbnailGeneratorModal({
       setExamplePreview(dataUrl);
       setIsUploading(false);
 
-      // Auto-analyze the image
+      // Auto-analyze the image (now reverse-engineers the full image)
       setIsAnalyzing(true);
       try {
         // Extract base64 from data URL
@@ -101,23 +97,23 @@ export function ThumbnailGeneratorModal({
 
         const result = await analyzeThumbnailStyle(base64Data);
         if (result.success && result.stylePrompt) {
-          setStylePrompt(result.stylePrompt);
+          setImagePrompt(result.stylePrompt);
           toast({
-            title: "Style Analyzed",
-            description: "Style prompt extracted from the example thumbnail.",
+            title: "Image Analyzed",
+            description: "Prompt extracted from the uploaded thumbnail. Edit as needed.",
           });
         } else {
           toast({
             title: "Analysis Failed",
-            description: result.error || "Failed to analyze thumbnail style.",
+            description: result.error || "Failed to analyze thumbnail.",
             variant: "destructive",
           });
         }
       } catch (error) {
-        console.error("Style analysis error:", error);
+        console.error("Image analysis error:", error);
         toast({
           title: "Analysis Failed",
-          description: error instanceof Error ? error.message : "Failed to analyze thumbnail style.",
+          description: error instanceof Error ? error.message : "Failed to analyze thumbnail.",
           variant: "destructive",
         });
       } finally {
@@ -135,14 +131,14 @@ export function ThumbnailGeneratorModal({
     reader.readAsDataURL(file);
 
     // Clear previous results
-    setStylePrompt("");
+    setImagePrompt("");
     setGeneratedThumbnails([]);
   };
 
   const handleRemoveImage = () => {
     setExampleImage(null);
     setExamplePreview(null);
-    setStylePrompt("");
+    setImagePrompt("");
     setGeneratedThumbnails([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -159,19 +155,10 @@ export function ThumbnailGeneratorModal({
       return;
     }
 
-    if (!stylePrompt.trim()) {
+    if (!imagePrompt.trim()) {
       toast({
-        title: "No Style Prompt",
-        description: "Please wait for style analysis or enter a style prompt.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!contentPrompt.trim()) {
-      toast({
-        title: "No Content Prompt",
-        description: "Please describe what the thumbnail should show.",
+        title: "No Prompt",
+        description: "Please wait for analysis or enter a prompt manually.",
         variant: "destructive",
       });
       return;
@@ -189,13 +176,14 @@ export function ThumbnailGeneratorModal({
       }
       const base64Data = base64Match[1];
 
+      // Pass the single prompt as both content and style (backend now uses just stylePrompt)
       const result = await generateThumbnailsStreaming(
         base64Data,
-        contentPrompt,
+        "generate", // Placeholder - backend ignores contentPrompt when stylePrompt is provided
         thumbnailCount,
         projectId,
         (progress) => setProgress(progress),
-        stylePrompt // Pass the pre-analyzed (and possibly edited) style prompt
+        imagePrompt // This is the full prompt that will be used
       );
 
       if (result.success && result.thumbnails) {
@@ -341,16 +329,16 @@ export function ThumbnailGeneratorModal({
             Generate Thumbnails
           </DialogTitle>
           <DialogDescription>
-            Upload an example thumbnail to analyze its style, then generate variations
+            Upload a thumbnail to reverse-engineer it into a prompt, then customize and generate variations
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-4">
           {/* Upload Example Thumbnail */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Upload Example Thumbnail:</label>
+            <label className="text-sm font-medium">Upload Reference Thumbnail:</label>
             <p className="text-xs text-muted-foreground">
-              Upload a thumbnail you like and we'll analyze its style
+              Upload any thumbnail and we'll reverse-engineer it into a prompt
             </p>
 
             {examplePreview ? (
@@ -391,7 +379,7 @@ export function ThumbnailGeneratorModal({
                   <div className="flex flex-col items-center gap-2">
                     <Upload className="w-6 h-6 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">
-                      Click to upload example thumbnail
+                      Click to upload reference thumbnail
                     </span>
                     <span className="text-xs text-muted-foreground">
                       PNG, JPG, or WebP (max 10MB)
@@ -410,37 +398,22 @@ export function ThumbnailGeneratorModal({
             />
           </div>
 
-          {/* Style Prompt (editable) */}
+          {/* Single Image Prompt (editable) */}
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Style Prompt:
+              Image Prompt:
               {isAnalyzing && <span className="ml-2 text-muted-foreground">(analyzing...)</span>}
             </label>
             <Textarea
-              placeholder={isAnalyzing ? "Analyzing example thumbnail..." : "Style will be extracted from uploaded image, or enter manually..."}
-              value={stylePrompt}
-              onChange={(e) => setStylePrompt(e.target.value)}
+              placeholder={isAnalyzing ? "Reverse-engineering the uploaded image..." : "Upload an image to auto-generate a prompt, or write your own..."}
+              value={imagePrompt}
+              onChange={(e) => setImagePrompt(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
-              className="min-h-[100px] resize-y"
+              className="min-h-[150px] resize-y font-mono text-sm"
               disabled={isAnalyzing}
             />
             <p className="text-xs text-muted-foreground">
-              Describes the visual style: colors, composition, lighting, effects
-            </p>
-          </div>
-
-          {/* Content Prompt */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Content Direction:</label>
-            <Textarea
-              placeholder="Describe the subject, scene, or concept for your thumbnail..."
-              value={contentPrompt}
-              onChange={(e) => setContentPrompt(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              className="min-h-[80px] resize-y"
-            />
-            <p className="text-xs text-muted-foreground">
-              Describes what should appear in the thumbnail (no text - artwork only)
+              Edit this prompt to customize the thumbnails. Describes content, style, colors, composition, mood - everything.
             </p>
           </div>
 
@@ -465,7 +438,7 @@ export function ThumbnailGeneratorModal({
           {/* Generate Button */}
           <Button
             onClick={handleGenerate}
-            disabled={!examplePreview || !stylePrompt.trim() || !contentPrompt.trim() || isGenerating || isAnalyzing}
+            disabled={!examplePreview || !imagePrompt.trim() || isGenerating || isAnalyzing}
             className="w-full gap-2"
           >
             {isGenerating ? (
@@ -486,7 +459,7 @@ export function ThumbnailGeneratorModal({
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {progress.stage === 'analyzing' ? 'Analyzing style...' : 'Generating thumbnails...'}
+                  {progress.stage === 'analyzing' ? 'Processing...' : 'Generating thumbnails...'}
                 </span>
                 <span className="font-medium">{progress.percent}%</span>
               </div>

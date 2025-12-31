@@ -188,20 +188,20 @@ async function analyzeExampleThumbnail(anthropicApiKey: string, imageBase64: str
         },
         {
           type: 'text',
-          text: `Analyze this YouTube thumbnail and describe its visual style for recreating similar thumbnails.
+          text: `Reverse-engineer this YouTube thumbnail into a detailed image generation prompt that could recreate it.
 
-CRITICAL - First identify the art style category:
-- Is it REALISTIC/PHOTOGRAPHIC (like a photograph or photorealistic render)?
-- Is it ILLUSTRATED/CARTOON (like a comic, anime, editorial illustration, graphic novel)?
-- Is it PAINTERLY (like an oil painting, watercolor, digital painting)?
+Describe EVERYTHING in the image:
+1. Subject/content: What is shown? People, objects, scene, setting, actions, expressions
+2. Composition: Layout, framing, focal point, rule of thirds, foreground/background
+3. Art style: Realistic, illustrated, painterly, cartoon, etc.
+4. Colors: Specific palette, color grading, saturation, warm/cool tones
+5. Lighting: Direction, mood, shadows, highlights
+6. Texture and rendering: Smooth, rough, crosshatched, cel-shaded, etc.
+7. Mood/atmosphere: Dramatic, peaceful, mysterious, etc.
 
-Focus on: art style (realistic vs illustrated vs painterly), rendering technique (photorealistic, cel-shaded, line art, crosshatching), color palette, saturation level, warm/cool tones, composition, lighting style, mood, outline/linework style (thick black outlines, no outlines, soft edges), texture (smooth, hatched, grainy), and overall aesthetic.
+Output a single detailed prompt (200-400 words) that an image generator could use to recreate this exact image. Write it as direct descriptive text, not a list. Do NOT mention any text, titles, or typography - describe only the visual artwork.
 
-Output ONLY a comma-separated list of style descriptors (150-250 words), suitable for an image generator. Do NOT include any headers, labels, or introductory text. Do NOT describe the specific content/subject - only the visual STYLE. Do NOT mention any text/typography in your analysis.
-
-Example output for illustrated style: "Editorial illustration style, comic book aesthetic, bold black outlines, cel-shaded coloring, exaggerated expressive faces, muted blue-gray color palette, crosshatching texture, flat background colors, graphic novel rendering, stylized proportions, dramatic expressions, ink drawing technique"
-
-Example output for realistic style: "Cinematic photography style, photorealistic rendering, warm golden color grading, dramatic chiaroscuro lighting, shallow depth of field, professional photography aesthetic, rich contrast with deep shadows"`
+Example: "A weathered medieval peasant man in his 40s sits huddled on a wooden bench inside a rustic cabin, clutching a thick wool blanket around his shoulders. His expression shows worry and exhaustion, with wide eyes and furrowed brows. Through a frosted window behind him, snow and icicles are visible. The scene is rendered in an editorial illustration style with bold black outlines, muted blue-gray color palette, and subtle crosshatching for texture. The lighting is cool and dim, suggesting a cold winter morning. The composition places the man in the right third of the frame, with the window providing visual interest on the left."`
         }
       ]
     }]
@@ -441,9 +441,9 @@ async function handleStreamingThumbnails(
       message: `Starting thumbnail generation (${count} images)...`
     });
 
-    // Combine style + content prompts
-    // IMPORTANT: Explicitly tell the model NO TEXT to avoid random characters/gibberish
-    const combinedPrompt = `${stylePrompt}\n\nSubject/Content: ${contentPrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional. IMPORTANT: Do NOT include any text, letters, words, or typography in the image. Generate ONLY the visual artwork with no text overlays.`;
+    // Use the prompt directly (already contains full description)
+    // Add no-text instruction to avoid random characters
+    const combinedPrompt = `${stylePrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional. IMPORTANT: Do NOT include any text, letters, words, or typography in the image. Generate ONLY the visual artwork with no text overlays.`;
 
     // Generate thumbnails with rolling concurrency
     const MAX_CONCURRENT = 4;
