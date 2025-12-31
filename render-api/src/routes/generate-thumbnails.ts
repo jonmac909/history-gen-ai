@@ -198,10 +198,11 @@ Describe EVERYTHING in the image:
 5. Lighting: Direction, mood, shadows, highlights
 6. Texture and rendering: Smooth, rough, crosshatched, cel-shaded, etc.
 7. Mood/atmosphere: Dramatic, peaceful, mysterious, etc.
+8. Text/Typography: If there is any text, describe what it says, its font style (bold, serif, sans-serif, handwritten, etc.), color, size, placement, and any effects (shadow, outline, glow)
 
-Output a single detailed prompt (200-400 words) that an image generator could use to recreate this exact image. Write it as direct descriptive text, not a list. Do NOT mention any text, titles, or typography - describe only the visual artwork.
+Output a single detailed prompt (200-400 words) that an image generator could use to recreate this exact image. Write it as direct descriptive text, not a list. Include text/typography details if present.
 
-Example: "A weathered medieval peasant man in his 40s sits huddled on a wooden bench inside a rustic cabin, clutching a thick wool blanket around his shoulders. His expression shows worry and exhaustion, with wide eyes and furrowed brows. Through a frosted window behind him, snow and icicles are visible. The scene is rendered in an editorial illustration style with bold black outlines, muted blue-gray color palette, and subtle crosshatching for texture. The lighting is cool and dim, suggesting a cold winter morning. The composition places the man in the right third of the frame, with the window providing visual interest on the left."`
+Example: "A weathered medieval peasant man in his 40s sits huddled on a wooden bench inside a rustic cabin, clutching a thick wool blanket around his shoulders. His expression shows worry and exhaustion, with wide eyes and furrowed brows. Through a frosted window behind him, snow and icicles are visible. The scene is rendered in an editorial illustration style with bold black outlines, muted blue-gray color palette, and subtle crosshatching for texture. The lighting is cool and dim, suggesting a cold winter morning. The composition places the man in the right third of the frame, with the window providing visual interest on the left. Large bold white text reading 'MEDIEVAL LIFE' with black outline spans the top of the image."`
         }
       ]
     }]
@@ -441,9 +442,8 @@ async function handleStreamingThumbnails(
       message: `Starting thumbnail generation (${count} images)...`
     });
 
-    // Use the prompt directly (already contains full description)
-    // Add no-text instruction to avoid random characters
-    const combinedPrompt = `${stylePrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional. IMPORTANT: Do NOT include any text, letters, words, or typography in the image. Generate ONLY the visual artwork with no text overlays.`;
+    // Use the prompt directly (already contains full description including any text/typography)
+    const combinedPrompt = `${stylePrompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional.`;
 
     // Generate thumbnails with rolling concurrency
     const MAX_CONCURRENT = 4;
