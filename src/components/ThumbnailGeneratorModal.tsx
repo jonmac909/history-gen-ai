@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { generateThumbnailsStreaming, analyzeThumbnailStyle, suggestThumbnailContent, type ThumbnailGenerationProgress } from "@/lib/api";
+import { generateThumbnailsStreaming, analyzeThumbnailStyle, type ThumbnailGenerationProgress } from "@/lib/api";
 import JSZip from "jszip";
 
 interface ThumbnailGeneratorModalProps {
@@ -46,7 +46,6 @@ export function ThumbnailGeneratorModal({
   // Generation state
   const [stylePrompt, setStylePrompt] = useState("");
   const [contentPrompt, setContentPrompt] = useState("");
-  const [isSuggestingContent, setIsSuggestingContent] = useState(false);
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
@@ -54,62 +53,6 @@ export function ThumbnailGeneratorModal({
 
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-
-  // Track if we've already suggested content for this script
-  const [hasAutoSuggested, setHasAutoSuggested] = useState(false);
-
-  // Auto-suggest content when modal opens with a script
-  useEffect(() => {
-    if (isOpen && script && script.trim().length > 0 && !hasAutoSuggested && !contentPrompt) {
-      setHasAutoSuggested(true);
-      handleSuggestContent();
-    }
-  }, [isOpen, script, hasAutoSuggested, contentPrompt]);
-
-  // Reset hasAutoSuggested when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      setHasAutoSuggested(false);
-    }
-  }, [isOpen]);
-
-  const handleSuggestContent = async () => {
-    if (!script || script.trim().length === 0) {
-      toast({
-        title: "No Script",
-        description: "No script available to generate content suggestion.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSuggestingContent(true);
-    try {
-      const result = await suggestThumbnailContent(script, projectTitle);
-      if (result.success && result.contentPrompt) {
-        setContentPrompt(result.contentPrompt);
-        toast({
-          title: "Content Suggested",
-          description: "Content direction drafted from your script.",
-        });
-      } else {
-        toast({
-          title: "Suggestion Failed",
-          description: result.error || "Failed to suggest content.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Content suggestion error:", error);
-      toast({
-        title: "Suggestion Failed",
-        description: error instanceof Error ? error.message : "Failed to suggest content.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSuggestingContent(false);
-    }
-  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -488,38 +431,16 @@ export function ThumbnailGeneratorModal({
 
           {/* Content Prompt */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Content Direction:
-                {isSuggestingContent && <span className="ml-2 text-muted-foreground">(drafting...)</span>}
-              </label>
-              {script && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSuggestContent}
-                  disabled={isSuggestingContent || isGenerating}
-                  className="text-xs h-7"
-                >
-                  {isSuggestingContent ? (
-                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                  ) : (
-                    <Sparkles className="w-3 h-3 mr-1" />
-                  )}
-                  Suggest from script
-                </Button>
-              )}
-            </div>
+            <label className="text-sm font-medium">Content Direction:</label>
             <Textarea
-              placeholder={isSuggestingContent ? "Drafting content suggestion from script..." : "Describe the subject, scene, or concept for your thumbnail..."}
+              placeholder="Describe the subject, scene, or concept for your thumbnail..."
               value={contentPrompt}
               onChange={(e) => setContentPrompt(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
               className="min-h-[80px] resize-y"
-              disabled={isSuggestingContent}
             />
             <p className="text-xs text-muted-foreground">
-              Describes what should appear in the thumbnail
+              Describes what should appear in the thumbnail (no text - artwork only)
             </p>
           </div>
 
@@ -544,7 +465,7 @@ export function ThumbnailGeneratorModal({
           {/* Generate Button */}
           <Button
             onClick={handleGenerate}
-            disabled={!examplePreview || !stylePrompt.trim() || !contentPrompt.trim() || isGenerating || isAnalyzing || isSuggestingContent}
+            disabled={!examplePreview || !stylePrompt.trim() || !contentPrompt.trim() || isGenerating || isAnalyzing}
             className="w-full gap-2"
           >
             {isGenerating ? (
