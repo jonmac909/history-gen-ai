@@ -1331,3 +1331,124 @@ export async function renderVideoStreaming(
     };
   }
 }
+
+// ============================================================================
+// Thumbnail Generation
+// ============================================================================
+
+export interface ThumbnailGenerationProgress {
+  stage: 'analyzing' | 'generating';
+  percent: number;
+  message: string;
+}
+
+export interface ThumbnailGenerationResult {
+  success: boolean;
+  thumbnails?: string[];
+  stylePrompt?: string;
+  error?: string;
+}
+
+export async function generateThumbnailsStreaming(
+  exampleImageBase64: string,
+  contentPrompt: string,
+  thumbnailCount: number,
+  projectId: string,
+  onProgress: (progress: ThumbnailGenerationProgress) => void
+): Promise<ThumbnailGenerationResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-thumbnails`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        exampleImageBase64,
+        contentPrompt,
+        thumbnailCount,
+        projectId,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Thumbnail generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate thumbnails: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: ThumbnailGenerationResult = { success: false, error: 'No response received' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+
+            if (parsed.type === 'progress') {
+              onProgress({
+                stage: parsed.stage,
+                percent: parsed.percent,
+                message: parsed.message
+              });
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: parsed.success,
+                thumbnails: parsed.thumbnails,
+                stylePrompt: parsed.stylePrompt
+              };
+              onProgress({
+                stage: 'generating',
+                percent: 100,
+                message: `${parsed.total} thumbnails generated`
+              });
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'Thumbnail generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error('Thumbnail generation error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate thumbnails'
+    };
+  }
+}
