@@ -34,6 +34,12 @@ const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4
 const SMOKE_GRAY_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_gray.mp4';
 const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
 
+// RunPod GPU rendering configuration
+const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';
+const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
+const RUNPOD_VIDEO_POLL_INTERVAL = 2000;  // 2 seconds
+const RUNPOD_VIDEO_MAX_WAIT = 15 * 60 * 1000;  // 15 minutes max
+
 type EffectType = 'none' | 'embers' | 'smoke_embers';
 
 interface VideoEffects {
@@ -54,6 +60,7 @@ interface RenderVideoRequest {
   srtContent: string;
   projectTitle: string;
   effects?: VideoEffects;
+  useGpu?: boolean;  // Use RunPod GPU rendering (faster but requires endpoint)
 }
 
 interface RenderJob {
@@ -125,7 +132,116 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   fs.writeFileSync(destPath, Buffer.from(buffer));
 }
 
-// Background render processing function
+// RunPod GPU rendering function
+async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): Promise<void> {
+  const supabase = getSupabase();
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  try {
+    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+
+    // Determine if effects should be applied
+    const applyEffects = effects?.smoke_embers || effects?.embers || false;
+
+    console.log(`Job ${jobId}: Starting GPU render for project ${projectId}`);
+    console.log(`Images: ${imageUrls.length}, Effects: ${applyEffects}`);
+
+    await updateJobStatus(supabase, jobId, 'queued', 5, 'Submitting to GPU worker...');
+
+    // Submit job to RunPod
+    const runpodUrl = `https://api.runpod.ai/v2/${RUNPOD_VIDEO_ENDPOINT_ID}/run`;
+    const runpodResponse = await fetch(runpodUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RUNPOD_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        input: {
+          image_urls: imageUrls,
+          timings: imageTimings,
+          audio_url: audioUrl,
+          project_id: projectId,
+          apply_effects: applyEffects,
+          supabase_url: supabaseUrl,
+          supabase_key: supabaseKey
+        }
+      })
+    });
+
+    if (!runpodResponse.ok) {
+      const errorText = await runpodResponse.text();
+      throw new Error(`RunPod submission failed: ${runpodResponse.status} - ${errorText}`);
+    }
+
+    const runpodData = await runpodResponse.json() as { id: string; status: string };
+    const runpodJobId = runpodData.id;
+    console.log(`Job ${jobId}: RunPod job submitted: ${runpodJobId}`);
+
+    await updateJobStatus(supabase, jobId, 'rendering', 10, 'GPU rendering started...');
+
+    // Poll for completion
+    const statusUrl = `https://api.runpod.ai/v2/${RUNPOD_VIDEO_ENDPOINT_ID}/status/${runpodJobId}`;
+    const startTime = Date.now();
+    let lastProgress = 10;
+
+    while (Date.now() - startTime < RUNPOD_VIDEO_MAX_WAIT) {
+      await new Promise(resolve => setTimeout(resolve, RUNPOD_VIDEO_POLL_INTERVAL));
+
+      const statusResponse = await fetch(statusUrl, {
+        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+      });
+
+      if (!statusResponse.ok) {
+        console.warn(`Job ${jobId}: Status check failed: ${statusResponse.status}`);
+        continue;
+      }
+
+      const statusData = await statusResponse.json() as {
+        status: string;
+        output?: { video_url?: string; error?: string; render_time_seconds?: number };
+      };
+
+      if (statusData.status === 'COMPLETED') {
+        if (statusData.output?.video_url) {
+          const videoUrl = statusData.output.video_url;
+          const renderTime = statusData.output.render_time_seconds || 0;
+          console.log(`Job ${jobId}: GPU render complete in ${renderTime.toFixed(1)}s`);
+          console.log(`Video URL: ${videoUrl}`);
+
+          await updateJobStatus(supabase, jobId, 'complete', 100,
+            `Video rendered successfully (GPU: ${renderTime.toFixed(1)}s)`,
+            { video_url: videoUrl });
+          return;
+        } else if (statusData.output?.error) {
+          throw new Error(`GPU render failed: ${statusData.output.error}`);
+        }
+      } else if (statusData.status === 'FAILED') {
+        const errorMsg = statusData.output?.error || 'GPU worker failed';
+        throw new Error(errorMsg);
+      } else if (statusData.status === 'IN_PROGRESS') {
+        // Estimate progress based on elapsed time (rough estimate: 5 min expected)
+        const elapsed = (Date.now() - startTime) / 1000;
+        const estimatedProgress = Math.min(90, 10 + Math.round(elapsed / 300 * 80));
+        if (estimatedProgress > lastProgress) {
+          lastProgress = estimatedProgress;
+          await updateJobStatus(supabase, jobId, 'rendering', estimatedProgress,
+            `GPU rendering in progress (${Math.round(elapsed)}s elapsed)...`);
+        }
+      }
+      // IN_QUEUE status - keep waiting
+    }
+
+    throw new Error('GPU render timed out after 15 minutes');
+
+  } catch (error: any) {
+    console.error(`Job ${jobId} failed:`, error);
+    await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message });
+  }
+}
+
+// Background render processing function (CPU)
 async function processRenderJob(jobId: string, params: RenderVideoRequest): Promise<void> {
   const supabase = getSupabase();
   let tempDir: string | null = null;
@@ -618,17 +734,27 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Start background processing (non-blocking)
-    processRenderJob(jobId, params).catch(err => {
-      console.error(`Background job ${jobId} crashed:`, err);
-    });
+    // Choose GPU or CPU rendering
+    const useGpu = params.useGpu && RUNPOD_VIDEO_ENDPOINT_ID && RUNPOD_API_KEY;
+
+    if (useGpu) {
+      console.log(`Job ${jobId}: Using GPU rendering (RunPod)`);
+      processRenderJobGpu(jobId, params).catch(err => {
+        console.error(`GPU job ${jobId} crashed:`, err);
+      });
+    } else {
+      console.log(`Job ${jobId}: Using CPU rendering (Railway)`);
+      processRenderJob(jobId, params).catch(err => {
+        console.error(`CPU job ${jobId} crashed:`, err);
+      });
+    }
 
     // Return immediately with job ID
     res.json({
       success: true,
       jobId,
       status: 'queued',
-      message: 'Render job started. Poll /render-video/status/:jobId for progress.'
+      message: `Render job started (${useGpu ? 'GPU' : 'CPU'}). Poll /render-video/status/:jobId for progress.`
     });
 
   } catch (error: any) {

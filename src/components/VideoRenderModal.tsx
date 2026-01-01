@@ -112,7 +112,8 @@ export function VideoRenderModal({
             console.warn('Caption error (ignored):', error);
           }
         },
-        effects
+        effects,
+        true  // Use GPU rendering (faster)
       );
 
       if (result.success && result.videoUrl) {
