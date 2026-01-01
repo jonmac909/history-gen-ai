@@ -46,6 +46,9 @@ export function ThumbnailGeneratorModal({
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
 
+  // Selection state - which thumbnail is selected for YouTube upload
+  const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
+
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const lightboxOverlayRef = useRef<HTMLDivElement>(null);
@@ -174,6 +177,7 @@ export function ThumbnailGeneratorModal({
     setIsGenerating(true);
     setProgress(null);
     setGeneratedThumbnails([]);
+    setSelectedThumbnail(null);
 
     try {
       // Extract base64 from data URL
@@ -349,8 +353,9 @@ export function ThumbnailGeneratorModal({
       };
       reader.readAsDataURL(blob);
 
-      // Clear generated thumbnails to start fresh iteration
+      // Clear generated thumbnails and selection to start fresh iteration
       setGeneratedThumbnails([]);
+      setSelectedThumbnail(null);
     } catch (error) {
       console.error("Failed to use as reference:", error);
       toast({
@@ -363,7 +368,8 @@ export function ThumbnailGeneratorModal({
   };
 
   const handleComplete = () => {
-    onConfirm(generatedThumbnails);
+    // Pass only the selected thumbnail (or empty array if none selected)
+    onConfirm(selectedThumbnail ? [selectedThumbnail] : []);
   };
 
   return (
@@ -526,40 +532,59 @@ export function ThumbnailGeneratorModal({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Click to preview full size. Use the arrow button to iterate on a thumbnail.
+                Click to select a thumbnail for YouTube upload. Double-click to preview full size.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {generatedThumbnails.map((url, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={url}
-                      alt={`Thumbnail ${index + 1}`}
-                      className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-                      style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                      onClick={() => setLightboxImage(url)}
-                    />
-                    <div className="absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 bg-background/80 hover:bg-background"
-                        onClick={() => handleUseAsReference(url)}
-                        title="Use as new reference"
-                      >
-                        <ArrowUp className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 bg-background/80 hover:bg-background"
-                        onClick={() => handleDownloadThumbnail(url, index)}
-                        title="Download"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
+                {generatedThumbnails.map((url, index) => {
+                  const isSelected = selectedThumbnail === url;
+                  return (
+                    <div key={index} className="relative group">
+                      <img
+                        src={url}
+                        alt={`Thumbnail ${index + 1}`}
+                        className={`w-full rounded-lg cursor-pointer transition-all ${
+                          isSelected
+                            ? 'ring-4 ring-primary ring-offset-2 opacity-100'
+                            : 'border hover:opacity-90'
+                        }`}
+                        style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                        onClick={() => setSelectedThumbnail(url)}
+                        onDoubleClick={() => setLightboxImage(url)}
+                      />
+                      {isSelected && (
+                        <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-full p-1">
+                          <Check className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 bg-background/80 hover:bg-background"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUseAsReference(url);
+                          }}
+                          title="Use as new reference"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 bg-background/80 hover:bg-background"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadThumbnail(url, index);
+                          }}
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -581,10 +606,13 @@ export function ThumbnailGeneratorModal({
           </div>
           <Button
             onClick={handleComplete}
+            disabled={generatedThumbnails.length > 0 && !selectedThumbnail}
             className="gap-2 w-full sm:w-auto"
           >
             <Check className="w-4 h-4" />
-            Complete
+            {generatedThumbnails.length > 0 && !selectedThumbnail
+              ? 'Select a Thumbnail'
+              : 'Continue'}
           </Button>
         </DialogFooter>
 
