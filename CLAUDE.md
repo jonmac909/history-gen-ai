@@ -317,7 +317,7 @@ Multi-step generation with user review at each stage:
 
 ### RunPod Endpoints
 
-**Fish Speech OpenAudio S1-mini** (Endpoint: `0tcsa5htuoq0go`):
+**Fish Speech OpenAudio S1-mini** (Endpoint: `32lqrjn54t9rcw`):
 - Input: `{ text, reference_audio_base64 }`
   - Voice sample: 10-30 seconds recommended for best quality
   - MP3/other formats auto-converted to WAV via ffmpeg
@@ -541,7 +541,7 @@ SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
-RUNPOD_ENDPOINT_ID=0tcsa5htuoq0go
+RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 GOOGLE_CLIENT_ID=<google-oauth-client-id>
