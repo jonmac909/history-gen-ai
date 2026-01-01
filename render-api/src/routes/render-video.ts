@@ -294,11 +294,12 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
           .input(chunk.concatPath)
           .inputOptions(['-f', 'concat', '-safe', '0'])
           .outputOptions([
-            '-threads', '0',
+            '-threads', '2',  // Limit threads to reduce memory (was 0 = all cores)
             '-c:v', 'libx264',
             '-preset', FFMPEG_PRESET,
             '-crf', FFMPEG_CRF,
             '-pix_fmt', 'yuv420p',
+            '-bufsize', '512k',  // Limit frame buffering
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
             '-y'
           ])
@@ -383,9 +384,12 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               .outputOptions([
                 '-map', '[out]',
                 '-c:v', 'libx264',
-                '-preset', FFMPEG_PRESET,
+                '-preset', 'faster',  // Use faster preset for overlay pass (less memory)
                 '-crf', FFMPEG_CRF,
                 '-pix_fmt', 'yuv420p',
+                '-filter_complex_threads', '1',  // Serialize filter execution
+                '-threads', '2',  // Limit encoding threads
+                '-bufsize', '512k',  // Limit frame buffering
                 '-y'
               ])
               .output(chunk.outputPath)
