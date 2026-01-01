@@ -360,7 +360,7 @@ async function handleStreamingThumbnails(
     const combinedPrompt = `${prompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional.`;
 
     // Generate thumbnails with rolling concurrency
-    const MAX_CONCURRENT = 4;
+    const MAX_CONCURRENT = 10;
     const POLL_INTERVAL = 2000;
     const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes
 
