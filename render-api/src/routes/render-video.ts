@@ -221,13 +221,39 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
         const errorMsg = statusData.output?.error || 'GPU worker failed';
         throw new Error(errorMsg);
       } else if (statusData.status === 'IN_PROGRESS') {
-        // Estimate progress based on elapsed time (rough estimate: 5 min expected)
+        // Stage-based progress estimation for 100 images (~90min audio):
+        // - Downloads: 0-60s = 10-25%
+        // - Pass 1 (raw video): 60-180s = 25-50%
+        // - Pass 2 (effects): 180-300s = 50-75%
+        // - Upload: 300-360s = 75-90%
         const elapsed = (Date.now() - startTime) / 1000;
-        const estimatedProgress = Math.min(90, 10 + Math.round(elapsed / 300 * 80));
+        let estimatedProgress: number;
+        let stageMessage: string;
+
+        if (elapsed < 60) {
+          // Downloading phase
+          estimatedProgress = 10 + Math.round((elapsed / 60) * 15);
+          stageMessage = 'Downloading assets...';
+        } else if (elapsed < 180) {
+          // Pass 1: Raw video rendering
+          estimatedProgress = 25 + Math.round(((elapsed - 60) / 120) * 25);
+          stageMessage = 'Rendering video (Pass 1)...';
+        } else if (elapsed < 300) {
+          // Pass 2: Effects overlay
+          estimatedProgress = 50 + Math.round(((elapsed - 180) / 120) * 25);
+          stageMessage = 'Applying smoke + embers (Pass 2)...';
+        } else if (elapsed < 400) {
+          // Upload phase
+          estimatedProgress = 75 + Math.round(((elapsed - 300) / 100) * 15);
+          stageMessage = 'Uploading video...';
+        } else {
+          estimatedProgress = 90;
+          stageMessage = 'Finalizing...';
+        }
+
         if (estimatedProgress > lastProgress) {
           lastProgress = estimatedProgress;
-          await updateJobStatus(supabase, jobId, 'rendering', estimatedProgress,
-            `GPU rendering in progress (${Math.round(elapsed)}s elapsed)...`);
+          await updateJobStatus(supabase, jobId, 'rendering', estimatedProgress, stageMessage);
         }
       }
       // IN_QUEUE status - keep waiting
