@@ -165,7 +165,8 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
           project_id: projectId,
           apply_effects: applyEffects,
           supabase_url: supabaseUrl,
-          supabase_key: supabaseKey
+          supabase_key: supabaseKey,
+          render_job_id: jobId  // So GPU worker can update job status directly
         }
       })
     });
