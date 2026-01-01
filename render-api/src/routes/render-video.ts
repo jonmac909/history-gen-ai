@@ -16,8 +16,8 @@ if (ffmpegStatic) {
 }
 
 // Configuration - balanced for speed and quality
-const IMAGES_PER_CHUNK = 25;
-const PARALLEL_CHUNK_RENDERS_NO_EFFECTS = 4;
+const IMAGES_PER_CHUNK = 10;  // Reduced from 25 to prevent OOM with overlay effects
+const PARALLEL_CHUNK_RENDERS_NO_EFFECTS = 2;
 const PARALLEL_CHUNK_RENDERS_WITH_EFFECTS = 1;  // Effects pass is memory-intensive
 const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
