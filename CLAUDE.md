@@ -259,7 +259,7 @@ Multi-step generation with user review at each stage:
 - `ImagePromptsPreviewModal`:
   - Collapsible Master Style Prompt editor (applies to all images)
   - Individual scene description editing per image
-- Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
+- Default voice sample: `clone_voice.wav` in `public/voices/` (~30 seconds, auto-loaded for new projects)
 - `ProjectResults`: Final downloads page with export options:
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
@@ -326,11 +326,13 @@ Multi-step generation with user review at each stage:
 - 2000 char limit per request
 - GitHub repo: `jonmac909/fish-speech-runpod`
 - **TTS Generation Parameters** (in `handler.py`):
-  - `temperature: 0.7` - Balanced expressiveness
-  - `top_p: 0.8` - Nucleus sampling
+  - `temperature: 0.3` - Lower for consistent voice/accent
+  - `top_p: 0.6` - Tighter nucleus sampling for stability
   - `repetition_penalty: 1.2` - Prevents phrase repetitions
+  - `seed: 42` - Fixed seed for deterministic output
   - `normalize: True` - Text normalization for numbers
-  - `chunk_length: 200` - Processing chunk size
+  - `chunk_length: 300` - Larger chunks reduce voice transitions
+  - `max_new_tokens: 2048` - Extended token limit
 - **Model Info**:
   - OpenAudio S1-mini: 0.5B parameters
   - Quality: 0.008 WER, 0.004 CER on English
@@ -699,7 +701,7 @@ Rendered video: `{projectId}/video.mp4` (with embers overlay)
 ## Default Settings
 
 New projects initialize with:
-- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.mp3` (set in `src/pages/Index.tsx`)
+- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.wav` (set in `src/pages/Index.tsx`)
 - Script template: `template-a`
 - AI model: `claude-sonnet-4-5`
 - Word count: 1000, Image count: 10, Speed: 1x
