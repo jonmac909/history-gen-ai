@@ -870,7 +870,7 @@ async function downloadVoiceSample(url: string): Promise<string> {
     } else if (header.startsWith('ID3') || header.startsWith('\xFF\xFB')) {
       format = 'MP3';
       needsConversion = true;
-      logger.warn(`⚠️  Voice sample is MP3 format. ChatterboxTTS requires WAV - will convert.`);
+      logger.info(`Voice sample is MP3 format - converting to WAV for reliability.`);
     } else {
       logger.warn(`Unknown audio format. First 4 bytes: ${Array.from(bytes.subarray(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
       needsConversion = true; // Try to convert anyway
