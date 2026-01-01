@@ -38,7 +38,7 @@ const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
 const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';
 const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
 const RUNPOD_VIDEO_POLL_INTERVAL = 2000;  // 2 seconds
-const RUNPOD_VIDEO_MAX_WAIT = 15 * 60 * 1000;  // 15 minutes max
+const RUNPOD_VIDEO_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max (GPU worker has 60-min FFmpeg timeout)
 
 type EffectType = 'none' | 'embers' | 'smoke_embers';
 
