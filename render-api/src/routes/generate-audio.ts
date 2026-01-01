@@ -42,7 +42,7 @@ const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY = 1000;
 const RETRY_MAX_DELAY = 10000;
 
-const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "rszwde8hjz75ik";
+const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "853j4rz2ewsych";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
 // Helper function to safely get Supabase credentials
