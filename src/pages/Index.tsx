@@ -20,10 +20,11 @@ import { ProjectResults, type GeneratedAsset } from "@/components/ProjectResults
 import { ScriptReviewModal } from "@/components/ScriptReviewModal";
 import { AudioPreviewModal } from "@/components/AudioPreviewModal";
 import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModal";
-import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal";
 import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
+import { VideoRenderModal } from "@/components/VideoRenderModal";
+import { YouTubeUploadModal } from "@/components/YouTubeUploadModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
@@ -32,7 +33,6 @@ import {
   recombineAudioSegments,
   generateImagesStreaming,
   generateImagePrompts,
-  generateCaptions,
   saveScriptToStorage,
   type ImagePromptWithTiming,
   type AudioSegment,
@@ -43,7 +43,7 @@ import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHisto
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "results";
+type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const Index = () => {
@@ -94,6 +94,7 @@ const Index = () => {
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | undefined>();
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
@@ -144,16 +145,7 @@ const Index = () => {
     }
   }, [settings.fullAutomation, viewState, pendingAudioUrl]);
 
-  // Full Automation: Auto-confirm captions when ready
-  useEffect(() => {
-    if (settings.fullAutomation && viewState === "review-captions" && pendingSrtContent) {
-      console.log("[Full Automation] Auto-confirming captions...");
-      const timer = setTimeout(() => {
-        handleCaptionsConfirm(pendingSrtContent);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [settings.fullAutomation, viewState, pendingSrtContent]);
+  // Full Automation: Auto-confirm captions when ready (captions step is now skipped automatically)
 
   // Full Automation: Auto-confirm prompts when ready
   useEffect(() => {
@@ -234,7 +226,8 @@ const Index = () => {
         setViewState("review-audio");
         break;
       case "captions":
-        setViewState("review-captions");
+        // Captions step removed - go to prompts instead
+        setViewState("review-prompts");
         break;
       case "prompts":
         setViewState("review-prompts");
@@ -600,7 +593,7 @@ const Index = () => {
     await handleCaptionsConfirm(simpleSrt);
   };
 
-  // Step 3: After audio confirmed, generate captions
+  // Step 3: After audio confirmed, skip captions and go to image prompts
   const handleAudioConfirm = async () => {
     const steps: GenerationStep[] = [];
 
@@ -608,10 +601,13 @@ const Index = () => {
     if (segmentsNeedRecombine) {
       steps.push({ id: "recombine", label: "Recombining audio segments", status: "pending" });
     }
-    steps.push({ id: "captions", label: "Generating SRT Captions", status: "pending" });
 
     setProcessingSteps(steps);
-    setViewState("processing");
+
+    // Only show processing if we need to recombine
+    if (segmentsNeedRecombine) {
+      setViewState("processing");
+    }
 
     try {
       let audioUrlToUse = pendingAudioUrl;
@@ -637,39 +633,13 @@ const Index = () => {
         console.log(`Recombined audio: ${audioUrlToUse}`);
       }
 
-      updateStep("captions", "active");
-      const captionsRes = await generateCaptions(
-        audioUrlToUse,
-        projectId,
-        (progress, message) => {
-          // Update progress in real-time as chunks are transcribed
-          const sublabel = message || `${progress}%`;
-          updateStep("captions", "active", sublabel);
-        }
-      );
-
-      if (!captionsRes.success || !captionsRes.srtContent) {
-        throw new Error(captionsRes.error || "Failed to generate captions");
-      }
-
-      updateStep("captions", "completed");
-
-      setPendingSrtContent(captionsRes.srtContent);
-      setPendingSrtUrl(captionsRes.captionsUrl || "");
-
-      // Auto-save after captions generation
-      autoSave("captions", {
-        srtContent: captionsRes.srtContent,
-        srtUrl: captionsRes.captionsUrl || "",
-      });
-
-      await new Promise(resolve => setTimeout(resolve, 300));
-      setViewState("review-captions");
+      // Skip captions - go directly to image prompts
+      await handleSkipCaptions();
 
     } catch (error) {
-      console.error("Captions generation error:", error);
+      console.error("Audio confirm error:", error);
       toast({
-        title: "Captions Generation Failed",
+        title: "Audio Processing Failed",
         description: error instanceof Error ? error.message : "An error occurred.",
         variant: "destructive",
       });
@@ -946,12 +916,46 @@ const Index = () => {
   // Thumbnail handlers
   const handleThumbnailsConfirm = (thumbnails: string[]) => {
     setGeneratedThumbnails(thumbnails);
-    handleImagesConfirmWithImages(pendingImages);
+    // Go to video render step
+    setViewState("review-render");
   };
 
   const handleThumbnailsSkip = () => {
     setGeneratedThumbnails([]);
+    // Go to video render step
+    setViewState("review-render");
+  };
+
+  // Video render handlers
+  const handleRenderConfirm = (videoUrl: string) => {
+    setRenderedVideoUrl(videoUrl);
+    // Go to YouTube upload step
+    setViewState("review-youtube");
+  };
+
+  const handleRenderSkip = () => {
+    setRenderedVideoUrl(undefined);
+    // Skip to YouTube (can still upload if they rendered before)
+    setViewState("review-youtube");
+  };
+
+  const handleBackToThumbnails = () => {
+    setViewState("review-thumbnails");
+  };
+
+  // YouTube upload handlers
+  const handleYouTubeComplete = () => {
+    // Go to results
     handleImagesConfirmWithImages(pendingImages);
+  };
+
+  const handleYouTubeSkip = () => {
+    // Go to results
+    handleImagesConfirmWithImages(pendingImages);
+  };
+
+  const handleBackToRender = () => {
+    setViewState("review-render");
   };
 
   const resetPendingState = () => {
@@ -969,6 +973,7 @@ const Index = () => {
     setPendingSrtUrl("");
     setPendingImages([]);
     setGeneratedThumbnails([]);
+    setRenderedVideoUrl(undefined);
     setVideoUrl(undefined);
     setImagePrompts([]);
   };
@@ -1004,10 +1009,6 @@ const Index = () => {
     setViewState("review-audio");
   };
 
-  const handleBackToCaptions = () => {
-    setViewState("review-captions");
-  };
-
   const handleBackToPrompts = () => {
     setViewState("review-prompts");
   };
@@ -1016,20 +1017,10 @@ const Index = () => {
     setViewState("review-images");
   };
 
-  const handleBackToThumbnails = () => {
-    setViewState("review-thumbnails");
-  };
-
   // Forward navigation handlers (to skip ahead if data already exists)
   const handleForwardToAudio = () => {
     if (pendingAudioUrl || pendingAudioSegments.length > 0) {
       setViewState("review-audio");
-    }
-  };
-
-  const handleForwardToCaptions = () => {
-    if (pendingSrtContent) {
-      setViewState("review-captions");
     }
   };
 
@@ -1047,8 +1038,7 @@ const Index = () => {
 
   // Check if forward navigation is available for each step
   const canGoForwardFromScript = () => pendingAudioUrl || pendingAudioSegments.length > 0;
-  const canGoForwardFromAudio = () => !!pendingSrtContent;
-  const canGoForwardFromCaptions = () => imagePrompts.length > 0;
+  const canGoForwardFromAudio = () => imagePrompts.length > 0;
   const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
   // Handle audio file upload for "Generate Captions" mode
@@ -1526,7 +1516,7 @@ const Index = () => {
               </p>
             </div>
 
-            {/* Three entry mode buttons */}
+            {/* Two entry mode buttons */}
             <div className="flex gap-3 justify-center mb-2">
               <Button
                 variant={entryMode === "script" ? "default" : "outline"}
@@ -1535,14 +1525,6 @@ const Index = () => {
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Generate Script
-              </Button>
-              <Button
-                variant={entryMode === "captions" ? "default" : "outline"}
-                onClick={() => setEntryMode("captions")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Mic className="w-4 h-4 mr-2" />
-                Generate Captions
               </Button>
               <Button
                 variant={entryMode === "images" ? "default" : "outline"}
@@ -1633,51 +1615,6 @@ const Index = () => {
                   </div>
                 )}
               </>
-            )}
-
-            {entryMode === "captions" && (
-              <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                <p className="text-muted-foreground text-sm">
-                  Upload an audio file to generate captions (SRT) from it.
-                </p>
-
-                {/* Project Title input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-left block">Project Title</label>
-                  <Input
-                    value={captionsProjectTitle}
-                    onChange={(e) => setCaptionsProjectTitle(e.target.value)}
-                    placeholder="Enter project title..."
-                    className="w-full"
-                  />
-                </div>
-
-                <input
-                  ref={audioFileInputRef}
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleAudioFileChange}
-                  className="hidden"
-                />
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => audioFileInputRef.current?.click()}
-                    className="flex-1"
-                  >
-                    <Mic className="w-4 h-4 mr-2" />
-                    {uploadedAudioFile ? uploadedAudioFile.name : "Choose Audio File"}
-                  </Button>
-                  <Button
-                    onClick={handleGenerateCaptionsFromAudio}
-                    disabled={!uploadedAudioFile || viewState !== "create"}
-                    className="shrink-0"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Captions
-                  </Button>
-                </div>
-              </div>
             )}
 
             {entryMode === "images" && (
@@ -1819,8 +1756,7 @@ const Index = () => {
           onRegenerate={handleSegmentRegenerate}
           onCancel={handleCancelRequest}
           onBack={handleBackToScript}
-          onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
-          onSkipCaptions={handleSkipCaptions}
+          onForward={canGoForwardFromAudio() ? handleForwardToPrompts : undefined}
           regeneratingIndex={regeneratingSegmentIndex}
         />
       ) : (
@@ -1832,20 +1768,8 @@ const Index = () => {
           onRegenerate={handleAudioRegenerate}
           onCancel={handleCancelRequest}
           onBack={handleBackToScript}
-          onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
-          onSkipCaptions={handleSkipCaptions}
         />
       )}
-
-      {/* Captions Preview Modal */}
-      <CaptionsPreviewModal
-        isOpen={viewState === "review-captions"}
-        srtContent={pendingSrtContent}
-        onConfirm={handleCaptionsConfirm}
-        onCancel={handleCancelRequest}
-        onBack={handleBackToAudio}
-        onForward={canGoForwardFromCaptions() ? handleForwardToPrompts : undefined}
-      />
 
       {/* Image Prompts Preview Modal */}
       <ImagePromptsPreviewModal
@@ -1854,7 +1778,7 @@ const Index = () => {
         stylePrompt={getSelectedImageStyle()}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancelRequest}
-        onBack={handleBackToCaptions}
+        onBack={handleBackToAudio}
         onForward={canGoForwardFromPrompts() ? handleForwardToImages : undefined}
       />
 
@@ -1882,6 +1806,33 @@ const Index = () => {
         onCancel={handleCancelRequest}
         onBack={handleBackToImages}
         onSkip={handleThumbnailsSkip}
+      />
+
+      {/* Video Render Modal (Smoke + Embers) */}
+      <VideoRenderModal
+        isOpen={viewState === "review-render"}
+        projectId={projectId}
+        projectTitle={videoTitle}
+        audioUrl={pendingAudioUrl}
+        imageUrls={pendingImages}
+        imageTimings={imagePrompts.map(p => ({ startSeconds: p.startSeconds, endSeconds: p.endSeconds }))}
+        srtContent={pendingSrtContent}
+        onConfirm={handleRenderConfirm}
+        onCancel={handleCancelRequest}
+        onBack={handleBackToThumbnails}
+        onSkip={handleRenderSkip}
+      />
+
+      {/* YouTube Upload Modal */}
+      <YouTubeUploadModal
+        isOpen={viewState === "review-youtube"}
+        videoUrl={renderedVideoUrl || ""}
+        projectTitle={videoTitle}
+        thumbnails={generatedThumbnails}
+        onClose={handleYouTubeComplete}
+        onSuccess={handleYouTubeComplete}
+        onBack={handleBackToRender}
+        onSkip={handleYouTubeSkip}
       />
 
       {/* Exit Confirmation Dialog */}

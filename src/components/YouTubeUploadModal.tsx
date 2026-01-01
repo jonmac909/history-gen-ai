@@ -8,7 +8,8 @@ import {
   Calendar,
   Clock,
   ExternalLink,
-  Unlink
+  Unlink,
+  ChevronLeft
 } from "lucide-react";
 import {
   Dialog,
@@ -46,6 +47,8 @@ interface YouTubeUploadModalProps {
   thumbnails?: string[]; // Previously generated thumbnails
   onClose: () => void;
   onSuccess?: (youtubeUrl: string) => void;
+  onBack?: () => void;
+  onSkip?: () => void;
 }
 
 // YouTube video categories
@@ -67,6 +70,8 @@ export function YouTubeUploadModal({
   thumbnails,
   onClose,
   onSuccess,
+  onBack,
+  onSkip,
 }: YouTubeUploadModalProps) {
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -533,7 +538,20 @@ export function YouTubeUploadModal({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <div className="flex gap-2 w-full sm:w-auto sm:mr-auto">
+            {onBack && !isUploading && !uploadResult && (
+              <Button variant="outline" onClick={onBack}>
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            {onSkip && !isUploading && !uploadResult && (
+              <Button variant="ghost" onClick={onSkip}>
+                Skip
+              </Button>
+            )}
+          </div>
           <Button variant="outline" onClick={onClose}>
             {uploadResult ? "Done" : "Cancel"}
           </Button>

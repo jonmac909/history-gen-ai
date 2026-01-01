@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check, ArrowUp } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,50 @@ export function ThumbnailGeneratorModal({
 
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const lightboxOverlayRef = useRef<HTMLDivElement>(null);
+  const lightboxImageRef = useRef<HTMLImageElement>(null);
+
+  // Keyboard: ESC to close lightbox (capture phase to intercept before Dialog)
+  useEffect(() => {
+    if (!lightboxImage) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxImage(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [lightboxImage]);
+
+  // Click handling: background click closes lightbox
+  useEffect(() => {
+    if (!lightboxImage) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+
+      // If clicked on image, do nothing
+      if (lightboxImageRef.current?.contains(target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // If clicked on overlay background, close
+      if (lightboxOverlayRef.current?.contains(target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxImage(null);
+      }
+    };
+
+    window.addEventListener('click', handleClick, true);
+    return () => window.removeEventListener('click', handleClick, true);
+  }, [lightboxImage]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,11 +108,11 @@ export function ThumbnailGeneratorModal({
       return;
     }
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
+    // Validate file size (max 20MB)
+    if (file.size > 20 * 1024 * 1024) {
       toast({
         title: "File Too Large",
-        description: "Please upload an image under 10MB.",
+        description: "Please upload an image under 20MB.",
         variant: "destructive",
       });
       return;
@@ -272,6 +316,52 @@ export function ThumbnailGeneratorModal({
     }
   };
 
+  // Use a generated thumbnail as the new reference image
+  const handleUseAsReference = async (url: string) => {
+    setIsUploading(true);
+    try {
+      // Fetch the image and convert to data URL
+      const response = await fetch(url);
+      const blob = await response.blob();
+
+      // Create a File object from the blob
+      const file = new File([blob], 'reference.png', { type: blob.type });
+      setExampleImage(file);
+
+      // Convert to data URL for preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        setExamplePreview(dataUrl);
+        setIsUploading(false);
+        toast({
+          title: "Reference Updated",
+          description: "Now using this thumbnail as the reference. Modify your prompt and generate again.",
+        });
+      };
+      reader.onerror = () => {
+        toast({
+          title: "Failed",
+          description: "Could not use this image as reference.",
+          variant: "destructive",
+        });
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(blob);
+
+      // Clear generated thumbnails to start fresh iteration
+      setGeneratedThumbnails([]);
+    } catch (error) {
+      console.error("Failed to use as reference:", error);
+      toast({
+        title: "Failed",
+        description: "Could not fetch the image.",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    }
+  };
+
   const handleComplete = () => {
     onConfirm(generatedThumbnails);
   };
@@ -338,7 +428,7 @@ export function ThumbnailGeneratorModal({
                       Click to upload reference thumbnail
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      PNG, JPG, or WebP (max 10MB)
+                      PNG, JPG, or WebP (max 20MB)
                     </span>
                   </div>
                 )}
@@ -435,6 +525,9 @@ export function ThumbnailGeneratorModal({
                   Download All
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Click to preview full size. Use the arrow button to iterate on a thumbnail.
+              </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {generatedThumbnails.map((url, index) => (
                   <div key={index} className="relative group">
@@ -445,14 +538,26 @@ export function ThumbnailGeneratorModal({
                       style={{ aspectRatio: '16/9', objectFit: 'cover' }}
                       onClick={() => setLightboxImage(url)}
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute bottom-1 right-1 h-7 w-7 bg-background/80 hover:bg-background opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => handleDownloadThumbnail(url, index)}
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
+                    <div className="absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background"
+                        onClick={() => handleUseAsReference(url)}
+                        title="Use as new reference"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background"
+                        onClick={() => handleDownloadThumbnail(url, index)}
+                        title="Download"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -486,14 +591,14 @@ export function ThumbnailGeneratorModal({
         {/* Lightbox */}
         {lightboxImage && (
           <div
+            ref={lightboxOverlayRef}
             className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setLightboxImage(null)}
           >
             <img
+              ref={lightboxImageRef}
               src={lightboxImage}
               alt="Full size preview"
               className="max-w-full max-h-full rounded-lg"
-              onClick={(e) => e.stopPropagation()}
             />
             <Button
               variant="ghost"

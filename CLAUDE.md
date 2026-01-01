@@ -326,10 +326,10 @@ Multi-step generation with user review at each stage:
 - 2000 char limit per request
 - GitHub repo: `jonmac909/fish-speech-runpod`
 - **TTS Generation Parameters** (in `handler.py`):
-  - `temperature: 0.5` - Balanced expressiveness with consistency
-  - `top_p: 0.7` - Moderate nucleus sampling
+  - `temperature: 0.7` - Balanced expressiveness
+  - `top_p: 0.8` - Nucleus sampling
   - `repetition_penalty: 1.2` - Prevents phrase repetitions
-  - `seed: 42` - Fixed seed for deterministic output
+  - `seed: 42` - Fixed seed for consistent voice/accent
   - `normalize: True` - Text normalization for numbers
   - `chunk_length: 300` - Larger chunks reduce voice transitions
   - `max_new_tokens: 2048` - Extended token limit
