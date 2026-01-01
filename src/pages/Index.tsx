@@ -56,7 +56,7 @@ const Index = () => {
     scriptTemplate: "template-a",
     imageTemplate: "image-a",
     aiModel: "claude-sonnet-4-5",
-    voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.mp3",
+    voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.wav",
     speed: 1,
     imageCount: 10,
     wordCount: 1000,
