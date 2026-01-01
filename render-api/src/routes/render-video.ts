@@ -17,7 +17,8 @@ if (ffmpegStatic) {
 
 // Configuration - balanced for speed and quality
 const IMAGES_PER_CHUNK = 25;
-const PARALLEL_CHUNK_RENDERS = 4;
+const PARALLEL_CHUNK_RENDERS_NO_EFFECTS = 4;
+const PARALLEL_CHUNK_RENDERS_WITH_EFFECTS = 1;  // Effects pass is memory-intensive
 const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
@@ -205,7 +206,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     const totalImages = imagePaths.length;
     const numChunks = Math.ceil(totalImages / IMAGES_PER_CHUNK);
 
-    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) (${PARALLEL_CHUNK_RENDERS} parallel, ${FFMPEG_PRESET} preset)`);
+    // Choose parallelism based on whether effects are enabled (effects are memory-intensive)
+    const parallelChunks = effectType !== 'none' ? PARALLEL_CHUNK_RENDERS_WITH_EFFECTS : PARALLEL_CHUNK_RENDERS_NO_EFFECTS;
+    console.log(`Processing ${totalImages} images in ${numChunks} chunk(s) (${parallelChunks} parallel, effects: ${effectType}, ${FFMPEG_PRESET} preset)`);
 
     interface ChunkData {
       index: number;
@@ -425,8 +428,8 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     // Render chunks in parallel batches
     await updateJobStatus(supabase, jobId, 'rendering', 30, `Rendering ${numChunks} chunks...`);
 
-    for (let i = 0; i < chunkDataList.length; i += PARALLEL_CHUNK_RENDERS) {
-      const batch = chunkDataList.slice(i, i + PARALLEL_CHUNK_RENDERS);
+    for (let i = 0; i < chunkDataList.length; i += parallelChunks) {
+      const batch = chunkDataList.slice(i, i + parallelChunks);
       console.log(`Starting batch: chunks ${batch.map(c => c.index + 1).join(', ')}`);
       await Promise.all(batch.map(chunk => renderChunk(chunk)));
     }
