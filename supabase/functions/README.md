@@ -22,7 +22,7 @@ These are automatically available in all edge functions:
 | Variable | Description | Used By |
 |----------|-------------|---------|
 | `RUNPOD_API_KEY` | RunPod API key for authentication | `generate-audio`, `generate-images` |
-| `RUNPOD_ENDPOINT_ID` | RunPod endpoint ID for Chatterbox TTS audio generation | `generate-audio` |
+| `RUNPOD_ENDPOINT_ID` | RunPod endpoint ID for Fish Speech TTS audio generation | `generate-audio` |
 | `RUNPOD_ZIMAGE_ENDPOINT_ID` | RunPod endpoint ID for Z-Image generation | `generate-images` |
 
 #### AI Service API Keys
@@ -44,10 +44,10 @@ These are automatically available in all edge functions:
 
 ### `generate-audio`
 
-Generates voiceover audio using Chatterbox TTS via RunPod.
+Generates voiceover audio using Fish Speech TTS via RunPod.
 
 **Features:**
-- Text-to-speech with automatic chunking (180 char limit per chunk)
+- Text-to-speech with automatic chunking (250 char limit per chunk)
 - Voice cloning support via reference audio
 - Streaming and non-streaming modes
 - Automatic WAV concatenation for multi-chunk audio

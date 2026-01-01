@@ -6,7 +6,7 @@ A modern web application for generating history video assets from YouTube conten
 
 - **YouTube Transcript Extraction** - Automatically fetch transcripts from YouTube videos
 - **AI Script Rewriting** - Transform transcripts into engaging scripts using Claude AI models
-- **Voice Cloning Audio** - Generate voiceover audio with your cloned voice via Chatterbox TTS
+- **Voice Cloning Audio** - Generate voiceover audio with your cloned voice via Fish Speech TTS
 - **AI Image Generation** - Create scene images with AI-generated visual prompts
 - **Caption Generation** - Auto-generate SRT captions from audio
 - **Step-by-Step Workflow** - Review and edit each asset before proceeding
@@ -166,7 +166,7 @@ supabase/
 - **UI Components**: shadcn/ui (Radix UI primitives)
 - **Backend**: Supabase Edge Functions (Deno)
 - **Testing**: Vitest, React Testing Library
-- **AI Models**: Claude (script writing), Chatterbox (TTS), RunPod (images)
+- **AI Models**: Claude (script writing), Fish Speech (TTS), RunPod (images)
 
 ## Workflow
 

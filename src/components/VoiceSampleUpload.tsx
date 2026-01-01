@@ -169,7 +169,7 @@ export function VoiceSampleUpload({ voiceSampleUrl, onVoiceSampleChange }: Voice
       />
       
       <p className="text-xs text-muted-foreground text-center">
-        Chatterbox Turbo will clone this voice
+        AI will clone this voice for narration
       </p>
     </div>
   );

@@ -10,7 +10,7 @@ const RUNPOD_ENDPOINT_ID = Deno.env.get('RUNPOD_ENDPOINT_ID') || "237phrp53pahz4
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
 // TTS Configuration Constants
-const MAX_TTS_CHUNK_LENGTH = 180; // Chatterbox TTS has a 180 character limit per chunk
+const MAX_TTS_CHUNK_LENGTH = 250; // Fish Speech supports up to 2000 chars, using 250 to match Railway API
 const MIN_TEXT_LENGTH = 5; // Minimum characters required for valid TTS input
 const MAX_TEXT_LENGTH = 400; // Maximum total text length to process
 const MAX_VOICE_SAMPLE_SIZE = 10 * 1024 * 1024; // 10MB max voice sample file size
@@ -239,11 +239,11 @@ serve(async (req) => {
     cleanScript = normalizeText(cleanScript);
     
     const wordCount = cleanScript.split(/\s+/).filter(Boolean).length;
-    logger.info(`Generating audio for ${wordCount} words with Chatterbox TTS...`);
+    logger.info(`Generating audio for ${wordCount} words with Fish Speech TTS...`);
     logger.debug(`Normalized text length: ${cleanScript.length} chars`);
 
-    // Split into chunks for safety (Chatterbox crashes on long text)
-    const rawChunks = splitIntoChunks(cleanScript, 180);
+    // Split into chunks for safety
+    const rawChunks = splitIntoChunks(cleanScript, MAX_TTS_CHUNK_LENGTH);
     logger.debug(`Split into ${rawChunks.length} chunks`);
 
     // Validate and filter chunks - skip invalid ones instead of failing
@@ -368,8 +368,8 @@ async function downloadVoiceSample(url: string): Promise<string> {
   }
 }
 
-// Chatterbox only supports cloning via reference_audio_base64
-// The worker decodes it and passes as reference_audio + reference_sr to synthesize()
+// Fish Speech supports cloning via reference_audio_base64
+// The worker decodes it and uses ServeReferenceAudio for voice cloning
 async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
   console.log(`\n=== Starting TTS Job ===`);
   console.log(`Endpoint: ${RUNPOD_API_URL}/run`);
@@ -390,8 +390,8 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
     prompt: text,
   };
 
-  // CANONICAL FIELD for Chatterbox voice cloning
-  // Worker must decode this and pass as reference_audio (and reference_sr) to tts.synthesize()
+  // CANONICAL FIELD for Fish Speech voice cloning
+  // Worker decodes this and creates ServeReferenceAudio for voice cloning
   if (referenceAudioBase64) {
     inputPayload.reference_audio_base64 = referenceAudioBase64;
     console.log(`Added reference_audio_base64 to payload`);
@@ -624,10 +624,10 @@ async function generateWithStreaming(chunks: string[], projectId: string, wordCo
       };
 
       try {
-        safeEnqueue(`data: ${JSON.stringify({ 
-          type: 'progress', 
+        safeEnqueue(`data: ${JSON.stringify({
+          type: 'progress',
           progress: 5,
-          message: `Starting Chatterbox TTS (${chunks.length} chunks, default voice)...`
+          message: `Starting Fish Speech TTS (${chunks.length} chunks, default voice)...`
         })}\n\n`);
 
         const audioChunks: Uint8Array[] = [];
@@ -913,7 +913,7 @@ async function generateVoiceCloningWithStreaming(chunks: string[], projectId: st
 async function generateWithoutStreaming(chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string): Promise<Response> {
   const audioChunks: Uint8Array[] = [];
 
-  // Download voice sample once and convert to base64 for Chatterbox
+  // Download voice sample once and convert to base64 for Fish Speech
   let referenceAudioBase64: string | undefined;
   if (voiceSampleUrl) {
     console.log('Downloading voice sample for cloning...');

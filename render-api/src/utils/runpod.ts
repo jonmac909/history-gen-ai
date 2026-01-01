@@ -47,7 +47,7 @@ export async function updateEndpointWorkers(
  * Call this before audio generation starts
  */
 export async function allocateWorkersForAudio(apiKey: string): Promise<void> {
-  const audioEndpointId = process.env.RUNPOD_ENDPOINT_ID; // ChatterboxTTS
+  const audioEndpointId = process.env.RUNPOD_ENDPOINT_ID; // Fish Speech TTS
   const imageEndpointId = process.env.RUNPOD_ZIMAGE_ENDPOINT_ID; // Z-Image
 
   if (!audioEndpointId || !imageEndpointId) {
@@ -71,7 +71,7 @@ export async function allocateWorkersForAudio(apiKey: string): Promise<void> {
  * Call this before image generation starts
  */
 export async function allocateWorkersForImages(apiKey: string): Promise<void> {
-  const audioEndpointId = process.env.RUNPOD_ENDPOINT_ID; // ChatterboxTTS
+  const audioEndpointId = process.env.RUNPOD_ENDPOINT_ID; // Fish Speech TTS
   const imageEndpointId = process.env.RUNPOD_ZIMAGE_ENDPOINT_ID; // Z-Image
 
   if (!audioEndpointId || !imageEndpointId) {
