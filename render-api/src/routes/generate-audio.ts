@@ -660,7 +660,7 @@ async function postProcessAudio(audioBuffer: Buffer): Promise<Buffer> {
 // ============================================================
 
 // Split script into N equal segments by word count
-const DEFAULT_SEGMENT_COUNT = 5; // Match Fish Speech RunPod worker allocation
+const DEFAULT_SEGMENT_COUNT = 10; // Match Fish Speech RunPod worker allocation
 
 // Detect and remove repeated phrases in source text BEFORE TTS generation
 function removeTextRepetitions(text: string, minWords: number = 4): { cleaned: string; removedCount: number } {
@@ -1634,7 +1634,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     const supabase = createClient(credentials.url, credentials.key);
     const actualProjectId = projectId || crypto.randomUUID();
 
-    const MAX_CONCURRENT_SEGMENTS = 5; // Match Fish Speech RunPod worker allocation
+    const MAX_CONCURRENT_SEGMENTS = 10; // Match Fish Speech RunPod worker allocation
     console.log(`\n=== Processing ${actualSegmentCount} segments with rolling concurrency (max ${MAX_CONCURRENT_SEGMENTS} concurrent) ===`);
 
     const allSegmentResults: Array<{
