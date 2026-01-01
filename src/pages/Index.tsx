@@ -31,6 +31,7 @@ import {
   generateAudioStreaming,
   regenerateAudioSegment,
   recombineAudioSegments,
+  generateCaptions,
   generateImagesStreaming,
   generateImagePrompts,
   saveScriptToStorage,
@@ -593,7 +594,7 @@ const Index = () => {
     await handleCaptionsConfirm(simpleSrt);
   };
 
-  // Step 3: After audio confirmed, skip captions and go to image prompts
+  // Step 3: After audio confirmed, generate captions (for image timing) then go to image prompts
   const handleAudioConfirm = async () => {
     const steps: GenerationStep[] = [];
 
@@ -602,12 +603,11 @@ const Index = () => {
       steps.push({ id: "recombine", label: "Recombining audio segments", status: "pending" });
     }
 
-    setProcessingSteps(steps);
+    // Always add captions step (for accurate image timing)
+    steps.push({ id: "captions", label: "Transcribing audio for image timing", status: "pending" });
 
-    // Only show processing if we need to recombine
-    if (segmentsNeedRecombine) {
-      setViewState("processing");
-    }
+    setProcessingSteps(steps);
+    setViewState("processing");
 
     try {
       let audioUrlToUse = pendingAudioUrl;
@@ -633,8 +633,35 @@ const Index = () => {
         console.log(`Recombined audio: ${audioUrlToUse}`);
       }
 
-      // Skip captions - go directly to image prompts
-      await handleSkipCaptions();
+      // Generate captions automatically (for accurate image timing)
+      updateStep("captions", "active", "Transcribing audio...");
+      console.log("Generating captions for image timing...");
+
+      const captionsResult = await generateCaptions(
+        audioUrlToUse,
+        projectId,
+        (progress, message) => {
+          updateStep("captions", "active", message || `Transcribing... ${progress}%`);
+        }
+      );
+
+      if (!captionsResult.success || !captionsResult.srtContent) {
+        // Fall back to evenly distributed timing if captions fail
+        console.warn("Captions generation failed, using even distribution:", captionsResult.error);
+        updateStep("captions", "completed", "Using even distribution");
+        await handleSkipCaptions();
+        return;
+      }
+
+      updateStep("captions", "completed", "Transcription complete");
+      console.log("Captions generated successfully");
+
+      // Use the real SRT for image timing
+      setPendingSrtContent(captionsResult.srtContent);
+      autoSave("captions", { srtContent: captionsResult.srtContent });
+
+      // Continue to image prompts with accurate timing
+      await handleCaptionsConfirm(captionsResult.srtContent);
 
     } catch (error) {
       console.error("Audio confirm error:", error);
