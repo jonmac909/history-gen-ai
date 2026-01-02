@@ -67,13 +67,23 @@ export function VideoRenderModal({
   const [videoUrl, setVideoUrl] = useState<string | null>(existingVideoUrl || null);
   const autoRenderTriggered = useRef(!!existingVideoUrl);
 
-  // Sync with existingVideoUrl prop when it changes
+  // Sync with existingVideoUrl prop when it changes or modal opens
   useEffect(() => {
     if (existingVideoUrl) {
+      console.log('[VideoRenderModal] Setting video URL from prop:', existingVideoUrl);
       setVideoUrl(existingVideoUrl);
       autoRenderTriggered.current = true;
     }
   }, [existingVideoUrl]);
+
+  // Also sync when modal opens (in case state was reset)
+  useEffect(() => {
+    if (isOpen && existingVideoUrl && !videoUrl) {
+      console.log('[VideoRenderModal] Modal opened with existing video, syncing:', existingVideoUrl);
+      setVideoUrl(existingVideoUrl);
+      autoRenderTriggered.current = true;
+    }
+  }, [isOpen, existingVideoUrl]);
 
   // Auto-start rendering when modal opens (ONLY if autoRender=true AND no existing video)
   useEffect(() => {
