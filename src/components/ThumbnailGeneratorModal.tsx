@@ -50,6 +50,13 @@ export function ThumbnailGeneratorModal({
   // Selection state - which thumbnail is selected for YouTube upload
   const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
 
+  // History stack for navigating back to previous thumbnail batches
+  const [thumbnailHistory, setThumbnailHistory] = useState<{
+    thumbnails: string[];
+    referencePreview: string;
+    prompt: string;
+  }[]>([]);
+
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const lightboxOverlayRef = useRef<HTMLDivElement>(null);
@@ -325,6 +332,15 @@ export function ThumbnailGeneratorModal({
   const handleUseAsReference = async (url: string) => {
     setIsUploading(true);
     try {
+      // Save current state to history before switching (if we have thumbnails)
+      if (generatedThumbnails.length > 0 && examplePreview) {
+        setThumbnailHistory(prev => [...prev, {
+          thumbnails: generatedThumbnails,
+          referencePreview: examplePreview,
+          prompt: imagePrompt,
+        }]);
+      }
+
       // Fetch the image and convert to data URL
       const response = await fetch(url);
       const blob = await response.blob();
@@ -366,6 +382,27 @@ export function ThumbnailGeneratorModal({
       });
       setIsUploading(false);
     }
+  };
+
+  // Go back to previous thumbnail batch
+  const handleGoBackInHistory = () => {
+    if (thumbnailHistory.length === 0) return;
+
+    const previousState = thumbnailHistory[thumbnailHistory.length - 1];
+
+    // Restore previous state
+    setGeneratedThumbnails(previousState.thumbnails);
+    setExamplePreview(previousState.referencePreview);
+    setImagePrompt(previousState.prompt);
+    setSelectedThumbnail(null);
+
+    // Remove from history
+    setThumbnailHistory(prev => prev.slice(0, -1));
+
+    toast({
+      title: "Returned to Previous Batch",
+      description: `Showing ${previousState.thumbnails.length} thumbnails from previous generation.`,
+    });
   };
 
   const handleComplete = () => {
@@ -533,7 +570,20 @@ export function ThumbnailGeneratorModal({
           {generatedThumbnails.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Generated Thumbnails:</label>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">Generated Thumbnails:</label>
+                  {thumbnailHistory.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleGoBackInHistory}
+                      className="gap-1 h-7 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                      Previous Batch
+                    </Button>
+                  )}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"

@@ -1664,6 +1664,7 @@ const Index = () => {
                         onSettingsChange={setSettings}
                         scriptTemplates={scriptTemplates}
                         imageTemplates={imageTemplates}
+                        requireTitle={!projectId}
                       />
                     </div>
                     <Button
@@ -1705,6 +1706,7 @@ const Index = () => {
                       onSettingsChange={setSettings}
                       scriptTemplates={scriptTemplates}
                       imageTemplates={imageTemplates}
+                      requireTitle={!projectId}
                     />
 
                     <Button

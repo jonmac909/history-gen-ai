@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
+import { toast } from "@/hooks/use-toast";
 import type { ScriptTemplate, ImageTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
@@ -63,6 +64,7 @@ interface SettingsPopoverProps {
   onSettingsChange: (settings: GenerationSettings) => void;
   scriptTemplates: ScriptTemplate[];
   imageTemplates: ImageTemplate[];
+  requireTitle?: boolean; // If true, prevent closing without a project title
 }
 
 const defaultScriptLabels: Record<string, string> = {
@@ -82,9 +84,11 @@ export function SettingsPopover({
   onSettingsChange,
   scriptTemplates,
   imageTemplates,
+  requireTitle = false,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
+  const [titleError, setTitleError] = useState(false);
 
   // Sync local settings when props change (but not when modal is open)
   React.useEffect(() => {
@@ -111,6 +115,17 @@ export function SettingsPopover({
   };
 
   const handleClose = () => {
+    // Validate title if required
+    if (requireTitle && !localSettings.projectTitle?.trim()) {
+      setTitleError(true);
+      toast({
+        title: "Project Title Required",
+        description: "Please enter a project title before closing settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setTitleError(false);
     onSettingsChange(localSettings);
     setIsOpen(false);
   };
@@ -151,15 +166,23 @@ export function SettingsPopover({
           {/* Project Title */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
-              Project Title:
+              Project Title:{requireTitle && <span className="text-destructive ml-1">*</span>}
             </label>
             <Input
               placeholder="Enter a name for this project..."
               value={localSettings.projectTitle || ""}
-              onChange={(e) => updateSetting("projectTitle", e.target.value)}
+              onChange={(e) => {
+                updateSetting("projectTitle", e.target.value);
+                if (e.target.value.trim()) setTitleError(false);
+              }}
               onKeyDown={(e) => e.stopPropagation()}
-              className="text-center"
+              className={`text-center ${titleError ? "border-destructive focus-visible:ring-destructive" : ""}`}
             />
+            {titleError && (
+              <p className="text-xs text-destructive text-center">
+                Project title is required
+              </p>
+            )}
           </div>
 
           {/* Full Automation Toggle */}
