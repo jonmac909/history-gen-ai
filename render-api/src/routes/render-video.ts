@@ -34,11 +34,12 @@ const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4
 const SMOKE_GRAY_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_gray.mp4';
 const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
 
-// RunPod GPU rendering configuration
-const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';
+// RunPod rendering configuration
+const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';  // GPU endpoint
+const RUNPOD_CPU_ENDPOINT_ID = process.env.RUNPOD_CPU_ENDPOINT_ID || 'bw3dx1k956cee9';  // CPU endpoint (32 vCPU)
 const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
 const RUNPOD_VIDEO_POLL_INTERVAL = 2000;  // 2 seconds
-const RUNPOD_VIDEO_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max (GPU worker has 60-min FFmpeg timeout)
+const RUNPOD_VIDEO_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max
 
 type EffectType = 'none' | 'embers' | 'smoke_embers';
 
@@ -267,6 +268,144 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
     }
 
     throw new Error('GPU render timed out after 30 minutes');
+
+  } catch (error: any) {
+    console.error(`Job ${jobId} failed:`, error);
+    await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message });
+  }
+}
+
+// RunPod CPU rendering function (32 vCPU worker - reliable, no GPU lottery)
+async function processRenderJobCpuRunpod(jobId: string, params: RenderVideoRequest): Promise<void> {
+  const supabase = getSupabase();
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  try {
+    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+
+    // Determine if effects should be applied
+    const applyEffects = effects?.smoke_embers || effects?.embers || false;
+
+    console.log(`Job ${jobId}: Starting CPU RunPod render for project ${projectId}`);
+    console.log(`Images: ${imageUrls.length}, Effects: ${applyEffects}`);
+
+    await updateJobStatus(supabase, jobId, 'queued', 5, 'Submitting to CPU worker...');
+
+    // Submit job to RunPod CPU endpoint
+    const runpodUrl = `https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/run`;
+    const runpodResponse = await fetch(runpodUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RUNPOD_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        input: {
+          image_urls: imageUrls,
+          timings: imageTimings,
+          audio_url: audioUrl,
+          project_id: projectId,
+          apply_effects: applyEffects,
+          supabase_url: supabaseUrl,
+          supabase_key: supabaseKey,
+          render_job_id: jobId
+        }
+      })
+    });
+
+    if (!runpodResponse.ok) {
+      const errorText = await runpodResponse.text();
+      throw new Error(`RunPod CPU submission failed: ${runpodResponse.status} - ${errorText}`);
+    }
+
+    const runpodData = await runpodResponse.json() as { id: string; status: string };
+    const runpodJobId = runpodData.id;
+    console.log(`Job ${jobId}: RunPod CPU job submitted: ${runpodJobId}`);
+
+    await updateJobStatus(supabase, jobId, 'rendering', 10, 'CPU rendering started (32 vCPU)...');
+
+    // Poll for completion
+    const statusUrl = `https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/status/${runpodJobId}`;
+    const startTime = Date.now();
+    let lastProgress = 10;
+
+    while (Date.now() - startTime < RUNPOD_VIDEO_MAX_WAIT) {
+      await new Promise(resolve => setTimeout(resolve, RUNPOD_VIDEO_POLL_INTERVAL));
+
+      const statusResponse = await fetch(statusUrl, {
+        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+      });
+
+      if (!statusResponse.ok) {
+        console.warn(`Job ${jobId}: Status check failed: ${statusResponse.status}`);
+        continue;
+      }
+
+      const statusData = await statusResponse.json() as {
+        status: string;
+        output?: { video_url?: string; error?: string; render_time_seconds?: number };
+      };
+
+      if (statusData.status === 'COMPLETED') {
+        if (statusData.output?.video_url) {
+          const videoUrl = statusData.output.video_url;
+          const renderTime = statusData.output.render_time_seconds || 0;
+          console.log(`Job ${jobId}: CPU render complete in ${renderTime.toFixed(1)}s`);
+          console.log(`Video URL: ${videoUrl}`);
+
+          await updateJobStatus(supabase, jobId, 'complete', 100,
+            `Video rendered successfully (CPU: ${renderTime.toFixed(1)}s)`,
+            { video_url: videoUrl });
+          return;
+        } else if (statusData.output?.error) {
+          throw new Error(`CPU render failed: ${statusData.output.error}`);
+        }
+      } else if (statusData.status === 'FAILED') {
+        // Check Supabase for actual status - worker may have completed before being killed
+        const { data: jobData } = await supabase
+          .from('render_jobs')
+          .select('status, progress, video_url, error')
+          .eq('id', jobId)
+          .single();
+
+        if (jobData?.status === 'complete' && jobData?.video_url) {
+          console.log(`Job ${jobId}: CPU worker was killed but job actually completed`);
+          console.log(`Video URL: ${jobData.video_url}`);
+          return;
+        }
+
+        const errorMsg = statusData.output?.error || jobData?.error || 'CPU worker failed';
+        throw new Error(errorMsg);
+      } else if (statusData.status === 'IN_PROGRESS' || statusData.status === 'IN_QUEUE') {
+        // Read real progress from Supabase (CPU worker updates it directly)
+        const { data: jobData } = await supabase
+          .from('render_jobs')
+          .select('progress, message, status')
+          .eq('id', jobId)
+          .single();
+
+        if (jobData && jobData.progress > lastProgress) {
+          lastProgress = jobData.progress;
+          console.log(`Job ${jobId}: CPU worker progress: ${jobData.progress}% - ${jobData.message}`);
+        }
+      }
+    }
+
+    // Before timing out, check if worker actually completed
+    const { data: finalCheck } = await supabase
+      .from('render_jobs')
+      .select('status, progress, video_url')
+      .eq('id', jobId)
+      .single();
+
+    if (finalCheck?.status === 'complete' && finalCheck?.video_url) {
+      console.log(`Job ${jobId}: CPU worker completed (caught at timeout check)`);
+      console.log(`Video URL: ${finalCheck.video_url}`);
+      return;
+    }
+
+    throw new Error('CPU render timed out after 30 minutes');
 
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
@@ -767,27 +906,37 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Choose GPU or CPU rendering
+    // Choose rendering method:
+    // 1. GPU RunPod (if useGpu=true and GPU endpoint configured)
+    // 2. CPU RunPod (default - reliable 32 vCPU)
+    // 3. Railway CPU (fallback if no RunPod API key)
     const useGpu = params.useGpu && RUNPOD_VIDEO_ENDPOINT_ID && RUNPOD_API_KEY;
+    const useCpuRunpod = !useGpu && RUNPOD_CPU_ENDPOINT_ID && RUNPOD_API_KEY;
 
     if (useGpu) {
       console.log(`Job ${jobId}: Using GPU rendering (RunPod)`);
       processRenderJobGpu(jobId, params).catch(err => {
         console.error(`GPU job ${jobId} crashed:`, err);
       });
+    } else if (useCpuRunpod) {
+      console.log(`Job ${jobId}: Using CPU rendering (RunPod 32 vCPU)`);
+      processRenderJobCpuRunpod(jobId, params).catch(err => {
+        console.error(`CPU RunPod job ${jobId} crashed:`, err);
+      });
     } else {
-      console.log(`Job ${jobId}: Using CPU rendering (Railway)`);
+      console.log(`Job ${jobId}: Using CPU rendering (Railway - fallback)`);
       processRenderJob(jobId, params).catch(err => {
-        console.error(`CPU job ${jobId} crashed:`, err);
+        console.error(`Railway CPU job ${jobId} crashed:`, err);
       });
     }
 
     // Return immediately with job ID
+    const rendererType = useGpu ? 'GPU' : (useCpuRunpod ? 'CPU-32' : 'Railway');
     res.json({
       success: true,
       jobId,
       status: 'queued',
-      message: `Render job started (${useGpu ? 'GPU' : 'CPU'}). Poll /render-video/status/:jobId for progress.`
+      message: `Render job started (${rendererType}). Poll /render-video/status/:jobId for progress.`
     });
 
   } catch (error: any) {
