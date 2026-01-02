@@ -144,6 +144,7 @@ export function ProjectResults({
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
   const autoRenderTriggered = useRef(false);
+  const autoYouTubeModalTriggered = useRef(false);
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
@@ -163,6 +164,18 @@ export function ProjectResults({
       }
     }
   }, [autoRender, projectId, audioUrl, srtContent, assets, embersVideoUrl, isRenderingEmbers]);
+
+  // Auto-open YouTube modal when video is ready in full automation mode
+  useEffect(() => {
+    if (autoRender && embersVideoUrl && !isRenderingEmbers && !autoYouTubeModalTriggered.current) {
+      console.log("[Full Automation] Video ready, opening YouTube upload modal...");
+      autoYouTubeModalTriggered.current = true;
+      // Small delay to let the render modal close first
+      setTimeout(() => {
+        setIsYouTubeModalOpen(true);
+      }, 500);
+    }
+  }, [autoRender, embersVideoUrl, isRenderingEmbers]);
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {
