@@ -151,7 +151,8 @@ export function ProjectResults({
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(initialEmbersVideoUrl || null);
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(initialSmokeEmbersVideoUrl || null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
-  const autoRenderTriggered = useRef(false);
+  // Initialize refs to true if video already exists (prevents re-rendering on reload)
+  const autoRenderTriggered = useRef(!!initialEmbersVideoUrl);
   const autoYouTubeModalTriggered = useRef(false);
 
   // State for YouTube upload
