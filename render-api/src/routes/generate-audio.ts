@@ -180,6 +180,8 @@ const PRONUNCIATION_FIXES: Record<string, string> = {
   'preachers': 'pree-chers',
   'Jewish': 'Jew-ish',
   'Armenian': 'Ar-mee-nee-an',
+  'dream': 'dreem',
+  'dreams': 'dreems',
 };
 
 // Mandatory normalization before sending to API
