@@ -990,7 +990,15 @@ export function ProjectResults({
           )}
 
           {/* YouTube Account Connect */}
-          <div className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors">
+          <div
+            className={`flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors ${isYouTubeConnected && (basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl) ? 'cursor-pointer' : ''}`}
+            onClick={() => {
+              // If connected and have video, open upload modal
+              if (isYouTubeConnected && (basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl)) {
+                setIsYouTubeModalOpen(true);
+              }
+            }}
+          >
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                 <Youtube className="w-5 h-5 text-red-600" />
@@ -998,28 +1006,44 @@ export function ProjectResults({
               <div>
                 <p className="font-medium text-foreground">YouTube Account</p>
                 <p className="text-sm text-muted-foreground">
-                  {isYouTubeConnected ? 'Connected' : 'Not connected'}
+                  {isYouTubeConnected
+                    ? (basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl)
+                      ? 'Connected - Click to upload'
+                      : 'Connected'
+                    : 'Not connected'}
                 </p>
               </div>
             </div>
-            <Button
-              variant={isYouTubeConnected ? "outline" : "default"}
-              size="sm"
-              onClick={isYouTubeConnected ? handleYouTubeDisconnect : handleYouTubeConnect}
-              disabled={isConnectingYouTube}
-              className={isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}
-            >
-              {isConnectingYouTube ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : isYouTubeConnected ? (
-                'Disconnect'
-              ) : (
-                'Connect'
+            <div className="flex items-center gap-2">
+              <Button
+                variant={isYouTubeConnected ? "outline" : "default"}
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isYouTubeConnected) {
+                    handleYouTubeDisconnect();
+                  } else {
+                    handleYouTubeConnect();
+                  }
+                }}
+                disabled={isConnectingYouTube}
+                className={isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}
+              >
+                {isConnectingYouTube ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : isYouTubeConnected ? (
+                  'Disconnect'
+                ) : (
+                  'Connect'
+                )}
+              </Button>
+              {isYouTubeConnected && (basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl) && (
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
               )}
-            </Button>
+            </div>
           </div>
         </div>
 
