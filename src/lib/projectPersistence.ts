@@ -52,7 +52,12 @@ const HISTORY_KEY = "historygenai-project-history";
 export function saveProject(project: SavedProject): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
-    console.log(`Project saved at step: ${project.step}`);
+    console.log(`Project saved at step: ${project.step}`, {
+      hasVideoUrl: !!project.videoUrl,
+      hasEmbersVideoUrl: !!project.embersVideoUrl,
+      hasSmokeEmbersVideoUrl: !!project.smokeEmbersVideoUrl,
+      smokeEmbersVideoUrl: project.smokeEmbersVideoUrl,
+    });
   } catch (error) {
     console.error("Failed to save project:", error);
   }
@@ -64,6 +69,12 @@ export function loadProject(): SavedProject | null {
     if (!saved) return null;
 
     const project = JSON.parse(saved) as SavedProject;
+    console.log(`Project loaded at step: ${project.step}`, {
+      hasVideoUrl: !!project.videoUrl,
+      hasEmbersVideoUrl: !!project.embersVideoUrl,
+      hasSmokeEmbersVideoUrl: !!project.smokeEmbersVideoUrl,
+      smokeEmbersVideoUrl: project.smokeEmbersVideoUrl,
+    });
 
     // Check if project is older than 24 hours
     const hoursSinceLastSave = (Date.now() - project.savedAt) / (1000 * 60 * 60);
@@ -136,7 +147,9 @@ export function updateProjectInHistory(projectId: string, updates: Partial<Proje
     if (index !== -1) {
       history[index] = { ...history[index], ...updates };
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-      console.log(`Updated project in history: ${projectId}`);
+      console.log(`Updated project in history: ${projectId}`, updates);
+    } else {
+      console.warn(`Project not found in history: ${projectId}`);
     }
   } catch (error) {
     console.error("Failed to update project in history:", error);
