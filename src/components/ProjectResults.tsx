@@ -250,20 +250,36 @@ export function ProjectResults({
   };
 
   // Auto-render video when in full automation mode (renders with embers)
+  // CRITICAL: Only auto-render if autoRender=true AND no video already exists
   useEffect(() => {
-    if (autoRender && !autoRenderTriggered.current && !embersVideoUrl && !isRenderingEmbers) {
-      // Check if we have all required data for rendering
-      const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
-      if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
-        console.log("[Full Automation] Auto-starting video render with embers...");
-        autoRenderTriggered.current = true;
-        // Small delay to let the UI render first
-        setTimeout(() => {
-          handleRenderVideo('embers');
-        }, 1000);
-      }
+    // Skip if autoRender is false (covers resumed projects via isFreshGeneration check in parent)
+    if (!autoRender) {
+      return;
     }
-  }, [autoRender, projectId, audioUrl, srtContent, assets, embersVideoUrl, isRenderingEmbers]);
+
+    // Skip if already triggered or currently rendering
+    if (autoRenderTriggered.current || isRenderingEmbers) {
+      return;
+    }
+
+    // Skip if a video already exists (from props OR state) - this is the key check!
+    if (embersVideoUrl || initialEmbersVideoUrl || smokeEmbersVideoUrl || initialSmokeEmbersVideoUrl) {
+      console.log("[Full Automation] Skipping auto-render - video already exists");
+      autoRenderTriggered.current = true;
+      return;
+    }
+
+    // Check if we have all required data for rendering
+    const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
+    if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
+      console.log("[Full Automation] Auto-starting video render with embers...");
+      autoRenderTriggered.current = true;
+      // Small delay to let the UI render first
+      setTimeout(() => {
+        handleRenderVideo('embers');
+      }, 1000);
+    }
+  }, [autoRender, projectId, audioUrl, srtContent, assets, embersVideoUrl, initialEmbersVideoUrl, smokeEmbersVideoUrl, initialSmokeEmbersVideoUrl, isRenderingEmbers]);
 
   // Auto-open YouTube modal when video is ready in full automation mode
   useEffect(() => {
