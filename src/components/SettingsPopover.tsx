@@ -248,18 +248,19 @@ export function SettingsPopover({
             <div className="px-3 py-3 bg-secondary/50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Speed</span>
-                <span className="text-sm font-medium">{localSettings.speed.toFixed(1)}x</span>
+                <span className="text-sm font-medium">{localSettings.speed.toFixed(2)}x</span>
               </div>
               <Slider
                 value={[localSettings.speed]}
                 onValueChange={(value) => updateSetting("speed", value[0])}
                 min={0.6}
                 max={1}
-                step={0.1}
+                step={0.05}
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-1">
                 <span>0.6x</span>
+                <span>0.8x</span>
                 <span>1x</span>
               </div>
             </div>

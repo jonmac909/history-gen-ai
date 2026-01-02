@@ -259,7 +259,7 @@ Multi-step generation with user review at each stage:
 - `ImagePromptsPreviewModal`:
   - Collapsible Master Style Prompt editor (applies to all images)
   - Individual scene description editing per image
-- Default voice sample: `clone_voice.wav` in `public/voices/` (~30 seconds, auto-loaded for new projects)
+- Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 - `ProjectResults`: Final downloads page with export options:
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
@@ -317,7 +317,7 @@ Multi-step generation with user review at each stage:
 
 ### RunPod Endpoints
 
-**Fish Speech OpenAudio S1-mini** (Endpoint: `7gv5y0snx5xiwk`):
+**Fish Speech OpenAudio S1-mini** (Endpoint: `32lqrjn54t9rcw`):
 - Input: `{ text, reference_audio_base64 }`
   - Voice sample: 10-30 seconds recommended for best quality
   - MP3/other formats auto-converted to WAV via ffmpeg
@@ -410,17 +410,25 @@ Multi-step generation with user review at each stage:
 
 ### Video Rendering Architecture
 
-**Server-side FFmpeg rendering with chunked processing and smoke+embers overlay.**
+**Uses RunPod CPU (32 vCPU) for reliable, fast video rendering.**
 
-**Chunked Rendering Pipeline:**
-1. Download audio + images + overlay files from Supabase/Netlify
-2. Split images into chunks (25 images per chunk)
-3. Render each chunk with two-pass approach:
-   - Pass 1: Images → raw chunk video (scale, letterbox)
-   - Pass 2: Apply smoke (multiply blend) + embers (colorkey overlay)
-4. Concatenate chunks (fast copy, no re-encode)
-5. Add audio (fast mux)
-6. Upload final MP4 to Supabase
+**Why RunPod CPU instead of GPU:**
+- GPU workers have "lottery" problem - not all RunPod workers have NVENC-capable GPUs
+- CPU with 32 cores is fast enough (~2-3 minutes for 10-minute video)
+- 100% reliable - no hardware compatibility issues
+
+**RunPod CPU Worker** (Endpoint: `bw3dx1k956cee9`):
+- GitHub repo: `jonmac909/video-render-cpu`
+- 32 vCPU, 64GB RAM, CPU5 tier ($0.0003733/s)
+- libx264 encoder with `-threads 32`
+- Overlay files bundled in Docker image
+
+**Two-Pass Rendering Pipeline:**
+1. Download audio + images from Supabase
+2. **Pass 1**: Images → raw video (scale, letterbox, libx264)
+3. **Pass 2**: Apply smoke (multiply blend) + embers (colorkey overlay)
+4. Add audio (fast mux)
+5. Upload final MP4 to Supabase
 
 **Smoke+Embers Overlay System:**
 - **Two-overlay approach** to avoid color tint issues:
@@ -428,37 +436,30 @@ Multi-step generation with user review at each stage:
   - `embers.mp4`: Orange embers on pure black background
 - **Filter chain** (for `smoke_embers` effect):
   ```
-  [smoke]colorchannelmixer → grayscale → [base]multiply blend → [embers]colorkey → overlay
+  [base]scale with flags=full_chroma_int+accurate_rnd →
+  [smoke]colorchannelmixer=.3:.59:.11 → grayscale →
+  [base][smoke]blend=multiply →
+  [embers]colorkey=black:0.2:0.2 → overlay
   ```
-  - Smoke: Convert to grayscale, multiply blend darkens image naturally
-  - Embers: Colorkey removes black, overlays bright particles on top
-- **Why two overlays?** Single overlays with colored smoke cause purple/green tint artifacts
-- Overlay files served from Netlify: `https://historygenai.netlify.app/overlays/`
-- Applied per-chunk using concat demuxer (NOT -stream_loop which crashes on long videos)
-- Graceful fallback: if overlay pass fails, uses raw chunk without effects
+  - **Critical**: `flags=full_chroma_int+accurate_rnd` and correct grayscale coefficients (`.3:.59:.11`) prevent green tint
+- Overlay files bundled with worker at `/app/overlays/`
 
-**Key constants** in `render-api/src/routes/render-video.ts`:
-- `IMAGES_PER_CHUNK = 25` images per chunk
-- `PARALLEL_CHUNK_RENDERS = 4` parallel chunk renders
-- `FFMPEG_PRESET = 'fast'` (better compression than ultrafast)
-- `FFMPEG_CRF = '26'` (good quality, reasonable file size)
-- Colorkey settings: `similarity=0.2:blend=0.2` for embers
+**Key constants** in CPU worker (`handler.py`):
+- `FFMPEG_THREADS = 32` (use all cores)
+- `FFMPEG_PRESET = "fast"` (good speed/quality balance)
+- `FFMPEG_CRF = "24"` (constant quality)
 
-**Large Video Upload:**
-- Videos >50MB use streaming upload via REST API (avoids memory exhaustion)
-- `fs.createReadStream()` streams directly to Supabase (no full file in RAM)
-- Supabase bucket must have file size limit set (default 50MB, increase to 5GB for Pro)
-
-**SSE Progress Stages:**
-- Downloading (5-25%), Preparing (30%), Rendering chunks (30-70%), Concatenating (72%), Audio mux (75%), Uploading (85-100%)
-- 5-second keepalive heartbeat prevents connection timeout
+**Progress Updates:**
+- Worker updates Supabase `render_jobs` table directly
+- Railway polls Supabase for progress (2s interval)
+- Frontend polls Railway `/render-video/status/:jobId`
 
 **Key files:**
-- `render-api/src/routes/render-video.ts`: FFmpeg rendering endpoint
+- `render-api/src/routes/render-video.ts`: Railway endpoint, dispatches to RunPod CPU
+- `/Users/jonmac/Documents/video-render-cpu-runpod/handler.py`: RunPod worker
 - `src/lib/fcpxmlGenerator.ts`: Client-side FCPXML generation for NLE import
-- `src/lib/api.ts`: `renderVideoStreaming()` with SSE progress parsing
-- `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay (for multiply blend)
-- `public/overlays/embers.mp4`: Embers overlay (for colorkey overlay)
+- `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay
+- `public/overlays/embers.mp4`: Embers overlay
 
 ### YouTube Upload Architecture
 
@@ -543,7 +544,7 @@ SUPABASE_URL=https://udqfdeoullsxttqguupz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
-RUNPOD_ENDPOINT_ID=7gv5y0snx5xiwk
+RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 GOOGLE_CLIENT_ID=<google-oauth-client-id>
