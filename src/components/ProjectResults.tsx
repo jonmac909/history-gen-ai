@@ -155,6 +155,25 @@ export function ProjectResults({
   const autoRenderTriggered = useRef(!!initialEmbersVideoUrl);
   const autoYouTubeModalTriggered = useRef(false);
 
+  // Sync state and ref when props change (handles case where component mounts before state propagates)
+  useEffect(() => {
+    if (initialEmbersVideoUrl) {
+      if (!autoRenderTriggered.current) {
+        console.log("[ProjectResults] Video already rendered, setting autoRenderTriggered=true");
+        autoRenderTriggered.current = true;
+      }
+      if (!embersVideoUrl) {
+        setEmbersVideoUrl(initialEmbersVideoUrl);
+      }
+    }
+  }, [initialEmbersVideoUrl]);
+
+  useEffect(() => {
+    if (initialSmokeEmbersVideoUrl && !smokeEmbersVideoUrl) {
+      setSmokeEmbersVideoUrl(initialSmokeEmbersVideoUrl);
+    }
+  }, [initialSmokeEmbersVideoUrl]);
+
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
 
