@@ -204,12 +204,14 @@ export function VideoRenderModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-orange-400" />
-            {videoUrl ? 'Video Ready' : 'Rendering Video'}
+            {videoUrl ? 'Video Ready' : (isRendering || renderProgress) ? 'Rendering Video' : 'Render Video'}
           </DialogTitle>
           <DialogDescription>
             {videoUrl
               ? 'Your video with smoke + embers effect is ready!'
-              : 'Rendering your video with smoke and embers overlay...'}
+              : (isRendering || renderProgress)
+                ? 'Rendering your video with smoke and embers overlay...'
+                : 'Add cinematic smoke and embers effects to your video.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -261,6 +263,22 @@ export function VideoRenderModal({
             <div className="flex flex-col items-center gap-3 py-8">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">Starting render...</p>
+            </div>
+          )}
+
+          {/* Render button when not auto-rendering */}
+          {!videoUrl && !renderProgress && !isRendering && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                <Video className="w-8 h-8 text-orange-500" />
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                Click the button below to render your video with smoke and embers effects.
+              </p>
+              <Button onClick={handleRender} className="gap-2">
+                <Sparkles className="w-4 h-4" />
+                Render Video
+              </Button>
             </div>
           )}
         </div>
