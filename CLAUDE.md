@@ -318,21 +318,22 @@ Multi-step generation with user review at each stage:
 ### RunPod Endpoints
 
 **Fish Speech OpenAudio S1-mini** (Endpoint: `32lqrjn54t9rcw`):
-- Input: `{ text, reference_audio_base64 }`
+- Input: `{ text, reference_audio_base64, emotion_marker?, temperature?, top_p?, repetition_penalty? }`
   - Voice sample: 10-30 seconds recommended for best quality
   - MP3/other formats auto-converted to WAV via ffmpeg
   - Fish Speech accepts various sample rates (no strict resampling required)
 - Output: 24000Hz mono 16-bit WAV
 - 2000 char limit per request
 - GitHub repo: `jonmac909/fish-speech-runpod`
-- **TTS Generation Parameters** (in `handler.py`):
-  - `temperature: 0.7` - Balanced expressiveness
-  - `top_p: 0.8` - Nucleus sampling
-  - `repetition_penalty: 1.2` - Prevents phrase repetitions
-  - `seed: 42` - Fixed seed for consistent voice/accent
+- Docker image: `jonmac909/fish-speech-runpod:latest` (pushed to Docker Hub, RunPod pulls on cold start)
+- **TTS Generation Parameters** (configurable via Generation Settings UI):
+  - `emotion_marker`: Voice style prefix like `(sincere) (soft tone)`, `(engaging)`, `(dramatic)`
+  - `temperature`: 0.1-1.0 (default 0.9) - Higher = more expressive
+  - `top_p`: 0.1-1.0 (default 0.85) - Higher = more variation
+  - `repetition_penalty`: 0.9-2.0 (default 1.1) - Higher = less repetition
   - `normalize: True` - Text normalization for numbers
-  - `chunk_length: 300` - Larger chunks reduce voice transitions
-  - `max_new_tokens: 2048` - Extended token limit
+  - `chunk_length: 200` - Chunk size for prosody
+  - `seed: None` - Random seed for natural variation
 - **Model Info**:
   - OpenAudio S1-mini: 0.5B parameters
   - Quality: 0.008 WER, 0.004 CER on English
@@ -593,7 +594,9 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 
 ### RunPod Workers
 
-**Fish Speech:** GitHub integration auto-rebuilds `jonmac909/fish-speech-runpod` (5-10 min)
+**Fish Speech:** Uses Docker Hub image `jonmac909/fish-speech-runpod:latest`
+- To update: `cd /Users/jonmac/Documents/fish-speech-runpod && docker build --platform linux/amd64 -t jonmac909/fish-speech-runpod:latest . && docker push jonmac909/fish-speech-runpod:latest`
+- RunPod pulls new image on next cold start (may take a few minutes)
 
 ## Common Issues
 
@@ -702,10 +705,11 @@ Rendered video: `{projectId}/video.mp4` (with embers overlay)
 ## Default Settings
 
 New projects initialize with:
-- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.wav` (set in `src/pages/Index.tsx`)
+- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.mp3` (set in `src/pages/Index.tsx`)
 - Script template: `template-a`
 - AI model: `claude-sonnet-4-5`
 - Word count: 1000, Image count: 10, Speed: 1x
+- TTS settings: Voice Style = "Sincere & Soft", Temperature = 0.9, Top-P = 0.85, Repetition Penalty = 1.1
 
 **Full Automation Mode** (`settings.fullAutomation`):
 - Auto-confirms each pipeline step without user review
