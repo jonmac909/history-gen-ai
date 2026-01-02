@@ -124,7 +124,9 @@ const Index = () => {
   // Check for saved project on load and when returning to create view
   useEffect(() => {
     if (viewState === "create") {
+      console.log("[Index] Checking for saved project...");
       const saved = loadProject();
+      console.log("[Index] Saved project found:", !!saved, saved?.smokeEmbersVideoUrl);
       if (saved) {
         setSavedProject(saved);
       }
