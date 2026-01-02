@@ -54,7 +54,7 @@ export const TTS_EMOTION_MARKERS = [
   { value: "(dramatic)", label: "Dramatic" },
   { value: "(whispering)", label: "Whispering" },
   { value: "(storytelling)", label: "Storytelling" },
-  { value: "", label: "None (Default)" },
+  { value: "none", label: "None (Default)" },
 ];
 
 

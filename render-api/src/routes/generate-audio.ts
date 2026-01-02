@@ -981,7 +981,8 @@ async function startTTSJob(
   // Pass TTS settings to RunPod worker
   if (ttsSettings) {
     if (ttsSettings.emotionMarker !== undefined) {
-      inputPayload.emotion_marker = ttsSettings.emotionMarker;
+      // Convert "none" (used for Radix Select compatibility) to empty string
+      inputPayload.emotion_marker = ttsSettings.emotionMarker === "none" ? "" : ttsSettings.emotionMarker;
     }
     if (ttsSettings.temperature !== undefined) {
       inputPayload.temperature = ttsSettings.temperature;
