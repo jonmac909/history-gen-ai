@@ -906,37 +906,18 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Choose rendering method:
-    // 1. GPU RunPod (if useGpu=true and GPU endpoint configured)
-    // 2. CPU RunPod (default - reliable 32 vCPU)
-    // 3. Railway CPU (fallback if no RunPod API key)
-    const useGpu = params.useGpu && RUNPOD_VIDEO_ENDPOINT_ID && RUNPOD_API_KEY;
-    const useCpuRunpod = !useGpu && RUNPOD_CPU_ENDPOINT_ID && RUNPOD_API_KEY;
-
-    if (useGpu) {
-      console.log(`Job ${jobId}: Using GPU rendering (RunPod)`);
-      processRenderJobGpu(jobId, params).catch(err => {
-        console.error(`GPU job ${jobId} crashed:`, err);
-      });
-    } else if (useCpuRunpod) {
-      console.log(`Job ${jobId}: Using CPU rendering (RunPod 32 vCPU)`);
-      processRenderJobCpuRunpod(jobId, params).catch(err => {
-        console.error(`CPU RunPod job ${jobId} crashed:`, err);
-      });
-    } else {
-      console.log(`Job ${jobId}: Using CPU rendering (Railway - fallback)`);
-      processRenderJob(jobId, params).catch(err => {
-        console.error(`Railway CPU job ${jobId} crashed:`, err);
-      });
-    }
+    // Always use RunPod CPU (32 vCPU) for reliable rendering
+    console.log(`Job ${jobId}: Using CPU rendering (RunPod 32 vCPU)`);
+    processRenderJobCpuRunpod(jobId, params).catch(err => {
+      console.error(`CPU RunPod job ${jobId} crashed:`, err);
+    });
 
     // Return immediately with job ID
-    const rendererType = useGpu ? 'GPU' : (useCpuRunpod ? 'CPU-32' : 'Railway');
     res.json({
       success: true,
       jobId,
       status: 'queued',
-      message: `Render job started (${rendererType}). Poll /render-video/status/:jobId for progress.`
+      message: 'Render job started (CPU-32). Poll /render-video/status/:jobId for progress.'
     });
 
   } catch (error: any) {
