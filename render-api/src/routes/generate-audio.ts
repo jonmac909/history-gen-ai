@@ -11,6 +11,7 @@ import FormData from 'form-data';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { getPronunciationFixesRecord } from './pronunciation';
 
 // Set FFmpeg and FFprobe paths
 if (ffmpegStatic) {
@@ -154,36 +155,6 @@ function convertNumbersToWords(text: string): string {
   return text;
 }
 
-// Common proper nouns and technical terms that TTS often mispronounces
-// NOTE: This is a workaround - the real fix is using a better voice sample
-const PRONUNCIATION_FIXES: Record<string, string> = {
-  // Place names
-  'Clermont': 'Clair-mont',
-  'Jerusalem': 'Jeh-roo-sah-lem',
-  'Piacenza': 'Pee-ah-chen-zah',
-  'Bouillon': 'Boo-ee-yon',
-  'Nicaea': 'Nye-see-ah',
-  'Dorylaeum': 'Dor-ee-lay-um',
-  'Anatolia': 'An-ah-toe-lee-ah',
-
-  // Historical terms
-  'Byzantine': 'Biz-an-tine',
-  'Papal': 'Pay-pal',
-  'Manzikert': 'Man-zee-kert',
-  'Crusade': 'Crew-sade',
-  'ecclesiastical': 'eh-klee-zee-as-ti-cal',
-  'Alexios': 'Ah-lex-ee-os',
-  'Kerbogha': 'Ker-bow-gah',
-
-  // Common words that get garbled
-  'courts': 'korts',
-  'preachers': 'pree-chers',
-  'Jewish': 'Jew-ish',
-  'Armenian': 'Ar-mee-nee-an',
-  'dream': 'dreem',
-  'dreams': 'dreems',
-};
-
 // Mandatory normalization before sending to API
 function normalizeText(text: string): string {
   let result = text
@@ -195,7 +166,9 @@ function normalizeText(text: string): string {
     .replace(/…/g, "...");
 
   // Apply pronunciation fixes for difficult words (case-insensitive)
-  for (const [word, phonetic] of Object.entries(PRONUNCIATION_FIXES)) {
+  // Loads dynamically from pronunciation-fixes.json file
+  const pronunciationFixes = getPronunciationFixesRecord();
+  for (const [word, phonetic] of Object.entries(pronunciationFixes)) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     result = result.replace(regex, phonetic);
   }

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, BookOpen } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AudioSegment } from "@/lib/api";
+import { PronunciationModal } from "./PronunciationModal";
 
 interface AudioSegmentsPreviewModalProps {
   isOpen: boolean;
@@ -251,6 +252,7 @@ export function AudioSegmentsPreviewModal({
   const [isLoadingAll, setIsLoadingAll] = useState(true);
   const [playbackRateAll, setPlaybackRateAll] = useState(1);
   const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
+  const [isPronunciationModalOpen, setIsPronunciationModalOpen] = useState(false);
   const combinedAudioRef = useRef<HTMLAudioElement>(null);
 
   const calculatedDuration = segments.reduce((sum, seg) => sum + seg.duration, 0);
@@ -425,7 +427,18 @@ export function AudioSegmentsPreviewModal({
           )}
 
           {/* Individual Segments */}
-          <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">Individual Segments (expand to edit script, then regenerate)</div>
+          <div className="flex items-center justify-between mt-4 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Individual Segments (expand to edit script, then regenerate)</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsPronunciationModalOpen(true)}
+              className="gap-1"
+            >
+              <BookOpen className="w-4 h-4" />
+              Pronunciation
+            </Button>
+          </div>
           {segments.map((segment) => (
             <AudioSegmentCard
               key={segment.index}
@@ -473,6 +486,12 @@ export function AudioSegmentsPreviewModal({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Pronunciation Modal */}
+      <PronunciationModal
+        isOpen={isPronunciationModalOpen}
+        onClose={() => setIsPronunciationModalOpen(false)}
+      />
     </Dialog>
   );
 }
