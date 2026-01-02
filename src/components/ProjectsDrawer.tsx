@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, PlayCircle, CheckCircle2 } from "lucide-react";
+import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, PlayCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -36,13 +36,18 @@ interface ProjectsDrawerProps {
 export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
 
   // Load projects when drawer opens
   useEffect(() => {
     if (isOpen) {
-      setProjects(getAllProjects());
+      setIsLoading(true);
+      getAllProjects()
+        .then(setProjects)
+        .catch(err => console.error('[ProjectsDrawer] Failed to load projects:', err))
+        .finally(() => setIsLoading(false));
     }
   }, [isOpen]);
 
@@ -70,8 +75,8 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
         }
       }
 
-      // Remove from project store
-      deleteProject(project.id);
+      // Remove from project store (Supabase)
+      await deleteProject(project.id);
       setProjects(prev => prev.filter(p => p.id !== project.id));
 
       toast({
@@ -118,7 +123,12 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
           </SheetHeader>
 
           <div className="mt-6 space-y-4 max-h-[calc(100vh-120px)] overflow-y-auto">
-            {projects.length === 0 ? (
+            {isLoading ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
+                <p>Loading projects...</p>
+              </div>
+            ) : projects.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p>No projects yet</p>

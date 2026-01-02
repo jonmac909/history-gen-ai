@@ -42,11 +42,10 @@ import { defaultTemplates, defaultImageTemplates } from "@/data/defaultTemplates
 import { supabase } from "@/integrations/supabase/client";
 import {
   upsertProject,
-  getProject,
   getMostRecentInProgress,
   completeProject,
   archiveProject,
-  migrateFromLegacyStorage,
+  migrateFromLocalStorage,
   getStepLabel,
   type Project,
 } from "@/lib/projectStore";
@@ -130,22 +129,23 @@ const Index = () => {
   const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
 
-  // Migrate legacy storage on first load
+  // Migrate localStorage to Supabase on first load
   useEffect(() => {
-    migrateFromLegacyStorage();
+    migrateFromLocalStorage();
   }, []);
 
   // Check for in-progress project on load and when returning to create view
   useEffect(() => {
     if (viewState === "create") {
       console.log("[Index] Checking for in-progress project...");
-      const inProgress = getMostRecentInProgress();
-      console.log("[Index] In-progress project found:", !!inProgress, inProgress?.id);
-      if (inProgress) {
-        setSavedProject(inProgress);
-      } else {
-        setSavedProject(null);
-      }
+      getMostRecentInProgress().then((inProgress) => {
+        console.log("[Index] In-progress project found:", !!inProgress, inProgress?.id);
+        if (inProgress) {
+          setSavedProject(inProgress);
+        } else {
+          setSavedProject(null);
+        }
+      });
     }
   }, [viewState]);
 
@@ -196,6 +196,7 @@ const Index = () => {
   }, [settings.fullAutomation, viewState, pendingImages]);
 
   // Auto-save helper - uses unified project store (upsert by id)
+  // Fire-and-forget async to avoid blocking UI
   const autoSave = (step: Project["currentStep"], overrides?: Partial<Project>) => {
     const finalId = overrides?.id || projectId;
     const finalVideoTitle = overrides?.videoTitle || videoTitle;
@@ -220,7 +221,7 @@ const Index = () => {
       videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
       embersVideoUrl: overrides?.embersVideoUrl || embersVideoUrl,
       smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
-    });
+    }).catch(err => console.error('[autoSave] Failed to save project:', err));
   };
 
   // Resume saved project
@@ -281,7 +282,9 @@ const Index = () => {
   const handleDismissSavedProject = () => {
     if (savedProject) {
       console.log("[handleDismissSavedProject] Archiving project:", savedProject.id);
-      archiveProject(savedProject.id);
+      archiveProject(savedProject.id).catch(err =>
+        console.error('[handleDismissSavedProject] Failed to archive:', err)
+      );
     }
     setSavedProject(null);
   };
@@ -981,7 +984,9 @@ const Index = () => {
     // Mark project as completed in the unified store
     // No clearProject needed - just change status
     console.log("[finishGeneration] Marking project as completed:", projectId);
-    completeProject(projectId);
+    completeProject(projectId).catch(err =>
+      console.error('[finishGeneration] Failed to complete project:', err)
+    );
 
     toast({
       title: "Generation Complete!",

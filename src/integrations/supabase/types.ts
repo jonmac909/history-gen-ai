@@ -16,42 +16,72 @@ export type Database = {
     Tables: {
       generation_projects: {
         Row: {
-          audio_url: string | null
-          captions_url: string | null
-          created_at: string
           id: string
-          images: Json | null
-          script_content: string | null
-          settings: Json | null
-          source_type: string
           source_url: string
+          source_type: string
           status: string
+          video_title: string | null
+          current_step: string | null
+          script_content: string | null
+          audio_url: string | null
+          audio_duration: number | null
+          audio_segments: Json | null
+          srt_url: string | null
+          srt_content: string | null
+          image_prompts: Json | null
+          image_urls: Json | null
+          video_url: string | null
+          video_url_captioned: string | null
+          embers_video_url: string | null
+          smoke_embers_video_url: string | null
+          settings: Json | null
+          created_at: string
           updated_at: string
         }
         Insert: {
-          audio_url?: string | null
-          captions_url?: string | null
-          created_at?: string
           id?: string
-          images?: Json | null
-          script_content?: string | null
-          settings?: Json | null
+          source_url?: string
           source_type?: string
-          source_url: string
           status?: string
+          video_title?: string | null
+          current_step?: string | null
+          script_content?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_segments?: Json | null
+          srt_url?: string | null
+          srt_content?: string | null
+          image_prompts?: Json | null
+          image_urls?: Json | null
+          video_url?: string | null
+          video_url_captioned?: string | null
+          embers_video_url?: string | null
+          smoke_embers_video_url?: string | null
+          settings?: Json | null
+          created_at?: string
           updated_at?: string
         }
         Update: {
-          audio_url?: string | null
-          captions_url?: string | null
-          created_at?: string
           id?: string
-          images?: Json | null
-          script_content?: string | null
-          settings?: Json | null
-          source_type?: string
           source_url?: string
+          source_type?: string
           status?: string
+          video_title?: string | null
+          current_step?: string | null
+          script_content?: string | null
+          audio_url?: string | null
+          audio_duration?: number | null
+          audio_segments?: Json | null
+          srt_url?: string | null
+          srt_content?: string | null
+          image_prompts?: Json | null
+          image_urls?: Json | null
+          video_url?: string | null
+          video_url_captioned?: string | null
+          embers_video_url?: string | null
+          smoke_embers_video_url?: string | null
+          settings?: Json | null
+          created_at?: string
           updated_at?: string
         }
         Relationships: []
