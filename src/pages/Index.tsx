@@ -1532,6 +1532,12 @@ const Index = () => {
           }}
           autoRender={settings.fullAutomation}
           thumbnails={generatedThumbnails}
+          onGoToScript={handleBackToScript}
+          onGoToAudio={handleBackToAudio}
+          onGoToPrompts={handleBackToPrompts}
+          onGoToImages={handleBackToImages}
+          onGoToThumbnails={handleBackToThumbnails}
+          onGoToRender={handleBackToRender}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

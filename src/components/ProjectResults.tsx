@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, Film, Video, Loader2, Sparkles, Youtube } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Film, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -42,6 +42,14 @@ interface ProjectResultsProps {
   onSmokeEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when smoke+embers video is rendered
   autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
   thumbnails?: string[];  // Generated thumbnails for YouTube upload
+  // Navigation callbacks to go back to specific pipeline steps
+  onGoToScript?: () => void;
+  onGoToAudio?: () => void;
+  onGoToPrompts?: () => void;
+  onGoToImages?: () => void;
+  onGoToThumbnails?: () => void;
+  onGoToRender?: () => void;
+  onGoToYouTube?: () => void;
 }
 
 // Parse SRT to get timing info
@@ -140,7 +148,14 @@ export function ProjectResults({
   onEmbersVideoRendered,
   onSmokeEmbersVideoRendered,
   autoRender,
-  thumbnails
+  thumbnails,
+  onGoToScript,
+  onGoToAudio,
+  onGoToPrompts,
+  onGoToImages,
+  onGoToThumbnails,
+  onGoToRender,
+  onGoToYouTube,
 }: ProjectResultsProps) {
   // State for video rendering - three separate videos (basic, embers, smoke_embers)
   const [isRenderingBasic, setIsRenderingBasic] = useState(false);
@@ -692,22 +707,23 @@ export function ProjectResults({
         </Button>
       </div>
 
-      {/* Downloads */}
+      {/* Pipeline Steps */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-4">
           <Layers className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-semibold text-foreground">Downloads</h2>
+          <h2 className="text-lg font-semibold text-foreground">Pipeline Steps</h2>
         </div>
 
         <div className="space-y-3">
           {/* Script */}
           {assets.find(a => a.id === 'script') && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToScript}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  {assets.find(a => a.id === 'script')!.icon}
+                  <FileText className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Script</p>
@@ -716,26 +732,35 @@ export function ProjectResults({
                   </p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => handleDownload(assets.find(a => a.id === 'script')!, 'script.txt')}
-                className="text-muted-foreground hover:text-foreground"
-                title="Download"
-              >
-                <Download className="w-5 h-5" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+                {onGoToScript && (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
             </div>
           )}
 
           {/* Audio */}
           {assets.find(a => a.id === 'audio') && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToAudio}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  {assets.find(a => a.id === 'audio')!.icon}
+                  <Mic className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Audio</p>
@@ -744,272 +769,206 @@ export function ProjectResults({
                   </p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav')}
-                className="text-muted-foreground hover:text-foreground"
-                title="Download"
-              >
-                <Download className="w-5 h-5" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+                {onGoToAudio && (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Image Prompts */}
+          {imagePrompts && imagePrompts.length > 0 && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToPrompts}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Palette className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Image Prompts</p>
+                  <p className="text-sm text-muted-foreground">
+                    {imagePrompts.length} scene descriptions
+                  </p>
+                </div>
+              </div>
+              {onGoToPrompts && (
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              )}
             </div>
           )}
 
           {/* Images */}
           {assets.some(a => a.id.startsWith('image-') && a.url) && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToImages}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <ImageIcon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Images</p>
+                  <p className="text-sm text-muted-foreground">
+                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated images
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadAllImagesAsZip();
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download ZIP"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+                {onGoToImages && (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Thumbnails */}
+          {thumbnails && thumbnails.length > 0 && (
+            <div
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToThumbnails}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
                   <Image className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Images</p>
+                  <p className="font-medium text-foreground">Thumbnails</p>
                   <p className="text-sm text-muted-foreground">
-                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} images (ZIP)
+                    {thumbnails.length} generated thumbnails
                   </p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleDownloadAllImagesAsZip}
-                className="text-muted-foreground hover:text-foreground"
-                title="Download"
-              >
-                <Download className="w-5 h-5" />
-              </Button>
-            </div>
-          )}
-
-          {/* Timeline Export (FCPXML) */}
-          {srtContent && assets.some(a => a.id.startsWith('image-')) && (
-            <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Film className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">Timeline Export</p>
-                  <p className="text-sm text-muted-foreground">
-                    FCPXML (DaVinci Resolve, FCP, Premiere)
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleDownloadFCPXML}
-                className="text-muted-foreground hover:text-foreground"
-                title="Download FCPXML"
-              >
-                <Download className="w-5 h-5" />
-              </Button>
-            </div>
-          )}
-
-          {/* Render Video (Basic - no effects) */}
-          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
-            <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Video className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">
-                    {basicVideoUrl ? 'Video' : 'Render Video'}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {basicVideoUrl ? 'MP4 video (no effects)' : 'Generate MP4 video'}
-                  </p>
-                </div>
-              </div>
-              {basicVideoUrl ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRenderVideo('basic')}
-                    disabled={isRenderingBasic || isRenderingEmbers}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Re-render Video"
-                  >
-                    {isRenderingBasic ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-5 h-5" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDownloadVideo('basic')}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Download Video"
-                  >
-                    <Download className="w-5 h-5" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRenderVideo('basic')}
-                  disabled={isRenderingBasic || isRenderingEmbers}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Render Video"
-                >
-                  {isRenderingBasic ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    "Render"
-                  )}
-                </Button>
+              {onGoToThumbnails && (
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
               )}
             </div>
           )}
 
-          {/* Render Video with Embers */}
+          {/* Video Render */}
           {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              onClick={onGoToRender}
             >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">
-                    {embersVideoUrl ? 'Video + Embers' : 'Render with Embers'}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {embersVideoUrl ? 'MP4 video with embers overlay' : 'Video with animated embers effect'}
-                  </p>
-                </div>
-              </div>
-              {embersVideoUrl ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRenderVideo('embers')}
-                    disabled={isRenderingBasic || isRenderingEmbers}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Re-render Video"
-                  >
-                    {isRenderingEmbers ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-5 h-5" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDownloadVideo('embers')}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Download Video"
-                  >
-                    <Download className="w-5 h-5" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRenderVideo('embers')}
-                  disabled={isRenderingBasic || isRenderingEmbers}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Render Video with Embers"
-                >
-                  {isRenderingEmbers ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    "Render"
-                  )}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Smoke + Embers Video */}
-          {(srtContent || smokeEmbersVideoUrl) && (
-            <div className="flex items-center justify-between p-4 bg-card rounded-lg border">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-orange-400" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">
-                    {smokeEmbersVideoUrl ? 'Smoke + Embers Video' : 'Smoke + Embers'}
-                  </p>
+                  <p className="font-medium text-foreground">Video Render</p>
                   <p className="text-sm text-muted-foreground">
-                    {smokeEmbersVideoUrl ? 'MP4 video with smoke and embers overlay' : 'Video with smoke and embers overlay'}
+                    {smokeEmbersVideoUrl ? 'Rendered with smoke + embers' : 'Render video with effects'}
                   </p>
                 </div>
               </div>
-              {smokeEmbersVideoUrl ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownloadVideo('smoke_embers')}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Download Video"
-                >
-                  <Download className="w-5 h-5" />
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRenderVideo('smoke_embers')}
-                  disabled={isRenderingBasic || isRenderingEmbers || isRenderingSmokeEmbers}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Render Video with Smoke + Embers"
-                >
-                  {isRenderingSmokeEmbers ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    "Render"
-                  )}
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {smokeEmbersVideoUrl && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadVideo('smoke_embers');
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Download Video"
+                  >
+                    <Download className="w-5 h-5" />
+                  </Button>
+                )}
+                {onGoToRender && (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
             </div>
           )}
 
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl) && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors"
+              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors cursor-pointer"
+              onClick={() => setIsYouTubeModalOpen(true)}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                   <Youtube className="w-5 h-5 text-red-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Upload to YouTube</p>
+                  <p className="font-medium text-foreground">YouTube Upload</p>
                   <p className="text-sm text-muted-foreground">
-                    Upload as private draft for review
+                    Upload as private draft
                   </p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsYouTubeModalOpen(true)}
-                className="text-red-600 hover:text-red-700 hover:bg-red-100/50"
-                title="Upload to YouTube"
-              >
-                Upload
-              </Button>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </div>
           )}
+        </div>
+
+        {/* Downloads Section */}
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Download className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Downloads</h2>
+          </div>
+
+          <div className="space-y-3">
+            {/* Timeline Export (FCPXML) */}
+            {srtContent && assets.some(a => a.id.startsWith('image-')) && (
+              <div
+                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                    <Film className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Timeline Export</p>
+                    <p className="text-sm text-muted-foreground">
+                      FCPXML (DaVinci Resolve, FCP, Premiere)
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDownloadFCPXML}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download FCPXML"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {assets.length === 0 && (
