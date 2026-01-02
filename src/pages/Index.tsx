@@ -1901,6 +1901,7 @@ const Index = () => {
         images={pendingImages}
         prompts={imagePrompts}
         script={confirmedScript}
+        srtContent={srtContent}
         onConfirm={handleImagesConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToPrompts}

@@ -15,6 +15,8 @@ interface ImagePrompt {
   index: number;
   prompt: string;
   sceneDescription: string;
+  startSeconds?: number;
+  endSeconds?: number;
 }
 
 interface ImagesPreviewModalProps {
@@ -22,6 +24,7 @@ interface ImagesPreviewModalProps {
   images: string[];
   prompts?: ImagePrompt[];
   script?: string;
+  srtContent?: string;
   onConfirm: () => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -30,11 +33,57 @@ interface ImagesPreviewModalProps {
   regeneratingIndex?: number;
 }
 
+// Parse SRT content and extract text for a given time range
+function extractSrtTextForTimeRange(srtContent: string, startSeconds: number, endSeconds: number): string {
+  const lines = srtContent.split('\n');
+  const matchingTexts: string[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    // Skip empty lines
+    if (!lines[i]?.trim()) {
+      i++;
+      continue;
+    }
+
+    // Skip index line (just a number)
+    if (/^\d+$/.test(lines[i].trim())) {
+      i++;
+    }
+
+    // Parse timestamp line: 00:00:00,000 --> 00:00:02,500
+    const timestampMatch = lines[i]?.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+    if (timestampMatch) {
+      const captionStart = parseInt(timestampMatch[1]) * 3600 + parseInt(timestampMatch[2]) * 60 + parseInt(timestampMatch[3]) + parseInt(timestampMatch[4]) / 1000;
+      const captionEnd = parseInt(timestampMatch[5]) * 3600 + parseInt(timestampMatch[6]) * 60 + parseInt(timestampMatch[7]) + parseInt(timestampMatch[8]) / 1000;
+
+      i++;
+
+      // Collect text lines until empty line
+      const textLines: string[] = [];
+      while (i < lines.length && lines[i]?.trim()) {
+        textLines.push(lines[i].trim());
+        i++;
+      }
+
+      // Check if this caption overlaps with our time range
+      if (captionEnd >= startSeconds && captionStart <= endSeconds) {
+        matchingTexts.push(textLines.join(' '));
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return matchingTexts.join(' ');
+}
+
 export function ImagesPreviewModal({
   isOpen,
   images,
   prompts,
   script,
+  srtContent,
   onConfirm,
   onCancel,
   onBack,
@@ -375,25 +424,69 @@ export function ImagesPreviewModal({
     {lightboxIndex !== null && createPortal(
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center cursor-pointer"
+        className="fixed inset-0 z-[100] bg-black/90 flex cursor-pointer overflow-hidden"
       >
         {/* Image counter */}
-        <div className="absolute top-4 left-4 text-white/70 text-lg font-medium pointer-events-none">
+        <div className="absolute top-4 left-4 text-white/70 text-lg font-medium pointer-events-none z-10">
           {lightboxIndex + 1} / {images.length}
         </div>
 
         {/* Hint text */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm pointer-events-none">
-          Press ESC or click outside to close
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm pointer-events-none z-10">
+          Press ESC or click outside • Arrow keys to navigate
         </div>
 
-        {/* Full-size image */}
-        <img
-          ref={imageRef}
-          src={getImageUrl(images[lightboxIndex], lightboxIndex)}
-          alt={`Full size image ${lightboxIndex + 1}`}
-          className="max-w-[90vw] max-h-[90vh] object-contain cursor-default"
-        />
+        {/* Main content: Image on left, Script on right */}
+        <div className="flex w-full h-full items-center justify-center gap-4 p-4">
+          {/* Full-size image */}
+          <div className="flex-shrink-0 flex items-center justify-center" style={{ maxWidth: srtContent || prompts ? '60%' : '90%' }}>
+            <img
+              ref={imageRef}
+              src={getImageUrl(images[lightboxIndex], lightboxIndex)}
+              alt={`Full size image ${lightboxIndex + 1}`}
+              className="max-w-full max-h-[85vh] object-contain cursor-default"
+            />
+          </div>
+
+          {/* Script/Audio text panel */}
+          {(srtContent || prompts) && prompts?.[lightboxIndex] && (
+            <div
+              className="flex-shrink-0 w-[35%] max-h-[85vh] bg-black/60 rounded-lg p-4 overflow-y-auto cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Time range */}
+              {prompts[lightboxIndex].startSeconds !== undefined && prompts[lightboxIndex].endSeconds !== undefined && (
+                <div className="text-white/50 text-xs mb-3 font-mono">
+                  {Math.floor(prompts[lightboxIndex].startSeconds! / 60)}:{String(Math.floor(prompts[lightboxIndex].startSeconds! % 60)).padStart(2, '0')}
+                  {' → '}
+                  {Math.floor(prompts[lightboxIndex].endSeconds! / 60)}:{String(Math.floor(prompts[lightboxIndex].endSeconds! % 60)).padStart(2, '0')}
+                </div>
+              )}
+
+              {/* Scene description / prompt */}
+              <div className="mb-4">
+                <div className="text-white/50 text-xs uppercase tracking-wide mb-1">Image Prompt</div>
+                <p className="text-white/80 text-sm leading-relaxed">
+                  {prompts[lightboxIndex].sceneDescription || prompts[lightboxIndex].prompt}
+                </p>
+              </div>
+
+              {/* Matching audio/script text */}
+              {srtContent && prompts[lightboxIndex].startSeconds !== undefined && prompts[lightboxIndex].endSeconds !== undefined && (
+                <div>
+                  <div className="text-white/50 text-xs uppercase tracking-wide mb-1">Audio Script</div>
+                  <p className="text-white text-sm leading-relaxed">
+                    {extractSrtTextForTimeRange(
+                      srtContent,
+                      prompts[lightboxIndex].startSeconds!,
+                      prompts[lightboxIndex].endSeconds!
+                    ) || 'No matching audio for this time range'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>,
       document.body
     )}
