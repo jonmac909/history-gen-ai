@@ -105,6 +105,8 @@ const Index = () => {
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | undefined>();
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | undefined>();
+  // Track whether this is a fresh generation (for autoRender) vs resumed/reopened project
+  const [isFreshGeneration, setIsFreshGeneration] = useState(false);
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -926,6 +928,7 @@ const Index = () => {
     setGeneratedAssets(assets);
     setAudioUrl(pendingAudioUrl);
     setSrtContent(pendingSrtContent);
+    setIsFreshGeneration(true);  // This is a fresh generation, allow autoRender
     setViewState("results");
 
     // Add to project history and clear in-progress save
@@ -1021,6 +1024,7 @@ const Index = () => {
     setEmbersVideoUrl(undefined);
     setSmokeEmbersVideoUrl(undefined);
     setImagePrompts([]);
+    setIsFreshGeneration(false);  // Reset fresh generation flag
   };
 
   const handleCancelRequest = () => {
@@ -1453,6 +1457,8 @@ const Index = () => {
     setGeneratedAssets(assets);
 
     // Go to results page (last step with all downloads)
+    // NOT a fresh generation - do NOT auto-render
+    setIsFreshGeneration(false);
     setViewState("results");
 
     toast({
@@ -1530,7 +1536,7 @@ const Index = () => {
             autoSave("complete", { smokeEmbersVideoUrl: url });
             updateProjectInHistory(projectId, { smokeEmbersVideoUrl: url });
           }}
-          autoRender={settings.fullAutomation}
+          autoRender={settings.fullAutomation && isFreshGeneration}
           thumbnails={generatedThumbnails}
           onGoToScript={handleBackToScript}
           onGoToAudio={handleBackToAudio}
