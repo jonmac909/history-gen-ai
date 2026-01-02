@@ -1946,12 +1946,12 @@ const Index = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Exit Project?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to exit? All your progress in this project will be lost.
+              Your progress is automatically saved. You can resume from the Projects drawer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancelExit}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmExit}>Exit Project</AlertDialogAction>
+            <AlertDialogAction onClick={handleConfirmExit}>Exit</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
