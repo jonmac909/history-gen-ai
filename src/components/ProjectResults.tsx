@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Film, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -41,7 +41,6 @@ interface ProjectResultsProps {
   onCaptionedVideoRendered?: (videoUrl: string) => void;  // Callback when captioned video is rendered
   onEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when embers video is rendered
   onSmokeEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when smoke+embers video is rendered
-  autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
   thumbnails?: string[];  // Generated thumbnails for YouTube upload
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
@@ -148,7 +147,6 @@ export function ProjectResults({
   onCaptionedVideoRendered,
   onEmbersVideoRendered,
   onSmokeEmbersVideoRendered,
-  autoRender,
   thumbnails,
   onGoToScript,
   onGoToAudio,
@@ -167,24 +165,15 @@ export function ProjectResults({
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(initialEmbersVideoUrl || null);
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(initialSmokeEmbersVideoUrl || null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
-  // Initialize refs to true if video already exists (prevents re-rendering on reload)
-  const autoRenderTriggered = useRef(!!initialEmbersVideoUrl);
-  const autoYouTubeModalTriggered = useRef(false);
 
   // State for YouTube connection
   const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
   const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
 
-  // Sync state and ref when props change (handles case where component mounts before state propagates)
+  // Sync state with props when they change (handles case where component mounts before state propagates)
   useEffect(() => {
-    if (initialEmbersVideoUrl) {
-      if (!autoRenderTriggered.current) {
-        console.log("[ProjectResults] Video already rendered, setting autoRenderTriggered=true");
-        autoRenderTriggered.current = true;
-      }
-      if (!embersVideoUrl) {
-        setEmbersVideoUrl(initialEmbersVideoUrl);
-      }
+    if (initialEmbersVideoUrl && !embersVideoUrl) {
+      setEmbersVideoUrl(initialEmbersVideoUrl);
     }
   }, [initialEmbersVideoUrl]);
 
@@ -249,49 +238,9 @@ export function ProjectResults({
     }
   };
 
-  // Auto-render video when in full automation mode (renders with embers)
-  // CRITICAL: Only auto-render if autoRender=true AND no video already exists
-  useEffect(() => {
-    // Skip if autoRender is false (covers resumed projects via isFreshGeneration check in parent)
-    if (!autoRender) {
-      return;
-    }
-
-    // Skip if already triggered or currently rendering
-    if (autoRenderTriggered.current || isRenderingEmbers) {
-      return;
-    }
-
-    // Skip if a video already exists (from props OR state) - this is the key check!
-    if (embersVideoUrl || initialEmbersVideoUrl || smokeEmbersVideoUrl || initialSmokeEmbersVideoUrl) {
-      console.log("[Full Automation] Skipping auto-render - video already exists");
-      autoRenderTriggered.current = true;
-      return;
-    }
-
-    // Check if we have all required data for rendering
-    const imageAssets = assets.filter(a => a.id.startsWith('image-') && a.url);
-    if (projectId && audioUrl && srtContent && imageAssets.length > 0) {
-      console.log("[Full Automation] Auto-starting video render with embers...");
-      autoRenderTriggered.current = true;
-      // Small delay to let the UI render first
-      setTimeout(() => {
-        handleRenderVideo('embers');
-      }, 1000);
-    }
-  }, [autoRender, projectId, audioUrl, srtContent, assets, embersVideoUrl, initialEmbersVideoUrl, smokeEmbersVideoUrl, initialSmokeEmbersVideoUrl, isRenderingEmbers]);
-
-  // Auto-open YouTube modal when video is ready in full automation mode
-  useEffect(() => {
-    if (autoRender && embersVideoUrl && !isRenderingEmbers && !autoYouTubeModalTriggered.current) {
-      console.log("[Full Automation] Video ready, opening YouTube upload modal...");
-      autoYouTubeModalTriggered.current = true;
-      // Small delay to let the render modal close first
-      setTimeout(() => {
-        setIsYouTubeModalOpen(true);
-      }, 500);
-    }
-  }, [autoRender, embersVideoUrl, isRenderingEmbers]);
+  // NOTE: Auto-render has been REMOVED from ProjectResults.
+  // Full automation mode uses the pipeline modals (review-render, review-youtube) instead.
+  // This component is the final "Project Ready" page and should NEVER auto-trigger rendering.
 
   // Calculate image timings based on SRT
   const getImageTimings = () => {
