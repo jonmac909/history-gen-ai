@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Film, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
-import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
@@ -414,71 +413,6 @@ export function ProjectResults({
       toast({
         title: "Download Failed",
         description: "Failed to create zip file. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Handle FCPXML timeline export
-  const handleDownloadFCPXML = () => {
-    if (!srtContent) {
-      toast({
-        title: "Export Unavailable",
-        description: "Captions are required for timeline export.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Get image timings from imagePrompts or calculate from SRT
-      let images: FCPXMLImage[] = [];
-
-      if (imagePrompts && imagePrompts.length > 0) {
-        // Use imagePrompts with proper timing
-        images = imagePrompts.map((prompt, index) => ({
-          index: index + 1,
-          startSeconds: prompt.startSeconds,
-          endSeconds: prompt.endSeconds,
-        }));
-      } else {
-        // Fall back to calculated timings
-        const timings = getImageTimings();
-        images = timings.map((t, index) => ({
-          index: index + 1,
-          startSeconds: t.startTime,
-          endSeconds: t.endTime,
-        }));
-      }
-
-      // Parse captions from SRT
-      const captions = parseSRTToCaptions(srtContent);
-
-      // Calculate total duration
-      const srtTimings = parseSRTTimings(srtContent);
-      const totalDuration = audioDuration ||
-        (srtTimings.length > 0 ? srtTimings[srtTimings.length - 1].endTime : 0);
-
-      // Generate FCPXML
-      const fcpxmlContent = generateFCPXML({
-        projectTitle: projectTitle || 'HistoryGenAI Export',
-        audioDuration: totalDuration,
-        images,
-        captions,
-      });
-
-      // Download the file
-      downloadTextContent(fcpxmlContent, 'timeline.fcpxml', 'application/xml');
-
-      toast({
-        title: "Timeline Exported",
-        description: "FCPXML file downloaded. Import into DaVinci Resolve and link media files.",
-      });
-    } catch (error) {
-      console.error('FCPXML export failed:', error);
-      toast({
-        title: "Export Failed",
-        description: "Failed to generate FCPXML file. Please try again.",
         variant: "destructive",
       });
     }
@@ -1025,44 +959,6 @@ export function ProjectResults({
               </div>
             );
           })()}
-        </div>
-
-        {/* Downloads Section */}
-        <div className="mt-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Download className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Downloads</h2>
-          </div>
-
-          <div className="space-y-3">
-            {/* Timeline Export (FCPXML) */}
-            {srtContent && assets.some(a => a.id.startsWith('image-')) && (
-              <div
-                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                    <Film className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Timeline Export</p>
-                    <p className="text-sm text-muted-foreground">
-                      FCPXML (DaVinci Resolve, FCP, Premiere)
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDownloadFCPXML}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Download FCPXML"
-                >
-                  <Download className="w-5 h-5" />
-                </Button>
-              </div>
-            )}
-          </div>
         </div>
 
         {assets.length === 0 && (
