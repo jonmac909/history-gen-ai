@@ -550,7 +550,7 @@ export function ThumbnailGeneratorModal({
           <div className="space-y-2">
             <label className="text-sm font-medium">How many thumbnails?</label>
             <div className="flex gap-2">
-              {[3, 5, 10].map((count) => (
+              {[3, 6, 9].map((count) => (
                 <Button
                   key={count}
                   variant={thumbnailCount === count ? "default" : "outline"}
