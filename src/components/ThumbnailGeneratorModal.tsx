@@ -34,11 +34,42 @@ export function ThumbnailGeneratorModal({
   onBack,
   onSkip,
 }: ThumbnailGeneratorModalProps) {
+  // Default reference thumbnail
+  const DEFAULT_THUMBNAIL_URL = "/thumbs/boring.jpg";
+
   // Upload state
   const [exampleImage, setExampleImage] = useState<File | null>(null);
   const [examplePreview, setExamplePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load default thumbnail on mount
+  useEffect(() => {
+    if (!examplePreview && !exampleImage) {
+      loadDefaultThumbnail();
+    }
+  }, []);
+
+  const loadDefaultThumbnail = async () => {
+    setIsUploading(true);
+    try {
+      const response = await fetch(DEFAULT_THUMBNAIL_URL);
+      const blob = await response.blob();
+      const file = new File([blob], 'default-reference.jpg', { type: blob.type });
+      setExampleImage(file);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setExamplePreview(e.target?.result as string);
+        setIsUploading(false);
+      };
+      reader.onerror = () => setIsUploading(false);
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      console.error("Failed to load default thumbnail:", error);
+      setIsUploading(false);
+    }
+  };
 
   // Generation state - single prompt for everything
   const [imagePrompt, setImagePrompt] = useState("");
