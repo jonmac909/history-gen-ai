@@ -269,13 +269,20 @@ export function ThumbnailGeneratorModal({
     });
 
     try {
+      // Fetch the image as blob to bypass cross-origin download restrictions
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
       const link = document.createElement('a');
-      link.href = url;
+      link.href = blobUrl;
       link.download = filename;
-      link.target = '_blank';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Clean up the blob URL
+      URL.revokeObjectURL(blobUrl);
     } catch (error) {
       toast({
         title: "Download Failed",
