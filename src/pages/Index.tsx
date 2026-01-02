@@ -1413,6 +1413,9 @@ const Index = () => {
       setAudioUrl(project.audioUrl);
     }
     if (project.audioDuration) setPendingAudioDuration(project.audioDuration);
+    if (project.audioSegments && project.audioSegments.length > 0) {
+      setPendingAudioSegments(project.audioSegments);
+    }
     if (project.srtContent) {
       setPendingSrtContent(project.srtContent);
       setSrtContent(project.srtContent);
