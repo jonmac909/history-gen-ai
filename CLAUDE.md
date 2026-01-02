@@ -223,6 +223,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/youtube-upload` | YouTube upload with resumable chunks, SSE progress |
 | `/youtube-upload/auth` | Exchange OAuth code for tokens |
 | `/youtube-upload/token` | Refresh access token |
+| `/pronunciation` | GET/POST pronunciation fixes dictionary for TTS |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -231,6 +232,14 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `generate-video` | EDL/CSV timeline files |
 | `download-images-zip` | Package images into ZIP |
 | `get-elevenlabs-voices` | List available voices |
+
+### Project Persistence (`src/lib/projectPersistence.ts`)
+
+**Two storage mechanisms:**
+- **SavedProject** (localStorage key: `historygenai-saved-project`): In-progress project state, cleared when pipeline completes
+- **ProjectHistoryItem** (localStorage key: `historygenai-project-history`): Completed projects list, persists video URLs
+
+**Important:** When `addToProjectHistory()` is called at pipeline completion, it MUST include all video URLs (`videoUrl`, `videoUrlCaptioned`, `embersVideoUrl`, `smokeEmbersVideoUrl`) - otherwise they're lost when the user reopens from history.
 
 ### Frontend Pipeline (`src/pages/Index.tsx`)
 
@@ -260,6 +269,7 @@ Multi-step generation with user review at each stage:
   - Collapsible Master Style Prompt editor (applies to all images)
   - Individual scene description editing per image
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
+- `PronunciationModal`: Edit pronunciation fixes dictionary (accessible from Audio preview modal)
 - `ProjectResults`: Final downloads page with export options:
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
@@ -457,10 +467,10 @@ Multi-step generation with user review at each stage:
 
 **Key files:**
 - `render-api/src/routes/render-video.ts`: Railway endpoint, dispatches to RunPod CPU
-- `/Users/jonmac/Documents/video-render-cpu-runpod/handler.py`: RunPod worker
 - `src/lib/fcpxmlGenerator.ts`: Client-side FCPXML generation for NLE import
 - `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay
 - `public/overlays/embers.mp4`: Embers overlay
+- RunPod worker: GitHub repo `jonmac909/video-render-cpu`
 
 ### YouTube Upload Architecture
 

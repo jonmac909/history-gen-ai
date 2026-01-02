@@ -169,6 +169,7 @@ CONTENT RULES:
         let fullScript = '';
         let currentWordCount = 0;
         let iteration = 0;
+        let maxProgressSent = 0; // Track max progress to prevent going backward
 
         while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
           iteration++;
@@ -212,7 +213,8 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
           }
 
           // Send initial progress for this iteration (actual progress only)
-          const currentProgress = Math.round((currentWordCount / targetWords) * 100);
+          const currentProgress = Math.max(maxProgressSent, Math.round((currentWordCount / targetWords) * 100));
+          maxProgressSent = currentProgress;
           const estimatedIterations = Math.ceil(targetWords / WORDS_PER_ITERATION);
           sendEvent({
             type: 'progress',
@@ -264,14 +266,18 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
                   // Estimate current words in this iteration
                   const iterationWords = iterationTokens.split(/\s+/).filter(w => w.length > 0).length;
                   const estimatedTotal = currentWordCount + iterationWords;
-                  const estimatedProgress = Math.min(Math.round((estimatedTotal / targetWords) * 100), 99);
+                  // Only send progress if it's higher than what we've sent before (prevent backward movement)
+                  const estimatedProgress = Math.max(maxProgressSent, Math.min(Math.round((estimatedTotal / targetWords) * 100), 99));
 
-                  sendEvent({
-                    type: 'progress',
-                    progress: estimatedProgress,
-                    wordCount: estimatedTotal,
-                    message: `Writing... ${estimatedTotal}/${targetWords} words`
-                  });
+                  if (estimatedProgress > maxProgressSent) {
+                    maxProgressSent = estimatedProgress;
+                    sendEvent({
+                      type: 'progress',
+                      progress: estimatedProgress,
+                      wordCount: estimatedTotal,
+                      message: `Writing... ${estimatedTotal}/${targetWords} words`
+                    });
+                  }
                 }
               }
             });
@@ -308,14 +314,17 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
           currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
           console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason})`);
 
-          // Send REAL progress update after iteration completes
-          const realProgress = Math.min(Math.round((currentWordCount / targetWords) * 100), 99);
-          sendEvent({
-            type: 'progress',
-            progress: realProgress,
-            wordCount: currentWordCount,
-            message: `Completed iteration ${iteration} - ${currentWordCount}/${targetWords} words`
-          });
+          // Send REAL progress update after iteration completes (only if higher than previous)
+          const realProgress = Math.max(maxProgressSent, Math.min(Math.round((currentWordCount / targetWords) * 100), 99));
+          if (realProgress > maxProgressSent) {
+            maxProgressSent = realProgress;
+            sendEvent({
+              type: 'progress',
+              progress: realProgress,
+              wordCount: currentWordCount,
+              message: `Completed iteration ${iteration} - ${currentWordCount}/${targetWords} words`
+            });
+          }
 
           // If the model stopped naturally and we're close enough, break
           if (result.stopReason === 'end_turn' && currentWordCount >= targetWords * 0.85) {

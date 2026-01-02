@@ -101,7 +101,7 @@ export function ImagesPreviewModal({
     return `${url}${separator}v=${key}`;
   };
 
-  // Keyboard: ESC to close lightbox
+  // Keyboard: ESC to close lightbox, Arrow keys to navigate
   useEffect(() => {
     if (lightboxIndex === null) return;
 
@@ -110,13 +110,25 @@ export function ImagesPreviewModal({
         e.preventDefault();
         e.stopPropagation();
         closeLightbox();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        // Go to next image (wrap around)
+        const nextIndex = (lightboxIndex + 1) % images.length;
+        setLightboxIndex(nextIndex);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        // Go to previous image (wrap around)
+        const prevIndex = lightboxIndex === 0 ? images.length - 1 : lightboxIndex - 1;
+        setLightboxIndex(prevIndex);
       }
     };
 
     // Use capture phase to intercept before Dialog
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [lightboxIndex]);
+  }, [lightboxIndex, images.length]);
 
   // Click handling: background click closes, image click does nothing
   useEffect(() => {

@@ -310,10 +310,20 @@ const Index = () => {
       setSourceUrl("Custom Script");
       const newProjectId = crypto.randomUUID();
       setProjectId(newProjectId);
-      setVideoTitle(settings.projectTitle || "Custom Script");
+      const projectTitle = settings.projectTitle || "Custom Script";
+      setVideoTitle(projectTitle);
 
       // Go straight to script review with custom script
       setPendingScript(settings.customScript!);
+
+      // Auto-save the custom script project
+      autoSave("script", {
+        id: newProjectId,
+        sourceUrl: "Custom Script",
+        videoTitle: projectTitle,
+        script: settings.customScript!
+      });
+
       setViewState("review-script");
       return;
     }
@@ -325,6 +335,16 @@ const Index = () => {
         description: inputMode === "url"
           ? "Please paste a YouTube URL to generate."
           : "Please enter a video title to generate.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For title mode, require a project title in settings
+    if (inputMode === "title" && !settings.projectTitle?.trim()) {
+      toast({
+        title: "Project Title Required",
+        description: "Please enter a project title in Settings before generating.",
         variant: "destructive",
       });
       return;
@@ -408,8 +428,13 @@ const Index = () => {
       updateStep("script", "completed");
       setPendingScript(scriptResult.script);
 
-      // Auto-save after script generation
-      autoSave("script", { script: scriptResult.script });
+      // Auto-save after script generation (pass newProjectId since state hasn't updated yet)
+      autoSave("script", {
+        id: newProjectId,
+        sourceUrl: inputValue,
+        videoTitle: settings.projectTitle || transcriptResult.title || "History Documentary",
+        script: scriptResult.script
+      });
 
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-script");
@@ -1044,10 +1069,7 @@ const Index = () => {
     setShowExitConfirmation(false);
     resetPendingState();
     setViewState("create");
-    toast({
-      title: "Project Closed",
-      description: "Your progress has been cleared.",
-    });
+    // No toast - the exit confirmation dialog already made the action clear
   };
 
   const handleCancelExit = () => {
