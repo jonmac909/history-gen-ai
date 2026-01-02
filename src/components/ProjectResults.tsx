@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { generateFCPXML, parseSRTToCaptions, type FCPXMLImage } from "@/lib/fcpxmlGenerator";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
+import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
 
 export interface GeneratedAsset {
   id: string;
@@ -170,6 +171,10 @@ export function ProjectResults({
   const autoRenderTriggered = useRef(!!initialEmbersVideoUrl);
   const autoYouTubeModalTriggered = useRef(false);
 
+  // State for YouTube connection
+  const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
+  const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
+
   // Sync state and ref when props change (handles case where component mounts before state propagates)
   useEffect(() => {
     if (initialEmbersVideoUrl) {
@@ -191,6 +196,58 @@ export function ProjectResults({
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+
+  // Check YouTube connection status on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      const status = await checkYouTubeConnection();
+      setIsYouTubeConnected(status.connected);
+    };
+    checkConnection();
+  }, []);
+
+  // Handle YouTube connect
+  const handleYouTubeConnect = async () => {
+    setIsConnectingYouTube(true);
+    try {
+      const success = await authenticateYouTube();
+      if (success) {
+        setIsYouTubeConnected(true);
+        toast({
+          title: "YouTube Connected",
+          description: "Your YouTube account has been connected successfully.",
+        });
+      }
+    } catch (error) {
+      console.error('YouTube connect error:', error);
+      toast({
+        title: "Connection Failed",
+        description: error instanceof Error ? error.message : "Failed to connect YouTube account.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsConnectingYouTube(false);
+    }
+  };
+
+  // Handle YouTube disconnect
+  const handleYouTubeDisconnect = async () => {
+    try {
+      await disconnectYouTube();
+      setIsYouTubeConnected(false);
+      toast({
+        title: "YouTube Disconnected",
+        description: "Your YouTube account has been disconnected.",
+      });
+    } catch (error) {
+      console.error('YouTube disconnect error:', error);
+      toast({
+        title: "Disconnect Failed",
+        description: "Failed to disconnect YouTube account.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Auto-render video when in full automation mode (renders with embers)
   useEffect(() => {
@@ -931,6 +988,39 @@ export function ProjectResults({
               <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </div>
           )}
+
+          {/* YouTube Account Connect */}
+          <div className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Youtube className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="font-medium text-foreground">YouTube Account</p>
+                <p className="text-sm text-muted-foreground">
+                  {isYouTubeConnected ? 'Connected' : 'Not connected'}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={isYouTubeConnected ? "outline" : "default"}
+              size="sm"
+              onClick={isYouTubeConnected ? handleYouTubeDisconnect : handleYouTubeConnect}
+              disabled={isConnectingYouTube}
+              className={isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}
+            >
+              {isConnectingYouTube ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : isYouTubeConnected ? (
+                'Disconnect'
+              ) : (
+                'Connect'
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Downloads Section */}
