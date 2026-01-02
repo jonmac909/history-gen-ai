@@ -21,6 +21,7 @@ interface VideoRenderModalProps {
   imageUrls: string[];
   imageTimings: { startSeconds: number; endSeconds: number }[];
   srtContent: string;
+  existingVideoUrl?: string;  // Pre-rendered video URL (skip rendering if provided)
   onConfirm: (videoUrl: string) => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -53,6 +54,7 @@ export function VideoRenderModal({
   imageUrls,
   imageTimings,
   srtContent,
+  existingVideoUrl,
   onConfirm,
   onCancel,
   onBack,
@@ -60,26 +62,37 @@ export function VideoRenderModal({
 }: VideoRenderModalProps) {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const autoRenderTriggered = useRef(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(existingVideoUrl || null);
+  const autoRenderTriggered = useRef(!!existingVideoUrl);
 
-  // Auto-start rendering when modal opens
+  // Sync with existingVideoUrl prop when it changes
   useEffect(() => {
-    if (isOpen && !autoRenderTriggered.current && !videoUrl && !isRendering) {
+    if (existingVideoUrl) {
+      setVideoUrl(existingVideoUrl);
+      autoRenderTriggered.current = true;
+    }
+  }, [existingVideoUrl]);
+
+  // Auto-start rendering when modal opens (only if no existing video)
+  useEffect(() => {
+    if (isOpen && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
       autoRenderTriggered.current = true;
       handleRender();
     }
-  }, [isOpen]);
+  }, [isOpen, existingVideoUrl]);
 
   // Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
-      autoRenderTriggered.current = false;
-      setVideoUrl(null);
+      // Only reset if there's no existing video - otherwise keep ref true
+      if (!existingVideoUrl) {
+        autoRenderTriggered.current = false;
+      }
+      setVideoUrl(existingVideoUrl || null);
       setRenderProgress(null);
       setIsRendering(false);
     }
-  }, [isOpen]);
+  }, [isOpen, existingVideoUrl]);
 
   const handleRender = async () => {
     setIsRendering(true);

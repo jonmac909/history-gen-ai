@@ -1882,6 +1882,7 @@ const Index = () => {
         imageUrls={pendingImages}
         imageTimings={imagePrompts.map(p => ({ startSeconds: p.startSeconds, endSeconds: p.endSeconds }))}
         srtContent={pendingSrtContent}
+        existingVideoUrl={smokeEmbersVideoUrl}
         onConfirm={handleRenderConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToThumbnails}
