@@ -996,11 +996,19 @@ export function ProjectResults({
                             videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl;
             return (
               <div
-                className={`flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors ${isYouTubeConnected && hasVideo ? 'cursor-pointer' : ''}`}
+                className={`flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors ${isYouTubeConnected ? 'cursor-pointer' : ''}`}
                 onClick={() => {
-                  // If connected and have video, open upload modal
-                  if (isYouTubeConnected && hasVideo) {
-                    setIsYouTubeModalOpen(true);
+                  // If connected, open upload modal (modal will show message if no video)
+                  if (isYouTubeConnected) {
+                    if (hasVideo) {
+                      setIsYouTubeModalOpen(true);
+                    } else {
+                      toast({
+                        title: "No Video Available",
+                        description: "Please render a video first before uploading to YouTube.",
+                        variant: "destructive",
+                      });
+                    }
                   }
                 }}
               >
@@ -1014,7 +1022,7 @@ export function ProjectResults({
                       {isYouTubeConnected
                         ? hasVideo
                           ? 'Connected - Click to upload'
-                          : 'Connected'
+                          : 'Connected - Render video first'
                         : 'Not connected'}
                     </p>
                   </div>
@@ -1045,7 +1053,7 @@ export function ProjectResults({
                       'Connect'
                     )}
                   </Button>
-                  {isYouTubeConnected && hasVideo && (
+                  {isYouTubeConnected && (
                     <ChevronRight className="w-5 h-5 text-muted-foreground" />
                   )}
                 </div>
