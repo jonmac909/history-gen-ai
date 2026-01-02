@@ -872,7 +872,7 @@ export function ProjectResults({
           )}
 
           {/* Thumbnails */}
-          {thumbnails && thumbnails.length > 0 && (
+          {onGoToThumbnails && (
             <div
               className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
               onClick={onGoToThumbnails}
@@ -884,13 +884,13 @@ export function ProjectResults({
                 <div>
                   <p className="font-medium text-foreground">Thumbnails</p>
                   <p className="text-sm text-muted-foreground">
-                    {thumbnails.length} generated thumbnails
+                    {thumbnails && thumbnails.length > 0
+                      ? `${thumbnails.length} generated thumbnails`
+                      : 'Generate YouTube thumbnails'}
                   </p>
                 </div>
               </div>
-              {onGoToThumbnails && (
-                <ChevronRight className="w-5 h-5 text-muted-foreground" />
-              )}
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </div>
           )}
 
