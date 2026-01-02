@@ -597,6 +597,21 @@ export function ThumbnailGeneratorModal({
             </div>
           )}
 
+          {/* Previous Batch Button - show when there's history, even if no current thumbnails */}
+          {thumbnailHistory.length > 0 && generatedThumbnails.length === 0 && (
+            <div className="flex items-center justify-center py-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGoBackInHistory}
+                className="gap-2"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to Previous Batch ({thumbnailHistory[thumbnailHistory.length - 1].thumbnails.length} thumbnails)
+              </Button>
+            </div>
+          )}
+
           {/* Generated Thumbnails */}
           {generatedThumbnails.length > 0 && (
             <div className="space-y-3">
