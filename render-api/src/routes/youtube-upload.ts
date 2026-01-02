@@ -8,7 +8,14 @@ const router = Router();
 const YOUTUBE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const YOUTUBE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const YOUTUBE_UPLOAD_URL = 'https://www.googleapis.com/upload/youtube/v3/videos';
-const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
+const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
+const YOUTUBE_CHANNELS_URL = 'https://www.googleapis.com/youtube/v3/channels';
+
+interface YouTubeChannel {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+}
 
 interface UploadRequest {
   videoUrl: string;
@@ -193,6 +200,57 @@ router.get('/token', async (req: Request, res: Response) => {
     console.error('Error refreshing token:', error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to refresh token'
+    });
+  }
+});
+
+// Get list of channels for the authenticated user
+router.get('/channels', async (req: Request, res: Response) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    console.log('Fetching YouTube channels...');
+
+    // Fetch channels the user owns or manages
+    const response = await fetch(
+      `${YOUTUBE_CHANNELS_URL}?part=snippet,contentDetails&mine=true`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to fetch channels:', response.status, errorText);
+
+      if (response.status === 401) {
+        return res.status(401).json({ error: 'Access token expired', needsAuth: true });
+      }
+
+      return res.status(response.status).json({ error: 'Failed to fetch channels' });
+    }
+
+    const data = await response.json() as any;
+
+    const channels: YouTubeChannel[] = (data.items || []).map((item: any) => ({
+      id: item.id,
+      title: item.snippet?.title || 'Unknown Channel',
+      thumbnailUrl: item.snippet?.thumbnails?.default?.url,
+    }));
+
+    console.log(`Found ${channels.length} channel(s)`);
+
+    return res.json({ channels });
+  } catch (error) {
+    console.error('Error fetching channels:', error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to fetch channels'
     });
   }
 });

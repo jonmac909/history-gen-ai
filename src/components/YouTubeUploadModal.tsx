@@ -37,6 +37,8 @@ import {
   checkYouTubeConnection,
   disconnectYouTube,
   getValidAccessToken,
+  fetchYouTubeChannels,
+  type YouTubeChannel,
 } from "@/lib/youtubeAuth";
 import { uploadToYouTube, type YouTubeUploadProgress } from "@/lib/api";
 
@@ -76,6 +78,11 @@ export function YouTubeUploadModal({
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+
+  // Channel state
+  const [channels, setChannels] = useState<YouTubeChannel[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [isLoadingChannels, setIsLoadingChannels] = useState(false);
 
   // Form state
   const [title, setTitle] = useState(projectTitle || "");
@@ -117,6 +124,29 @@ export function YouTubeUploadModal({
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();
     setIsConnected(status.connected);
+
+    // Fetch channels when connected
+    if (status.connected) {
+      await loadChannels();
+    }
+  };
+
+  const loadChannels = async () => {
+    setIsLoadingChannels(true);
+    try {
+      const result = await fetchYouTubeChannels();
+      if (result.channels.length > 0) {
+        setChannels(result.channels);
+        // Auto-select first channel if only one, or if none selected
+        if (result.channels.length === 1 || !selectedChannel) {
+          setSelectedChannel(result.channels[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading channels:', error);
+    } finally {
+      setIsLoadingChannels(false);
+    }
   };
 
   const handleConnect = async () => {
@@ -125,6 +155,8 @@ export function YouTubeUploadModal({
       const result = await authenticateYouTube();
       if (result.success) {
         setIsConnected(true);
+        // Fetch channels after connecting
+        await loadChannels();
         toast({
           title: "YouTube Connected",
           description: "Your YouTube account is now connected.",
@@ -334,6 +366,46 @@ export function YouTubeUploadModal({
           ) : (
             // Upload Form
             <>
+              {/* Channel Info - show which channel will receive the upload */}
+              {isLoadingChannels ? (
+                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Loading channel info...</span>
+                </div>
+              ) : channels.length > 0 ? (
+                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    {channels[0].thumbnailUrl && (
+                      <img
+                        src={channels[0].thumbnailUrl}
+                        alt={channels[0].title}
+                        className="w-8 h-8 rounded-full"
+                      />
+                    )}
+                    <div>
+                      <p className="text-sm font-medium">{channels[0].title}</p>
+                      <p className="text-xs text-muted-foreground">Upload destination</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      // Disconnect and reconnect to allow channel selection
+                      await handleDisconnect();
+                      toast({
+                        title: "Reconnect Required",
+                        description: "Please reconnect and select a different channel during Google sign-in.",
+                      });
+                    }}
+                    disabled={isUploading}
+                    className="text-xs"
+                  >
+                    Switch Channel
+                  </Button>
+                </div>
+              ) : null}
+
               {/* Title */}
               <div className="space-y-2">
                 <Label htmlFor="title">Title *</Label>

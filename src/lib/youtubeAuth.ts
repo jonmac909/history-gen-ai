@@ -1,7 +1,13 @@
 // YouTube OAuth 2.0 Authentication Helper
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
+const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
+
+export interface YouTubeChannel {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+}
 
 // Storage keys
 const ACCESS_TOKEN_KEY = 'youtube_access_token';
@@ -307,5 +313,41 @@ export async function authenticateYouTube(): Promise<TokenResponse> {
       success: false,
       error: error instanceof Error ? error.message : 'Authentication failed'
     };
+  }
+}
+
+// Fetch YouTube channels for the authenticated user
+export async function fetchYouTubeChannels(): Promise<{ channels: YouTubeChannel[]; error?: string }> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return { channels: [], error: 'API URL not configured' };
+  }
+
+  // Get a valid access token
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) {
+    return { channels: [], error: 'Not authenticated' };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-upload/channels`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { channels: [], error: data.error || 'Failed to fetch channels' };
+    }
+
+    return { channels: data.channels || [] };
+  } catch (error) {
+    console.error('Error fetching YouTube channels:', error);
+    return { channels: [], error: error instanceof Error ? error.message : 'Failed to fetch channels' };
   }
 }
