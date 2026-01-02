@@ -971,6 +971,10 @@ const Index = () => {
   // Video render handlers
   const handleRenderConfirm = (videoUrl: string) => {
     setRenderedVideoUrl(videoUrl);
+    // Save the rendered video URL to project state and history
+    setSmokeEmbersVideoUrl(videoUrl);
+    autoSave("complete", { smokeEmbersVideoUrl: videoUrl });
+    updateProjectInHistory(projectId, { smokeEmbersVideoUrl: videoUrl });
     // Go to YouTube upload step
     setViewState("review-youtube");
   };
