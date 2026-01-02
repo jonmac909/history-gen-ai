@@ -181,11 +181,17 @@ const Index = () => {
 
   // Auto-save helper - accepts overrides for values that were just set
   const autoSave = (step: SavedProject["step"], overrides?: Partial<SavedProject>) => {
+    const finalId = overrides?.id || projectId;
+    const finalVideoTitle = overrides?.videoTitle || videoTitle;
+    console.log(`[autoSave] Creating project with id=${finalId}, title=${finalVideoTitle}, step=${step}`);
+    console.log(`[autoSave] Overrides:`, overrides);
+    console.log(`[autoSave] Current state: projectId=${projectId}, videoTitle=${videoTitle}`);
+
     const project: SavedProject = {
-      id: overrides?.id || projectId,
+      id: finalId,
       savedAt: Date.now(),
       sourceUrl: overrides?.sourceUrl || sourceUrl,
-      videoTitle: overrides?.videoTitle || videoTitle,
+      videoTitle: finalVideoTitle,
       settings: overrides?.settings || settings,
       step,
       script: overrides?.script || confirmedScript || pendingScript,
@@ -202,7 +208,7 @@ const Index = () => {
       smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
     };
     saveProject(project);
-    console.log(`Auto-saved project at step: ${step}`);
+    console.log(`[autoSave] Project saved:`, { id: project.id, step: project.step, hasScript: !!project.script });
   };
 
   // Resume saved project
