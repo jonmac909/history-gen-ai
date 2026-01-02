@@ -62,6 +62,11 @@ const Index = () => {
     imageCount: 10,
     wordCount: 1000,
     quality: "basic",
+    // TTS settings (Fish Speech)
+    ttsEmotionMarker: "(sincere) (soft tone)",
+    ttsTemperature: 0.9,
+    ttsTopP: 0.85,
+    ttsRepetitionPenalty: 1.1,
   });
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
@@ -436,7 +441,13 @@ const Index = () => {
         (progress) => {
           updateStep("audio", "active", `${progress}%`);
         },
-        settings.speed
+        settings.speed,
+        {
+          emotionMarker: settings.ttsEmotionMarker,
+          temperature: settings.ttsTemperature,
+          topP: settings.ttsTopP,
+          repetitionPenalty: settings.ttsRepetitionPenalty,
+        }
       );
 
       if (!audioRes.success) {

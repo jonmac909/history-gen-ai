@@ -949,8 +949,21 @@ async function downloadVoiceSample(url: string): Promise<string> {
   }
 }
 
+// TTS settings interface
+interface TTSJobSettings {
+  emotionMarker?: string;
+  temperature?: number;
+  topP?: number;
+  repetitionPenalty?: number;
+}
+
 // Start TTS job
-async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: string): Promise<string> {
+async function startTTSJob(
+  text: string,
+  apiKey: string,
+  referenceAudioBase64?: string,
+  ttsSettings?: TTSJobSettings
+): Promise<string> {
   const payloadSizeKB = referenceAudioBase64
     ? ((referenceAudioBase64.length * 0.75) / 1024).toFixed(2)
     : '0';
@@ -963,6 +976,22 @@ async function startTTSJob(text: string, apiKey: string, referenceAudioBase64?: 
 
   if (referenceAudioBase64) {
     inputPayload.reference_audio_base64 = referenceAudioBase64;
+  }
+
+  // Pass TTS settings to RunPod worker
+  if (ttsSettings) {
+    if (ttsSettings.emotionMarker !== undefined) {
+      inputPayload.emotion_marker = ttsSettings.emotionMarker;
+    }
+    if (ttsSettings.temperature !== undefined) {
+      inputPayload.temperature = ttsSettings.temperature;
+    }
+    if (ttsSettings.topP !== undefined) {
+      inputPayload.top_p = ttsSettings.topP;
+    }
+    if (ttsSettings.repetitionPenalty !== undefined) {
+      inputPayload.repetition_penalty = ttsSettings.repetitionPenalty;
+    }
   }
 
   try {
@@ -1067,7 +1096,8 @@ async function generateTTSChunkWithRetry(
   apiKey: string,
   referenceAudioBase64: string | undefined,
   chunkIndex: number,
-  totalChunks: number
+  totalChunks: number,
+  ttsSettings?: TTSJobSettings
 ): Promise<Buffer> {
   let lastError: Error | null = null;
 
@@ -1083,7 +1113,7 @@ async function generateTTSChunkWithRetry(
       }
 
       logger.debug(`Starting TTS job for chunk ${chunkIndex + 1}/${totalChunks} (attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS})`);
-      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64, ttsSettings);
       const output = await pollJobStatus(jobId, apiKey);
       const audioData = base64ToBuffer(output.audio_base64);
 
@@ -1311,7 +1341,21 @@ async function adjustAudioSpeed(wavBuffer: Buffer, speed: number): Promise<Buffe
 
 // Main route handler
 router.post('/', async (req: Request, res: Response) => {
-  const { script, voiceSampleUrl, projectId, stream, speed = 1.0 } = req.body;
+  const { script, voiceSampleUrl, projectId, stream, speed = 1.0, ttsSettings = {} } = req.body;
+
+  // Extract TTS settings with defaults
+  const emotionMarker = ttsSettings.emotionMarker ?? '(sincere) (soft tone)';
+  const ttsTemperature = ttsSettings.temperature ?? 0.9;
+  const ttsTopP = ttsSettings.topP ?? 0.85;
+  const ttsRepetitionPenalty = ttsSettings.repetitionPenalty ?? 1.1;
+
+  // Create settings object to pass through call chain
+  const ttsJobSettings: TTSJobSettings = {
+    emotionMarker,
+    temperature: ttsTemperature,
+    topP: ttsTopP,
+    repetitionPenalty: ttsRepetitionPenalty,
+  };
 
   // Log raw input immediately
   const rawWordCount = script ? script.split(/\s+/).filter(Boolean).length : 0;
@@ -1433,13 +1477,13 @@ router.post('/', async (req: Request, res: Response) => {
     // Voice cloning support - now generates 10 separate segments
     if (voiceSampleUrl && stream) {
       logger.info('Using streaming mode with voice cloning (10 segments)');
-      return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed);
+      return handleVoiceCloningStreaming(req, res, cleanScript, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed, ttsJobSettings);
     }
 
     if (stream) {
-      return handleStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, speed);
+      return handleStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, speed, ttsJobSettings);
     } else {
-      return handleNonStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed);
+      return handleNonStreaming(req, res, chunks, projectId, wordCount, RUNPOD_API_KEY, voiceSampleUrl, speed, ttsJobSettings);
     }
 
   } catch (error) {
@@ -1454,7 +1498,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Handle streaming without voice cloning (SEQUENTIAL - Memory optimized)
-async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, speed: number = 1.0) {
+async function handleStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, speed: number = 1.0, ttsJobSettings?: TTSJobSettings) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1487,7 +1531,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
       try {
         // Use retry logic with exponential backoff
-        const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, undefined, i, chunks.length);
+        const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, undefined, i, chunks.length, ttsJobSettings);
         audioChunks.push(audioData);
         console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
       } catch (err) {
@@ -1580,7 +1624,7 @@ interface AudioSegmentResult {
 }
 
 // Handle streaming with voice cloning - generates 10 separate segments
-async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string, speed: number = 1.0) {
+async function handleVoiceCloningStreaming(req: Request, res: Response, script: string, projectId: string, wordCount: number, apiKey: string, voiceSampleUrl: string, speed: number = 1.0, ttsJobSettings?: TTSJobSettings) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1707,7 +1751,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
           });
 
           try {
-            const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length);
+            const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, referenceAudioBase64, chunkIdx, chunks.length, ttsJobSettings);
             console.log(`  Segment ${segmentNumber} - Chunk ${chunkIdx + 1}/${chunks.length}: ${audioData.length} bytes`);
 
             // Incrementally concatenate instead of accumulating in array
@@ -2049,7 +2093,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 }
 
 // Handle non-streaming (with or without voice cloning) - SEQUENTIAL - Memory optimized
-async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string, speed: number = 1.0) {
+async function handleNonStreaming(req: Request, res: Response, chunks: string[], projectId: string, wordCount: number, apiKey: string, voiceSampleUrl?: string, speed: number = 1.0, ttsJobSettings?: TTSJobSettings) {
   let referenceAudioBase64: string | undefined;
   if (voiceSampleUrl) {
     console.log('Downloading voice sample for cloning...');
@@ -2068,7 +2112,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
 
     try {
       // Start the TTS job with reference_audio_base64 for cloning (if provided)
-      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64);
+      const jobId = await startTTSJob(chunkText, apiKey, referenceAudioBase64, ttsJobSettings);
       console.log(`TTS job started with ID: ${jobId}`);
 
       // Poll for completion

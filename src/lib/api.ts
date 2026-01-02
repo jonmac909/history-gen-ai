@@ -487,12 +487,20 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
   }
 }
 
+export interface TTSSettings {
+  emotionMarker?: string;
+  temperature?: number;
+  topP?: number;
+  repetitionPenalty?: number;
+}
+
 export async function generateAudioStreaming(
   script: string,
   voiceSampleUrl: string,
   projectId: string,
   onProgress: (progress: number, message?: string) => void,
-  speed: number = 1.0
+  speed: number = 1.0,
+  ttsSettings?: TTSSettings
 ): Promise<AudioResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -519,7 +527,8 @@ export async function generateAudioStreaming(
         voiceSampleUrl,
         projectId,
         speed,
-        stream: true
+        stream: true,
+        ttsSettings: ttsSettings || {}
       }),
       signal: controller.signal
     });

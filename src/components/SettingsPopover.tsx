@@ -35,7 +35,27 @@ export interface GenerationSettings {
   wordCount: number;
   quality: string;
   customScript?: string;
+  // TTS settings
+  ttsEmotionMarker: string;
+  ttsTemperature: number;
+  ttsTopP: number;
+  ttsRepetitionPenalty: number;
 }
+
+// Available emotion/tone markers for Fish Speech
+export const TTS_EMOTION_MARKERS = [
+  { value: "(sincere) (soft tone)", label: "Sincere & Soft (Documentary)" },
+  { value: "(engaging)", label: "Engaging" },
+  { value: "(excited)", label: "Excited" },
+  { value: "(confident)", label: "Confident" },
+  { value: "(calm)", label: "Calm" },
+  { value: "(serious)", label: "Serious" },
+  { value: "(warm)", label: "Warm" },
+  { value: "(dramatic)", label: "Dramatic" },
+  { value: "(whispering)", label: "Whispering" },
+  { value: "(storytelling)", label: "Storytelling" },
+  { value: "", label: "None (Default)" },
+];
 
 
 interface SettingsPopoverProps {
@@ -262,6 +282,106 @@ export function SettingsPopover({
                 <span>0.6x</span>
                 <span>0.8x</span>
                 <span>1x</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TTS Voice Style */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Voice Style:
+            </label>
+            <p className="text-xs text-muted-foreground text-center">
+              Emotion/tone marker for TTS narration
+            </p>
+            <Select
+              value={localSettings.ttsEmotionMarker ?? "(sincere) (soft tone)"}
+              onValueChange={(value) => updateSetting("ttsEmotionMarker", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select voice style" />
+              </SelectTrigger>
+              <SelectContent>
+                {TTS_EMOTION_MARKERS.map((marker) => (
+                  <SelectItem key={marker.value || "none"} value={marker.value}>
+                    {marker.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* TTS Temperature */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Voice Expressiveness:
+            </label>
+            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Temperature</span>
+                <span className="text-sm font-medium">{(localSettings.ttsTemperature ?? 0.9).toFixed(2)}</span>
+              </div>
+              <Slider
+                value={[localSettings.ttsTemperature ?? 0.9]}
+                onValueChange={(value) => updateSetting("ttsTemperature", value[0])}
+                min={0.1}
+                max={1.0}
+                step={0.05}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>Monotone</span>
+                <span>Expressive</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TTS Top-P */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Voice Variation:
+            </label>
+            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Top-P</span>
+                <span className="text-sm font-medium">{(localSettings.ttsTopP ?? 0.85).toFixed(2)}</span>
+              </div>
+              <Slider
+                value={[localSettings.ttsTopP ?? 0.85]}
+                onValueChange={(value) => updateSetting("ttsTopP", value[0])}
+                min={0.1}
+                max={1.0}
+                step={0.05}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>Consistent</span>
+                <span>Varied</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TTS Repetition Penalty */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-center block">
+              Repetition Prevention:
+            </label>
+            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Penalty</span>
+                <span className="text-sm font-medium">{(localSettings.ttsRepetitionPenalty ?? 1.1).toFixed(2)}</span>
+              </div>
+              <Slider
+                value={[localSettings.ttsRepetitionPenalty ?? 1.1]}
+                onValueChange={(value) => updateSetting("ttsRepetitionPenalty", value[0])}
+                min={0.9}
+                max={2.0}
+                step={0.1}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>0.9 (Natural)</span>
+                <span>2.0 (Strong)</span>
               </div>
             </div>
           </div>
