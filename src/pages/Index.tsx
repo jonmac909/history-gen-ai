@@ -103,6 +103,8 @@ const Index = () => {
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | undefined>();
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
+  const [embersVideoUrl, setEmbersVideoUrl] = useState<string | undefined>();
+  const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -222,6 +224,8 @@ const Index = () => {
     if (savedProject.imageUrls) setPendingImages(savedProject.imageUrls);
     if (savedProject.videoUrl) setVideoUrl(savedProject.videoUrl);
     if (savedProject.videoUrlCaptioned) setVideoUrlCaptioned(savedProject.videoUrlCaptioned);
+    if (savedProject.embersVideoUrl) setEmbersVideoUrl(savedProject.embersVideoUrl);
+    if (savedProject.smokeEmbersVideoUrl) setSmokeEmbersVideoUrl(savedProject.smokeEmbersVideoUrl);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.step) {
@@ -1013,6 +1017,9 @@ const Index = () => {
     setGeneratedThumbnails([]);
     setRenderedVideoUrl(undefined);
     setVideoUrl(undefined);
+    setVideoUrlCaptioned(undefined);
+    setEmbersVideoUrl(undefined);
+    setSmokeEmbersVideoUrl(undefined);
     setImagePrompts([]);
   };
 
@@ -1391,6 +1398,12 @@ const Index = () => {
     if (project.videoUrlCaptioned) {
       setVideoUrlCaptioned(project.videoUrlCaptioned);
     }
+    if (project.embersVideoUrl) {
+      setEmbersVideoUrl(project.embersVideoUrl);
+    }
+    if (project.smokeEmbersVideoUrl) {
+      setSmokeEmbersVideoUrl(project.smokeEmbersVideoUrl);
+    }
 
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [];
@@ -1491,6 +1504,8 @@ const Index = () => {
           projectId={projectId}
           videoUrl={videoUrl}
           videoUrlCaptioned={videoUrlCaptioned}
+          embersVideoUrl={embersVideoUrl}
+          smokeEmbersVideoUrl={smokeEmbersVideoUrl}
           onVideoRendered={(url) => {
             setVideoUrl(url);
             // Save to current project and update history
@@ -1502,6 +1517,18 @@ const Index = () => {
             // Save captioned video URL to current project and update history
             autoSave("complete", { videoUrlCaptioned: url });
             updateProjectInHistory(projectId, { videoUrlCaptioned: url });
+          }}
+          onEmbersVideoRendered={(url) => {
+            setEmbersVideoUrl(url);
+            // Save embers video URL to current project and update history
+            autoSave("complete", { embersVideoUrl: url });
+            updateProjectInHistory(projectId, { embersVideoUrl: url });
+          }}
+          onSmokeEmbersVideoRendered={(url) => {
+            setSmokeEmbersVideoUrl(url);
+            // Save smoke+embers video URL to current project and update history
+            autoSave("complete", { smokeEmbersVideoUrl: url });
+            updateProjectInHistory(projectId, { smokeEmbersVideoUrl: url });
           }}
           autoRender={settings.fullAutomation}
           thumbnails={generatedThumbnails}

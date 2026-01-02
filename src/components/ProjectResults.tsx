@@ -32,10 +32,14 @@ interface ProjectResultsProps {
   audioDuration?: number;
   projectTitle?: string;
   projectId?: string;
-  videoUrl?: string;  // Pre-rendered video URL (from saved project)
+  videoUrl?: string;  // Pre-rendered video URL (basic, from saved project)
   videoUrlCaptioned?: string;  // Pre-rendered captioned video URL (from saved project)
+  embersVideoUrl?: string;  // Pre-rendered video URL with embers (from saved project)
+  smokeEmbersVideoUrl?: string;  // Pre-rendered video URL with smoke+embers (from saved project)
   onVideoRendered?: (videoUrl: string) => void;  // Callback when video is rendered
   onCaptionedVideoRendered?: (videoUrl: string) => void;  // Callback when captioned video is rendered
+  onEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when embers video is rendered
+  onSmokeEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when smoke+embers video is rendered
   autoRender?: boolean;  // Auto-start video rendering (for full automation mode)
   thumbnails?: string[];  // Generated thumbnails for YouTube upload
 }
@@ -129,8 +133,12 @@ export function ProjectResults({
   projectId,
   videoUrl,
   videoUrlCaptioned,
+  embersVideoUrl: initialEmbersVideoUrl,
+  smokeEmbersVideoUrl: initialSmokeEmbersVideoUrl,
   onVideoRendered,
   onCaptionedVideoRendered,
+  onEmbersVideoRendered,
+  onSmokeEmbersVideoRendered,
   autoRender,
   thumbnails
 }: ProjectResultsProps) {
@@ -140,8 +148,8 @@ export function ProjectResults({
   const [isRenderingSmokeEmbers, setIsRenderingSmokeEmbers] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(videoUrl || null);
-  const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(null);
-  const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(null);
+  const [embersVideoUrl, setEmbersVideoUrl] = useState<string | null>(initialEmbersVideoUrl || null);
+  const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | null>(initialSmokeEmbersVideoUrl || null);
   const [currentRenderType, setCurrentRenderType] = useState<'basic' | 'embers' | 'smoke_embers'>('basic');
   const autoRenderTriggered = useRef(false);
   const autoYouTubeModalTriggered = useRef(false);
@@ -513,16 +521,19 @@ export function ProjectResults({
             // Video is ready - show preview immediately
             if (type === 'basic') {
               setBasicVideoUrl(url);
-            } else {
+              if (onVideoRendered) onVideoRendered(url);
+            } else if (type === 'embers') {
               setEmbersVideoUrl(url);
-            }
-            // Notify parent to save the video URL
-            if (onVideoRendered) {
-              onVideoRendered(url);
+              if (onEmbersVideoRendered) onEmbersVideoRendered(url);
+            } else {
+              setSmokeEmbersVideoUrl(url);
+              if (onSmokeEmbersVideoRendered) onSmokeEmbersVideoRendered(url);
             }
             toast({
               title: "Video Ready",
-              description: type === 'embers' ? "Your video with embers effect has been rendered!" : "Your video has been rendered successfully!",
+              description: type === 'embers' ? "Your video with embers effect has been rendered!" :
+                          type === 'smoke_embers' ? "Your video with smoke & embers effect has been rendered!" :
+                          "Your video has been rendered successfully!",
             });
           },
           onCaptionError: (error) => {
@@ -538,16 +549,15 @@ export function ProjectResults({
         if (type === 'basic') {
           setBasicVideoUrl(result.videoUrl);
           setIsRenderingBasic(false);
+          if (onVideoRendered) onVideoRendered(result.videoUrl);
         } else if (type === 'embers') {
           setEmbersVideoUrl(result.videoUrl);
           setIsRenderingEmbers(false);
+          if (onEmbersVideoRendered) onEmbersVideoRendered(result.videoUrl);
         } else {
           setSmokeEmbersVideoUrl(result.videoUrl);
           setIsRenderingSmokeEmbers(false);
-        }
-        // Notify parent to save the video URL
-        if (onVideoRendered) {
-          onVideoRendered(result.videoUrl);
+          if (onSmokeEmbersVideoRendered) onSmokeEmbersVideoRendered(result.videoUrl);
         }
         toast({
           title: "Video Complete",

@@ -20,8 +20,10 @@ export interface SavedProject {
   srtUrl?: string;
   imagePrompts?: ImagePromptWithTiming[];
   imageUrls?: string[];
-  videoUrl?: string;  // Rendered video URL (no captions)
+  videoUrl?: string;  // Rendered video URL (basic, no effects)
   videoUrlCaptioned?: string;  // Rendered video URL with captions
+  embersVideoUrl?: string;  // Rendered video URL with embers overlay
+  smokeEmbersVideoUrl?: string;  // Rendered video URL with smoke+embers overlay
 }
 
 // Project info for history list (includes data to reopen)
@@ -38,8 +40,10 @@ export interface ProjectHistoryItem {
   srtUrl?: string;
   imageUrls?: string[];
   imagePrompts?: ImagePromptWithTiming[];
-  videoUrl?: string;  // Rendered video URL (no captions)
+  videoUrl?: string;  // Rendered video URL (basic, no effects)
   videoUrlCaptioned?: string;  // Rendered video URL with captions
+  embersVideoUrl?: string;  // Rendered video URL with embers overlay
+  smokeEmbersVideoUrl?: string;  // Rendered video URL with smoke+embers overlay
 }
 
 const STORAGE_KEY = "historygenai-saved-project";
