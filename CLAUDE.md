@@ -233,13 +233,21 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `download-images-zip` | Package images into ZIP |
 | `get-elevenlabs-voices` | List available voices |
 
-### Project Persistence (`src/lib/projectPersistence.ts`)
+### Project Persistence (`src/lib/projectStore.ts`)
 
-**Two storage mechanisms:**
-- **SavedProject** (localStorage key: `historygenai-saved-project`): In-progress project state, cleared when pipeline completes
-- **ProjectHistoryItem** (localStorage key: `historygenai-project-history`): Completed projects list, persists video URLs
+**Unified Project Store:**
+- **Single storage mechanism** (localStorage key: `historygenai-projects-v2`)
+- All projects stored in one array with `status` field: `'in_progress' | 'completed' | 'archived'`
+- No more `clearProject()` - status transitions handle everything
+- Projects appear in Projects drawer immediately (both in-progress and completed)
+- Auto-migrates from legacy storage (`historygenai-saved-project` + `historygenai-project-history`)
 
-**Important:** When `addToProjectHistory()` is called at pipeline completion, it MUST include all video URLs (`videoUrl`, `videoUrlCaptioned`, `embersVideoUrl`, `smokeEmbersVideoUrl`) - otherwise they're lost when the user reopens from history.
+**Key functions:**
+- `upsertProject(project)`: Create or update project by ID
+- `completeProject(id)`: Mark project as completed (status change, not deletion)
+- `archiveProject(id)`: Hide project from lists without deleting
+- `getMostRecentInProgress()`: Get project for Resume banner (filters out >24hr old)
+- `getAllProjects()`: Get all non-archived projects for Projects drawer
 
 ### Frontend Pipeline (`src/pages/Index.tsx`)
 

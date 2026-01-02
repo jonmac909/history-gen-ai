@@ -40,7 +40,16 @@ import {
 } from "@/lib/api";
 import { defaultTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
-import { saveProject, loadProject, clearProject, getStepLabel, addToProjectHistory, updateProjectInHistory, type SavedProject, type ProjectHistoryItem } from "@/lib/projectPersistence";
+import {
+  upsertProject,
+  getProject,
+  getMostRecentInProgress,
+  completeProject,
+  archiveProject,
+  migrateFromLegacyStorage,
+  getStepLabel,
+  type Project,
+} from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 
 type InputMode = "url" | "title";
@@ -117,18 +126,25 @@ const Index = () => {
   const scriptFileInputRef = useRef<HTMLInputElement>(null);
   const captionsFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedAudioFileForImages, setUploadedAudioFileForImages] = useState<File | null>(null);
-  const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
+  const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
 
-  // Check for saved project on load and when returning to create view
+  // Migrate legacy storage on first load
+  useEffect(() => {
+    migrateFromLegacyStorage();
+  }, []);
+
+  // Check for in-progress project on load and when returning to create view
   useEffect(() => {
     if (viewState === "create") {
-      console.log("[Index] Checking for saved project...");
-      const saved = loadProject();
-      console.log("[Index] Saved project found:", !!saved, saved?.smokeEmbersVideoUrl);
-      if (saved) {
-        setSavedProject(saved);
+      console.log("[Index] Checking for in-progress project...");
+      const inProgress = getMostRecentInProgress();
+      console.log("[Index] In-progress project found:", !!inProgress, inProgress?.id);
+      if (inProgress) {
+        setSavedProject(inProgress);
+      } else {
+        setSavedProject(null);
       }
     }
   }, [viewState]);
@@ -179,21 +195,19 @@ const Index = () => {
     }
   }, [settings.fullAutomation, viewState, pendingImages]);
 
-  // Auto-save helper - accepts overrides for values that were just set
-  const autoSave = (step: SavedProject["step"], overrides?: Partial<SavedProject>) => {
+  // Auto-save helper - uses unified project store (upsert by id)
+  const autoSave = (step: Project["currentStep"], overrides?: Partial<Project>) => {
     const finalId = overrides?.id || projectId;
     const finalVideoTitle = overrides?.videoTitle || videoTitle;
-    console.log(`[autoSave] Creating project with id=${finalId}, title=${finalVideoTitle}, step=${step}`);
-    console.log(`[autoSave] Overrides:`, overrides);
-    console.log(`[autoSave] Current state: projectId=${projectId}, videoTitle=${videoTitle}`);
+    console.log(`[autoSave] Saving project id=${finalId}, title=${finalVideoTitle}, step=${step}`);
 
-    const project: SavedProject = {
+    upsertProject({
       id: finalId,
-      savedAt: Date.now(),
       sourceUrl: overrides?.sourceUrl || sourceUrl,
       videoTitle: finalVideoTitle,
       settings: overrides?.settings || settings,
-      step,
+      status: 'in_progress',
+      currentStep: step,
       script: overrides?.script || confirmedScript || pendingScript,
       audioUrl: overrides?.audioUrl || pendingAudioUrl,
       audioDuration: overrides?.audioDuration || pendingAudioDuration,
@@ -206,9 +220,7 @@ const Index = () => {
       videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
       embersVideoUrl: overrides?.embersVideoUrl || embersVideoUrl,
       smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
-    };
-    saveProject(project);
-    console.log(`[autoSave] Project saved:`, { id: project.id, step: project.step, hasScript: !!project.script });
+    });
   };
 
   // Resume saved project
@@ -238,7 +250,7 @@ const Index = () => {
     if (savedProject.smokeEmbersVideoUrl) setSmokeEmbersVideoUrl(savedProject.smokeEmbersVideoUrl);
 
     // Navigate to the appropriate view based on saved step
-    switch (savedProject.step) {
+    switch (savedProject.currentStep) {
       case "script":
         setViewState("review-script");
         break;
@@ -261,13 +273,16 @@ const Index = () => {
     setSavedProject(null);
     toast({
       title: "Project Resumed",
-      description: `Continuing from: ${getStepLabel(savedProject.step)}`,
+      description: `Continuing from: ${getStepLabel(savedProject.currentStep)}`,
     });
   };
 
-  // Dismiss saved project
+  // Dismiss saved project - archive it instead of deleting
   const handleDismissSavedProject = () => {
-    clearProject();
+    if (savedProject) {
+      console.log("[handleDismissSavedProject] Archiving project:", savedProject.id);
+      archiveProject(savedProject.id);
+    }
     setSavedProject(null);
   };
 
@@ -963,26 +978,10 @@ const Index = () => {
     setSrtContent(pendingSrtContent);
     setViewState("results");
 
-    // Add to project history and clear in-progress save
-    // Include video URLs so they're preserved when project is reopened
-    addToProjectHistory({
-      id: projectId,
-      videoTitle,
-      completedAt: Date.now(),
-      imageCount: images.length,
-      audioDuration: pendingAudioDuration,
-      script: confirmedScript,
-      audioUrl: pendingAudioUrl,
-      srtContent: pendingSrtContent,
-      srtUrl: pendingSrtUrl,
-      imageUrls: images,
-      imagePrompts: imagePrompts,
-      videoUrl,
-      videoUrlCaptioned,
-      embersVideoUrl,
-      smokeEmbersVideoUrl,
-    });
-    clearProject();
+    // Mark project as completed in the unified store
+    // No clearProject needed - just change status
+    console.log("[finishGeneration] Marking project as completed:", projectId);
+    completeProject(projectId);
 
     toast({
       title: "Generation Complete!",
@@ -1011,10 +1010,9 @@ const Index = () => {
   // Video render handlers
   const handleRenderConfirm = (videoUrl: string) => {
     setRenderedVideoUrl(videoUrl);
-    // Save the rendered video URL to project state and history
+    // Save the rendered video URL to project state
     setSmokeEmbersVideoUrl(videoUrl);
     autoSave("complete", { smokeEmbersVideoUrl: videoUrl });
-    updateProjectInHistory(projectId, { smokeEmbersVideoUrl: videoUrl });
     // Go to YouTube upload step
     setViewState("review-youtube");
   };
@@ -1385,15 +1383,16 @@ const Index = () => {
   };
 
   const handleNewProject = () => {
+    console.log("[handleNewProject] User clicked New Project from results page");
     setViewState("create");
     setInputValue("");
     setSourceUrl("");
     resetPendingState();
-    clearProject();
+    // No clearProject needed - new project will be a new entry in the store
   };
 
   // Open a project from history
-  const handleOpenProject = (project: ProjectHistoryItem) => {
+  const handleOpenProject = (project: Project) => {
     // Set project state
     setProjectId(project.id);
     setVideoTitle(project.videoTitle);
@@ -1549,27 +1548,20 @@ const Index = () => {
           smokeEmbersVideoUrl={smokeEmbersVideoUrl}
           onVideoRendered={(url) => {
             setVideoUrl(url);
-            // Save to current project and update history
+            // Save to current project (upsert handles both in_progress and completed)
             autoSave("complete", { videoUrl: url });
-            updateProjectInHistory(projectId, { videoUrl: url });
           }}
           onCaptionedVideoRendered={(url) => {
             setVideoUrlCaptioned(url);
-            // Save captioned video URL to current project and update history
             autoSave("complete", { videoUrlCaptioned: url });
-            updateProjectInHistory(projectId, { videoUrlCaptioned: url });
           }}
           onEmbersVideoRendered={(url) => {
             setEmbersVideoUrl(url);
-            // Save embers video URL to current project and update history
             autoSave("complete", { embersVideoUrl: url });
-            updateProjectInHistory(projectId, { embersVideoUrl: url });
           }}
           onSmokeEmbersVideoRendered={(url) => {
             setSmokeEmbersVideoUrl(url);
-            // Save smoke+embers video URL to current project and update history
             autoSave("complete", { smokeEmbersVideoUrl: url });
-            updateProjectInHistory(projectId, { smokeEmbersVideoUrl: url });
           }}
           thumbnails={generatedThumbnails}
           onGoToScript={handleBackToScript}
@@ -1592,7 +1584,7 @@ const Index = () => {
                       Resume previous project?
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {savedProject.videoTitle} - {getStepLabel(savedProject.step)}
+                      {savedProject.videoTitle} - {getStepLabel(savedProject.currentStep)}
                     </p>
                   </div>
                 </div>

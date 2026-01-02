@@ -97,6 +97,7 @@ export function clearProject(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
     console.log("Saved project cleared");
+    console.trace("clearProject called from:");
   } catch (error) {
     console.error("Failed to clear project:", error);
   }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight } from "lucide-react";
+import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, PlayCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -21,31 +21,32 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getProjectHistory,
-  removeFromProjectHistory,
+  getAllProjects,
+  deleteProject,
+  getStepLabel,
   formatDuration,
   formatDate,
-  type ProjectHistoryItem,
-} from "@/lib/projectPersistence";
+  type Project,
+} from "@/lib/projectStore";
 
 interface ProjectsDrawerProps {
-  onOpenProject?: (project: ProjectHistoryItem) => void;
+  onOpenProject?: (project: Project) => void;
 }
 
 export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectHistoryItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<ProjectHistoryItem | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
 
   // Load projects when drawer opens
   useEffect(() => {
     if (isOpen) {
-      setProjects(getProjectHistory());
+      setProjects(getAllProjects());
     }
   }, [isOpen]);
 
-  const handleDelete = async (project: ProjectHistoryItem) => {
+  const handleDelete = async (project: Project) => {
     setDeletingId(project.id);
 
     try {
@@ -69,8 +70,8 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
         }
       }
 
-      // Remove from local history
-      removeFromProjectHistory(project.id);
+      // Remove from project store
+      deleteProject(project.id);
       setProjects(prev => prev.filter(p => p.id !== project.id));
 
       toast({
@@ -89,6 +90,10 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
       setConfirmDelete(null);
     }
   };
+
+  // Separate in-progress and completed projects
+  const inProgressProjects = projects.filter(p => p.status === 'in_progress');
+  const completedProjects = projects.filter(p => p.status === 'completed');
 
   return (
     <>
@@ -112,63 +117,55 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
             </SheetTitle>
           </SheetHeader>
 
-          <div className="mt-6 space-y-3 max-h-[calc(100vh-120px)] overflow-y-auto">
+          <div className="mt-6 space-y-4 max-h-[calc(100vh-120px)] overflow-y-auto">
             {projects.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p>No completed projects yet</p>
-                <p className="text-sm mt-1">Projects will appear here after generation</p>
+                <p>No projects yet</p>
+                <p className="text-sm mt-1">Projects will appear here as you work</p>
               </div>
             ) : (
-              projects.map(project => (
-                <div
-                  key={project.id}
-                  className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
-                  onClick={() => {
-                    if (onOpenProject) {
-                      onOpenProject(project);
-                      setIsOpen(false);
-                    }
-                  }}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">
-                      {project.videoTitle}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDate(project.completedAt)}
-                      </span>
-                      {project.audioDuration && (
-                        <span className="flex items-center gap-1">
-                          <Music className="w-3 h-3" />
-                          {formatDuration(project.audioDuration)}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Image className="w-3 h-3" />
-                        {project.imageCount}
-                      </span>
+              <>
+                {/* In-Progress Projects */}
+                {inProgressProjects.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <PlayCircle className="w-4 h-4" />
+                      In Progress ({inProgressProjects.length})
                     </div>
+                    {inProgressProjects.map(project => (
+                      <ProjectCard
+                        key={project.id}
+                        project={project}
+                        onOpen={onOpenProject}
+                        onDelete={() => setConfirmDelete(project)}
+                        deletingId={deletingId}
+                        setIsOpen={setIsOpen}
+                      />
+                    ))}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDelete(project);
-                      }}
-                      disabled={deletingId === project.id}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                )}
+
+                {/* Completed Projects */}
+                {completedProjects.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Completed ({completedProjects.length})
+                    </div>
+                    {completedProjects.map(project => (
+                      <ProjectCard
+                        key={project.id}
+                        project={project}
+                        onOpen={onOpenProject}
+                        onDelete={() => setConfirmDelete(project)}
+                        deletingId={deletingId}
+                        setIsOpen={setIsOpen}
+                      />
+                    ))}
                   </div>
-                </div>
-              ))
+                )}
+              </>
             )}
           </div>
         </SheetContent>
@@ -195,5 +192,81 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+// Separate component for project cards to reduce repetition
+function ProjectCard({
+  project,
+  onOpen,
+  onDelete,
+  deletingId,
+  setIsOpen,
+}: {
+  project: Project;
+  onOpen?: (project: Project) => void;
+  onDelete: () => void;
+  deletingId: string | null;
+  setIsOpen: (open: boolean) => void;
+}) {
+  const isInProgress = project.status === 'in_progress';
+  const imageCount = project.imageUrls?.length || 0;
+
+  return (
+    <div
+      className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
+      onClick={() => {
+        if (onOpen) {
+          onOpen(project);
+          setIsOpen(false);
+        }
+      }}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="font-medium text-foreground truncate">
+            {project.videoTitle}
+          </p>
+          {isInProgress && (
+            <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
+              {getStepLabel(project.currentStep)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {formatDate(project.updatedAt)}
+          </span>
+          {project.audioDuration && (
+            <span className="flex items-center gap-1">
+              <Music className="w-3 h-3" />
+              {formatDuration(project.audioDuration)}
+            </span>
+          )}
+          {imageCount > 0 && (
+            <span className="flex items-center gap-1">
+              <Image className="w-3 h-3" />
+              {imageCount}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          disabled={deletingId === project.id}
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
   );
 }
