@@ -196,6 +196,8 @@ const Index = () => {
       imageUrls: overrides?.imageUrls || pendingImages,
       videoUrl: overrides?.videoUrl || videoUrl,
       videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
+      embersVideoUrl: overrides?.embersVideoUrl || embersVideoUrl,
+      smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
     };
     saveProject(project);
     console.log(`Auto-saved project at step: ${step}`);
