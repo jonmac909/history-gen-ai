@@ -219,48 +219,54 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
           throw new Error(`GPU render failed: ${statusData.output.error}`);
         }
       } else if (statusData.status === 'FAILED') {
-        const errorMsg = statusData.output?.error || 'GPU worker failed';
-        throw new Error(errorMsg);
-      } else if (statusData.status === 'IN_PROGRESS') {
-        // Stage-based progress estimation for 100 images (~90min audio):
-        // - Downloads: 0-60s = 10-25%
-        // - Pass 1 (raw video): 60-180s = 25-50%
-        // - Pass 2 (effects): 180-300s = 50-75%
-        // - Upload: 300-360s = 75-90%
-        const elapsed = (Date.now() - startTime) / 1000;
-        let estimatedProgress: number;
-        let stageMessage: string;
+        // Check Supabase for actual status - GPU worker may have completed before being killed
+        const { data: jobData } = await supabase
+          .from('render_jobs')
+          .select('status, progress, video_url, error')
+          .eq('id', jobId)
+          .single();
 
-        if (elapsed < 60) {
-          // Downloading phase
-          estimatedProgress = 10 + Math.round((elapsed / 60) * 15);
-          stageMessage = 'Downloading assets...';
-        } else if (elapsed < 180) {
-          // Pass 1: Raw video rendering
-          estimatedProgress = 25 + Math.round(((elapsed - 60) / 120) * 25);
-          stageMessage = 'Rendering video (Pass 1)...';
-        } else if (elapsed < 300) {
-          // Pass 2: Effects overlay
-          estimatedProgress = 50 + Math.round(((elapsed - 180) / 120) * 25);
-          stageMessage = 'Applying smoke + embers (Pass 2)...';
-        } else if (elapsed < 400) {
-          // Upload phase
-          estimatedProgress = 75 + Math.round(((elapsed - 300) / 100) * 15);
-          stageMessage = 'Uploading video...';
-        } else {
-          estimatedProgress = 90;
-          stageMessage = 'Finalizing...';
+        if (jobData?.status === 'complete' && jobData?.video_url) {
+          // GPU worker actually completed! RunPod just killed it after upload
+          console.log(`Job ${jobId}: GPU worker was killed but job actually completed`);
+          console.log(`Video URL: ${jobData.video_url}`);
+          return;  // Success - video_url already in Supabase
         }
 
-        if (estimatedProgress > lastProgress) {
-          lastProgress = estimatedProgress;
-          await updateJobStatus(supabase, jobId, 'rendering', estimatedProgress, stageMessage);
+        // Truly failed
+        const errorMsg = statusData.output?.error || jobData?.error || 'GPU worker failed';
+        throw new Error(errorMsg);
+      } else if (statusData.status === 'IN_PROGRESS' || statusData.status === 'IN_QUEUE') {
+        // Read real progress from Supabase (GPU worker updates it directly)
+        const { data: jobData } = await supabase
+          .from('render_jobs')
+          .select('progress, message, status')
+          .eq('id', jobId)
+          .single();
+
+        if (jobData && jobData.progress > lastProgress) {
+          lastProgress = jobData.progress;
+          // Don't update Supabase again - GPU worker already did
+          console.log(`Job ${jobId}: GPU worker progress: ${jobData.progress}% - ${jobData.message}`);
         }
       }
       // IN_QUEUE status - keep waiting
     }
 
-    throw new Error('GPU render timed out after 15 minutes');
+    // Before timing out, check if GPU worker actually completed
+    const { data: finalCheck } = await supabase
+      .from('render_jobs')
+      .select('status, progress, video_url')
+      .eq('id', jobId)
+      .single();
+
+    if (finalCheck?.status === 'complete' && finalCheck?.video_url) {
+      console.log(`Job ${jobId}: GPU worker completed (caught at timeout check)`);
+      console.log(`Video URL: ${finalCheck.video_url}`);
+      return;  // Success
+    }
+
+    throw new Error('GPU render timed out after 30 minutes');
 
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
