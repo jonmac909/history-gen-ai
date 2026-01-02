@@ -65,7 +65,9 @@ export function saveProject(project: SavedProject): void {
 
 export function loadProject(): SavedProject | null {
   try {
+    console.log(`[loadProject] Checking localStorage key: ${STORAGE_KEY}`);
     const saved = localStorage.getItem(STORAGE_KEY);
+    console.log(`[loadProject] Raw data found:`, saved ? `${saved.substring(0, 100)}...` : null);
     if (!saved) return null;
 
     const project = JSON.parse(saved) as SavedProject;

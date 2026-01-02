@@ -933,6 +933,7 @@ const Index = () => {
     setViewState("results");
 
     // Add to project history and clear in-progress save
+    // Include video URLs so they're preserved when project is reopened
     addToProjectHistory({
       id: projectId,
       videoTitle,
@@ -945,6 +946,10 @@ const Index = () => {
       srtUrl: pendingSrtUrl,
       imageUrls: images,
       imagePrompts: imagePrompts,
+      videoUrl,
+      videoUrlCaptioned,
+      embersVideoUrl,
+      smokeEmbersVideoUrl,
     });
     clearProject();
 
