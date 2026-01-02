@@ -22,6 +22,7 @@ interface VideoRenderModalProps {
   imageTimings: { startSeconds: number; endSeconds: number }[];
   srtContent: string;
   existingVideoUrl?: string;  // Pre-rendered video URL (skip rendering if provided)
+  autoRender?: boolean;  // Auto-start rendering when modal opens (for full automation mode)
   onConfirm: (videoUrl: string) => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -55,6 +56,7 @@ export function VideoRenderModal({
   imageTimings,
   srtContent,
   existingVideoUrl,
+  autoRender = false,
   onConfirm,
   onCancel,
   onBack,
@@ -73,13 +75,13 @@ export function VideoRenderModal({
     }
   }, [existingVideoUrl]);
 
-  // Auto-start rendering when modal opens (only if no existing video)
+  // Auto-start rendering when modal opens (ONLY if autoRender=true AND no existing video)
   useEffect(() => {
-    if (isOpen && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
+    if (isOpen && autoRender && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
       autoRenderTriggered.current = true;
       handleRender();
     }
-  }, [isOpen, existingVideoUrl]);
+  }, [isOpen, autoRender, existingVideoUrl]);
 
   // Reset state when modal closes
   useEffect(() => {
