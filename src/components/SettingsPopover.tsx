@@ -136,7 +136,7 @@ export function SettingsPopover({
         hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={() => handleClose()}
       >
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-center gap-2 text-primary">

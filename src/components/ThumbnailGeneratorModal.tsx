@@ -30,6 +30,7 @@ export function ThumbnailGeneratorModal({
   isOpen,
   projectId,
   onConfirm,
+  onCancel,
   onBack,
   onSkip,
 }: ThumbnailGeneratorModalProps) {
@@ -372,6 +373,18 @@ export function ThumbnailGeneratorModal({
     onConfirm(selectedThumbnail ? [selectedThumbnail] : []);
   };
 
+  // Handle escape key - allow closing when not actively generating
+  const handleEscapeKey = (e: KeyboardEvent) => {
+    // If lightbox is open, let the lightbox handler deal with it
+    if (lightboxImage) return;
+
+    if (isGenerating || isUploading) {
+      e.preventDefault();
+    } else {
+      onCancel();
+    }
+  };
+
   return (
     <Dialog open={isOpen}>
       <DialogContent
@@ -379,7 +392,7 @@ export function ThumbnailGeneratorModal({
         hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={handleEscapeKey}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

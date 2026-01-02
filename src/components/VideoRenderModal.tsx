@@ -202,6 +202,15 @@ export function VideoRenderModal({
     }
   };
 
+  // Handle escape key - allow closing when not actively rendering
+  const handleEscapeKey = (e: KeyboardEvent) => {
+    if (isRendering) {
+      e.preventDefault();
+    } else {
+      onCancel();
+    }
+  };
+
   return (
     <Dialog open={isOpen}>
       <DialogContent
@@ -209,7 +218,7 @@ export function VideoRenderModal({
         hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={handleEscapeKey}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
