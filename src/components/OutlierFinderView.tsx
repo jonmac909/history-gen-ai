@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Search, Loader2, TrendingUp, X, LayoutGrid, Filter, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, Loader2, TrendingUp, X, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
@@ -105,7 +105,6 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   const [viewingAll, setViewingAll] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('uploaded');
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>({
     dateRange: 'all',
     duration: 'all',
@@ -362,19 +361,6 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               </div>
             </div>
 
-            {/* Filter button */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`rounded-full ${hasActiveFilters ? 'border-red-500 text-red-500' : 'border-gray-300 text-gray-600'}`}
-            >
-              <Filter className="h-4 w-4 mr-1" />
-              Filters
-              {hasActiveFilters && <span className="ml-1 text-xs">•</span>}
-              {showFilters ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
-            </Button>
-
             {/* Sort dropdown */}
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span>Sort by:</span>
@@ -393,81 +379,79 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         </div>
       </div>
 
-      {/* Filter panel */}
-      {showFilters && (
-        <div className="border-b border-gray-200 bg-gray-50">
-          <div className="max-w-7xl mx-auto px-4 py-3">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Date range */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Date:</span>
-                <select
-                  value={filters.dateRange}
-                  onChange={(e) => setFilters({ ...filters, dateRange: e.target.value as DateRangeOption })}
-                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
-                >
-                  {Object.entries(DATE_RANGE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Duration */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Duration:</span>
-                <select
-                  value={filters.duration}
-                  onChange={(e) => setFilters({ ...filters, duration: e.target.value as DurationOption })}
-                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
-                >
-                  {Object.entries(DURATION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Min views */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Min views:</span>
-                <select
-                  value={filters.minViews}
-                  onChange={(e) => setFilters({ ...filters, minViews: parseInt(e.target.value) })}
-                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
-                >
-                  <option value={0}>Any</option>
-                  <option value={1000}>1K+</option>
-                  <option value={10000}>10K+</option>
-                  <option value={100000}>100K+</option>
-                  <option value={1000000}>1M+</option>
-                </select>
-              </div>
-
-              {/* Only positive outliers */}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.onlyPositiveOutliers}
-                  onChange={(e) => setFilters({ ...filters, onlyPositiveOutliers: e.target.checked })}
-                  className="rounded border-gray-300 text-red-500 focus:ring-red-500"
-                />
-                <span className="text-sm text-gray-700">Only outliers (3x+)</span>
-              </label>
-
-              {/* Clear filters */}
-              {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setFilters({ dateRange: 'all', duration: 'all', minViews: 0, onlyPositiveOutliers: false })}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  Clear filters
-                </Button>
-              )}
+      {/* Filter panel - always visible */}
+      <div className="border-b border-gray-200 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Date range */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Date:</span>
+              <select
+                value={filters.dateRange}
+                onChange={(e) => setFilters({ ...filters, dateRange: e.target.value as DateRangeOption })}
+                className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+              >
+                {Object.entries(DATE_RANGE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
+
+            {/* Duration */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Duration:</span>
+              <select
+                value={filters.duration}
+                onChange={(e) => setFilters({ ...filters, duration: e.target.value as DurationOption })}
+                className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+              >
+                {Object.entries(DURATION_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Min views */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Min views:</span>
+              <select
+                value={filters.minViews}
+                onChange={(e) => setFilters({ ...filters, minViews: parseInt(e.target.value) })}
+                className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+              >
+                <option value={0}>Any</option>
+                <option value={1000}>1K+</option>
+                <option value={10000}>10K+</option>
+                <option value={100000}>100K+</option>
+                <option value={1000000}>1M+</option>
+              </select>
+            </div>
+
+            {/* Only positive outliers */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filters.onlyPositiveOutliers}
+                onChange={(e) => setFilters({ ...filters, onlyPositiveOutliers: e.target.checked })}
+                className="rounded border-gray-300 text-red-500 focus:ring-red-500"
+              />
+              <span className="text-sm text-gray-700">Only outliers (3x+)</span>
+            </label>
+
+            {/* Clear filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFilters({ dateRange: 'all', duration: 'all', minViews: 0, onlyPositiveOutliers: false })}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Action buttons bar */}
       {!channel && !viewingAll && !isLoading && (
