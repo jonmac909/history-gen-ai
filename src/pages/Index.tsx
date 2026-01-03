@@ -1640,6 +1640,7 @@ const Index = () => {
             autoSave("complete", { smokeEmbersVideoUrl: url });
           }}
           thumbnails={generatedThumbnails}
+          selectedThumbnailIndex={selectedThumbnailIndex}
           script={confirmedScript}
           onGoToScript={handleBackToScript}
           onGoToAudio={handleBackToAudio}

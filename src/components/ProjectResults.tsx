@@ -41,6 +41,7 @@ interface ProjectResultsProps {
   onEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when embers video is rendered
   onSmokeEmbersVideoRendered?: (videoUrl: string) => void;  // Callback when smoke+embers video is rendered
   thumbnails?: string[];  // Generated thumbnails for YouTube upload
+  selectedThumbnailIndex?: number;  // Index of previously selected thumbnail
   script?: string;  // Script content for YouTube metadata AI generation
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
@@ -150,6 +151,7 @@ export function ProjectResults({
   onEmbersVideoRendered,
   onSmokeEmbersVideoRendered,
   thumbnails,
+  selectedThumbnailIndex,
   script,
   onGoToScript,
   onGoToAudio,
@@ -1081,6 +1083,7 @@ export function ProjectResults({
         projectTitle={projectTitle}
         script={script}
         thumbnails={thumbnails}
+        selectedThumbnailIndex={selectedThumbnailIndex}
         onClose={() => setIsYouTubeModalOpen(false)}
         onSuccess={(youtubeUrl) => {
           console.log('Video uploaded to YouTube:', youtubeUrl);
