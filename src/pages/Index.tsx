@@ -222,6 +222,8 @@ const Index = () => {
       videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
       embersVideoUrl: overrides?.embersVideoUrl || embersVideoUrl,
       smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
+      thumbnails: overrides?.thumbnails || generatedThumbnails,
+      selectedThumbnailIndex: overrides?.selectedThumbnailIndex ?? selectedThumbnailIndex,
     }).catch(err => console.error('[autoSave] Failed to save project:', err));
   };
 
@@ -1007,7 +1009,7 @@ const Index = () => {
     setGeneratedThumbnails(thumbnails);
     setSelectedThumbnailIndex(selectedIndex);
     // Save thumbnails to project
-    autoSave({
+    autoSave("complete", {
       thumbnails,
       selectedThumbnailIndex: selectedIndex,
     });
