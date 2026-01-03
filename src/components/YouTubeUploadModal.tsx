@@ -10,7 +10,9 @@ import {
   ChevronLeft,
   Sparkles,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ImagePlus,
+  X
 } from "lucide-react";
 import {
   Dialog,
@@ -42,6 +44,7 @@ import {
   type YouTubeChannel,
 } from "@/lib/youtubeAuth";
 import { uploadToYouTube, generateYouTubeMetadata, type YouTubeUploadProgress } from "@/lib/api";
+import { supabase } from "@/integrations/supabase/client";
 
 interface YouTubeUploadModalProps {
   isOpen: boolean;
@@ -99,6 +102,8 @@ export function YouTubeUploadModal({
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("12:00");
   const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
+  const [customThumbnailFile, setCustomThumbnailFile] = useState<File | null>(null);
+  const [customThumbnailPreview, setCustomThumbnailPreview] = useState<string | null>(null);
 
   // Upload state
   const [isUploading, setIsUploading] = useState(false);
@@ -124,6 +129,9 @@ export function YouTubeUploadModal({
       setProgress(null);
       setGeneratedTitles([]);
       setShowTitleSelector(false);
+      // Reset custom thumbnail
+      setCustomThumbnailFile(null);
+      setCustomThumbnailPreview(null);
       // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
         const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
@@ -266,6 +274,49 @@ export function YouTubeUploadModal({
     setShowTitleSelector(false);
   };
 
+  // Handle custom thumbnail file selection
+  const handleCustomThumbnailSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
+    if (!validTypes.includes(file.type)) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please select a JPEG, PNG, GIF, or BMP image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 2MB for YouTube)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Thumbnail must be less than 2MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCustomThumbnailFile(file);
+    // Clear any selected generated thumbnail
+    setSelectedThumbnail(null);
+
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    setCustomThumbnailPreview(previewUrl);
+  };
+
+  const handleRemoveCustomThumbnail = () => {
+    if (customThumbnailPreview) {
+      URL.revokeObjectURL(customThumbnailPreview);
+    }
+    setCustomThumbnailFile(null);
+    setCustomThumbnailPreview(null);
+  };
+
   const handleUpload = async () => {
     if (!title.trim()) {
       toast({
@@ -306,6 +357,35 @@ export function YouTubeUploadModal({
         .map(t => t.trim())
         .filter(t => t.length > 0);
 
+      // Determine thumbnail URL - upload custom file if provided
+      let thumbnailUrl = selectedThumbnail || undefined;
+      if (customThumbnailFile) {
+        setProgress({ percent: 0, message: 'Uploading custom thumbnail...' });
+        const ext = customThumbnailFile.name.split('.').pop() || 'jpg';
+        const fileName = `thumbnails/custom_${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('generated-assets')
+          .upload(fileName, customThumbnailFile, {
+            contentType: customThumbnailFile.type,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('Failed to upload custom thumbnail:', uploadError);
+          toast({
+            title: "Thumbnail Upload Failed",
+            description: "Failed to upload custom thumbnail. Continuing without thumbnail.",
+            variant: "destructive",
+          });
+        } else {
+          const { data: urlData } = supabase.storage
+            .from('generated-assets')
+            .getPublicUrl(fileName);
+          thumbnailUrl = urlData.publicUrl;
+        }
+      }
+
       const result = await uploadToYouTube(
         {
           videoUrl,
@@ -316,7 +396,7 @@ export function YouTubeUploadModal({
           categoryId,
           privacyStatus: isScheduled ? "private" : privacyStatus,
           publishAt,
-          thumbnailUrl: selectedThumbnail || undefined,
+          thumbnailUrl,
         },
         (progress) => setProgress(progress)
       );
@@ -590,29 +670,39 @@ export function YouTubeUploadModal({
               </div>
 
               {/* Thumbnail Selection */}
-              {thumbnails && thumbnails.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Thumbnail</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Select a thumbnail for your video (optional - YouTube will auto-generate if not selected)
-                  </p>
+              <div className="space-y-2">
+                <Label>Thumbnail</Label>
+                <p className="text-xs text-muted-foreground">
+                  {thumbnails && thumbnails.length > 0
+                    ? "Select a generated thumbnail or upload your own"
+                    : "Upload a custom thumbnail (optional - YouTube will auto-generate if not provided)"}
+                </p>
+
+                {/* Generated thumbnails grid */}
+                {thumbnails && thumbnails.length > 0 && (
                   <div className="grid grid-cols-3 gap-2">
                     {thumbnails.map((thumb, index) => (
                       <div
                         key={index}
                         className={`relative cursor-pointer rounded-lg border-2 overflow-hidden transition-all ${
-                          selectedThumbnail === thumb
+                          selectedThumbnail === thumb && !customThumbnailPreview
                             ? "border-primary ring-2 ring-primary/20"
                             : "border-border hover:border-primary/50"
                         }`}
-                        onClick={() => setSelectedThumbnail(selectedThumbnail === thumb ? null : thumb)}
+                        onClick={() => {
+                          setSelectedThumbnail(selectedThumbnail === thumb ? null : thumb);
+                          // Clear custom thumbnail when selecting generated one
+                          if (customThumbnailPreview) {
+                            handleRemoveCustomThumbnail();
+                          }
+                        }}
                       >
                         <img
                           src={thumb}
                           alt={`Thumbnail ${index + 1}`}
                           className="w-full aspect-video object-cover"
                         />
-                        {selectedThumbnail === thumb && (
+                        {selectedThumbnail === thumb && !customThumbnailPreview && (
                           <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
                             <Check className="w-6 h-6 text-primary" />
                           </div>
@@ -620,8 +710,58 @@ export function YouTubeUploadModal({
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* Custom thumbnail upload */}
+                {customThumbnailPreview ? (
+                  <div className="relative">
+                    <div className="relative rounded-lg border-2 border-primary ring-2 ring-primary/20 overflow-hidden">
+                      <img
+                        src={customThumbnailPreview}
+                        alt="Custom thumbnail"
+                        className="w-full aspect-video object-cover"
+                      />
+                      <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                        <Check className="w-6 h-6 text-primary" />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                      onClick={handleRemoveCustomThumbnail}
+                      disabled={isUploading}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1">Custom thumbnail selected</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      id="custom-thumbnail"
+                      accept="image/jpeg,image/png,image/gif,image/bmp"
+                      onChange={handleCustomThumbnailSelect}
+                      disabled={isUploading}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => document.getElementById('custom-thumbnail')?.click()}
+                      disabled={isUploading}
+                      className="gap-2"
+                    >
+                      <ImagePlus className="w-4 h-4" />
+                      Upload Custom Thumbnail
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Max 2MB, JPEG/PNG/GIF/BMP</span>
+                  </div>
+                )}
+              </div>
 
               {/* Privacy / Schedule */}
               <div className="space-y-3">
