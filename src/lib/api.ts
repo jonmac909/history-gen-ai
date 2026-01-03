@@ -1928,3 +1928,54 @@ export async function getChannelOutliersApify(
     };
   }
 }
+
+// ==================== Invidious Channel Scraper (for View All) ====================
+
+/**
+ * Scrape channel outliers using Invidious API (free YouTube frontend)
+ * Used for View All feature - faster than Apify, no rate limits
+ */
+export async function getChannelOutliersInvidious(
+  channelInput: string,
+  maxResults: number = 50,
+  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier',
+  forceRefresh: boolean = false
+): Promise<ChannelStatsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-channel-invidious`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Invidious channel stats error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to analyze channel: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('Invidious channel stats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze channel'
+    };
+  }
+}

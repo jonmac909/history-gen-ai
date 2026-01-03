@@ -3,7 +3,7 @@ import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
-import { getChannelOutliers, getChannelOutliersApify, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
+import { getChannelOutliers, getChannelOutliersInvidious, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 interface OutlierFinderViewProps {
@@ -250,35 +250,41 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     const allResults: VideoWithChannel[] = [];
 
     try {
-      // Use Apify for View All - process sequentially to stay within free tier memory limits
-      // Apify free tier has total memory limits, so we can't run all channels in parallel
+      // Use Invidious for View All - process in parallel (no rate limits)
       setLoadingProgress({ current: 0, total: savedChannels.length });
 
-      // Process channels sequentially to avoid Apify memory limits
-      for (let i = 0; i < savedChannels.length; i++) {
-        const saved = savedChannels[i];
-        try {
-          // Use Apify endpoint - works with any channel
-          const result = await getChannelOutliersApify(saved.input, 20, 'uploaded', true);
+      let completed = 0;
 
-          // Update progress after each channel
-          setLoadingProgress({ current: i + 1, total: savedChannels.length });
+      // Process all channels in parallel using Invidious API
+      const promises = savedChannels.map(async (saved) => {
+        try {
+          // Use Invidious endpoint - fast, free, no rate limits
+          const result = await getChannelOutliersInvidious(saved.input, 20, 'uploaded', false);
+
+          // Update progress
+          completed++;
+          setLoadingProgress({ current: completed, total: savedChannels.length });
 
           if (result.success && result.videos && result.channel) {
-            const videos = result.videos.map(v => ({
+            return result.videos.map(v => ({
               ...v,
               channelTitle: result.channel!.title,
               channelSubscribers: result.channel!.subscriberCountFormatted,
               channelAverageViews: result.channel!.averageViews,
               channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
             }));
-            allResults.push(...videos);
           }
         } catch {
           // Update progress even for failed channels
-          setLoadingProgress({ current: i + 1, total: savedChannels.length });
-          // Continue to next channel on error
+          completed++;
+          setLoadingProgress({ current: completed, total: savedChannels.length });
         }
+        return [];
+      });
+
+      const results = await Promise.all(promises);
+      for (const videos of results) {
+        allResults.push(...videos);
       }
 
       // Sort by selected option
