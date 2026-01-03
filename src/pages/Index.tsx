@@ -1077,8 +1077,13 @@ const Index = () => {
   const handleConfirmExit = () => {
     setShowExitConfirmation(false);
     resetPendingState();
-    setViewState("create");
-    // No toast - the exit confirmation dialog already made the action clear
+    // If we have a loaded project (generatedAssets populated), go back to results
+    // Otherwise go to create page
+    if (generatedAssets.length > 0) {
+      setViewState("results");
+    } else {
+      setViewState("create");
+    }
   };
 
   const handleCancelExit = () => {
