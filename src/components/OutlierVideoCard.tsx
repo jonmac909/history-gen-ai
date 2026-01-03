@@ -64,21 +64,10 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
           alt={video.title}
           className="w-full h-full object-cover"
         />
-        {/* Bottom row of badges */}
-        <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1.5">
-          {/* Duration badge */}
-          <span className="px-1.5 py-0.5 text-xs font-medium bg-black/80 text-white rounded">
-            {video.durationFormatted}
-          </span>
-          {/* Language badge */}
-          <span className="px-1.5 py-0.5 text-xs font-medium bg-black/80 text-white rounded">
-            English
-          </span>
-          {/* Estimated revenue badge - green */}
-          <span className="px-1.5 py-0.5 text-xs font-medium bg-green-600 text-white rounded">
-            $
-          </span>
-        </div>
+        {/* Duration badge */}
+        <span className="absolute bottom-2 left-2 px-1.5 py-0.5 text-xs font-medium bg-black/80 text-white rounded">
+          {video.durationFormatted}
+        </span>
       </div>
 
       {/* Video info */}

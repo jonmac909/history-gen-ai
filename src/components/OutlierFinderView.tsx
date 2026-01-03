@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Search, Loader2, TrendingUp, Eye, Calendar, Shuffle, Filter, X } from "lucide-react";
+import { ArrowLeft, Search, Loader2, TrendingUp, Shuffle, Filter, X, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
@@ -16,8 +16,17 @@ interface SavedChannel {
   title: string;
   thumbnailUrl: string;
   subscriberCountFormatted: string;
+  averageViews: number;
+  averageViewsFormatted: string;
   input: string;
   savedAt: number;
+}
+
+interface VideoWithChannel extends OutlierVideo {
+  channelTitle: string;
+  channelSubscribers: string;
+  channelAverageViews: number;
+  channelAverageViewsFormatted: string;
 }
 
 type SortOption = 'outlier' | 'views' | 'uploaded';
@@ -42,6 +51,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   const [isLoading, setIsLoading] = useState(false);
   const [channel, setChannel] = useState<ChannelStats | null>(null);
   const [videos, setVideos] = useState<OutlierVideo[]>([]);
+  const [allVideos, setAllVideos] = useState<VideoWithChannel[]>([]);
+  const [viewingAll, setViewingAll] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('uploaded');
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
 
@@ -64,6 +75,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     setIsLoading(true);
     setChannel(null);
     setVideos([]);
+    setViewingAll(false);
 
     try {
       const result = await getChannelOutliers(channelToAnalyze, 50, sortBy);
@@ -85,6 +97,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           title: result.channel.title,
           thumbnailUrl: result.channel.thumbnailUrl,
           subscriberCountFormatted: result.channel.subscriberCountFormatted,
+          averageViews: result.channel.averageViews,
+          averageViewsFormatted: result.channel.averageViewsFormatted,
           input: channelToAnalyze,
           savedAt: Date.now(),
         };
@@ -113,18 +127,95 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     }
   };
 
-  const handleSort = async (newSort: SortOption) => {
+  const handleViewAll = async () => {
+    if (savedChannels.length === 0) {
+      toast({
+        title: "No saved channels",
+        description: "Analyze some channels first to use View All",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    setChannel(null);
+    setVideos([]);
+    setViewingAll(true);
+
+    const allResults: VideoWithChannel[] = [];
+
+    try {
+      // Fetch videos from all saved channels in parallel
+      const promises = savedChannels.map(async (saved) => {
+        try {
+          const result = await getChannelOutliers(saved.input, 20, 'uploaded');
+          if (result.success && result.videos && result.channel) {
+            return result.videos.map(v => ({
+              ...v,
+              channelTitle: result.channel!.title,
+              channelSubscribers: result.channel!.subscriberCountFormatted,
+              channelAverageViews: result.channel!.averageViews,
+              channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
+            }));
+          }
+          return [];
+        } catch {
+          return [];
+        }
+      });
+
+      const results = await Promise.all(promises);
+      results.forEach(vids => allResults.push(...vids));
+
+      // Sort by selected option
+      if (sortBy === 'outlier') {
+        allResults.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
+      } else if (sortBy === 'views') {
+        allResults.sort((a, b) => b.viewCount - a.viewCount);
+      } else {
+        allResults.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      }
+
+      setAllVideos(allResults);
+
+      toast({
+        title: "View All complete",
+        description: `Found ${allResults.length} videos from ${savedChannels.length} channels`,
+      });
+    } catch (error) {
+      console.error('View all error:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch videos from all channels",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSort = (newSort: SortOption) => {
     if (newSort === sortBy) return;
     setSortBy(newSort);
 
     // Re-sort locally for immediate feedback
-    if (videos.length > 0) {
+    if (viewingAll && allVideos.length > 0) {
+      const sorted = [...allVideos];
+      if (newSort === 'outlier') {
+        sorted.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
+      } else if (newSort === 'views') {
+        sorted.sort((a, b) => b.viewCount - a.viewCount);
+      } else {
+        sorted.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      }
+      setAllVideos(sorted);
+    } else if (videos.length > 0) {
       const sorted = [...videos];
       if (newSort === 'outlier') {
         sorted.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
       } else if (newSort === 'views') {
         sorted.sort((a, b) => b.viewCount - a.viewCount);
-      } else if (newSort === 'uploaded') {
+      } else {
         sorted.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
       }
       setVideos(sorted);
@@ -143,28 +234,37 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     saveSavedChannels(updated);
   };
 
+  const handleClear = () => {
+    setChannel(null);
+    setVideos([]);
+    setAllVideos([]);
+    setViewingAll(false);
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
+            {/* Clickable logo/title to go back */}
+            <button
               onClick={onBack}
-              className="text-gray-500 hover:text-gray-900"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
+              <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
+              <span className="font-semibold text-gray-900">HistoryGen</span>
+            </button>
 
-            {/* Search bar - VidIQ style */}
+            {/* Search bar */}
             <div className="flex-1 flex items-center gap-2">
               <div className="relative flex-1 max-w-xl">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
                 <Input
                   type="text"
-                  placeholder="BoringHistorySecrets"
+                  placeholder="Enter channel handle or URL..."
                   value={channelInput}
                   onChange={(e) => setChannelInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
@@ -199,8 +299,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         </div>
       </div>
 
-      {/* Generate Ideas button bar */}
-      {!channel && !isLoading && (
+      {/* Action buttons bar */}
+      {!channel && !viewingAll && !isLoading && (
         <div className="border-b border-gray-200 bg-gray-50">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
             <Button
@@ -211,8 +311,14 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               <TrendingUp className="h-4 w-4 mr-2" />
               Generate Ideas
             </Button>
-            <Button variant="outline" className="rounded-full text-gray-600 border-gray-300">
-              + Save New Idea
+            <Button
+              onClick={handleViewAll}
+              disabled={savedChannels.length === 0}
+              variant="outline"
+              className="rounded-full text-gray-600 border-gray-300"
+            >
+              <LayoutGrid className="h-4 w-4 mr-2" />
+              View All
             </Button>
           </div>
         </div>
@@ -220,7 +326,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Saved channels list */}
-        {!channel && !isLoading && savedChannels.length > 0 && (
+        {!channel && !viewingAll && !isLoading && savedChannels.length > 0 && (
           <div className="mb-8">
             <h2 className="text-sm font-medium text-gray-500 mb-3">Recent Channels</h2>
             <div className="flex flex-wrap gap-2">
@@ -252,8 +358,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           </div>
         )}
 
-        {/* Channel header when analyzing */}
-        {channel && (
+        {/* Channel header when analyzing single channel */}
+        {channel && !viewingAll && (
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
@@ -268,10 +374,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
             </div>
             <Button
               variant="outline"
-              onClick={() => {
-                setChannel(null);
-                setVideos([]);
-              }}
+              onClick={handleClear}
               className="text-gray-600"
             >
               Clear
@@ -279,8 +382,25 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           </div>
         )}
 
-        {/* Video grid */}
-        {videos.length > 0 && channel && (
+        {/* View All header */}
+        {viewingAll && !isLoading && (
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-900">All Channels</h2>
+              <p className="text-sm text-gray-500">{allVideos.length} videos from {savedChannels.length} channels</p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleClear}
+              className="text-gray-600"
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+
+        {/* Video grid - single channel */}
+        {videos.length > 0 && channel && !viewingAll && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {videos.map((video) => (
               <OutlierVideoCard
@@ -296,8 +416,25 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           </div>
         )}
 
+        {/* Video grid - all channels */}
+        {viewingAll && allVideos.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {allVideos.map((video) => (
+              <OutlierVideoCard
+                key={video.videoId}
+                video={video}
+                averageViews={video.channelAverageViews}
+                averageViewsFormatted={video.channelAverageViewsFormatted}
+                channelTitle={video.channelTitle}
+                subscriberCountFormatted={video.channelSubscribers}
+                onClick={() => handleVideoClick(video)}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Empty state */}
-        {!isLoading && !channel && savedChannels.length === 0 && (
+        {!isLoading && !channel && !viewingAll && savedChannels.length === 0 && (
           <div className="text-center py-20 text-gray-500">
             <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
             <p className="text-lg text-gray-700">Enter a YouTube channel to find outlier videos</p>
@@ -309,7 +446,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         {isLoading && (
           <div className="text-center py-20">
             <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-red-500" />
-            <p className="text-gray-500">Analyzing channel videos...</p>
+            <p className="text-gray-500">{viewingAll ? 'Loading videos from all channels...' : 'Analyzing channel videos...'}</p>
           </div>
         )}
       </div>
