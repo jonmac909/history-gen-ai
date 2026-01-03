@@ -1599,14 +1599,17 @@ const Index = () => {
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={() => setViewState("create")}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center">
               <Scroll className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold text-foreground">
               HistoryVidGen
             </span>
-          </div>
+          </button>
           
           <div className="flex items-center gap-2">
             <ProjectsDrawer onOpenProject={handleOpenProject} />
