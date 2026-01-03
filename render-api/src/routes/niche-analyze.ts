@@ -92,11 +92,21 @@ async function searchChannels(topic: string, maxResults: number = 50): Promise<s
   url.searchParams.set('maxResults', maxResults.toString());
   url.searchParams.set('key', YOUTUBE_API_KEY!);
 
+  console.log(`[niche-analyze] Searching for channels with topic: "${topic}"`);
   const response = await fetch(url.toString());
   const data = await response.json() as any;
 
-  if (!data.items) return [];
+  if (data.error) {
+    console.error(`[niche-analyze] YouTube API error:`, data.error);
+    return [];
+  }
 
+  if (!data.items) {
+    console.log(`[niche-analyze] No items returned from search`);
+    return [];
+  }
+
+  console.log(`[niche-analyze] Search returned ${data.items.length} channels`);
   return data.items.map((item: any) => item.snippet.channelId);
 }
 
@@ -105,6 +115,8 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
   if (channelIds.length === 0) return [];
 
   const channels: NicheChannel[] = [];
+  let skippedHidden = 0;
+  let skippedNoVideos = 0;
 
   // Process in batches of 50 (YouTube API limit)
   for (let i = 0; i < channelIds.length; i += 50) {
@@ -118,7 +130,17 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
     const response = await fetch(url.toString());
     const data = await response.json() as any;
 
-    if (!data.items) continue;
+    if (data.error) {
+      console.error(`[niche-analyze] YouTube channels API error:`, data.error);
+      continue;
+    }
+
+    if (!data.items) {
+      console.log(`[niche-analyze] No channel details returned`);
+      continue;
+    }
+
+    console.log(`[niche-analyze] Got details for ${data.items.length} channels`);
 
     for (const channel of data.items) {
       const subscriberCount = parseInt(channel.statistics.subscriberCount || '0', 10);
@@ -126,7 +148,14 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
       const videoCount = parseInt(channel.statistics.videoCount || '0', 10);
 
       // Skip channels with hidden subscriber count or no videos
-      if (channel.statistics.hiddenSubscriberCount || videoCount === 0) continue;
+      if (channel.statistics.hiddenSubscriberCount) {
+        skippedHidden++;
+        continue;
+      }
+      if (videoCount === 0) {
+        skippedNoVideos++;
+        continue;
+      }
 
       const viewsToSubsRatio = subscriberCount > 0
         ? Math.round((viewCount / subscriberCount) * 100) / 100
@@ -147,6 +176,7 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
     }
   }
 
+  console.log(`[niche-analyze] Channels after filtering: ${channels.length} (skipped ${skippedHidden} hidden, ${skippedNoVideos} no videos)`);
   return channels;
 }
 
