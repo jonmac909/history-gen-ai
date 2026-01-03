@@ -12,6 +12,7 @@ import generateThumbnailsRouter from './routes/generate-thumbnails';
 import youtubeUploadRouter from './routes/youtube-upload';
 import pronunciationRouter from './routes/pronunciation';
 import generateYoutubeMetadataRouter from './routes/generate-youtube-metadata';
+import youtubeChannelStatsRouter from './routes/youtube-channel-stats';
 
 dotenv.config();
 
@@ -54,6 +55,7 @@ app.use('/generate-thumbnails', generateThumbnailsRouter);
 app.use('/youtube-upload', youtubeUploadRouter);
 app.use('/pronunciation', pronunciationRouter);
 app.use('/generate-youtube-metadata', generateYoutubeMetadataRouter);
+app.use('/youtube-channel-stats', youtubeChannelStatsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

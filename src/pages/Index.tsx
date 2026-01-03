@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -50,9 +50,10 @@ import {
   type Project,
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
+import { OutlierFinderView } from "@/components/OutlierFinderView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "processing" | "review-script" | "review-audio" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "processing" | "review-script" | "review-audio" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const Index = () => {
@@ -318,11 +319,19 @@ const Index = () => {
   };
 
   const updateStep = (stepId: string, status: "pending" | "active" | "completed", sublabel?: string) => {
-    setProcessingSteps(prev => prev.map(step => 
-      step.id === stepId 
+    setProcessingSteps(prev => prev.map(step =>
+      step.id === stepId
         ? { ...step, status, sublabel: sublabel || step.sublabel }
         : step
     ));
+  };
+
+  // Handler for selecting a video from the outlier finder
+  const handleSelectOutlierVideo = (videoUrl: string, title: string) => {
+    setInputValue(videoUrl);
+    setInputMode("url");
+    setSettings(prev => ({ ...prev, projectTitle: title }));
+    setViewState("create");
   };
 
   // Step 1: Generate transcript and script
@@ -1614,7 +1623,12 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      {viewState === "results" ? (
+      {viewState === "outlier-finder" ? (
+        <OutlierFinderView
+          onBack={() => setViewState("create")}
+          onSelectVideo={handleSelectOutlierVideo}
+        />
+      ) : viewState === "results" ? (
         <ProjectResults
           sourceUrl={sourceUrl}
           onNewProject={handleNewProject}
@@ -1811,6 +1825,18 @@ const Index = () => {
                     </Button>
                   </div>
                 )}
+
+                {/* Find Outliers button */}
+                <div className="mt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setViewState("outlier-finder")}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    Find Outlier Videos
+                  </Button>
+                </div>
               </>
             )}
 

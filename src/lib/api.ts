@@ -1691,3 +1691,80 @@ export async function generateYouTubeMetadata(
     };
   }
 }
+
+// ==================== YouTube Channel Stats / Outlier Finder ====================
+
+export interface OutlierVideo {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+  duration: string;
+  durationFormatted: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  outlierMultiplier: number;
+  viewsPerSubscriber: number;
+}
+
+export interface ChannelStats {
+  id: string;
+  title: string;
+  subscriberCount: number;
+  subscriberCountFormatted: string;
+  thumbnailUrl: string;
+  averageViews: number;
+  averageViewsFormatted: string;
+}
+
+export interface ChannelStatsResult {
+  success: boolean;
+  channel?: ChannelStats;
+  videos?: OutlierVideo[];
+  error?: string;
+}
+
+export async function getChannelOutliers(
+  channelInput: string,
+  maxResults: number = 50,
+  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier'
+): Promise<ChannelStatsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-channel-stats`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channelInput, maxResults, sortBy })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Channel stats error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to analyze channel: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('Channel stats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze channel'
+    };
+  }
+}
