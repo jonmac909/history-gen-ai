@@ -925,7 +925,7 @@ export function ProjectResults({
                 <div>
                   <p className="font-medium text-foreground">YouTube Upload</p>
                   <p className="text-sm text-muted-foreground">
-                    Upload as private draft
+                    Schedule or upload as draft
                   </p>
                 </div>
               </div>
