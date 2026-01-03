@@ -1076,12 +1076,12 @@ const Index = () => {
 
   const handleConfirmExit = () => {
     setShowExitConfirmation(false);
-    resetPendingState();
-    // If we have a loaded project (generatedAssets populated), go back to results
-    // Otherwise go to create page
+    // If we have a loaded project, go back to results without resetting assets
+    // Otherwise reset everything and go to create page
     if (generatedAssets.length > 0) {
       setViewState("results");
     } else {
+      resetPendingState();
       setViewState("create");
     }
   };
