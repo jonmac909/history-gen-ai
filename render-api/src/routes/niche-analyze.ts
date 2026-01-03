@@ -181,6 +181,14 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
   return channels;
 }
 
+// Debug endpoint to check config
+router.get('/debug', (req: Request, res: Response) => {
+  res.json({
+    hasApiKey: !!YOUTUBE_API_KEY,
+    apiKeyPrefix: YOUTUBE_API_KEY ? YOUTUBE_API_KEY.substring(0, 8) + '...' : 'NOT SET'
+  });
+});
+
 // Main endpoint
 router.post('/', async (req: Request, res: Response) => {
   try {

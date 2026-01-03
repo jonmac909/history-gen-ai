@@ -161,11 +161,17 @@ async function getChannelInfo(channelId: string): Promise<ChannelInfo | null> {
   url.searchParams.set('id', channelId);
   url.searchParams.set('key', YOUTUBE_API_KEY!);
 
+  console.log(`[youtube-channel-stats] Fetching channel info for: ${channelId}`);
   const response = await fetch(url.toString());
   const data = await response.json() as any;
 
+  if (data.error) {
+    console.error(`[youtube-channel-stats] YouTube API error:`, JSON.stringify(data.error));
+    return null;
+  }
+
   if (!data.items || data.items.length === 0) {
-    console.error(`[youtube-channel-stats] Channel not found: ${channelId}`);
+    console.error(`[youtube-channel-stats] Channel not found: ${channelId}, response:`, JSON.stringify(data));
     return null;
   }
 
