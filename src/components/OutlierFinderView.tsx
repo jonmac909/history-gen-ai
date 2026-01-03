@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Search, Loader2, TrendingUp, Shuffle, Filter, X, LayoutGrid } from "lucide-react";
+import { Search, Loader2, TrendingUp, X, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
@@ -288,13 +288,6 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               </select>
             </div>
 
-            {/* Action buttons */}
-            <Button variant="ghost" size="icon" className="text-gray-500">
-              <Shuffle className="h-5 w-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="text-gray-500">
-              <Filter className="h-5 w-5" />
-            </Button>
           </div>
         </div>
       </div>
