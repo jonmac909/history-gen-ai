@@ -35,6 +35,8 @@ export type Database = {
           embers_video_url: string | null
           smoke_embers_video_url: string | null
           settings: Json | null
+          thumbnails: Json | null
+          selected_thumbnail_index: number | null
           created_at: string
           updated_at: string
         }
@@ -58,6 +60,8 @@ export type Database = {
           embers_video_url?: string | null
           smoke_embers_video_url?: string | null
           settings?: Json | null
+          thumbnails?: Json | null
+          selected_thumbnail_index?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -81,6 +85,8 @@ export type Database = {
           embers_video_url?: string | null
           smoke_embers_video_url?: string | null
           settings?: Json | null
+          thumbnails?: Json | null
+          selected_thumbnail_index?: number | null
           created_at?: string
           updated_at?: string
         }

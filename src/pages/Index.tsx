@@ -108,6 +108,7 @@ const Index = () => {
   const [pendingSrtUrl, setPendingSrtUrl] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
+  const [selectedThumbnailIndex, setSelectedThumbnailIndex] = useState<number | undefined>();
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | undefined>();
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
@@ -249,6 +250,8 @@ const Index = () => {
     if (savedProject.videoUrlCaptioned) setVideoUrlCaptioned(savedProject.videoUrlCaptioned);
     if (savedProject.embersVideoUrl) setEmbersVideoUrl(savedProject.embersVideoUrl);
     if (savedProject.smokeEmbersVideoUrl) setSmokeEmbersVideoUrl(savedProject.smokeEmbersVideoUrl);
+    if (savedProject.thumbnails) setGeneratedThumbnails(savedProject.thumbnails);
+    if (savedProject.selectedThumbnailIndex !== undefined) setSelectedThumbnailIndex(savedProject.selectedThumbnailIndex);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.currentStep) {
@@ -1000,14 +1003,21 @@ const Index = () => {
   };
 
   // Thumbnail handlers
-  const handleThumbnailsConfirm = (thumbnails: string[]) => {
+  const handleThumbnailsConfirm = (thumbnails: string[], selectedIndex: number | undefined) => {
     setGeneratedThumbnails(thumbnails);
+    setSelectedThumbnailIndex(selectedIndex);
+    // Save thumbnails to project
+    autoSave({
+      thumbnails,
+      selectedThumbnailIndex: selectedIndex,
+    });
     // Go to video render step
     setViewState("review-render");
   };
 
   const handleThumbnailsSkip = () => {
     setGeneratedThumbnails([]);
+    setSelectedThumbnailIndex(undefined);
     // Go to video render step
     setViewState("review-render");
   };
@@ -1504,6 +1514,12 @@ const Index = () => {
     if (project.smokeEmbersVideoUrl) {
       setSmokeEmbersVideoUrl(project.smokeEmbersVideoUrl);
     }
+    if (project.thumbnails) {
+      setGeneratedThumbnails(project.thumbnails);
+    }
+    if (project.selectedThumbnailIndex !== undefined) {
+      setSelectedThumbnailIndex(project.selectedThumbnailIndex);
+    }
 
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [];
@@ -1974,6 +1990,8 @@ const Index = () => {
         projectId={projectId}
         projectTitle={videoTitle}
         script={confirmedScript}
+        initialThumbnails={generatedThumbnails}
+        initialSelectedIndex={selectedThumbnailIndex}
         onConfirm={handleThumbnailsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToImages}
@@ -2003,6 +2021,7 @@ const Index = () => {
         videoUrl={renderedVideoUrl || ""}
         projectTitle={videoTitle}
         thumbnails={generatedThumbnails}
+        selectedThumbnailIndex={selectedThumbnailIndex}
         onClose={handleYouTubeComplete}
         onSuccess={handleYouTubeComplete}
         onBack={handleBackToRender}

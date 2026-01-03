@@ -27,6 +27,10 @@ export interface Project {
   videoUrlCaptioned?: string;
   embersVideoUrl?: string;
   smokeEmbersVideoUrl?: string;
+
+  // Thumbnails
+  thumbnails?: string[];  // Array of generated thumbnail URLs
+  selectedThumbnailIndex?: number;  // Index of selected thumbnail for YouTube upload
 }
 
 // Legacy localStorage keys for migration
@@ -56,6 +60,8 @@ function rowToProject(row: {
   embers_video_url: string | null;
   smoke_embers_video_url: string | null;
   settings: unknown;
+  thumbnails: unknown;
+  selected_thumbnail_index: number | null;
   created_at: string;
   updated_at: string;
 }): Project {
@@ -80,6 +86,8 @@ function rowToProject(row: {
     videoUrlCaptioned: row.video_url_captioned || undefined,
     embersVideoUrl: row.embers_video_url || undefined,
     smokeEmbersVideoUrl: row.smoke_embers_video_url || undefined,
+    thumbnails: (row.thumbnails as string[]) || undefined,
+    selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
   };
 }
 
@@ -106,6 +114,8 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
     embers_video_url: project.embersVideoUrl || null,
     smoke_embers_video_url: project.smokeEmbersVideoUrl || null,
     settings: project.settings || null,
+    thumbnails: project.thumbnails || [],
+    selected_thumbnail_index: project.selectedThumbnailIndex ?? null,
     updated_at: now,
   };
 

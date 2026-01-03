@@ -47,6 +47,7 @@ interface YouTubeUploadModalProps {
   videoUrl: string;
   projectTitle?: string;
   thumbnails?: string[]; // Previously generated thumbnails
+  selectedThumbnailIndex?: number; // Index of previously selected thumbnail
   onClose: () => void;
   onSuccess?: (youtubeUrl: string) => void;
   onBack?: () => void;
@@ -70,6 +71,7 @@ export function YouTubeUploadModal({
   videoUrl,
   projectTitle,
   thumbnails,
+  selectedThumbnailIndex,
   onClose,
   onSuccess,
   onBack,
@@ -112,14 +114,17 @@ export function YouTubeUploadModal({
       setTitle(projectTitle || "");
       setUploadResult(null);
       setProgress(null);
-      // Auto-select first thumbnail if available
+      // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
-        setSelectedThumbnail(thumbnails[0]);
+        const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
+          ? selectedThumbnailIndex
+          : 0;
+        setSelectedThumbnail(thumbnails[indexToSelect]);
       } else {
         setSelectedThumbnail(null);
       }
     }
-  }, [isOpen, projectTitle, thumbnails]);
+  }, [isOpen, projectTitle, thumbnails, selectedThumbnailIndex]);
 
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();

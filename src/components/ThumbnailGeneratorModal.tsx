@@ -20,7 +20,9 @@ interface ThumbnailGeneratorModalProps {
   projectId: string;
   projectTitle?: string;
   script?: string;
-  onConfirm: (thumbnails: string[]) => void;
+  initialThumbnails?: string[];
+  initialSelectedIndex?: number;
+  onConfirm: (thumbnails: string[], selectedIndex: number | undefined) => void;
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
@@ -29,6 +31,8 @@ interface ThumbnailGeneratorModalProps {
 export function ThumbnailGeneratorModal({
   isOpen,
   projectId,
+  initialThumbnails,
+  initialSelectedIndex,
   onConfirm,
   onCancel,
   onBack,
@@ -76,10 +80,28 @@ export function ThumbnailGeneratorModal({
   const [thumbnailCount, setThumbnailCount] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
-  const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
+  const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>(initialThumbnails || []);
 
   // Selection state - which thumbnail is selected for YouTube upload
-  const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
+  const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(
+    initialThumbnails && initialSelectedIndex !== undefined
+      ? initialThumbnails[initialSelectedIndex] || null
+      : null
+  );
+
+  // Reset state when modal opens with new initial values
+  useEffect(() => {
+    if (isOpen) {
+      if (initialThumbnails && initialThumbnails.length > 0) {
+        setGeneratedThumbnails(initialThumbnails);
+        setSelectedThumbnail(
+          initialSelectedIndex !== undefined
+            ? initialThumbnails[initialSelectedIndex] || null
+            : null
+        );
+      }
+    }
+  }, [isOpen, initialThumbnails, initialSelectedIndex]);
 
   // History stack for navigating back to previous thumbnail batches
   const [thumbnailHistory, setThumbnailHistory] = useState<{
@@ -444,8 +466,11 @@ export function ThumbnailGeneratorModal({
   };
 
   const handleComplete = () => {
-    // Pass only the selected thumbnail (or empty array if none selected)
-    onConfirm(selectedThumbnail ? [selectedThumbnail] : []);
+    // Pass all thumbnails and the selected index
+    const selectedIndex = selectedThumbnail
+      ? generatedThumbnails.indexOf(selectedThumbnail)
+      : undefined;
+    onConfirm(generatedThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
   };
 
   // Handle escape key - allow closing when not actively generating
