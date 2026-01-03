@@ -249,27 +249,41 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     const allResults: VideoWithChannel[] = [];
 
     try {
-      // Fetch videos from all saved channels in parallel
-      const promises = savedChannels.map(async (saved) => {
-        try {
-          const result = await getChannelOutliers(saved.input, 20, 'uploaded');
-          if (result.success && result.videos && result.channel) {
-            return result.videos.map(v => ({
-              ...v,
-              channelTitle: result.channel!.title,
-              channelSubscribers: result.channel!.subscriberCountFormatted,
-              channelAverageViews: result.channel!.averageViews,
-              channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
-            }));
-          }
-          return [];
-        } catch {
-          return [];
-        }
-      });
+      // Process channels in batches to respect TubeLab rate limit (10 req/min)
+      // Use batches of 5 with 7 second delay between batches
+      const BATCH_SIZE = 5;
+      const BATCH_DELAY_MS = 7000;
 
-      const results = await Promise.all(promises);
-      results.forEach(vids => allResults.push(...vids));
+      for (let i = 0; i < savedChannels.length; i += BATCH_SIZE) {
+        const batch = savedChannels.slice(i, i + BATCH_SIZE);
+
+        // Fetch batch in parallel
+        const promises = batch.map(async (saved) => {
+          try {
+            const result = await getChannelOutliers(saved.input, 20, 'uploaded');
+            if (result.success && result.videos && result.channel) {
+              return result.videos.map(v => ({
+                ...v,
+                channelTitle: result.channel!.title,
+                channelSubscribers: result.channel!.subscriberCountFormatted,
+                channelAverageViews: result.channel!.averageViews,
+                channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
+              }));
+            }
+            return [];
+          } catch {
+            return [];
+          }
+        });
+
+        const results = await Promise.all(promises);
+        results.forEach(vids => allResults.push(...vids));
+
+        // Wait before next batch (unless this is the last batch)
+        if (i + BATCH_SIZE < savedChannels.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
 
       // Sort by selected option
       if (sortBy === 'outlier') {
