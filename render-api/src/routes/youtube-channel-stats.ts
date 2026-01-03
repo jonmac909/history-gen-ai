@@ -1,65 +1,58 @@
 import { Router, Request, Response } from 'express';
 import fetch from 'node-fetch';
+import {
+  getCachedChannel,
+  cacheChannel,
+  getCachedOutliersForChannel,
+  cacheOutliers,
+  CachedChannel,
+  CachedOutlier,
+} from '../lib/outlier-cache';
 
 const router = Router();
 
-// YouTube API key from environment
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+// TubeLab API key from environment
+const TUBELAB_API_KEY = process.env.TUBELAB_API_KEY;
+const TUBELAB_BASE_URL = 'https://public-api.tubelab.net/v1';
 
-interface ChannelInfo {
-  id: string;
-  title: string;
-  subscriberCount: number;
-  thumbnailUrl: string;
-  uploadsPlaylistId: string;
-}
-
-interface VideoStats {
+interface OutlierVideo {
   videoId: string;
   title: string;
   thumbnailUrl: string;
   publishedAt: string;
   duration: string;
   durationFormatted: string;
+  durationSeconds: number;
   viewCount: number;
   likeCount: number;
   commentCount: number;
-}
-
-interface OutlierVideo extends VideoStats {
   outlierMultiplier: number;
   viewsPerSubscriber: number;
   zScore: number;
   isPositiveOutlier: boolean;
   isNegativeOutlier: boolean;
-  durationSeconds: number;
+  monetization?: {
+    rpmEstimationFrom?: number;
+    rpmEstimationTo?: number;
+    revenueEstimationFrom?: number;
+    revenueEstimationTo?: number;
+  };
+  classification?: {
+    isFaceless?: boolean;
+    quality?: 'negative' | 'neutral' | 'positive';
+  };
 }
 
-// Parse ISO 8601 duration to seconds
-function parseDurationToSeconds(isoDuration: string): number {
-  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 0;
-
-  const hours = parseInt(match[1] || '0', 10);
-  const minutes = parseInt(match[2] || '0', 10);
-  const seconds = parseInt(match[3] || '0', 10);
-
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-// Parse ISO 8601 duration to formatted string (e.g., "PT5M30S" -> "5:30")
-function formatDuration(isoDuration: string): string {
-  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return '0:00';
-
-  const hours = parseInt(match[1] || '0', 10);
-  const minutes = parseInt(match[2] || '0', 10);
-  const seconds = parseInt(match[3] || '0', 10);
+// Format seconds to duration string (e.g., 330 -> "5:30")
+function formatDurationFromSeconds(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
 
   if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
 // Format large numbers (e.g., 1234567 -> "1.2M")
@@ -73,286 +66,431 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
-// Resolve channel input (URL, @handle, or ID) to channel ID
-async function resolveChannelId(input: string): Promise<string | null> {
-  // Clean up input
+// TubeLab outlier video response type
+interface TubeLabOutlierHit {
+  id: string;
+  kind: string;
+  snippet: {
+    channelId: string;
+    channelTitle: string;
+    channelHandle?: string;
+    channelSubscribers: number;
+    title: string;
+    publishedAt: string;
+    language?: string;
+    thumbnails?: {
+      default?: { url: string; width: number; height: number };
+      medium?: { url: string; width: number; height: number };
+      high?: { url: string; width: number; height: number };
+    };
+    duration: number;
+    monetization?: {
+      rpmEstimationFrom?: number;
+      rpmEstimationTo?: number;
+      revenueEstimationFrom?: number;
+      revenueEstimationTo?: number;
+    };
+    channelMonetization?: {
+      adsense?: boolean;
+      rpmEstimationFrom?: number;
+      rpmEstimationTo?: number;
+    };
+  };
+  statistics: {
+    commentCount: number;
+    likeCount: number;
+    viewCount: number;
+    zScore: number;
+    averageViewsRatio: number;
+    isPositiveOutlier: boolean;
+    isNegativeOutlier: boolean;
+  };
+  classification?: {
+    isFaceless?: boolean;
+    quality?: 'negative' | 'neutral' | 'positive';
+  };
+}
+
+interface TubeLabOutliersResponse {
+  pagination: {
+    total: number;
+    from: number;
+    size: number;
+  };
+  hits: TubeLabOutlierHit[];
+}
+
+// Convert TubeLab outlier to our OutlierVideo format
+function tubeLabOutlierToVideo(video: TubeLabOutlierHit, subscriberCount: number): OutlierVideo {
+  const durationSeconds = video.snippet.duration || 0;
+
+  return {
+    videoId: video.id,
+    title: video.snippet.title,
+    thumbnailUrl: video.snippet.thumbnails?.medium?.url
+      || video.snippet.thumbnails?.high?.url
+      || video.snippet.thumbnails?.default?.url
+      || '',
+    publishedAt: video.snippet.publishedAt,
+    duration: `PT${Math.floor(durationSeconds / 60)}M${durationSeconds % 60}S`,
+    durationFormatted: formatDurationFromSeconds(durationSeconds),
+    durationSeconds,
+    viewCount: video.statistics.viewCount,
+    likeCount: video.statistics.likeCount || 0,
+    commentCount: video.statistics.commentCount || 0,
+    outlierMultiplier: Math.round(video.statistics.averageViewsRatio * 10) / 10,
+    zScore: Math.round(video.statistics.zScore * 100) / 100,
+    isPositiveOutlier: video.statistics.isPositiveOutlier,
+    isNegativeOutlier: video.statistics.isNegativeOutlier,
+    viewsPerSubscriber: subscriberCount > 0
+      ? Math.round((video.statistics.viewCount / subscriberCount) * 100) / 100
+      : 0,
+    monetization: video.snippet.monetization,
+    classification: video.classification,
+  };
+}
+
+// Convert cached outlier to OutlierVideo format
+function cachedOutlierToVideo(cached: CachedOutlier): OutlierVideo {
+  return {
+    videoId: cached.video_id,
+    title: cached.title,
+    thumbnailUrl: cached.thumbnail_url,
+    publishedAt: cached.published_at,
+    duration: `PT${Math.floor(cached.duration_seconds / 60)}M${cached.duration_seconds % 60}S`,
+    durationFormatted: formatDurationFromSeconds(cached.duration_seconds),
+    durationSeconds: cached.duration_seconds,
+    viewCount: cached.view_count,
+    likeCount: cached.like_count,
+    commentCount: cached.comment_count,
+    outlierMultiplier: cached.outlier_multiplier,
+    zScore: cached.z_score,
+    isPositiveOutlier: cached.is_positive_outlier,
+    isNegativeOutlier: cached.is_negative_outlier,
+    viewsPerSubscriber: cached.views_per_subscriber,
+    monetization: cached.monetization as OutlierVideo['monetization'],
+    classification: cached.classification as OutlierVideo['classification'],
+  };
+}
+
+// Convert OutlierVideo to cache format
+function outlierVideoToCacheFormat(video: OutlierVideo, channelId: string): Omit<CachedOutlier, 'fetched_at' | 'expires_at'> {
+  return {
+    video_id: video.videoId,
+    channel_id: channelId,
+    title: video.title,
+    thumbnail_url: video.thumbnailUrl,
+    published_at: video.publishedAt,
+    duration_seconds: video.durationSeconds,
+    view_count: video.viewCount,
+    like_count: video.likeCount,
+    comment_count: video.commentCount,
+    outlier_multiplier: video.outlierMultiplier,
+    z_score: video.zScore,
+    views_per_subscriber: video.viewsPerSubscriber,
+    is_positive_outlier: video.isPositiveOutlier,
+    is_negative_outlier: video.isNegativeOutlier,
+    monetization: video.monetization,
+    classification: video.classification,
+    source: 'tubelab',
+  };
+}
+
+// Resolve channel input to channel ID using TubeLab channels search (with caching)
+async function resolveChannelId(input: string): Promise<{ channelId: string; channelInfo: any; fromCache: boolean } | null> {
   input = input.trim();
-
-  // Extract from various URL formats
-  // https://www.youtube.com/channel/UC1234567890
-  // https://www.youtube.com/@ChannelHandle
-  // https://www.youtube.com/c/ChannelName
-  // https://www.youtube.com/user/Username
-
-  let channelId: string | null = null;
-  let handle: string | null = null;
+  let searchQuery = input;
 
   // Check if it's a channel ID format (starts with UC)
   if (input.startsWith('UC') && input.length === 24) {
-    return input;
+    // Check cache for this channel ID
+    const cached = await getCachedChannel(input);
+    if (cached) {
+      console.log(`[youtube-channel-stats] Cache HIT for channel ID: ${input}`);
+      return {
+        channelId: input,
+        channelInfo: {
+          id: cached.id,
+          title: cached.title,
+          handle: cached.handle,
+          subscriberCount: cached.subscriber_count,
+          thumbnailUrl: cached.thumbnail_url,
+          avgViews: cached.avg_views,
+          videoCount: cached.video_count,
+        },
+        fromCache: true,
+      };
+    }
+    return { channelId: input, channelInfo: null, fromCache: false };
   }
 
-  // Parse URL
+  // Parse URL to extract handle
   if (input.includes('youtube.com') || input.includes('youtu.be')) {
     try {
       const url = new URL(input.startsWith('http') ? input : `https://${input}`);
       const pathname = url.pathname;
 
-      // /channel/UC1234567890
       if (pathname.startsWith('/channel/')) {
-        channelId = pathname.split('/channel/')[1].split('/')[0];
-        if (channelId) return channelId;
+        const channelId = pathname.split('/channel/')[1].split('/')[0];
+        if (channelId) {
+          const cached = await getCachedChannel(channelId);
+          if (cached) {
+            console.log(`[youtube-channel-stats] Cache HIT for channel URL: ${channelId}`);
+            return {
+              channelId,
+              channelInfo: {
+                id: cached.id,
+                title: cached.title,
+                handle: cached.handle,
+                subscriberCount: cached.subscriber_count,
+                thumbnailUrl: cached.thumbnail_url,
+              },
+              fromCache: true,
+            };
+          }
+          return { channelId, channelInfo: null, fromCache: false };
+        }
       }
 
-      // /@ChannelHandle
       if (pathname.startsWith('/@')) {
-        handle = pathname.split('/@')[1].split('/')[0];
+        searchQuery = pathname.split('/@')[1].split('/')[0];
       }
 
-      // /c/ChannelName or /user/Username
       if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
         const segments = pathname.split('/');
-        handle = segments[2];
+        searchQuery = segments[2];
       }
     } catch (e) {
-      // Not a valid URL, treat as handle
+      // Not a valid URL, use as-is
     }
   }
 
-  // If input starts with @, it's a handle
-  if (input.startsWith('@')) {
-    handle = input.substring(1);
-  } else if (!handle && !input.includes('/')) {
-    // Plain text, could be a handle
-    handle = input;
+  if (searchQuery.startsWith('@')) {
+    searchQuery = searchQuery.substring(1);
   }
 
-  // If we have a handle, resolve it via search API
-  if (handle) {
-    console.log(`[youtube-channel-stats] Resolving handle: @${handle}`);
+  // Search TubeLab for this channel
+  console.log(`[youtube-channel-stats] Cache MISS - searching TubeLab for: ${searchQuery}`);
 
-    const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
-    searchUrl.searchParams.set('part', 'snippet');
-    searchUrl.searchParams.set('type', 'channel');
-    searchUrl.searchParams.set('q', handle);
-    searchUrl.searchParams.set('maxResults', '1');
-    searchUrl.searchParams.set('key', YOUTUBE_API_KEY!);
+  const url = new URL(`${TUBELAB_BASE_URL}/channels`);
+  url.searchParams.set('query', searchQuery);
+  url.searchParams.set('size', '1');
 
-    const response = await fetch(searchUrl.toString());
-    const data = await response.json() as any;
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Api-Key ${TUBELAB_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
 
-    if (data.items && data.items.length > 0) {
-      // For type=channel search, the ID is in item.id.channelId
-      channelId = data.items[0].id?.channelId || data.items[0].snippet?.channelId;
-      console.log(`[youtube-channel-stats] Resolved @${handle} to channel ID: ${channelId}`);
-      return channelId;
-    }
-
-    console.error(`[youtube-channel-stats] Could not resolve handle: @${handle}`);
+  if (!response.ok) {
+    console.error(`[youtube-channel-stats] TubeLab search error: ${response.status}`);
     return null;
   }
 
-  return channelId;
-}
-
-// Get channel info including uploads playlist ID
-async function getChannelInfo(channelId: string): Promise<ChannelInfo | null> {
-  const url = new URL('https://www.googleapis.com/youtube/v3/channels');
-  url.searchParams.set('part', 'snippet,statistics,contentDetails');
-  url.searchParams.set('id', channelId);
-  url.searchParams.set('key', YOUTUBE_API_KEY!);
-
-  console.log(`[youtube-channel-stats] Fetching channel info for: ${channelId}`);
-  const response = await fetch(url.toString());
   const data = await response.json() as any;
 
-  if (data.error) {
-    console.error(`[youtube-channel-stats] YouTube API error:`, JSON.stringify(data.error));
-    return null;
+  if (data.hits && data.hits.length > 0) {
+    const channel = data.hits[0];
+    console.log(`[youtube-channel-stats] Found channel: ${channel.snippet?.title} (${channel.id})`);
+
+    const channelInfo = {
+      id: channel.id,
+      title: channel.snippet?.title,
+      handle: channel.snippet?.handle,
+      subscriberCount: channel.statistics?.subscriberCount || 0,
+      thumbnailUrl: channel.snippet?.thumbnails?.medium?.url
+        || channel.snippet?.thumbnails?.high?.url
+        || channel.snippet?.thumbnails?.default?.url
+        || '',
+      avgViews: channel.statistics?.avgViewsEstimate || 0,
+      videoCount: channel.statistics?.videoCount || 0,
+    };
+
+    // Cache the channel
+    await cacheChannel({
+      id: channel.id,
+      title: channelInfo.title,
+      handle: channelInfo.handle,
+      thumbnail_url: channelInfo.thumbnailUrl,
+      subscriber_count: channelInfo.subscriberCount,
+      view_count: channel.statistics?.viewCount || 0,
+      video_count: channelInfo.videoCount,
+      views_to_subs_ratio: channel.statistics?.avgViewsToSubscribersRatio || 0,
+      avg_views: channelInfo.avgViews,
+      is_breakout: (channel.statistics?.avgViewsToSubscribersRatio || 0) > 2,
+      created_at: channel.snippet?.publishedAt,
+      monetization: channel.monetization,
+      source: 'tubelab',
+    });
+
+    return { channelId: channel.id, channelInfo, fromCache: false };
   }
 
-  if (!data.items || data.items.length === 0) {
-    console.error(`[youtube-channel-stats] Channel not found: ${channelId}, response:`, JSON.stringify(data));
-    return null;
-  }
-
-  const channel = data.items[0];
-  return {
-    id: channel.id,
-    title: channel.snippet.title,
-    subscriberCount: parseInt(channel.statistics.subscriberCount || '0', 10),
-    thumbnailUrl: channel.snippet.thumbnails?.medium?.url || channel.snippet.thumbnails?.default?.url,
-    uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
-  };
+  console.error(`[youtube-channel-stats] Channel not found in TubeLab: ${searchQuery}`);
+  return null;
 }
 
-// Get videos from uploads playlist
-async function getPlaylistVideos(playlistId: string, maxResults: number = 50): Promise<string[]> {
-  const videoIds: string[] = [];
-  let nextPageToken: string | undefined;
+// Get outlier videos for a channel from TubeLab (with caching)
+async function getChannelOutliersWithCache(
+  channelId: string,
+  maxResults: number = 40,
+  sortBy: string = 'averageViewsRatio',
+  subscriberCount: number = 0
+): Promise<{ videos: OutlierVideo[]; total: number; fromCache: boolean }> {
 
-  while (videoIds.length < maxResults) {
-    const url = new URL('https://www.googleapis.com/youtube/v3/playlistItems');
-    url.searchParams.set('part', 'contentDetails');
-    url.searchParams.set('playlistId', playlistId);
-    url.searchParams.set('maxResults', Math.min(50, maxResults - videoIds.length).toString());
-    url.searchParams.set('key', YOUTUBE_API_KEY!);
-    if (nextPageToken) {
-      url.searchParams.set('pageToken', nextPageToken);
+  // Check cache first
+  const cachedOutliers = await getCachedOutliersForChannel(channelId);
+  if (cachedOutliers.length > 0) {
+    console.log(`[youtube-channel-stats] Cache HIT for outliers: ${channelId} (${cachedOutliers.length} videos)`);
+
+    let videos = cachedOutliers.map(cachedOutlierToVideo);
+
+    // Sort according to sortBy
+    if (sortBy === 'outlier' || sortBy === 'averageViewsRatio') {
+      videos.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
+    } else if (sortBy === 'views') {
+      videos.sort((a, b) => b.viewCount - a.viewCount);
+    } else if (sortBy === 'uploaded' || sortBy === 'publishedAt') {
+      videos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
     }
 
-    const response = await fetch(url.toString());
-    const data = await response.json() as any;
-
-    if (!data.items) break;
-
-    for (const item of data.items) {
-      videoIds.push(item.contentDetails.videoId);
+    // Limit results
+    if (videos.length > maxResults) {
+      videos = videos.slice(0, maxResults);
     }
 
-    nextPageToken = data.nextPageToken;
-    if (!nextPageToken) break;
+    return {
+      videos,
+      total: cachedOutliers.length,
+      fromCache: true,
+    };
   }
 
-  return videoIds;
-}
+  // Cache miss - call TubeLab API
+  console.log(`[youtube-channel-stats] Cache MISS - calling TubeLab outliers API for: ${channelId}`);
 
-// Get video details and statistics in batches
-async function getVideoStats(videoIds: string[]): Promise<VideoStats[]> {
-  const videos: VideoStats[] = [];
+  const url = new URL(`${TUBELAB_BASE_URL}/outliers`);
+  url.searchParams.set('channelId', channelId);
+  url.searchParams.set('size', maxResults.toString());
+  url.searchParams.set('sortBy', sortBy === 'outlier' ? 'averageViewsRatio' : sortBy === 'views' ? 'views' : 'publishedAt');
+  url.searchParams.set('sortOrder', 'desc');
 
-  // Process in batches of 50 (YouTube API limit)
-  for (let i = 0; i < videoIds.length; i += 50) {
-    const batch = videoIds.slice(i, i + 50);
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Api-Key ${TUBELAB_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
 
-    const url = new URL('https://www.googleapis.com/youtube/v3/videos');
-    url.searchParams.set('part', 'snippet,statistics,contentDetails');
-    url.searchParams.set('id', batch.join(','));
-    url.searchParams.set('key', YOUTUBE_API_KEY!);
-
-    const response = await fetch(url.toString());
-    const data = await response.json() as any;
-
-    if (!data.items) continue;
-
-    for (const video of data.items) {
-      videos.push({
-        videoId: video.id,
-        title: video.snippet.title,
-        thumbnailUrl: video.snippet.thumbnails?.medium?.url || video.snippet.thumbnails?.default?.url,
-        publishedAt: video.snippet.publishedAt,
-        duration: video.contentDetails.duration,
-        durationFormatted: formatDuration(video.contentDetails.duration),
-        viewCount: parseInt(video.statistics.viewCount || '0', 10),
-        likeCount: parseInt(video.statistics.likeCount || '0', 10),
-        commentCount: parseInt(video.statistics.commentCount || '0', 10),
-      });
-    }
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[youtube-channel-stats] TubeLab API error: ${response.status} ${errorText}`);
+    throw new Error(`TubeLab API error: ${response.status}`);
   }
 
-  return videos;
+  const data = await response.json() as TubeLabOutliersResponse;
+
+  console.log(`[youtube-channel-stats] TubeLab returned ${data.hits?.length || 0} outliers (total: ${data.pagination?.total || 0})`);
+
+  if (!data.hits || data.hits.length === 0) {
+    return { videos: [], total: 0, fromCache: false };
+  }
+
+  const videos = data.hits.map(hit => tubeLabOutlierToVideo(hit, subscriberCount));
+  const total = data.pagination?.total || videos.length;
+
+  // Cache the outliers
+  await cacheOutliers(videos.map(v => outlierVideoToCacheFormat(v, channelId)));
+
+  return { videos, total, fromCache: false };
 }
 
 // Main endpoint
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { channelInput, maxResults = 50, sortBy = 'outlier' } = req.body;
+    const { channelInput, maxResults = 40, sortBy = 'outlier' } = req.body;
 
     if (!channelInput) {
       return res.status(400).json({ success: false, error: 'Channel input is required' });
     }
 
-    if (!YOUTUBE_API_KEY) {
-      return res.status(500).json({ success: false, error: 'YouTube API key not configured' });
+    if (!TUBELAB_API_KEY) {
+      return res.status(500).json({ success: false, error: 'TubeLab API key not configured' });
     }
 
     console.log(`[youtube-channel-stats] Analyzing channel: ${channelInput}`);
 
-    // Step 1: Resolve channel ID
-    const channelId = await resolveChannelId(channelInput);
-    if (!channelId) {
-      return res.status(404).json({ success: false, error: 'Channel not found' });
+    // Step 1: Resolve channel ID and get channel info (with caching)
+    const resolved = await resolveChannelId(channelInput);
+    if (!resolved) {
+      return res.status(404).json({ success: false, error: 'Channel not found in TubeLab database' });
     }
 
-    // Step 2: Get channel info
-    const channelInfo = await getChannelInfo(channelId);
-    if (!channelInfo) {
-      return res.status(404).json({ success: false, error: 'Channel info not found' });
+    const { channelId, channelInfo, fromCache: channelFromCache } = resolved;
+
+    // Step 2: Get outlier videos (with caching)
+    const { videos: outlierVideos, total, fromCache: videosFromCache } = await getChannelOutliersWithCache(
+      channelId,
+      maxResults,
+      sortBy,
+      channelInfo?.subscriberCount || 0
+    );
+
+    if (outlierVideos.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No videos found for this channel in TubeLab database'
+      });
     }
 
-    console.log(`[youtube-channel-stats] Found channel: ${channelInfo.title} (${formatNumber(channelInfo.subscriberCount)} subs)`);
+    // Extract channel info from first video if we don't have it
+    const channel = channelInfo || {
+      id: channelId,
+      title: 'Unknown Channel',
+      handle: undefined,
+      subscriberCount: 0,
+      thumbnailUrl: '',
+    };
 
-    // Step 3: Get video IDs from uploads playlist
-    const videoIds = await getPlaylistVideos(channelInfo.uploadsPlaylistId, maxResults);
-    if (videoIds.length === 0) {
-      return res.status(404).json({ success: false, error: 'No videos found on this channel' });
-    }
+    // Calculate average views from the videos
+    const totalViews = outlierVideos.reduce((sum, v) => sum + v.viewCount, 0);
+    const averageViews = Math.round(totalViews / outlierVideos.length);
 
-    console.log(`[youtube-channel-stats] Fetching stats for ${videoIds.length} videos...`);
-
-    // Step 4: Get video statistics
-    const videos = await getVideoStats(videoIds);
-
-    // Step 5: Calculate average views, standard deviation, and outlier metrics
-    const totalViews = videos.reduce((sum, v) => sum + v.viewCount, 0);
-    const averageViews = Math.round(totalViews / videos.length);
-
-    // Calculate standard deviation for z-score
-    const variance = videos.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / videos.length;
+    // Calculate standard deviation
+    const variance = outlierVideos.reduce((sum, v) =>
+      sum + Math.pow(v.viewCount - averageViews, 2), 0
+    ) / outlierVideos.length;
     const standardDeviation = Math.sqrt(variance);
-
-    const outlierVideos: OutlierVideo[] = videos.map(video => {
-      const outlierMultiplier = averageViews > 0 ? Math.round((video.viewCount / averageViews) * 10) / 10 : 0;
-      const zScore = standardDeviation > 0
-        ? Math.round(((video.viewCount - averageViews) / standardDeviation) * 100) / 100
-        : 0;
-
-      return {
-        ...video,
-        durationSeconds: parseDurationToSeconds(video.duration),
-        outlierMultiplier,
-        viewsPerSubscriber: channelInfo.subscriberCount > 0
-          ? Math.round((video.viewCount / channelInfo.subscriberCount) * 100) / 100
-          : 0,
-        zScore,
-        // Positive outlier: zScore > 2 or multiplier > 3x
-        isPositiveOutlier: zScore > 2 || outlierMultiplier >= 3,
-        // Negative outlier: zScore < -1.5 or multiplier < 0.3x
-        isNegativeOutlier: zScore < -1.5 || outlierMultiplier < 0.3,
-      };
-    });
-
-    // Step 6: Sort results
-    if (sortBy === 'outlier') {
-      outlierVideos.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
-    } else if (sortBy === 'views') {
-      outlierVideos.sort((a, b) => b.viewCount - a.viewCount);
-    } else if (sortBy === 'uploaded') {
-      outlierVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-    }
-
-    console.log(`[youtube-channel-stats] Analysis complete. Avg views: ${formatNumber(averageViews)}, Top outlier: ${outlierVideos[0]?.outlierMultiplier}x`);
 
     // Count positive and negative outliers
     const positiveOutliersCount = outlierVideos.filter(v => v.isPositiveOutlier).length;
     const negativeOutliersCount = outlierVideos.filter(v => v.isNegativeOutlier).length;
 
+    const fromCache = channelFromCache && videosFromCache;
+    console.log(`[youtube-channel-stats] Analysis complete. ${outlierVideos.length} videos, ${positiveOutliersCount} positive outliers, fromCache: ${fromCache}`);
+
     return res.json({
       success: true,
       channel: {
-        id: channelInfo.id,
-        title: channelInfo.title,
-        subscriberCount: channelInfo.subscriberCount,
-        subscriberCountFormatted: formatNumber(channelInfo.subscriberCount),
-        thumbnailUrl: channelInfo.thumbnailUrl,
+        id: channel.id,
+        title: channel.title,
+        handle: channel.handle,
+        subscriberCount: channel.subscriberCount,
+        subscriberCountFormatted: formatNumber(channel.subscriberCount),
+        thumbnailUrl: channel.thumbnailUrl,
         averageViews,
         averageViewsFormatted: formatNumber(averageViews),
         standardDeviation: Math.round(standardDeviation),
         standardDeviationFormatted: formatNumber(Math.round(standardDeviation)),
         positiveOutliersCount,
         negativeOutliersCount,
+        totalVideosInDatabase: total,
       },
       videos: outlierVideos,
+      fromCache,
     });
 
   } catch (error) {

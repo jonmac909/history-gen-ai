@@ -1,14 +1,23 @@
 import { Router, Request, Response } from 'express';
 import fetch from 'node-fetch';
+import {
+  getCachedNicheSearch,
+  cacheNicheSearch,
+  getCachedChannels,
+  cacheChannels,
+  CachedChannel,
+} from '../lib/outlier-cache';
 
 const router = Router();
 
-// YouTube API key from environment
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+// TubeLab API key from environment
+const TUBELAB_API_KEY = process.env.TUBELAB_API_KEY;
+const TUBELAB_BASE_URL = 'https://public-api.tubelab.net/v1';
 
 interface NicheChannel {
   id: string;
   title: string;
+  handle?: string;
   thumbnailUrl: string;
   subscriberCount: number;
   subscriberCountFormatted: string;
@@ -17,6 +26,14 @@ interface NicheChannel {
   viewsToSubsRatio: number;
   isBreakout: boolean;
   createdAt?: string;
+  // TubeLab-specific fields
+  avgViews?: number;
+  avgViewsFormatted?: string;
+  monetization?: {
+    adsense: boolean;
+    rpmEstimationFrom?: number;
+    rpmEstimationTo?: number;
+  };
 }
 
 interface NicheMetrics {
@@ -41,29 +58,22 @@ function formatNumber(num: number): string {
 
 // Calculate saturation level based on channel count and views-to-subs ratio
 function calculateSaturation(channelCount: number, avgViewsToSubsRatio: number): { level: 'low' | 'medium' | 'high'; score: number } {
-  // Score from 0-100 where lower = better opportunity
-  // Factors: fewer channels = better, higher views/subs ratio = better
+  let score = 50;
 
-  let score = 50; // Start at medium
-
-  // Channel count factor (fewer = lower score = better)
   if (channelCount < 10) score -= 30;
   else if (channelCount < 20) score -= 20;
   else if (channelCount < 30) score -= 10;
   else if (channelCount > 40) score += 15;
   else if (channelCount > 50) score += 25;
 
-  // Views-to-subs ratio factor (higher = lower score = better)
   if (avgViewsToSubsRatio > 3) score -= 25;
   else if (avgViewsToSubsRatio > 2) score -= 15;
   else if (avgViewsToSubsRatio > 1.5) score -= 10;
   else if (avgViewsToSubsRatio < 0.5) score += 20;
   else if (avgViewsToSubsRatio < 1) score += 10;
 
-  // Clamp to 0-100
   score = Math.max(0, Math.min(100, score));
 
-  // Determine level
   let level: 'low' | 'medium' | 'high';
   if (score < 35) level = 'low';
   else if (score < 65) level = 'medium';
@@ -72,115 +82,232 @@ function calculateSaturation(channelCount: number, avgViewsToSubsRatio: number):
   return { level, score };
 }
 
-// Check if channel is a "breakout" - high performance + relatively new
-function isBreakoutChannel(viewsToSubsRatio: number, createdAt?: string): boolean {
-  if (!createdAt) return viewsToSubsRatio > 2;
-
-  const channelAge = Date.now() - new Date(createdAt).getTime();
-  const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
-
-  // Breakout = high ratio AND channel less than 2 years old
-  return viewsToSubsRatio > 2 && channelAge < twoYearsMs;
+// TubeLab channel response type
+interface TubeLabChannelHit {
+  id: string;
+  snippet: {
+    title: string;
+    handle?: string;
+    publishedAt?: string;
+    thumbnails?: {
+      default?: { url: string };
+      medium?: { url: string };
+      high?: { url: string };
+    };
+  };
+  statistics: {
+    subscriberCount: number;
+    viewCount: number;
+    videoCount: number;
+    avgViewsToSubscribersRatio?: number;
+    avgViewsEstimate?: number;
+  };
+  monetization?: {
+    adsense?: boolean;
+    rpmEstimationFrom?: number;
+    rpmEstimationTo?: number;
+  };
 }
 
-// Search for channels by topic
-async function searchChannels(topic: string, maxResults: number = 50): Promise<string[]> {
-  const url = new URL('https://www.googleapis.com/youtube/v3/search');
-  url.searchParams.set('part', 'snippet');
-  url.searchParams.set('type', 'channel');
-  url.searchParams.set('q', topic);
-  url.searchParams.set('maxResults', maxResults.toString());
-  url.searchParams.set('key', YOUTUBE_API_KEY!);
-
-  console.log(`[niche-analyze] Searching for channels with topic: "${topic}"`);
-  const response = await fetch(url.toString());
-  const data = await response.json() as any;
-
-  if (data.error) {
-    console.error(`[niche-analyze] YouTube API error:`, JSON.stringify(data.error));
-    throw new Error(`YouTube API error: ${data.error.message || JSON.stringify(data.error)}`);
-  }
-
-  if (!data.items) {
-    console.log(`[niche-analyze] No items returned from search`);
-    return [];
-  }
-
-  console.log(`[niche-analyze] Search returned ${data.items.length} channels`);
-  // For type=channel search, the ID is in item.id.channelId
-  return data.items.map((item: any) => item.id?.channelId).filter(Boolean);
+interface TubeLabChannelsResponse {
+  pagination: {
+    total: number;
+    from: number;
+    size: number;
+  };
+  hits: TubeLabChannelHit[];
 }
 
-// Get channel details
-async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> {
-  if (channelIds.length === 0) return [];
+// Convert TubeLab hit to our NicheChannel format
+function tubeLabHitToNicheChannel(hit: TubeLabChannelHit): NicheChannel {
+  const subscriberCount = hit.statistics.subscriberCount || 0;
+  const viewCount = hit.statistics.viewCount || 0;
+  const videoCount = hit.statistics.videoCount || 0;
+  const avgViews = hit.statistics.avgViewsEstimate || 0;
 
-  const channels: NicheChannel[] = [];
-  let skippedHidden = 0;
-  let skippedNoVideos = 0;
+  const viewsToSubsRatio = hit.statistics.avgViewsToSubscribersRatio
+    || (subscriberCount > 0 ? Math.round((viewCount / subscriberCount) * 100) / 100 : 0);
 
-  // Process in batches of 50 (YouTube API limit)
-  for (let i = 0; i < channelIds.length; i += 50) {
-    const batch = channelIds.slice(i, i + 50);
+  const isBreakout = viewsToSubsRatio > 2;
 
-    const url = new URL('https://www.googleapis.com/youtube/v3/channels');
-    url.searchParams.set('part', 'snippet,statistics');
-    url.searchParams.set('id', batch.join(','));
-    url.searchParams.set('key', YOUTUBE_API_KEY!);
+  return {
+    id: hit.id,
+    title: hit.snippet.title,
+    handle: hit.snippet.handle,
+    thumbnailUrl: hit.snippet.thumbnails?.medium?.url
+      || hit.snippet.thumbnails?.high?.url
+      || hit.snippet.thumbnails?.default?.url
+      || '',
+    subscriberCount,
+    subscriberCountFormatted: formatNumber(subscriberCount),
+    viewCount,
+    videoCount,
+    viewsToSubsRatio,
+    isBreakout,
+    createdAt: hit.snippet.publishedAt,
+    avgViews,
+    avgViewsFormatted: formatNumber(avgViews),
+    monetization: hit.monetization ? {
+      adsense: hit.monetization.adsense || false,
+      rpmEstimationFrom: hit.monetization.rpmEstimationFrom,
+      rpmEstimationTo: hit.monetization.rpmEstimationTo,
+    } : undefined,
+  };
+}
 
-    const response = await fetch(url.toString());
-    const data = await response.json() as any;
+// Convert cached channel to NicheChannel format
+function cachedChannelToNicheChannel(cached: CachedChannel): NicheChannel {
+  return {
+    id: cached.id,
+    title: cached.title,
+    handle: cached.handle,
+    thumbnailUrl: cached.thumbnail_url,
+    subscriberCount: cached.subscriber_count,
+    subscriberCountFormatted: formatNumber(cached.subscriber_count),
+    viewCount: cached.view_count,
+    videoCount: cached.video_count,
+    viewsToSubsRatio: cached.views_to_subs_ratio,
+    isBreakout: cached.is_breakout,
+    createdAt: cached.created_at,
+    avgViews: cached.avg_views,
+    avgViewsFormatted: formatNumber(cached.avg_views),
+    monetization: cached.monetization as NicheChannel['monetization'],
+  };
+}
 
-    if (data.error) {
-      console.error(`[niche-analyze] YouTube channels API error:`, data.error);
-      continue;
-    }
+// Convert NicheChannel to cache format
+function nicheChannelToCacheFormat(channel: NicheChannel): Omit<CachedChannel, 'fetched_at' | 'expires_at'> {
+  return {
+    id: channel.id,
+    title: channel.title,
+    handle: channel.handle,
+    thumbnail_url: channel.thumbnailUrl,
+    subscriber_count: channel.subscriberCount,
+    view_count: channel.viewCount,
+    video_count: channel.videoCount,
+    views_to_subs_ratio: channel.viewsToSubsRatio,
+    avg_views: channel.avgViews || 0,
+    is_breakout: channel.isBreakout,
+    created_at: channel.createdAt,
+    monetization: channel.monetization,
+    source: 'tubelab',
+  };
+}
 
-    if (!data.items) {
-      console.log(`[niche-analyze] No channel details returned`);
-      continue;
-    }
+// Search for channels using TubeLab API (with caching)
+async function searchChannelsTubeLab(
+  topic: string,
+  subscriberMin?: number,
+  subscriberMax?: number,
+  size: number = 40
+): Promise<{ channels: NicheChannel[]; total: number; fromCache: boolean }> {
 
-    console.log(`[niche-analyze] Got details for ${data.items.length} channels`);
+  // Check cache first (only for searches without subscriber filters)
+  if (subscriberMin === undefined && subscriberMax === undefined) {
+    const cached = await getCachedNicheSearch(topic);
+    if (cached) {
+      console.log(`[niche-analyze] Cache HIT for niche "${topic}" (${cached.channel_ids.length} channels)`);
 
-    for (const channel of data.items) {
-      const subscriberCount = parseInt(channel.statistics.subscriberCount || '0', 10);
-      const viewCount = parseInt(channel.statistics.viewCount || '0', 10);
-      const videoCount = parseInt(channel.statistics.videoCount || '0', 10);
+      // Get the cached channel details
+      const cachedChannels = await getCachedChannels(cached.channel_ids);
 
-      // Skip channels with hidden subscriber count or no videos
-      if (channel.statistics.hiddenSubscriberCount) {
-        skippedHidden++;
-        continue;
+      if (cachedChannels.length > 0) {
+        const channels = cachedChannels.map(cachedChannelToNicheChannel);
+        // Sort by views-to-subs ratio (descending)
+        channels.sort((a, b) => b.viewsToSubsRatio - a.viewsToSubsRatio);
+
+        return {
+          channels,
+          total: cached.total_in_database,
+          fromCache: true,
+        };
       }
-      if (videoCount === 0) {
-        skippedNoVideos++;
-        continue;
-      }
-
-      const viewsToSubsRatio = subscriberCount > 0
-        ? Math.round((viewCount / subscriberCount) * 100) / 100
-        : 0;
-
-      channels.push({
-        id: channel.id,
-        title: channel.snippet.title,
-        thumbnailUrl: channel.snippet.thumbnails?.medium?.url || channel.snippet.thumbnails?.default?.url,
-        subscriberCount,
-        subscriberCountFormatted: formatNumber(subscriberCount),
-        viewCount,
-        videoCount,
-        viewsToSubsRatio,
-        isBreakout: isBreakoutChannel(viewsToSubsRatio, channel.snippet.publishedAt),
-        createdAt: channel.snippet.publishedAt,
-      });
+      // If channel details not found, fall through to API
+      console.log(`[niche-analyze] Cache partial - channel details missing, fetching from API`);
     }
   }
 
-  console.log(`[niche-analyze] Channels after filtering: ${channels.length} (skipped ${skippedHidden} hidden, ${skippedNoVideos} no videos)`);
-  return channels;
-}
+  // Cache miss - call TubeLab API
+  if (!TUBELAB_API_KEY) {
+    throw new Error('TubeLab API key not configured');
+  }
 
+  const url = new URL(`${TUBELAB_BASE_URL}/channels`);
+  url.searchParams.set('query', topic);
+  url.searchParams.set('size', size.toString());
+  url.searchParams.set('sortBy', 'avgViewsToSubscribersRatio');
+  url.searchParams.set('sortOrder', 'desc');
+
+  if (subscriberMin !== undefined) {
+    url.searchParams.set('subscribersCountFrom', subscriberMin.toString());
+  }
+  if (subscriberMax !== undefined) {
+    url.searchParams.set('subscribersCountTo', subscriberMax.toString());
+  }
+
+  console.log(`[niche-analyze] Cache MISS - calling TubeLab API for "${topic}"`);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Api-Key ${TUBELAB_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[niche-analyze] TubeLab API error: ${response.status} ${errorText}`);
+    throw new Error(`TubeLab API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as TubeLabChannelsResponse;
+
+  console.log(`[niche-analyze] TubeLab returned ${data.hits?.length || 0} channels (total: ${data.pagination?.total || 0})`);
+
+  if (!data.hits || data.hits.length === 0) {
+    return { channels: [], total: 0, fromCache: false };
+  }
+
+  const channels = data.hits.map(tubeLabHitToNicheChannel);
+  const total = data.pagination?.total || channels.length;
+
+  // Cache the results (only for searches without filters)
+  if (subscriberMin === undefined && subscriberMax === undefined) {
+    // Calculate metrics for caching
+    const channelCount = channels.length;
+    const totalSubscribers = channels.reduce((sum, c) => sum + c.subscriberCount, 0);
+    const totalViews = channels.reduce((sum, c) => sum + c.viewCount, 0);
+    const totalVideos = channels.reduce((sum, c) => sum + c.videoCount, 0);
+    const totalViewsToSubsRatio = channels.reduce((sum, c) => sum + c.viewsToSubsRatio, 0);
+
+    const avgSubscribers = Math.round(totalSubscribers / channelCount);
+    const avgViewsPerVideo = totalVideos > 0 ? Math.round(totalViews / totalVideos) : 0;
+    const avgViewsToSubsRatio = Math.round((totalViewsToSubsRatio / channelCount) * 100) / 100;
+    const saturation = calculateSaturation(total, avgViewsToSubsRatio);
+
+    // Cache niche search result
+    await cacheNicheSearch(
+      topic,
+      channels.map(c => c.id),
+      {
+        channelCount,
+        avgSubscribers,
+        avgViewsPerVideo,
+        avgViewsToSubsRatio,
+        saturationLevel: saturation.level,
+        saturationScore: saturation.score,
+      },
+      total,
+      'tubelab'
+    );
+
+    // Cache individual channels
+    await cacheChannels(channels.map(nicheChannelToCacheFormat));
+  }
+
+  return { channels, total, fromCache: false };
+}
 
 // Main endpoint
 router.post('/', async (req: Request, res: Response) => {
@@ -191,16 +318,17 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Topic is required' });
     }
 
-    if (!YOUTUBE_API_KEY) {
-      return res.status(500).json({ success: false, error: 'YouTube API key not configured' });
-    }
-
     console.log(`[niche-analyze] Analyzing niche: "${topic}"`);
 
-    // Step 1: Search for channels in this niche
-    const channelIds = await searchChannels(topic.trim(), 50);
+    // Search for channels (with caching)
+    const { channels, total, fromCache } = await searchChannelsTubeLab(
+      topic.trim(),
+      subscriberMin,
+      subscriberMax,
+      40
+    );
 
-    if (channelIds.length === 0) {
+    if (channels.length === 0) {
       return res.json({
         success: true,
         topic: topic.trim(),
@@ -213,42 +341,13 @@ router.post('/', async (req: Request, res: Response) => {
           saturationScore: 0,
         },
         channels: [],
+        totalInDatabase: 0,
+        fromCache: false,
       });
     }
 
-    console.log(`[niche-analyze] Found ${channelIds.length} channels, fetching details...`);
-
-    // Step 2: Get channel details
-    let channels = await getChannelDetails(channelIds);
-
-    // Step 3: Filter by subscriber range if specified
-    if (subscriberMin !== undefined || subscriberMax !== undefined) {
-      channels = channels.filter(c => {
-        if (subscriberMin !== undefined && c.subscriberCount < subscriberMin) return false;
-        if (subscriberMax !== undefined && c.subscriberCount > subscriberMax) return false;
-        return true;
-      });
-    }
-
-    // Step 4: Calculate metrics
+    // Calculate metrics
     const channelCount = channels.length;
-
-    if (channelCount === 0) {
-      return res.json({
-        success: true,
-        topic: topic.trim(),
-        metrics: {
-          channelCount: 0,
-          avgSubscribers: 0,
-          avgViewsPerVideo: 0,
-          avgViewsToSubsRatio: 0,
-          saturationLevel: 'low',
-          saturationScore: 0,
-        },
-        channels: [],
-      });
-    }
-
     const totalSubscribers = channels.reduce((sum, c) => sum + c.subscriberCount, 0);
     const totalViews = channels.reduce((sum, c) => sum + c.viewCount, 0);
     const totalVideos = channels.reduce((sum, c) => sum + c.videoCount, 0);
@@ -258,13 +357,10 @@ router.post('/', async (req: Request, res: Response) => {
     const avgViewsPerVideo = totalVideos > 0 ? Math.round(totalViews / totalVideos) : 0;
     const avgViewsToSubsRatio = Math.round((totalViewsToSubsRatio / channelCount) * 100) / 100;
 
-    const saturation = calculateSaturation(channelCount, avgViewsToSubsRatio);
-
-    // Step 5: Sort channels by views-to-subs ratio (best first)
-    channels.sort((a, b) => b.viewsToSubsRatio - a.viewsToSubsRatio);
+    const saturation = calculateSaturation(total, avgViewsToSubsRatio);
 
     const breakoutCount = channels.filter(c => c.isBreakout).length;
-    console.log(`[niche-analyze] Analysis complete. ${channelCount} channels, ${breakoutCount} breakouts, saturation: ${saturation.level}`);
+    console.log(`[niche-analyze] Analysis complete. ${channelCount} channels, ${total} total, ${breakoutCount} breakouts, saturation: ${saturation.level}, fromCache: ${fromCache}`);
 
     return res.json({
       success: true,
@@ -278,6 +374,8 @@ router.post('/', async (req: Request, res: Response) => {
         saturationScore: saturation.score,
       },
       channels,
+      totalInDatabase: total,
+      fromCache,
     });
 
   } catch (error) {

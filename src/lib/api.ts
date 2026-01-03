@@ -1710,11 +1710,23 @@ export interface OutlierVideo {
   zScore: number;
   isPositiveOutlier: boolean;
   isNegativeOutlier: boolean;
+  // TubeLab-specific fields
+  monetization?: {
+    rpmEstimationFrom?: number;
+    rpmEstimationTo?: number;
+    revenueEstimationFrom?: number;
+    revenueEstimationTo?: number;
+  };
+  classification?: {
+    isFaceless?: boolean;
+    quality?: 'negative' | 'neutral' | 'positive';
+  };
 }
 
 export interface ChannelStats {
   id: string;
   title: string;
+  handle?: string;
   subscriberCount: number;
   subscriberCountFormatted: string;
   thumbnailUrl: string;
@@ -1724,6 +1736,7 @@ export interface ChannelStats {
   standardDeviationFormatted: string;
   positiveOutliersCount: number;
   negativeOutliersCount: number;
+  totalVideosInDatabase?: number;
 }
 
 export interface ChannelStatsResult {
@@ -1782,6 +1795,7 @@ export async function getChannelOutliers(
 export interface NicheChannel {
   id: string;
   title: string;
+  handle?: string;
   thumbnailUrl: string;
   subscriberCount: number;
   subscriberCountFormatted: string;
@@ -1790,6 +1804,14 @@ export interface NicheChannel {
   viewsToSubsRatio: number;
   isBreakout: boolean;
   createdAt?: string;
+  // TubeLab-specific fields
+  avgViews?: number;
+  avgViewsFormatted?: string;
+  monetization?: {
+    adsense: boolean;
+    rpmEstimationFrom?: number;
+    rpmEstimationTo?: number;
+  };
 }
 
 export interface NicheMetrics {
@@ -1806,6 +1828,7 @@ export interface NicheAnalysisResult {
   topic?: string;
   metrics?: NicheMetrics;
   channels?: NicheChannel[];
+  totalInDatabase?: number;
   error?: string;
 }
 
