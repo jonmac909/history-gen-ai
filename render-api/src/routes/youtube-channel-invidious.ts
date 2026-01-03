@@ -102,10 +102,8 @@ function invidiousVideoToOutlier(
   const isPositiveOutlier = outlierMultiplier >= 3 || zScore >= 2;
   const isNegativeOutlier = outlierMultiplier <= 0.3 || zScore <= -1.5;
 
-  // Get best thumbnail
-  const thumbnail = video.videoThumbnails?.find(t => t.quality === 'medium')
-    || video.videoThumbnails?.[0];
-  const thumbnailUrl = thumbnail?.url || `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`;
+  // Always use direct YouTube thumbnail URL (more reliable than Invidious proxy)
+  const thumbnailUrl = `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`;
 
   // Convert Unix timestamp to ISO date
   const publishedAt = video.published
