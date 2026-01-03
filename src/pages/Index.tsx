@@ -283,13 +283,19 @@ const Index = () => {
     });
   };
 
-  // Dismiss saved project - archive it instead of deleting
+  // Dismiss saved project banner - only archive if in_progress (not completed)
   const handleDismissSavedProject = () => {
     if (savedProject) {
-      console.log("[handleDismissSavedProject] Archiving project:", savedProject.id);
-      archiveProject(savedProject.id).catch(err =>
-        console.error('[handleDismissSavedProject] Failed to archive:', err)
-      );
+      // Only archive in-progress projects when dismissed
+      // Completed projects should stay accessible in the Projects drawer
+      if (savedProject.status === 'in_progress') {
+        console.log("[handleDismissSavedProject] Archiving in-progress project:", savedProject.id);
+        archiveProject(savedProject.id).catch(err =>
+          console.error('[handleDismissSavedProject] Failed to archive:', err)
+        );
+      } else {
+        console.log("[handleDismissSavedProject] Dismissed completed project (not archiving):", savedProject.id);
+      }
     }
     setSavedProject(null);
   };
