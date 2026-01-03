@@ -14,8 +14,9 @@ const router = Router();
 const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
 const apifyClient = APIFY_API_TOKEN ? new ApifyClient({ token: APIFY_API_TOKEN }) : null;
 
-// YouTube Channel Scraper actor ID (by Bernardo Srulzon)
-const YOUTUBE_SCRAPER_ACTOR_ID = 'bernardo/youtube-scraper';
+// YouTube Channel Scraper actor ID - using free official actor
+// Note: 'streamers/youtube-channel-scraper' is free and accessible with any Apify token
+const YOUTUBE_SCRAPER_ACTOR_ID = 'streamers/youtube-channel-scraper';
 
 interface OutlierVideo {
   videoId: string;
