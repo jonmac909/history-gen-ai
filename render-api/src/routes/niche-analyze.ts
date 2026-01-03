@@ -107,7 +107,8 @@ async function searchChannels(topic: string, maxResults: number = 50): Promise<s
   }
 
   console.log(`[niche-analyze] Search returned ${data.items.length} channels`);
-  return data.items.map((item: any) => item.snippet.channelId);
+  // For type=channel search, the ID is in item.id.channelId (not item.snippet.channelId)
+  return data.items.map((item: any) => item.id.channelId || item.snippet.channelId).filter(Boolean);
 }
 
 // Get channel details
