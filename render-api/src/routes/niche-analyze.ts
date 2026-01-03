@@ -102,7 +102,8 @@ async function searchChannels(topic: string, maxResults: number = 50): Promise<s
 
   if (data.error) {
     console.error(`[niche-analyze] YouTube API error:`, JSON.stringify(data.error));
-    return [];
+    // Throw the error so caller can handle it
+    throw new Error(`YouTube API error: ${data.error.message || JSON.stringify(data.error)}`);
   }
 
   if (!data.items) {
