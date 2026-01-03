@@ -191,7 +191,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           savedAt: Date.now(),
         };
         const existing = savedChannels.filter(c => c.id !== result.channel!.id);
-        const updated = [newSaved, ...existing].slice(0, 10); // Keep last 10
+        const updated = [newSaved, ...existing]; // No limit on saved channels
         setSavedChannels(updated);
         saveSavedChannels(updated);
       }
@@ -343,7 +343,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center">
                 <TrendingUp className="h-5 w-5 text-white" />
               </div>
-              <span className="font-semibold text-gray-900">HistoryGen</span>
+              <span className="font-semibold text-gray-900">Outliers</span>
             </button>
 
             {/* Search bar */}
