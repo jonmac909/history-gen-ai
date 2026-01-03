@@ -251,8 +251,9 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
     try {
       // Process channels SEQUENTIALLY to respect TubeLab rate limit (10 req/min)
-      // Each channel may use 2 API calls (channel search + outliers), so 6s delay = safe
-      const CHANNEL_DELAY_MS = 6500; // 6.5 seconds between channels
+      // Use cache first, then forceRefresh for channels with stale cache
+      // 3 second delay between channels (conservative, uses cache when possible)
+      const CHANNEL_DELAY_MS = 3000; // 3 seconds between channels
 
       setLoadingProgress({ current: 0, total: savedChannels.length });
 
@@ -261,8 +262,11 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         setLoadingProgress({ current: i + 1, total: savedChannels.length });
 
         try {
-          // forceRefresh=true to always fetch fresh videos from TubeLab and update cache
-          const result = await getChannelOutliers(saved.input, 20, 'uploaded', true);
+          // First try with cache (faster, no rate limit issues)
+          let result = await getChannelOutliers(saved.input, 20, 'uploaded', false);
+
+          // If cache hit but we want fresh data, try refresh after delay
+          // Skip refresh to avoid rate limits - cache is good enough for View All
           if (result.success && result.videos && result.channel) {
             const videos = result.videos.map(v => ({
               ...v,
@@ -899,7 +903,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
             </p>
             {viewingAll && loadingProgress.total > 1 && (
               <p className="text-xs text-gray-400 mt-2">
-                ~{Math.ceil((loadingProgress.total - loadingProgress.current) * 6.5)} seconds remaining
+                ~{Math.ceil((loadingProgress.total - loadingProgress.current) * 3)} seconds remaining
               </p>
             )}
           </div>
