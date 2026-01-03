@@ -1749,7 +1749,8 @@ export interface ChannelStatsResult {
 export async function getChannelOutliers(
   channelInput: string,
   maxResults: number = 50,
-  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier'
+  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier',
+  forceRefresh: boolean = false
 ): Promise<ChannelStatsResult> {
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
 
@@ -1766,7 +1767,7 @@ export async function getChannelOutliers(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ channelInput, maxResults, sortBy })
+      body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
     });
 
     if (!response.ok) {

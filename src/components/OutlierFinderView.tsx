@@ -260,7 +260,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         // Fetch batch in parallel
         const promises = batch.map(async (saved) => {
           try {
-            const result = await getChannelOutliers(saved.input, 20, 'uploaded');
+            // forceRefresh=true to always fetch fresh videos from TubeLab and update cache
+            const result = await getChannelOutliers(saved.input, 20, 'uploaded', true);
             if (result.success && result.videos && result.channel) {
               return result.videos.map(v => ({
                 ...v,

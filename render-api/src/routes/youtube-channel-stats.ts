@@ -337,38 +337,41 @@ async function getChannelOutliersWithCache(
   channelId: string,
   maxResults: number = 40,
   sortBy: string = 'averageViewsRatio',
-  subscriberCount: number = 0
+  subscriberCount: number = 0,
+  forceRefresh: boolean = false
 ): Promise<{ videos: OutlierVideo[]; total: number; fromCache: boolean }> {
 
-  // Check cache first
-  const cachedOutliers = await getCachedOutliersForChannel(channelId);
-  if (cachedOutliers.length > 0) {
-    console.log(`[youtube-channel-stats] Cache HIT for outliers: ${channelId} (${cachedOutliers.length} videos)`);
+  // Check cache first (unless forceRefresh is true)
+  if (!forceRefresh) {
+    const cachedOutliers = await getCachedOutliersForChannel(channelId);
+    if (cachedOutliers.length > 0) {
+      console.log(`[youtube-channel-stats] Cache HIT for outliers: ${channelId} (${cachedOutliers.length} videos)`);
 
-    let videos = cachedOutliers.map(cachedOutlierToVideo);
+      let videos = cachedOutliers.map(cachedOutlierToVideo);
 
-    // Sort according to sortBy
-    if (sortBy === 'outlier' || sortBy === 'averageViewsRatio') {
-      videos.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
-    } else if (sortBy === 'views') {
-      videos.sort((a, b) => b.viewCount - a.viewCount);
-    } else if (sortBy === 'uploaded' || sortBy === 'publishedAt') {
-      videos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      // Sort according to sortBy
+      if (sortBy === 'outlier' || sortBy === 'averageViewsRatio') {
+        videos.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
+      } else if (sortBy === 'views') {
+        videos.sort((a, b) => b.viewCount - a.viewCount);
+      } else if (sortBy === 'uploaded' || sortBy === 'publishedAt') {
+        videos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      }
+
+      // Limit results
+      if (videos.length > maxResults) {
+        videos = videos.slice(0, maxResults);
+      }
+
+      return {
+        videos,
+        total: cachedOutliers.length,
+        fromCache: true,
+      };
     }
-
-    // Limit results
-    if (videos.length > maxResults) {
-      videos = videos.slice(0, maxResults);
-    }
-
-    return {
-      videos,
-      total: cachedOutliers.length,
-      fromCache: true,
-    };
   }
 
-  // Cache miss - call TubeLab API
+  // Cache miss (or forceRefresh) - call TubeLab API
   console.log(`[youtube-channel-stats] Cache MISS - calling TubeLab outliers API for: ${channelId}`);
 
   const url = new URL(`${TUBELAB_BASE_URL}/outliers`);
@@ -411,7 +414,7 @@ async function getChannelOutliersWithCache(
 // Main endpoint
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { channelInput, maxResults = 40, sortBy = 'outlier' } = req.body;
+    const { channelInput, maxResults = 40, sortBy = 'outlier', forceRefresh = false } = req.body;
 
     if (!channelInput) {
       return res.status(400).json({ success: false, error: 'Channel input is required' });
@@ -421,7 +424,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, error: 'TubeLab API key not configured' });
     }
 
-    console.log(`[youtube-channel-stats] Analyzing channel: ${channelInput}`);
+    console.log(`[youtube-channel-stats] Analyzing channel: ${channelInput} (forceRefresh: ${forceRefresh})`);
 
     // Step 1: Resolve channel ID and get channel info (with caching)
     const resolved = await resolveChannelId(channelInput);
@@ -431,12 +434,13 @@ router.post('/', async (req: Request, res: Response) => {
 
     const { channelId, channelInfo, fromCache: channelFromCache } = resolved;
 
-    // Step 2: Get outlier videos (with caching)
+    // Step 2: Get outlier videos (with caching, or force refresh)
     const { videos: outlierVideos, total, fromCache: videosFromCache } = await getChannelOutliersWithCache(
       channelId,
       maxResults,
       sortBy,
-      channelInfo?.subscriberCount || 0
+      channelInfo?.subscriberCount || 0,
+      forceRefresh
     );
 
     if (outlierVideos.length === 0) {
