@@ -182,14 +182,19 @@ async function scrapeChannelWithApify(
 
   console.log(`[youtube-channel-apify] Starting Apify scrape for: ${channelUrl}`);
 
-  // Run the YouTube scraper actor
-  const run = await apifyClient.actor(YOUTUBE_SCRAPER_ACTOR_ID).call({
-    startUrls: [{ url: channelUrl }],
-    maxResults: maxVideos,
-    maxResultsShorts: 0,  // Skip shorts
-    maxResultStreams: 0,  // Skip streams
-    preferApiScraper: true,  // Use API when possible (faster)
-  });
+  // Run the YouTube scraper actor with minimal memory to stay within free tier limits
+  const run = await apifyClient.actor(YOUTUBE_SCRAPER_ACTOR_ID).call(
+    {
+      startUrls: [{ url: channelUrl }],
+      maxResults: maxVideos,
+      maxResultsShorts: 0,  // Skip shorts
+      maxResultStreams: 0,  // Skip streams
+    },
+    {
+      memory: 256,  // Use minimum memory (256MB) to stay within free tier
+      timeout: 120, // 2 minute timeout per channel
+    }
+  );
 
   console.log(`[youtube-channel-apify] Apify run completed: ${run.id}`);
 

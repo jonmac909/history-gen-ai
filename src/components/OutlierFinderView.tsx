@@ -250,38 +250,36 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     const allResults: VideoWithChannel[] = [];
 
     try {
-      // Use Apify for View All - no rate limits, works with any channel
-      // Process channels in parallel for faster results
+      // Use Apify for View All - process sequentially to stay within free tier memory limits
+      // Apify free tier has total memory limits, so we can't run all channels in parallel
       setLoadingProgress({ current: 0, total: savedChannels.length });
 
-      // Process all channels in parallel using Apify
-      const promises = savedChannels.map(async (saved, i) => {
+      // Process channels sequentially to avoid Apify memory limits
+      for (let i = 0; i < savedChannels.length; i++) {
+        const saved = savedChannels[i];
         try {
-          // Use Apify endpoint - no rate limits, fresh data
+          // Use Apify endpoint - works with any channel
           const result = await getChannelOutliersApify(saved.input, 20, 'uploaded', true);
 
-          // Update progress as each channel completes
-          setLoadingProgress(prev => ({ current: prev.current + 1, total: prev.total }));
+          // Update progress after each channel
+          setLoadingProgress({ current: i + 1, total: savedChannels.length });
 
           if (result.success && result.videos && result.channel) {
-            return result.videos.map(v => ({
+            const videos = result.videos.map(v => ({
               ...v,
               channelTitle: result.channel!.title,
               channelSubscribers: result.channel!.subscriberCountFormatted,
               channelAverageViews: result.channel!.averageViews,
               channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
             }));
+            allResults.push(...videos);
           }
-          return [];
         } catch {
           // Update progress even for failed channels
-          setLoadingProgress(prev => ({ current: prev.current + 1, total: prev.total }));
-          return [];
+          setLoadingProgress({ current: i + 1, total: savedChannels.length });
+          // Continue to next channel on error
         }
-      });
-
-      const results = await Promise.all(promises);
-      results.forEach(videos => allResults.push(...videos));
+      }
 
       // Sort by selected option
       if (sortBy === 'outlier') {
