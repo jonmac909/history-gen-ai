@@ -11,6 +11,7 @@ import generateImagePromptsRouter from './routes/generate-image-prompts';
 import generateThumbnailsRouter from './routes/generate-thumbnails';
 import youtubeUploadRouter from './routes/youtube-upload';
 import pronunciationRouter from './routes/pronunciation';
+import generateYoutubeMetadataRouter from './routes/generate-youtube-metadata';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use('/generate-image-prompts', generateImagePromptsRouter);
 app.use('/generate-thumbnails', generateThumbnailsRouter);
 app.use('/youtube-upload', youtubeUploadRouter);
 app.use('/pronunciation', pronunciationRouter);
+app.use('/generate-youtube-metadata', generateYoutubeMetadataRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

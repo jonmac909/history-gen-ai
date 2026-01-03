@@ -1642,3 +1642,52 @@ export async function uploadToYouTube(
     };
   }
 }
+
+// YouTube Metadata Generation Types
+export interface YouTubeMetadataResult {
+  success: boolean;
+  titles?: string[];
+  description?: string;
+  tags?: string[];
+  error?: string;
+}
+
+export async function generateYouTubeMetadata(
+  title: string,
+  script: string
+): Promise<YouTubeMetadataResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-youtube-metadata`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title, script })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('YouTube metadata generation error:', response.status, errorText);
+      return { success: false, error: `Failed to generate metadata: ${response.status}` };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('YouTube metadata generation error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate metadata'
+    };
+  }
+}

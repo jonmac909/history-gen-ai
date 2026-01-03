@@ -2,14 +2,15 @@ import { useState, useEffect } from "react";
 import {
   Youtube,
   Upload,
-  X,
   Loader2,
   Check,
   Calendar,
-  Clock,
   ExternalLink,
   Unlink,
-  ChevronLeft
+  ChevronLeft,
+  Sparkles,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import {
   Dialog,
@@ -40,12 +41,13 @@ import {
   fetchYouTubeChannels,
   type YouTubeChannel,
 } from "@/lib/youtubeAuth";
-import { uploadToYouTube, type YouTubeUploadProgress } from "@/lib/api";
+import { uploadToYouTube, generateYouTubeMetadata, type YouTubeUploadProgress } from "@/lib/api";
 
 interface YouTubeUploadModalProps {
   isOpen: boolean;
   videoUrl: string;
   projectTitle?: string;
+  script?: string; // Script content for AI metadata generation
   thumbnails?: string[]; // Previously generated thumbnails
   selectedThumbnailIndex?: number; // Index of previously selected thumbnail
   onClose: () => void;
@@ -70,6 +72,7 @@ export function YouTubeUploadModal({
   isOpen,
   videoUrl,
   projectTitle,
+  script,
   thumbnails,
   selectedThumbnailIndex,
   onClose,
@@ -106,6 +109,11 @@ export function YouTubeUploadModal({
     studioUrl: string;
   } | null>(null);
 
+  // AI generation state
+  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
+  const [generatedTitles, setGeneratedTitles] = useState<string[]>([]);
+  const [showTitleSelector, setShowTitleSelector] = useState(false);
+
   // Check connection status on open
   useEffect(() => {
     if (isOpen) {
@@ -114,6 +122,8 @@ export function YouTubeUploadModal({
       setTitle(projectTitle || "");
       setUploadResult(null);
       setProgress(null);
+      setGeneratedTitles([]);
+      setShowTitleSelector(false);
       // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
         const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
@@ -199,6 +209,61 @@ export function YouTubeUploadModal({
         variant: "destructive",
       });
     }
+  };
+
+  // AI-powered metadata generation
+  const handleGenerateMetadata = async () => {
+    if (!script || script.trim().length === 0) {
+      toast({
+        title: "Script Required",
+        description: "No script available for metadata generation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingMetadata(true);
+    try {
+      const result = await generateYouTubeMetadata(projectTitle || "Historical Documentary", script);
+
+      if (result.success && result.titles) {
+        setGeneratedTitles(result.titles);
+        setShowTitleSelector(true);
+
+        // Auto-fill description and tags
+        if (result.description) {
+          setDescription(result.description);
+        }
+        if (result.tags && result.tags.length > 0) {
+          setTags(result.tags.join(", "));
+        }
+
+        toast({
+          title: "Metadata Generated",
+          description: "Select a title and review the description & tags.",
+        });
+      } else {
+        toast({
+          title: "Generation Failed",
+          description: result.error || "Failed to generate metadata.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Metadata generation error:", error);
+      toast({
+        title: "Generation Failed",
+        description: error instanceof Error ? error.message : "Failed to generate metadata.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingMetadata(false);
+    }
+  };
+
+  const handleSelectTitle = (selectedTitle: string) => {
+    setTitle(selectedTitle);
+    setShowTitleSelector(false);
   };
 
   const handleUpload = async () => {
@@ -410,6 +475,61 @@ export function YouTubeUploadModal({
                   </Button>
                 </div>
               ) : null}
+
+              {/* AI Auto-fill Button */}
+              {script && (
+                <Button
+                  onClick={handleGenerateMetadata}
+                  disabled={isGeneratingMetadata || isUploading}
+                  variant="outline"
+                  className="w-full gap-2 border-primary/50 text-primary hover:bg-primary/10"
+                >
+                  {isGeneratingMetadata ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating with AI...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Auto-fill with AI (Title, Description, Tags)
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Title Selector (shown after AI generation) */}
+              {showTitleSelector && generatedTitles.length > 0 && (
+                <div className="space-y-2 p-3 bg-muted/50 rounded-lg border border-primary/20">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-primary font-medium">Select a Title:</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowTitleSelector(false)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      {showTitleSelector ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                    {generatedTitles.map((generatedTitle, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSelectTitle(generatedTitle)}
+                        className={`w-full text-left p-2 rounded text-sm transition-colors ${
+                          title === generatedTitle
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-background hover:bg-accent border border-border'
+                        }`}
+                      >
+                        <span className="text-muted-foreground mr-2">{index + 1}.</span>
+                        {generatedTitle}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Title */}
               <div className="space-y-2">

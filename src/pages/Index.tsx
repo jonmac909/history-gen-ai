@@ -2020,6 +2020,7 @@ const Index = () => {
         isOpen={viewState === "review-youtube"}
         videoUrl={renderedVideoUrl || ""}
         projectTitle={videoTitle}
+        script={confirmedScript}
         thumbnails={generatedThumbnails}
         selectedThumbnailIndex={selectedThumbnailIndex}
         onClose={handleYouTubeComplete}
