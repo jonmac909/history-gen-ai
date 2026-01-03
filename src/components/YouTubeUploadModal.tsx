@@ -108,7 +108,7 @@ export function YouTubeUploadModal({
   const [privacyStatus, setPrivacyStatus] = useState<"private" | "unlisted">("private");
   const [isScheduled, setIsScheduled] = useState(true); // Default to scheduled
   const [scheduledDate, setScheduledDate] = useState("");
-  const [scheduledTime, setScheduledTime] = useState("14:00"); // 2pm PST default
+  const [scheduledTime, setScheduledTime] = useState("12:00"); // 12pm PST default
   const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
   const [customThumbnailFile, setCustomThumbnailFile] = useState<File | null>(null);
   const [customThumbnailPreview, setCustomThumbnailPreview] = useState<string | null>(null);
