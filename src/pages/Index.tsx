@@ -1630,6 +1630,12 @@ const Index = () => {
           onGoToImages={handleBackToImages}
           onGoToThumbnails={handleBackToThumbnails}
           onGoToRender={handleBackToRender}
+          onImagePromptsHealed={(healedPrompts) => {
+            console.log(`[Index] Healed image prompts: ${healedPrompts.length}`);
+            setImagePrompts(healedPrompts);
+            // Save healed prompts to project
+            autoSave("images", { imagePrompts: healedPrompts });
+          }}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
