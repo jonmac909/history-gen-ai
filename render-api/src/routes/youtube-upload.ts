@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import sharp from 'sharp';
 
 const router = Router();
 
@@ -255,6 +256,127 @@ router.get('/channels', async (req: Request, res: Response) => {
   }
 });
 
+// Get list of playlists for the authenticated user
+router.get('/playlists', async (req: Request, res: Response) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    console.log('Fetching YouTube playlists...');
+
+    // Fetch playlists the user owns (paginated)
+    let allPlaylists: { id: string; title: string; thumbnailUrl?: string; itemCount: number }[] = [];
+    let nextPageToken: string | undefined;
+
+    do {
+      const url = new URL('https://www.googleapis.com/youtube/v3/playlists');
+      url.searchParams.set('part', 'snippet,contentDetails');
+      url.searchParams.set('mine', 'true');
+      url.searchParams.set('maxResults', '50');
+      if (nextPageToken) {
+        url.searchParams.set('pageToken', nextPageToken);
+      }
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to fetch playlists:', response.status, errorText);
+
+        if (response.status === 401) {
+          return res.status(401).json({ error: 'Access token expired', needsAuth: true });
+        }
+
+        return res.status(response.status).json({ error: 'Failed to fetch playlists' });
+      }
+
+      const data = await response.json() as any;
+
+      const playlists = (data.items || []).map((item: any) => ({
+        id: item.id,
+        title: item.snippet?.title || 'Unknown Playlist',
+        thumbnailUrl: item.snippet?.thumbnails?.default?.url,
+        itemCount: item.contentDetails?.itemCount || 0,
+      }));
+
+      allPlaylists = allPlaylists.concat(playlists);
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+
+    console.log(`Found ${allPlaylists.length} playlist(s)`);
+
+    return res.json({ playlists: allPlaylists });
+  } catch (error) {
+    console.error('Error fetching playlists:', error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to fetch playlists'
+    });
+  }
+});
+
+// Add video to a playlist
+router.post('/playlists/add', async (req: Request, res: Response) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    const { playlistId, videoId } = req.body;
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    if (!playlistId || !videoId) {
+      return res.status(400).json({ error: 'playlistId and videoId are required' });
+    }
+
+    console.log(`Adding video ${videoId} to playlist ${playlistId}...`);
+
+    const response = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: {
+          playlistId,
+          resourceId: {
+            kind: 'youtube#video',
+            videoId,
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to add video to playlist:', response.status, errorText);
+
+      if (response.status === 401) {
+        return res.status(401).json({ error: 'Access token expired', needsAuth: true });
+      }
+
+      return res.status(response.status).json({ error: 'Failed to add video to playlist', details: errorText });
+    }
+
+    const data = await response.json() as any;
+    console.log('Video added to playlist successfully:', data.id);
+
+    return res.json({ success: true, playlistItemId: data.id });
+  } catch (error) {
+    console.error('Error adding video to playlist:', error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to add video to playlist'
+    });
+  }
+});
+
 // Check if we have a valid refresh token stored
 router.get('/status', async (req: Request, res: Response) => {
   try {
@@ -487,8 +609,41 @@ router.post('/', async (req: Request, res: Response) => {
             // Download thumbnail image
             const thumbResponse = await fetch(thumbnailUrl);
             if (thumbResponse.ok) {
-              const thumbBuffer = Buffer.from(await thumbResponse.arrayBuffer());
-              const contentType = thumbResponse.headers.get('content-type') || 'image/png';
+              let thumbBuffer = Buffer.from(await thumbResponse.arrayBuffer());
+              let contentType = thumbResponse.headers.get('content-type') || 'image/png';
+
+              const MAX_THUMB_SIZE = 2 * 1024 * 1024; // 2MB YouTube limit
+              const originalBuffer = thumbBuffer; // Keep original for recompression
+
+              // If thumbnail is larger than 2MB, compress it
+              if (thumbBuffer.length > MAX_THUMB_SIZE) {
+                console.log(`[Thumbnail] Original size: ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB, compressing...`);
+
+                let quality = 90;
+                let width = 1280; // YouTube recommended thumbnail width
+
+                // Try progressively lower quality until under 2MB
+                while (thumbBuffer.length > MAX_THUMB_SIZE && quality > 10) {
+                  const compressed = await sharp(originalBuffer)
+                    .resize(width, null, { withoutEnlargement: true })
+                    .jpeg({ quality })
+                    .toBuffer();
+                  thumbBuffer = Buffer.from(compressed);
+
+                  console.log(`[Thumbnail] Compressed to ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB at quality=${quality}`);
+
+                  if (thumbBuffer.length > MAX_THUMB_SIZE) {
+                    quality -= 10;
+                    if (quality <= 20 && width > 640) {
+                      width = Math.round(width * 0.8);
+                      quality = 80; // Reset quality and try smaller dimensions
+                    }
+                  }
+                }
+
+                contentType = 'image/jpeg';
+                console.log(`[Thumbnail] Final size: ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+              }
 
               // Upload thumbnail to YouTube
               const thumbUploadResponse = await fetch(

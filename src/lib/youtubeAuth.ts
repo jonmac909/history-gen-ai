@@ -9,6 +9,13 @@ export interface YouTubeChannel {
   thumbnailUrl?: string;
 }
 
+export interface YouTubePlaylist {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+  itemCount: number;
+}
+
 // Storage keys
 const ACCESS_TOKEN_KEY = 'youtube_access_token';
 const TOKEN_EXPIRY_KEY = 'youtube_token_expiry';
@@ -349,5 +356,78 @@ export async function fetchYouTubeChannels(): Promise<{ channels: YouTubeChannel
   } catch (error) {
     console.error('Error fetching YouTube channels:', error);
     return { channels: [], error: error instanceof Error ? error.message : 'Failed to fetch channels' };
+  }
+}
+
+// Fetch YouTube playlists for the authenticated user
+export async function fetchYouTubePlaylists(): Promise<{ playlists: YouTubePlaylist[]; error?: string }> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return { playlists: [], error: 'API URL not configured' };
+  }
+
+  // Get a valid access token
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) {
+    return { playlists: [], error: 'Not authenticated' };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-upload/playlists`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { playlists: [], error: data.error || 'Failed to fetch playlists' };
+    }
+
+    return { playlists: data.playlists || [] };
+  } catch (error) {
+    console.error('Error fetching YouTube playlists:', error);
+    return { playlists: [], error: error instanceof Error ? error.message : 'Failed to fetch playlists' };
+  }
+}
+
+// Add video to a playlist
+export async function addVideoToPlaylist(playlistId: string, videoId: string): Promise<{ success: boolean; error?: string }> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return { success: false, error: 'API URL not configured' };
+  }
+
+  // Get a valid access token
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-upload/playlists/add`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ playlistId, videoId })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Failed to add video to playlist' };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error adding video to playlist:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to add video to playlist' };
   }
 }

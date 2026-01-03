@@ -41,7 +41,10 @@ import {
   disconnectYouTube,
   getValidAccessToken,
   fetchYouTubeChannels,
+  fetchYouTubePlaylists,
+  addVideoToPlaylist,
   type YouTubeChannel,
+  type YouTubePlaylist,
 } from "@/lib/youtubeAuth";
 import { uploadToYouTube, generateYouTubeMetadata, type YouTubeUploadProgress } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
@@ -92,6 +95,11 @@ export function YouTubeUploadModal({
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [isLoadingChannels, setIsLoadingChannels] = useState(false);
 
+  // Playlist state
+  const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<string | null>(null);
+  const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
+
   // Form state
   const [title, setTitle] = useState(projectTitle || "");
   const [description, setDescription] = useState("");
@@ -129,9 +137,10 @@ export function YouTubeUploadModal({
       setProgress(null);
       setGeneratedTitles([]);
       setShowTitleSelector(false);
-      // Reset custom thumbnail
+      // Reset custom thumbnail and playlist
       setCustomThumbnailFile(null);
       setCustomThumbnailPreview(null);
+      setSelectedPlaylist(null);
       // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
         const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
@@ -148,9 +157,9 @@ export function YouTubeUploadModal({
     const status = await checkYouTubeConnection();
     setIsConnected(status.connected);
 
-    // Fetch channels when connected
+    // Fetch channels and playlists when connected
     if (status.connected) {
-      await loadChannels();
+      await Promise.all([loadChannels(), loadPlaylists()]);
     }
   };
 
@@ -172,14 +181,26 @@ export function YouTubeUploadModal({
     }
   };
 
+  const loadPlaylists = async () => {
+    setIsLoadingPlaylists(true);
+    try {
+      const result = await fetchYouTubePlaylists();
+      setPlaylists(result.playlists || []);
+    } catch (error) {
+      console.error('Error loading playlists:', error);
+    } finally {
+      setIsLoadingPlaylists(false);
+    }
+  };
+
   const handleConnect = async () => {
     setIsConnecting(true);
     try {
       const result = await authenticateYouTube();
       if (result.success) {
         setIsConnected(true);
-        // Fetch channels after connecting
-        await loadChannels();
+        // Fetch channels and playlists after connecting
+        await Promise.all([loadChannels(), loadPlaylists()]);
         toast({
           title: "YouTube Connected",
           description: "Your YouTube account is now connected.",
@@ -317,6 +338,93 @@ export function YouTubeUploadModal({
     setCustomThumbnailPreview(null);
   };
 
+  // Compress image to be under 2MB for YouTube thumbnail requirements
+  const compressImageToUnder2MB = async (file: File): Promise<File> => {
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+
+    // If already under 2MB, return as-is
+    if (file.size <= MAX_SIZE) {
+      return file;
+    }
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = async () => {
+        let width = img.width;
+        let height = img.height;
+        let quality = 0.9;
+
+        // YouTube recommends 1280x720 for thumbnails
+        const MAX_WIDTH = 1280;
+        const MAX_HEIGHT = 720;
+
+        // Scale down if larger than recommended dimensions
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Try progressively lower quality until under 2MB
+        const tryCompress = (q: number): Promise<Blob> => {
+          return new Promise((res) => {
+            canvas.toBlob(
+              (blob) => res(blob!),
+              'image/jpeg',
+              q
+            );
+          });
+        };
+
+        let blob = await tryCompress(quality);
+
+        // Reduce quality in steps until under 2MB
+        while (blob.size > MAX_SIZE && quality > 0.1) {
+          quality -= 0.1;
+          blob = await tryCompress(quality);
+        }
+
+        // If still too big, scale down dimensions
+        while (blob.size > MAX_SIZE && width > 640) {
+          width = Math.round(width * 0.8);
+          height = Math.round(height * 0.8);
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          blob = await tryCompress(quality);
+        }
+
+        if (blob.size > MAX_SIZE) {
+          reject(new Error('Could not compress image below 2MB'));
+          return;
+        }
+
+        const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+          type: 'image/jpeg',
+        });
+
+        console.log(`[Thumbnail] Compressed from ${(file.size / 1024 / 1024).toFixed(2)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB (quality: ${quality.toFixed(1)}, ${width}x${height})`);
+        resolve(compressedFile);
+      };
+
+      img.onerror = () => reject(new Error('Failed to load image for compression'));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleUpload = async () => {
     if (!title.trim()) {
       toast({
@@ -360,29 +468,43 @@ export function YouTubeUploadModal({
       // Determine thumbnail URL - upload custom file if provided
       let thumbnailUrl = selectedThumbnail || undefined;
       if (customThumbnailFile) {
-        setProgress({ percent: 0, message: 'Uploading custom thumbnail...' });
-        const ext = customThumbnailFile.name.split('.').pop() || 'jpg';
-        const fileName = `thumbnails/custom_${Date.now()}.${ext}`;
+        setProgress({ percent: 0, message: 'Processing thumbnail...' });
 
-        const { error: uploadError } = await supabase.storage
-          .from('generated-assets')
-          .upload(fileName, customThumbnailFile, {
-            contentType: customThumbnailFile.type,
-            upsert: true,
-          });
+        try {
+          // Compress if larger than 2MB (YouTube requirement)
+          const fileToUpload = await compressImageToUnder2MB(customThumbnailFile);
+          const ext = fileToUpload.type === 'image/jpeg' ? 'jpg' : customThumbnailFile.name.split('.').pop() || 'jpg';
+          const fileName = `thumbnails/custom_${Date.now()}.${ext}`;
 
-        if (uploadError) {
-          console.error('Failed to upload custom thumbnail:', uploadError);
+          setProgress({ percent: 0, message: 'Uploading thumbnail...' });
+
+          const { error: uploadError } = await supabase.storage
+            .from('generated-assets')
+            .upload(fileName, fileToUpload, {
+              contentType: fileToUpload.type,
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.error('Failed to upload custom thumbnail:', uploadError);
+            toast({
+              title: "Thumbnail Upload Failed",
+              description: "Failed to upload custom thumbnail. Continuing without thumbnail.",
+              variant: "destructive",
+            });
+          } else {
+            const { data: urlData } = supabase.storage
+              .from('generated-assets')
+              .getPublicUrl(fileName);
+            thumbnailUrl = urlData.publicUrl;
+          }
+        } catch (compressError) {
+          console.error('Failed to compress thumbnail:', compressError);
           toast({
-            title: "Thumbnail Upload Failed",
-            description: "Failed to upload custom thumbnail. Continuing without thumbnail.",
+            title: "Thumbnail Processing Failed",
+            description: compressError instanceof Error ? compressError.message : "Could not process thumbnail.",
             variant: "destructive",
           });
-        } else {
-          const { data: urlData } = supabase.storage
-            .from('generated-assets')
-            .getPublicUrl(fileName);
-          thumbnailUrl = urlData.publicUrl;
         }
       }
 
@@ -407,10 +529,31 @@ export function YouTubeUploadModal({
           youtubeUrl: result.youtubeUrl!,
           studioUrl: result.studioUrl!,
         });
-        toast({
-          title: "Upload Complete!",
-          description: "Your video has been uploaded to YouTube.",
-        });
+
+        // Add to playlist if one was selected
+        if (selectedPlaylist) {
+          setProgress({ percent: 98, message: 'Adding to playlist...' });
+          const playlistResult = await addVideoToPlaylist(selectedPlaylist, result.videoId);
+          if (playlistResult.success) {
+            const playlistName = playlists.find(p => p.id === selectedPlaylist)?.title || 'playlist';
+            toast({
+              title: "Upload Complete!",
+              description: `Video uploaded and added to "${playlistName}".`,
+            });
+          } else {
+            toast({
+              title: "Upload Complete",
+              description: `Video uploaded but couldn't add to playlist: ${playlistResult.error}`,
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({
+            title: "Upload Complete!",
+            description: "Your video has been uploaded to YouTube.",
+          });
+        }
+
         onSuccess?.(result.youtubeUrl!);
       } else {
         toast({
@@ -431,11 +574,10 @@ export function YouTubeUploadModal({
     }
   };
 
-  // Get minimum date for scheduler (tomorrow)
+  // Get minimum date for scheduler (today - YouTube allows scheduling for future times today)
   const getMinDate = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split("T")[0];
+    const today = new Date();
+    return today.toISOString().split("T")[0];
   };
 
   return (
@@ -667,6 +809,38 @@ export function YouTubeUploadModal({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Playlist Selection */}
+              <div className="space-y-2">
+                <Label>Add to Playlist</Label>
+                <Select
+                  value={selectedPlaylist || "none"}
+                  onValueChange={(value) => setSelectedPlaylist(value === "none" ? null : value)}
+                  disabled={isUploading || isLoadingPlaylists}
+                >
+                  <SelectTrigger>
+                    {isLoadingPlaylists ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Loading playlists...</span>
+                      </div>
+                    ) : (
+                      <SelectValue placeholder="Select a playlist (optional)" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No playlist</SelectItem>
+                    {playlists.map((playlist) => (
+                      <SelectItem key={playlist.id} value={playlist.id}>
+                        {playlist.title} ({playlist.itemCount} videos)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Optionally add this video to one of your playlists after upload
+                </p>
               </div>
 
               {/* Thumbnail Selection */}
