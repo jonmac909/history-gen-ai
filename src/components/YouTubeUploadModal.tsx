@@ -108,7 +108,7 @@ export function YouTubeUploadModal({
   const [privacyStatus, setPrivacyStatus] = useState<"private" | "unlisted">("private");
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledDate, setScheduledDate] = useState("");
-  const [scheduledTime, setScheduledTime] = useState("12:00");
+  const [scheduledTime, setScheduledTime] = useState("14:00"); // 2pm PST default
   const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(null);
   const [customThumbnailFile, setCustomThumbnailFile] = useState<File | null>(null);
   const [customThumbnailPreview, setCustomThumbnailPreview] = useState<string | null>(null);
@@ -141,6 +141,11 @@ export function YouTubeUploadModal({
       setCustomThumbnailFile(null);
       setCustomThumbnailPreview(null);
       setSelectedPlaylist(null);
+      // Set default schedule to tomorrow at 2pm PST
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setScheduledDate(tomorrow.toISOString().split("T")[0]);
+      setScheduledTime("14:00");
       // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
         const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
