@@ -1,11 +1,14 @@
 import { Router, Request, Response } from 'express';
 import {
-  resolveChannelId,
+  resolveChannelId as invidiousResolveChannelId,
   getChannel,
   getChannelVideos,
   InvidiousChannel,
   InvidiousVideo,
 } from '../lib/invidious';
+import {
+  resolveChannelId as ytdlpResolveChannelId,
+} from '../lib/ytdlp';
 import {
   getCachedChannel,
   cacheChannel,
@@ -13,6 +16,16 @@ import {
   cacheOutliers,
   CachedOutlier,
 } from '../lib/outlier-cache';
+
+// Try Invidious first, fall back to yt-dlp if it fails
+async function resolveChannelId(input: string): Promise<string> {
+  try {
+    return await invidiousResolveChannelId(input);
+  } catch (invidiousError) {
+    console.log(`[youtube-invidious] Invidious resolve failed, trying yt-dlp...`);
+    return await ytdlpResolveChannelId(input);
+  }
+}
 
 const router = Router();
 
