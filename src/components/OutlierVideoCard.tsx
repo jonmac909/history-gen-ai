@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { OutlierVideo } from "@/lib/api";
 
 interface OutlierVideoCardProps {
@@ -48,9 +49,15 @@ function getOutlierBadgeStyle(multiplier: number): string {
 }
 
 export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, subscriberCountFormatted, onClick }: OutlierVideoCardProps) {
+  const [imageError, setImageError] = useState(false);
   const viewsFormatted = formatNumber(video.viewCount);
   const timeAgo = formatTimeAgo(video.publishedAt);
   const outlierBadgeStyle = getOutlierBadgeStyle(video.outlierMultiplier);
+
+  // Don't render if thumbnail failed to load (deleted/private video)
+  if (imageError) {
+    return null;
+  }
 
   return (
     <div
@@ -58,11 +65,12 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
       onClick={onClick}
     >
       {/* Thumbnail with badges */}
-      <div className="relative aspect-video rounded-xl overflow-hidden mb-2">
+      <div className="relative aspect-video rounded-xl overflow-hidden mb-2 bg-gray-200">
         <img
           src={video.thumbnailUrl}
           alt={video.title}
           className="w-full h-full object-cover"
+          onError={() => setImageError(true)}
         />
         {/* Duration badge */}
         <span className="absolute bottom-2 left-2 px-1.5 py-0.5 text-xs font-medium bg-black/80 text-white rounded">

@@ -236,11 +236,13 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    // Filter out shorts and live streams
+    // Filter out shorts, live streams, and deleted/private videos
     const regularVideos = invidiousVideos.filter(v =>
       !v.liveNow &&
       !v.isUpcoming &&
-      v.lengthSeconds > 60 // Exclude shorts (< 60s)
+      v.lengthSeconds > 60 && // Exclude shorts (< 60s)
+      v.viewCount > 0 && // Exclude deleted/private videos (0 views)
+      v.videoId // Must have valid video ID
     );
 
     if (regularVideos.length === 0) {
