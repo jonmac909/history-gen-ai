@@ -142,7 +142,8 @@ async function resolveChannelId(input: string): Promise<string | null> {
     const data = await response.json() as any;
 
     if (data.items && data.items.length > 0) {
-      channelId = data.items[0].snippet.channelId;
+      // For type=channel search, the ID is in item.id.channelId
+      channelId = data.items[0].id?.channelId || data.items[0].snippet?.channelId;
       console.log(`[youtube-channel-stats] Resolved @${handle} to channel ID: ${channelId}`);
       return channelId;
     }
