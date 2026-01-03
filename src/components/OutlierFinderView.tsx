@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, Search, Loader2, TrendingUp, Eye, Calendar } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Search, Loader2, TrendingUp, Eye, Calendar, Shuffle, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
@@ -11,17 +11,48 @@ interface OutlierFinderViewProps {
   onSelectVideo: (videoUrl: string, title: string) => void;
 }
 
+interface SavedChannel {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  subscriberCountFormatted: string;
+  input: string;
+  savedAt: number;
+}
+
 type SortOption = 'outlier' | 'views' | 'uploaded';
+
+const SAVED_CHANNELS_KEY = 'outlier-finder-saved-channels';
+
+function loadSavedChannels(): SavedChannel[] {
+  try {
+    const saved = localStorage.getItem(SAVED_CHANNELS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSavedChannels(channels: SavedChannel[]) {
+  localStorage.setItem(SAVED_CHANNELS_KEY, JSON.stringify(channels));
+}
 
 export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewProps) {
   const [channelInput, setChannelInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [channel, setChannel] = useState<ChannelStats | null>(null);
   const [videos, setVideos] = useState<OutlierVideo[]>([]);
-  const [sortBy, setSortBy] = useState<SortOption>('outlier');
+  const [sortBy, setSortBy] = useState<SortOption>('uploaded');
+  const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
 
-  const handleAnalyze = async () => {
-    if (!channelInput.trim()) {
+  // Load saved channels on mount
+  useEffect(() => {
+    setSavedChannels(loadSavedChannels());
+  }, []);
+
+  const handleAnalyze = async (input?: string) => {
+    const channelToAnalyze = input || channelInput.trim();
+    if (!channelToAnalyze) {
       toast({
         title: "Enter a channel",
         description: "Please enter a YouTube channel URL or @handle",
@@ -35,7 +66,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     setVideos([]);
 
     try {
-      const result = await getChannelOutliers(channelInput.trim(), 50, sortBy);
+      const result = await getChannelOutliers(channelToAnalyze, 50, sortBy);
 
       if (!result.success) {
         toast({
@@ -48,6 +79,19 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
       if (result.channel) {
         setChannel(result.channel);
+        // Save to recent channels
+        const newSaved: SavedChannel = {
+          id: result.channel.id,
+          title: result.channel.title,
+          thumbnailUrl: result.channel.thumbnailUrl,
+          subscriberCountFormatted: result.channel.subscriberCountFormatted,
+          input: channelToAnalyze,
+          savedAt: Date.now(),
+        };
+        const existing = savedChannels.filter(c => c.id !== result.channel!.id);
+        const updated = [newSaved, ...existing].slice(0, 10); // Keep last 10
+        setSavedChannels(updated);
+        saveSavedChannels(updated);
       }
       if (result.videos) {
         setVideos(result.videos);
@@ -92,115 +136,160 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     onSelectVideo(videoUrl, video.title);
   };
 
+  const handleRemoveSavedChannel = (channelId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = savedChannels.filter(c => c.id !== channelId);
+    setSavedChannels(updated);
+    saveSavedChannels(updated);
+  };
+
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-sm border-b border-zinc-800">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4 mb-4">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="text-gray-400 hover:text-white"
+              className="text-gray-500 hover:text-gray-900"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h1 className="text-xl font-bold">Outlier Finder</h1>
-          </div>
 
-          {/* Search bar */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type="text"
-                placeholder="Enter YouTube channel URL or @handle..."
-                value={channelInput}
-                onChange={(e) => setChannelInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                className="bg-zinc-900 border-zinc-700 text-white placeholder:text-gray-500 pr-10"
-              />
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+            {/* Search bar - VidIQ style */}
+            <div className="flex-1 flex items-center gap-2">
+              <div className="relative flex-1 max-w-xl">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
+                <Input
+                  type="text"
+                  placeholder="BoringHistorySecrets"
+                  value={channelInput}
+                  onChange={(e) => setChannelInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                  className="pl-8 pr-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-full"
+                />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              </div>
             </div>
-            <Button
-              onClick={handleAnalyze}
-              disabled={isLoading || !channelInput.trim()}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                'Analyze'
-              )}
+
+            {/* Sort dropdown */}
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span>Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => handleSort(e.target.value as SortOption)}
+                className="bg-white border border-gray-300 rounded-md px-2 py-1 text-gray-700"
+              >
+                <option value="uploaded">Uploaded</option>
+                <option value="outlier">Outlier Score</option>
+                <option value="views">Views</option>
+              </select>
+            </div>
+
+            {/* Action buttons */}
+            <Button variant="ghost" size="icon" className="text-gray-500">
+              <Shuffle className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="text-gray-500">
+              <Filter className="h-5 w-5" />
             </Button>
           </div>
         </div>
       </div>
 
+      {/* Generate Ideas button bar */}
+      {!channel && !isLoading && (
+        <div className="border-b border-gray-200 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+            <Button
+              onClick={() => handleAnalyze()}
+              disabled={!channelInput.trim()}
+              className="bg-red-500 hover:bg-red-600 text-white rounded-full px-6"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Generate Ideas
+            </Button>
+            <Button variant="outline" className="rounded-full text-gray-600 border-gray-300">
+              + Save New Idea
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Channel header card */}
-        {channel && (
-          <div className="bg-zinc-900 rounded-lg p-4 mb-6 flex items-center gap-4">
-            <img
-              src={channel.thumbnailUrl}
-              alt={channel.title}
-              className="w-16 h-16 rounded-full"
-            />
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-white">{channel.title}</h2>
-              <div className="flex gap-4 text-sm text-gray-400 mt-1">
-                <span>{channel.subscriberCountFormatted} subscribers</span>
-                <span>Avg: {channel.averageViewsFormatted} views</span>
-              </div>
+        {/* Saved channels list */}
+        {!channel && !isLoading && savedChannels.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-sm font-medium text-gray-500 mb-3">Recent Channels</h2>
+            <div className="flex flex-wrap gap-2">
+              {savedChannels.map((saved) => (
+                <button
+                  key={saved.id}
+                  onClick={() => {
+                    setChannelInput(saved.input);
+                    handleAnalyze(saved.input);
+                  }}
+                  className="group flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                >
+                  <img
+                    src={saved.thumbnailUrl}
+                    alt={saved.title}
+                    className="w-6 h-6 rounded-full"
+                  />
+                  <span className="text-sm text-gray-700">{saved.title}</span>
+                  <span className="text-xs text-gray-400">{saved.subscriberCountFormatted}</span>
+                  <button
+                    onClick={(e) => handleRemoveSavedChannel(saved.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-gray-300 transition-opacity"
+                  >
+                    <X className="h-3 w-3 text-gray-500" />
+                  </button>
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Sort controls */}
-        {videos.length > 0 && (
-          <div className="flex gap-2 mb-4">
+        {/* Channel header when analyzing */}
+        {channel && (
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img
+                src={channel.thumbnailUrl}
+                alt={channel.title}
+                className="w-10 h-10 rounded-full"
+              />
+              <div>
+                <h2 className="font-semibold text-gray-900">{channel.title}</h2>
+                <p className="text-sm text-gray-500">{channel.subscriberCountFormatted} subscribers • Avg: {channel.averageViewsFormatted} views</p>
+              </div>
+            </div>
             <Button
-              variant={sortBy === 'outlier' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => handleSort('outlier')}
-              className={sortBy === 'outlier' ? 'bg-red-600 hover:bg-red-700' : 'border-zinc-700 text-gray-400'}
+              variant="outline"
+              onClick={() => {
+                setChannel(null);
+                setVideos([]);
+              }}
+              className="text-gray-600"
             >
-              <TrendingUp className="h-4 w-4 mr-1" />
-              Outlier
-            </Button>
-            <Button
-              variant={sortBy === 'views' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => handleSort('views')}
-              className={sortBy === 'views' ? 'bg-red-600 hover:bg-red-700' : 'border-zinc-700 text-gray-400'}
-            >
-              <Eye className="h-4 w-4 mr-1" />
-              Views
-            </Button>
-            <Button
-              variant={sortBy === 'uploaded' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => handleSort('uploaded')}
-              className={sortBy === 'uploaded' ? 'bg-red-600 hover:bg-red-700' : 'border-zinc-700 text-gray-400'}
-            >
-              <Calendar className="h-4 w-4 mr-1" />
-              Newest
+              Clear
             </Button>
           </div>
         )}
 
         {/* Video grid */}
         {videos.length > 0 && channel && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {videos.map((video) => (
               <OutlierVideoCard
                 key={video.videoId}
                 video={video}
                 averageViews={channel.averageViews}
                 averageViewsFormatted={channel.averageViewsFormatted}
+                channelTitle={channel.title}
+                subscriberCountFormatted={channel.subscriberCountFormatted}
                 onClick={() => handleVideoClick(video)}
               />
             ))}
@@ -208,11 +297,11 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         )}
 
         {/* Empty state */}
-        {!isLoading && !channel && (
+        {!isLoading && !channel && savedChannels.length === 0 && (
           <div className="text-center py-20 text-gray-500">
-            <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p className="text-lg">Enter a YouTube channel to find outlier videos</p>
-            <p className="text-sm mt-2">Discover viral content by analyzing view patterns</p>
+            <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
+            <p className="text-lg text-gray-700">Enter a YouTube channel to find outlier videos</p>
+            <p className="text-sm mt-2 text-gray-500">Discover viral content by analyzing view patterns</p>
           </div>
         )}
 
@@ -220,7 +309,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         {isLoading && (
           <div className="text-center py-20">
             <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-red-500" />
-            <p className="text-gray-400">Analyzing channel videos...</p>
+            <p className="text-gray-500">Analyzing channel videos...</p>
           </div>
         )}
       </div>
