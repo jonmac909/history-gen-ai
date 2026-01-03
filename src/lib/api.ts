@@ -1776,3 +1776,79 @@ export async function getChannelOutliers(
     };
   }
 }
+
+// ==================== Niche Analyzer ====================
+
+export interface NicheChannel {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  subscriberCount: number;
+  subscriberCountFormatted: string;
+  viewCount: number;
+  videoCount: number;
+  viewsToSubsRatio: number;
+  isBreakout: boolean;
+  createdAt?: string;
+}
+
+export interface NicheMetrics {
+  channelCount: number;
+  avgSubscribers: number;
+  avgViewsPerVideo: number;
+  avgViewsToSubsRatio: number;
+  saturationLevel: 'low' | 'medium' | 'high';
+  saturationScore: number;
+}
+
+export interface NicheAnalysisResult {
+  success: boolean;
+  topic?: string;
+  metrics?: NicheMetrics;
+  channels?: NicheChannel[];
+  error?: string;
+}
+
+export async function analyzeNiche(
+  topic: string,
+  subscriberMin?: number,
+  subscriberMax?: number
+): Promise<NicheAnalysisResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/niche-analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ topic, subscriberMin, subscriberMax })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Niche analyze error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to analyze niche: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('Niche analyze error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze niche'
+    };
+  }
+}

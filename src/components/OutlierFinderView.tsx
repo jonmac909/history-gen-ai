@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { Search, Loader2, TrendingUp, X, LayoutGrid } from "lucide-react";
+import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
-import { getChannelOutliers, OutlierVideo, ChannelStats } from "@/lib/api";
+import { getChannelOutliers, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 interface OutlierFinderViewProps {
@@ -41,6 +41,17 @@ interface Filters {
 }
 
 const SAVED_CHANNELS_KEY = 'outlier-finder-saved-channels';
+
+// Format large numbers (e.g., 1234567 -> "1.2M")
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return num.toString();
+}
 
 const DATE_RANGE_LABELS: Record<DateRangeOption, string> = {
   'all': 'All time',
@@ -111,6 +122,12 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     minViews: 0,
     onlyPositiveOutliers: false,
   });
+
+  // Niche mode state
+  const [nicheMode, setNicheMode] = useState(false);
+  const [nicheMetrics, setNicheMetrics] = useState<NicheMetrics | null>(null);
+  const [nicheChannels, setNicheChannels] = useState<NicheChannel[]>([]);
+  const [nicheTopic, setNicheTopic] = useState('');
 
   // Load saved channels on mount
   useEffect(() => {
@@ -281,6 +298,96 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     }
   };
 
+  const handleAnalyzeNiche = async () => {
+    const topic = channelInput.trim();
+    if (!topic) {
+      toast({
+        title: "Enter a topic",
+        description: "Please enter a niche topic to analyze (e.g., 'medieval history')",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    setNicheMode(true);
+    setNicheMetrics(null);
+    setNicheChannels([]);
+    setChannel(null);
+    setVideos([]);
+    setViewingAll(false);
+
+    try {
+      const result = await analyzeNiche(topic);
+
+      if (!result.success) {
+        toast({
+          title: "Analysis failed",
+          description: result.error || "Could not analyze this niche",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setNicheTopic(result.topic);
+      setNicheMetrics(result.metrics);
+      setNicheChannels(result.channels);
+
+      toast({
+        title: "Niche analysis complete",
+        description: `Found ${result.channels.length} channels in "${result.topic}"`,
+      });
+    } catch (error) {
+      console.error('Niche analysis error:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to analyze niche",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleNicheChannelClick = async (nicheChannel: NicheChannel) => {
+    // Analyze this channel's videos using existing flow
+    setChannelInput(nicheChannel.id);
+    setNicheMode(false);
+    setNicheMetrics(null);
+    setNicheChannels([]);
+    await handleAnalyze(nicheChannel.id);
+  };
+
+  const handleSaveNicheChannel = (nicheChannel: NicheChannel, e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Check if already saved
+    if (savedChannels.some(c => c.id === nicheChannel.id)) {
+      toast({
+        title: "Already saved",
+        description: `${nicheChannel.title} is already in your saved channels`,
+      });
+      return;
+    }
+    // Add to saved channels
+    const newSaved: SavedChannel = {
+      id: nicheChannel.id,
+      title: nicheChannel.title,
+      thumbnailUrl: nicheChannel.thumbnailUrl,
+      subscriberCountFormatted: nicheChannel.subscriberCountFormatted,
+      averageViews: Math.round(nicheChannel.viewCount / nicheChannel.videoCount),
+      averageViewsFormatted: formatNumber(Math.round(nicheChannel.viewCount / nicheChannel.videoCount)),
+      input: nicheChannel.id,
+      savedAt: Date.now(),
+    };
+    const updated = [newSaved, ...savedChannels];
+    setSavedChannels(updated);
+    saveSavedChannels(updated);
+    toast({
+      title: "Channel saved",
+      description: `${nicheChannel.title} added to your channels`,
+    });
+  };
+
   const handleSort = (newSort: SortOption) => {
     if (newSort === sortBy) return;
     setSortBy(newSort);
@@ -326,6 +433,10 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     setVideos([]);
     setAllVideos([]);
     setViewingAll(false);
+    setNicheMode(false);
+    setNicheMetrics(null);
+    setNicheChannels([]);
+    setNicheTopic('');
   };
 
   return (
@@ -348,16 +459,15 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
             {/* Search bar */}
             <div className="flex-1 flex items-center gap-2">
               <div className="relative flex-1 max-w-xl">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   type="text"
-                  placeholder="Enter channel handle or URL..."
+                  placeholder="@channel or niche topic..."
                   value={channelInput}
                   onChange={(e) => setChannelInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                  className="pl-8 pr-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-full"
+                  className="pl-10 pr-4 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-full"
                 />
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               </div>
             </div>
 
@@ -454,7 +564,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
       </div>
 
       {/* Action buttons bar */}
-      {!channel && !viewingAll && !isLoading && (
+      {!channel && !viewingAll && !nicheMode && !isLoading && (
         <div className="border-b border-gray-200 bg-gray-50">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
             <Button
@@ -463,7 +573,16 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               className="bg-red-500 hover:bg-red-600 text-white rounded-full px-6"
             >
               <TrendingUp className="h-4 w-4 mr-2" />
-              Generate Ideas
+              Analyze Channel
+            </Button>
+            <Button
+              onClick={handleAnalyzeNiche}
+              disabled={!channelInput.trim()}
+              variant="outline"
+              className="rounded-full text-gray-600 border-gray-300"
+            >
+              <Compass className="h-4 w-4 mr-2" />
+              Analyze Niche
             </Button>
             <Button
               onClick={handleViewAll}
@@ -480,7 +599,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Saved channels list */}
-        {!channel && !viewingAll && !isLoading && savedChannels.length > 0 && (
+        {!channel && !viewingAll && !nicheMode && !isLoading && savedChannels.length > 0 && (
           <div className="mb-8">
             <h2 className="text-sm font-medium text-gray-500 mb-3">Recent Channels</h2>
             <div className="flex flex-wrap gap-2">
@@ -510,6 +629,115 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               ))}
             </div>
           </div>
+        )}
+
+        {/* Niche Analysis Results */}
+        {nicheMode && nicheMetrics && !isLoading && (
+          <>
+            {/* Niche metrics panel */}
+            <div className="mb-6 p-4 bg-gradient-to-r from-orange-50 to-red-50 rounded-xl border border-orange-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Compass className="h-5 w-5 text-orange-500" />
+                  <h2 className="font-semibold text-gray-900">Niche: "{nicheTopic}"</h2>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClear}
+                  className="text-gray-600"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">{nicheMetrics.channelCount}</div>
+                  <div className="text-sm text-gray-500">Channels</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">{formatNumber(nicheMetrics.avgSubscribers)}</div>
+                  <div className="text-sm text-gray-500">Avg Subscribers</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">{nicheMetrics.avgViewsToSubsRatio}x</div>
+                  <div className="text-sm text-gray-500">Views/Subs Ratio</div>
+                </div>
+                <div>
+                  <div className={`text-2xl font-bold ${
+                    nicheMetrics.saturationLevel === 'low' ? 'text-green-600' :
+                    nicheMetrics.saturationLevel === 'medium' ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {nicheMetrics.saturationLevel === 'low' ? '🟢 Low' :
+                     nicheMetrics.saturationLevel === 'medium' ? '🟡 Medium' :
+                     '🔴 High'}
+                  </div>
+                  <div className="text-sm text-gray-500">Saturation</div>
+                </div>
+              </div>
+              {nicheMetrics.saturationLevel === 'low' && (
+                <div className="mt-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">
+                  Good opportunity! Low competition with healthy engagement ratios.
+                </div>
+              )}
+            </div>
+
+            {/* Niche channels grid */}
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-500 mb-3">
+                Top Channels ({nicheChannels.length})
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {nicheChannels.map((nicheChannel) => (
+                <div
+                  key={nicheChannel.id}
+                  onClick={() => handleNicheChannelClick(nicheChannel)}
+                  className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
+                >
+                  <div className="flex flex-col items-center text-center">
+                    <img
+                      src={nicheChannel.thumbnailUrl}
+                      alt={nicheChannel.title}
+                      className="w-16 h-16 rounded-full mb-3"
+                    />
+                    <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-1">
+                      {nicheChannel.title}
+                    </h4>
+                    <div className="text-xs text-gray-500 mb-2">
+                      {nicheChannel.subscriberCountFormatted} subscribers
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-sm font-bold ${
+                        nicheChannel.viewsToSubsRatio >= 2 ? 'text-orange-500' : 'text-gray-600'
+                      }`}>
+                        {nicheChannel.viewsToSubsRatio}x
+                      </span>
+                      {nicheChannel.isBreakout && (
+                        <Flame className="h-4 w-4 text-orange-500" title="Breakout channel" />
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleSaveNicheChannel(nicheChannel, e)}
+                      className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {nicheChannels.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <p>No channels found in this niche with the current filters</p>
+              </div>
+            )}
+          </>
         )}
 
         {/* Channel header when analyzing single channel */}
@@ -640,11 +868,11 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         )}
 
         {/* Empty state */}
-        {!isLoading && !channel && !viewingAll && savedChannels.length === 0 && (
+        {!isLoading && !channel && !viewingAll && !nicheMode && savedChannels.length === 0 && (
           <div className="text-center py-20 text-gray-500">
             <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-lg text-gray-700">Enter a YouTube channel to find outlier videos</p>
-            <p className="text-sm mt-2 text-gray-500">Discover viral content by analyzing view patterns</p>
+            <p className="text-lg text-gray-700">Analyze channels or explore niches</p>
+            <p className="text-sm mt-2 text-gray-500">Enter a @channel to find outliers, or a topic to analyze the niche</p>
           </div>
         )}
 
@@ -652,7 +880,9 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         {isLoading && (
           <div className="text-center py-20">
             <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-red-500" />
-            <p className="text-gray-500">{viewingAll ? 'Loading videos from all channels...' : 'Analyzing channel videos...'}</p>
+            <p className="text-gray-500">
+              {nicheMode ? 'Analyzing niche...' : viewingAll ? 'Loading videos from all channels...' : 'Analyzing channel videos...'}
+            </p>
           </div>
         )}
       </div>
