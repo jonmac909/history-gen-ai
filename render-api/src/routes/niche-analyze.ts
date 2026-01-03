@@ -93,31 +93,22 @@ async function searchChannels(topic: string, maxResults: number = 50): Promise<s
   url.searchParams.set('key', YOUTUBE_API_KEY!);
 
   console.log(`[niche-analyze] Searching for channels with topic: "${topic}"`);
-  console.log(`[niche-analyze] Search URL: ${url.toString().replace(YOUTUBE_API_KEY!, 'API_KEY')}`);
   const response = await fetch(url.toString());
   const data = await response.json() as any;
 
-  console.log(`[niche-analyze] Search response status: ${response.status}`);
-  console.log(`[niche-analyze] Search response data keys:`, Object.keys(data || {}));
-
   if (data.error) {
     console.error(`[niche-analyze] YouTube API error:`, JSON.stringify(data.error));
-    // Throw the error so caller can handle it
     throw new Error(`YouTube API error: ${data.error.message || JSON.stringify(data.error)}`);
   }
 
   if (!data.items) {
-    console.log(`[niche-analyze] No items returned from search. Full response:`, JSON.stringify(data).substring(0, 500));
+    console.log(`[niche-analyze] No items returned from search`);
     return [];
   }
 
   console.log(`[niche-analyze] Search returned ${data.items.length} channels`);
-  console.log(`[niche-analyze] First item structure:`, JSON.stringify(data.items[0], null, 2).substring(0, 500));
-
-  // For type=channel search, the ID is in item.id.channelId (not item.snippet.channelId)
-  const ids = data.items.map((item: any) => item.id?.channelId || item.snippet?.channelId).filter(Boolean);
-  console.log(`[niche-analyze] Extracted channel IDs:`, ids.slice(0, 5));
-  return ids;
+  // For type=channel search, the ID is in item.id.channelId
+  return data.items.map((item: any) => item.id?.channelId).filter(Boolean);
 }
 
 // Get channel details
@@ -190,13 +181,6 @@ async function getChannelDetails(channelIds: string[]): Promise<NicheChannel[]> 
   return channels;
 }
 
-// Debug endpoint to check config
-router.get('/debug', (req: Request, res: Response) => {
-  res.json({
-    hasApiKey: !!YOUTUBE_API_KEY,
-    apiKeyPrefix: YOUTUBE_API_KEY ? YOUTUBE_API_KEY.substring(0, 8) + '...' : 'NOT SET'
-  });
-});
 
 // Main endpoint
 router.post('/', async (req: Request, res: Response) => {
