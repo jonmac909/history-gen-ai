@@ -166,6 +166,18 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   // Check if any filters are active
   const hasActiveFilters = filters.dateRange !== 'all' || filters.duration !== 'all' || filters.minViews > 0 || filters.onlyPositiveOutliers;
 
+  // Check if we're viewing a single channel or View All (not on main saved channels page)
+  const isInSubview = channel !== null || viewingAll;
+
+  // Reset to main Outliers page (saved channels list)
+  const handleResetToMain = () => {
+    setChannel(null);
+    setVideos([]);
+    setViewingAll(false);
+    setAllVideos([]);
+    setChannelInput('');
+  };
+
   const handleAnalyze = async (input?: string) => {
     const channelToAnalyze = input || channelInput.trim();
     if (!channelToAnalyze) {
@@ -183,7 +195,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     setViewingAll(false);
 
     try {
-      const result = await getChannelOutliers(channelToAnalyze, 50, sortBy);
+      // Use Invidious API for all channel analysis
+      const result = await getChannelOutliersInvidious(channelToAnalyze, 50, sortBy, false);
 
       if (!result.success) {
         toast({
@@ -461,9 +474,9 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center gap-4">
-            {/* Clickable logo/title to go back */}
+            {/* Clickable logo/title - goes to main Outliers page if in subview, otherwise exits */}
             <button
-              onClick={onBack}
+              onClick={isInSubview ? handleResetToMain : onBack}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
               <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center">

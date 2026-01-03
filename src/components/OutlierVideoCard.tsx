@@ -59,13 +59,18 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
     return null;
   }
 
+  const handleTitleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.open(`https://youtube.com/watch?v=${video.videoId}`, '_blank');
+  };
+
   return (
-    <div
-      className="group cursor-pointer"
-      onClick={onClick}
-    >
-      {/* Thumbnail with badges */}
-      <div className="relative aspect-video rounded-xl overflow-hidden mb-2 bg-gray-200">
+    <div className="group">
+      {/* Thumbnail with badges - click to use video */}
+      <div
+        className="relative aspect-video rounded-xl overflow-hidden mb-2 bg-gray-200 cursor-pointer"
+        onClick={onClick}
+      >
         <img
           src={video.thumbnailUrl}
           alt={video.title}
@@ -80,8 +85,11 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
 
       {/* Video info */}
       <div className="space-y-1">
-        {/* Title */}
-        <h3 className="text-sm font-medium text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors leading-snug">
+        {/* Title - click to open on YouTube */}
+        <h3
+          className="text-sm font-medium text-gray-900 line-clamp-2 hover:text-blue-600 transition-colors leading-snug cursor-pointer"
+          onClick={handleTitleClick}
+        >
           {video.title}
         </h3>
 
