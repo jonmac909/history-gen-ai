@@ -114,6 +114,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   const [videos, setVideos] = useState<OutlierVideo[]>([]);
   const [allVideos, setAllVideos] = useState<VideoWithChannel[]>([]);
   const [viewingAll, setViewingAll] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
   const [sortBy, setSortBy] = useState<SortOption>('uploaded');
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
   const [filters, setFilters] = useState<Filters>({
@@ -249,40 +250,36 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     const allResults: VideoWithChannel[] = [];
 
     try {
-      // Process channels in batches to respect TubeLab rate limit (10 req/min)
-      // Use batches of 5 with 7 second delay between batches
-      const BATCH_SIZE = 5;
-      const BATCH_DELAY_MS = 7000;
+      // Process channels SEQUENTIALLY to respect TubeLab rate limit (10 req/min)
+      // Each channel may use 2 API calls (channel search + outliers), so 6s delay = safe
+      const CHANNEL_DELAY_MS = 6500; // 6.5 seconds between channels
 
-      for (let i = 0; i < savedChannels.length; i += BATCH_SIZE) {
-        const batch = savedChannels.slice(i, i + BATCH_SIZE);
+      setLoadingProgress({ current: 0, total: savedChannels.length });
 
-        // Fetch batch in parallel
-        const promises = batch.map(async (saved) => {
-          try {
-            // forceRefresh=true to always fetch fresh videos from TubeLab and update cache
-            const result = await getChannelOutliers(saved.input, 20, 'uploaded', true);
-            if (result.success && result.videos && result.channel) {
-              return result.videos.map(v => ({
-                ...v,
-                channelTitle: result.channel!.title,
-                channelSubscribers: result.channel!.subscriberCountFormatted,
-                channelAverageViews: result.channel!.averageViews,
-                channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
-              }));
-            }
-            return [];
-          } catch {
-            return [];
+      for (let i = 0; i < savedChannels.length; i++) {
+        const saved = savedChannels[i];
+        setLoadingProgress({ current: i + 1, total: savedChannels.length });
+
+        try {
+          // forceRefresh=true to always fetch fresh videos from TubeLab and update cache
+          const result = await getChannelOutliers(saved.input, 20, 'uploaded', true);
+          if (result.success && result.videos && result.channel) {
+            const videos = result.videos.map(v => ({
+              ...v,
+              channelTitle: result.channel!.title,
+              channelSubscribers: result.channel!.subscriberCountFormatted,
+              channelAverageViews: result.channel!.averageViews,
+              channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
+            }));
+            allResults.push(...videos);
           }
-        });
+        } catch {
+          // Skip failed channels silently
+        }
 
-        const results = await Promise.all(promises);
-        results.forEach(vids => allResults.push(...vids));
-
-        // Wait before next batch (unless this is the last batch)
-        if (i + BATCH_SIZE < savedChannels.length) {
-          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        // Wait before next channel (unless this is the last one)
+        if (i < savedChannels.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, CHANNEL_DELAY_MS));
         }
       }
 
@@ -896,8 +893,15 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           <div className="text-center py-20">
             <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-red-500" />
             <p className="text-gray-500">
-              {nicheMode ? 'Analyzing niche...' : viewingAll ? 'Loading videos from all channels...' : 'Analyzing channel videos...'}
+              {nicheMode ? 'Analyzing niche...' : viewingAll
+                ? `Loading channel ${loadingProgress.current} of ${loadingProgress.total}...`
+                : 'Analyzing channel videos...'}
             </p>
+            {viewingAll && loadingProgress.total > 1 && (
+              <p className="text-xs text-gray-400 mt-2">
+                ~{Math.ceil((loadingProgress.total - loadingProgress.current) * 6.5)} seconds remaining
+              </p>
+            )}
           </div>
         )}
       </div>
