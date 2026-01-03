@@ -40,7 +40,7 @@ export interface CachedChannel {
     rpmEstimationFrom?: number;
     rpmEstimationTo?: number;
   };
-  source: 'tubelab' | 'youtube';
+  source: 'tubelab' | 'youtube' | 'apify';
   fetched_at: string;
   expires_at: string;
 }
@@ -70,7 +70,7 @@ export interface CachedOutlier {
     isFaceless?: boolean;
     quality?: 'negative' | 'neutral' | 'positive';
   };
-  source: 'tubelab' | 'youtube';
+  source: 'tubelab' | 'youtube' | 'apify';
   fetched_at: string;
   expires_at: string;
 }

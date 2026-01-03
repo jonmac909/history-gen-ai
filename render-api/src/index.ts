@@ -13,6 +13,7 @@ import youtubeUploadRouter from './routes/youtube-upload';
 import pronunciationRouter from './routes/pronunciation';
 import generateYoutubeMetadataRouter from './routes/generate-youtube-metadata';
 import youtubeChannelStatsRouter from './routes/youtube-channel-stats';
+import youtubeChannelApifyRouter from './routes/youtube-channel-apify';
 import nicheAnalyzeRouter from './routes/niche-analyze';
 
 dotenv.config();
@@ -57,6 +58,7 @@ app.use('/youtube-upload', youtubeUploadRouter);
 app.use('/pronunciation', pronunciationRouter);
 app.use('/generate-youtube-metadata', generateYoutubeMetadataRouter);
 app.use('/youtube-channel-stats', youtubeChannelStatsRouter);
+app.use('/youtube-channel-apify', youtubeChannelApifyRouter);
 app.use('/niche-analyze', nicheAnalyzeRouter);
 
 // Error handling

@@ -3,7 +3,7 @@ import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
-import { getChannelOutliers, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
+import { getChannelOutliers, getChannelOutliersApify, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 interface OutlierFinderViewProps {
@@ -250,42 +250,38 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     const allResults: VideoWithChannel[] = [];
 
     try {
-      // Process channels SEQUENTIALLY to respect TubeLab rate limit (10 req/min)
-      // Use cache first, then forceRefresh for channels with stale cache
-      // 3 second delay between channels (conservative, uses cache when possible)
-      const CHANNEL_DELAY_MS = 3000; // 3 seconds between channels
-
+      // Use Apify for View All - no rate limits, works with any channel
+      // Process channels in parallel for faster results
       setLoadingProgress({ current: 0, total: savedChannels.length });
 
-      for (let i = 0; i < savedChannels.length; i++) {
-        const saved = savedChannels[i];
-        setLoadingProgress({ current: i + 1, total: savedChannels.length });
-
+      // Process all channels in parallel using Apify
+      const promises = savedChannels.map(async (saved, i) => {
         try {
-          // First try with cache (faster, no rate limit issues)
-          let result = await getChannelOutliers(saved.input, 20, 'uploaded', false);
+          // Use Apify endpoint - no rate limits, fresh data
+          const result = await getChannelOutliersApify(saved.input, 20, 'uploaded', true);
 
-          // If cache hit but we want fresh data, try refresh after delay
-          // Skip refresh to avoid rate limits - cache is good enough for View All
+          // Update progress as each channel completes
+          setLoadingProgress(prev => ({ current: prev.current + 1, total: prev.total }));
+
           if (result.success && result.videos && result.channel) {
-            const videos = result.videos.map(v => ({
+            return result.videos.map(v => ({
               ...v,
               channelTitle: result.channel!.title,
               channelSubscribers: result.channel!.subscriberCountFormatted,
               channelAverageViews: result.channel!.averageViews,
               channelAverageViewsFormatted: result.channel!.averageViewsFormatted,
             }));
-            allResults.push(...videos);
           }
+          return [];
         } catch {
-          // Skip failed channels silently
+          // Update progress even for failed channels
+          setLoadingProgress(prev => ({ current: prev.current + 1, total: prev.total }));
+          return [];
         }
+      });
 
-        // Wait before next channel (unless this is the last one)
-        if (i < savedChannels.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, CHANNEL_DELAY_MS));
-        }
-      }
+      const results = await Promise.all(promises);
+      results.forEach(videos => allResults.push(...videos));
 
       // Sort by selected option
       if (sortBy === 'outlier') {
@@ -903,7 +899,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
             </p>
             {viewingAll && loadingProgress.total > 1 && (
               <p className="text-xs text-gray-400 mt-2">
-                ~{Math.ceil((loadingProgress.total - loadingProgress.current) * 3)} seconds remaining
+                {loadingProgress.current} of {loadingProgress.total} channels loaded
               </p>
             )}
           </div>

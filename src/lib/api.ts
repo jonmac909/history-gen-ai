@@ -1876,3 +1876,55 @@ export async function analyzeNiche(
     };
   }
 }
+
+// ==================== Apify Channel Scraper (for View All) ====================
+
+/**
+ * Scrape channel outliers using Apify YouTube Scraper
+ * Used for View All feature - works with ANY YouTube channel, no rate limits
+ * TubeLab is still used for Niche Analysis (pre-computed breakout channels)
+ */
+export async function getChannelOutliersApify(
+  channelInput: string,
+  maxResults: number = 50,
+  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier',
+  forceRefresh: boolean = false
+): Promise<ChannelStatsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-channel-apify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Apify channel stats error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to analyze channel: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('Apify channel stats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze channel'
+    };
+  }
+}
