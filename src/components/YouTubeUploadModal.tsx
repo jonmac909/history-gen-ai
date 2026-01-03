@@ -141,11 +141,11 @@ export function YouTubeUploadModal({
       setCustomThumbnailFile(null);
       setCustomThumbnailPreview(null);
       setSelectedPlaylist(null);
-      // Set default schedule to tomorrow at 2pm PST
+      // Set default schedule to tomorrow at 12pm PST
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       setScheduledDate(tomorrow.toISOString().split("T")[0]);
-      setScheduledTime("14:00");
+      setScheduledTime("12:00");
       // Auto-select thumbnail at saved index, or first one if no selection
       if (thumbnails && thumbnails.length > 0) {
         const indexToSelect = selectedThumbnailIndex !== undefined && selectedThumbnailIndex < thumbnails.length
