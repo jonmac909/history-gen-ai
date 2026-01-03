@@ -84,8 +84,9 @@ function rowToProject(row: {
 }
 
 // Convert Project to database row format
-function projectToRow(project: Partial<Project> & { id: string }) {
-  return {
+function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean = false) {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
     id: project.id,
     source_url: project.sourceUrl || '',
     source_type: 'youtube',
@@ -105,8 +106,15 @@ function projectToRow(project: Partial<Project> & { id: string }) {
     embers_video_url: project.embersVideoUrl || null,
     smoke_embers_video_url: project.smokeEmbersVideoUrl || null,
     settings: project.settings || null,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
+
+  // Only set created_at for new projects
+  if (isNew) {
+    row.created_at = now;
+  }
+
+  return row;
 }
 
 export async function getProject(id: string): Promise<Project | null> {
@@ -140,7 +148,15 @@ export async function getAllProjects(): Promise<Project[]> {
 }
 
 export async function upsertProject(project: Partial<Project> & { id: string }): Promise<Project> {
-  const row = projectToRow(project);
+  // Check if project exists to determine if this is a new insert
+  const { data: existing } = await supabase
+    .from('generation_projects')
+    .select('id')
+    .eq('id', project.id)
+    .single();
+
+  const isNew = !existing;
+  const row = projectToRow(project, isNew);
 
   const { data, error } = await supabase
     .from('generation_projects')
@@ -153,7 +169,7 @@ export async function upsertProject(project: Partial<Project> & { id: string }):
     throw error;
   }
 
-  console.log(`[projectStore] Upserted project: ${project.id}`, {
+  console.log(`[projectStore] ${isNew ? 'Created' : 'Updated'} project: ${project.id}`, {
     status: project.status,
     step: project.currentStep
   });
