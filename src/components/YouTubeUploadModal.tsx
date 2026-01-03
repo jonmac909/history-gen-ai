@@ -290,11 +290,11 @@ export function YouTubeUploadModal({
       return;
     }
 
-    // Validate file size (max 2MB for YouTube)
-    if (file.size > 2 * 1024 * 1024) {
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
       toast({
         title: "File Too Large",
-        description: "Thumbnail must be less than 2MB.",
+        description: "Thumbnail must be less than 10MB.",
         variant: "destructive",
       });
       return;
@@ -758,7 +758,7 @@ export function YouTubeUploadModal({
                       <ImagePlus className="w-4 h-4" />
                       Upload Custom Thumbnail
                     </Button>
-                    <span className="text-xs text-muted-foreground">Max 2MB, JPEG/PNG/GIF/BMP</span>
+                    <span className="text-xs text-muted-foreground">Max 10MB, JPEG/PNG/GIF/BMP</span>
                   </div>
                 )}
               </div>
