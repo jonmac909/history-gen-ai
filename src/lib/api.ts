@@ -1701,11 +1701,15 @@ export interface OutlierVideo {
   publishedAt: string;
   duration: string;
   durationFormatted: string;
+  durationSeconds: number;
   viewCount: number;
   likeCount: number;
   commentCount: number;
   outlierMultiplier: number;
   viewsPerSubscriber: number;
+  zScore: number;
+  isPositiveOutlier: boolean;
+  isNegativeOutlier: boolean;
 }
 
 export interface ChannelStats {
@@ -1716,6 +1720,10 @@ export interface ChannelStats {
   thumbnailUrl: string;
   averageViews: number;
   averageViewsFormatted: string;
+  standardDeviation: number;
+  standardDeviationFormatted: string;
+  positiveOutliersCount: number;
+  negativeOutliersCount: number;
 }
 
 export interface ChannelStatsResult {

@@ -29,6 +29,22 @@ interface VideoStats {
 interface OutlierVideo extends VideoStats {
   outlierMultiplier: number;
   viewsPerSubscriber: number;
+  zScore: number;
+  isPositiveOutlier: boolean;
+  isNegativeOutlier: boolean;
+  durationSeconds: number;
+}
+
+// Parse ISO 8601 duration to seconds
+function parseDurationToSeconds(isoDuration: string): number {
+  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+
+  const hours = parseInt(match[1] || '0', 10);
+  const minutes = parseInt(match[2] || '0', 10);
+  const seconds = parseInt(match[3] || '0', 10);
+
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 // Parse ISO 8601 duration to formatted string (e.g., "PT5M30S" -> "5:30")
@@ -270,17 +286,34 @@ router.post('/', async (req: Request, res: Response) => {
     // Step 4: Get video statistics
     const videos = await getVideoStats(videoIds);
 
-    // Step 5: Calculate average views and outlier metrics
+    // Step 5: Calculate average views, standard deviation, and outlier metrics
     const totalViews = videos.reduce((sum, v) => sum + v.viewCount, 0);
     const averageViews = Math.round(totalViews / videos.length);
 
-    const outlierVideos: OutlierVideo[] = videos.map(video => ({
-      ...video,
-      outlierMultiplier: averageViews > 0 ? Math.round((video.viewCount / averageViews) * 10) / 10 : 0,
-      viewsPerSubscriber: channelInfo.subscriberCount > 0
-        ? Math.round((video.viewCount / channelInfo.subscriberCount) * 100) / 100
-        : 0,
-    }));
+    // Calculate standard deviation for z-score
+    const variance = videos.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / videos.length;
+    const standardDeviation = Math.sqrt(variance);
+
+    const outlierVideos: OutlierVideo[] = videos.map(video => {
+      const outlierMultiplier = averageViews > 0 ? Math.round((video.viewCount / averageViews) * 10) / 10 : 0;
+      const zScore = standardDeviation > 0
+        ? Math.round(((video.viewCount - averageViews) / standardDeviation) * 100) / 100
+        : 0;
+
+      return {
+        ...video,
+        durationSeconds: parseDurationToSeconds(video.duration),
+        outlierMultiplier,
+        viewsPerSubscriber: channelInfo.subscriberCount > 0
+          ? Math.round((video.viewCount / channelInfo.subscriberCount) * 100) / 100
+          : 0,
+        zScore,
+        // Positive outlier: zScore > 2 or multiplier > 3x
+        isPositiveOutlier: zScore > 2 || outlierMultiplier >= 3,
+        // Negative outlier: zScore < -1.5 or multiplier < 0.3x
+        isNegativeOutlier: zScore < -1.5 || outlierMultiplier < 0.3,
+      };
+    });
 
     // Step 6: Sort results
     if (sortBy === 'outlier') {
@@ -293,6 +326,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`[youtube-channel-stats] Analysis complete. Avg views: ${formatNumber(averageViews)}, Top outlier: ${outlierVideos[0]?.outlierMultiplier}x`);
 
+    // Count positive and negative outliers
+    const positiveOutliersCount = outlierVideos.filter(v => v.isPositiveOutlier).length;
+    const negativeOutliersCount = outlierVideos.filter(v => v.isNegativeOutlier).length;
+
     return res.json({
       success: true,
       channel: {
@@ -303,6 +340,10 @@ router.post('/', async (req: Request, res: Response) => {
         thumbnailUrl: channelInfo.thumbnailUrl,
         averageViews,
         averageViewsFormatted: formatNumber(averageViews),
+        standardDeviation: Math.round(standardDeviation),
+        standardDeviationFormatted: formatNumber(Math.round(standardDeviation)),
+        positiveOutliersCount,
+        negativeOutliersCount,
       },
       videos: outlierVideos,
     });

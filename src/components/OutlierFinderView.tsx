@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Search, Loader2, TrendingUp, X, LayoutGrid } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Search, Loader2, TrendingUp, X, LayoutGrid, Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
@@ -30,8 +30,32 @@ interface VideoWithChannel extends OutlierVideo {
 }
 
 type SortOption = 'outlier' | 'views' | 'uploaded';
+type DateRangeOption = 'all' | '7d' | '30d' | '90d' | '1y';
+type DurationOption = 'all' | 'short' | 'medium' | 'long';
+
+interface Filters {
+  dateRange: DateRangeOption;
+  duration: DurationOption;
+  minViews: number;
+  onlyPositiveOutliers: boolean;
+}
 
 const SAVED_CHANNELS_KEY = 'outlier-finder-saved-channels';
+
+const DATE_RANGE_LABELS: Record<DateRangeOption, string> = {
+  'all': 'All time',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  '1y': 'Last year',
+};
+
+const DURATION_LABELS: Record<DurationOption, string> = {
+  'all': 'Any duration',
+  'short': 'Shorts (<60s)',
+  'medium': 'Medium (1-20 min)',
+  'long': 'Long (>20 min)',
+};
 
 function loadSavedChannels(): SavedChannel[] {
   try {
@@ -46,6 +70,32 @@ function saveSavedChannels(channels: SavedChannel[]) {
   localStorage.setItem(SAVED_CHANNELS_KEY, JSON.stringify(channels));
 }
 
+// Filter helper functions
+function filterByDateRange(video: OutlierVideo, dateRange: DateRangeOption): boolean {
+  if (dateRange === 'all') return true;
+  const now = new Date();
+  const publishedAt = new Date(video.publishedAt);
+  const diffDays = Math.floor((now.getTime() - publishedAt.getTime()) / (1000 * 60 * 60 * 24));
+  switch (dateRange) {
+    case '7d': return diffDays <= 7;
+    case '30d': return diffDays <= 30;
+    case '90d': return diffDays <= 90;
+    case '1y': return diffDays <= 365;
+    default: return true;
+  }
+}
+
+function filterByDuration(video: OutlierVideo, duration: DurationOption): boolean {
+  if (duration === 'all') return true;
+  const seconds = video.durationSeconds || 0;
+  switch (duration) {
+    case 'short': return seconds < 60;
+    case 'medium': return seconds >= 60 && seconds <= 1200;
+    case 'long': return seconds > 1200;
+    default: return true;
+  }
+}
+
 export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewProps) {
   const [channelInput, setChannelInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,11 +105,49 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   const [viewingAll, setViewingAll] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('uploaded');
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    dateRange: 'all',
+    duration: 'all',
+    minViews: 0,
+    onlyPositiveOutliers: false,
+  });
 
   // Load saved channels on mount
   useEffect(() => {
     setSavedChannels(loadSavedChannels());
   }, []);
+
+  // Apply filters to videos
+  const filteredVideos = useMemo(() => {
+    let filtered = videos;
+    filtered = filtered.filter(v => filterByDateRange(v, filters.dateRange));
+    filtered = filtered.filter(v => filterByDuration(v, filters.duration));
+    if (filters.minViews > 0) {
+      filtered = filtered.filter(v => v.viewCount >= filters.minViews);
+    }
+    if (filters.onlyPositiveOutliers) {
+      filtered = filtered.filter(v => v.isPositiveOutlier);
+    }
+    return filtered;
+  }, [videos, filters]);
+
+  // Apply filters to all videos (view all mode)
+  const filteredAllVideos = useMemo(() => {
+    let filtered = allVideos;
+    filtered = filtered.filter(v => filterByDateRange(v, filters.dateRange));
+    filtered = filtered.filter(v => filterByDuration(v, filters.duration));
+    if (filters.minViews > 0) {
+      filtered = filtered.filter(v => v.viewCount >= filters.minViews);
+    }
+    if (filters.onlyPositiveOutliers) {
+      filtered = filtered.filter(v => v.isPositiveOutlier);
+    }
+    return filtered;
+  }, [allVideos, filters]);
+
+  // Check if any filters are active
+  const hasActiveFilters = filters.dateRange !== 'all' || filters.duration !== 'all' || filters.minViews > 0 || filters.onlyPositiveOutliers;
 
   const handleAnalyze = async (input?: string) => {
     const channelToAnalyze = input || channelInput.trim();
@@ -274,6 +362,19 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               </div>
             </div>
 
+            {/* Filter button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`rounded-full ${hasActiveFilters ? 'border-red-500 text-red-500' : 'border-gray-300 text-gray-600'}`}
+            >
+              <Filter className="h-4 w-4 mr-1" />
+              Filters
+              {hasActiveFilters && <span className="ml-1 text-xs">•</span>}
+              {showFilters ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+            </Button>
+
             {/* Sort dropdown */}
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span>Sort by:</span>
@@ -291,6 +392,82 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           </div>
         </div>
       </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="border-b border-gray-200 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Date range */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Date:</span>
+                <select
+                  value={filters.dateRange}
+                  onChange={(e) => setFilters({ ...filters, dateRange: e.target.value as DateRangeOption })}
+                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+                >
+                  {Object.entries(DATE_RANGE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Duration */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Duration:</span>
+                <select
+                  value={filters.duration}
+                  onChange={(e) => setFilters({ ...filters, duration: e.target.value as DurationOption })}
+                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+                >
+                  {Object.entries(DURATION_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Min views */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Min views:</span>
+                <select
+                  value={filters.minViews}
+                  onChange={(e) => setFilters({ ...filters, minViews: parseInt(e.target.value) })}
+                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700"
+                >
+                  <option value={0}>Any</option>
+                  <option value={1000}>1K+</option>
+                  <option value={10000}>10K+</option>
+                  <option value={100000}>100K+</option>
+                  <option value={1000000}>1M+</option>
+                </select>
+              </div>
+
+              {/* Only positive outliers */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.onlyPositiveOutliers}
+                  onChange={(e) => setFilters({ ...filters, onlyPositiveOutliers: e.target.checked })}
+                  className="rounded border-gray-300 text-red-500 focus:ring-red-500"
+                />
+                <span className="text-sm text-gray-700">Only outliers (3x+)</span>
+              </label>
+
+              {/* Clear filters */}
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFilters({ dateRange: 'all', duration: 'all', minViews: 0, onlyPositiveOutliers: false })}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action buttons bar */}
       {!channel && !viewingAll && !isLoading && (
@@ -362,16 +539,33 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               />
               <div>
                 <h2 className="font-semibold text-gray-900">{channel.title}</h2>
-                <p className="text-sm text-gray-500">{channel.subscriberCountFormatted} subscribers • Avg: {channel.averageViewsFormatted} views</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                  <span>{channel.subscriberCountFormatted} subscribers</span>
+                  <span>•</span>
+                  <span>Avg: {channel.averageViewsFormatted} ± {channel.standardDeviationFormatted}</span>
+                  {channel.positiveOutliersCount > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-green-600">{channel.positiveOutliersCount} outliers</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-            <Button
-              variant="outline"
-              onClick={handleClear}
-              className="text-gray-600"
-            >
-              Clear
-            </Button>
+            <div className="flex items-center gap-2">
+              {hasActiveFilters && (
+                <span className="text-xs text-gray-500">
+                  Showing {filteredVideos.length} of {videos.length}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                onClick={handleClear}
+                className="text-gray-600"
+              >
+                Clear
+              </Button>
+            </div>
           </div>
         )}
 
@@ -380,7 +574,12 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-gray-900">All Channels</h2>
-              <p className="text-sm text-gray-500">{allVideos.length} videos from {savedChannels.length} channels</p>
+              <p className="text-sm text-gray-500">
+                {hasActiveFilters
+                  ? `${filteredAllVideos.length} of ${allVideos.length} videos from ${savedChannels.length} channels`
+                  : `${allVideos.length} videos from ${savedChannels.length} channels`
+                }
+              </p>
             </div>
             <Button
               variant="outline"
@@ -394,36 +593,66 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
         {/* Video grid - single channel */}
         {videos.length > 0 && channel && !viewingAll && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {videos.map((video) => (
-              <OutlierVideoCard
-                key={video.videoId}
-                video={video}
-                averageViews={channel.averageViews}
-                averageViewsFormatted={channel.averageViewsFormatted}
-                channelTitle={channel.title}
-                subscriberCountFormatted={channel.subscriberCountFormatted}
-                onClick={() => handleVideoClick(video)}
-              />
-            ))}
-          </div>
+          <>
+            {filteredVideos.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {filteredVideos.map((video) => (
+                  <OutlierVideoCard
+                    key={video.videoId}
+                    video={video}
+                    averageViews={channel.averageViews}
+                    averageViewsFormatted={channel.averageViewsFormatted}
+                    channelTitle={channel.title}
+                    subscriberCountFormatted={channel.subscriberCountFormatted}
+                    onClick={() => handleVideoClick(video)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <p>No videos match your filters</p>
+                <Button
+                  variant="link"
+                  onClick={() => setFilters({ dateRange: 'all', duration: 'all', minViews: 0, onlyPositiveOutliers: false })}
+                  className="text-red-500"
+                >
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Video grid - all channels */}
         {viewingAll && allVideos.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {allVideos.map((video) => (
-              <OutlierVideoCard
-                key={video.videoId}
-                video={video}
-                averageViews={video.channelAverageViews}
-                averageViewsFormatted={video.channelAverageViewsFormatted}
-                channelTitle={video.channelTitle}
-                subscriberCountFormatted={video.channelSubscribers}
-                onClick={() => handleVideoClick(video)}
-              />
-            ))}
-          </div>
+          <>
+            {filteredAllVideos.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {filteredAllVideos.map((video) => (
+                  <OutlierVideoCard
+                    key={video.videoId}
+                    video={video}
+                    averageViews={video.channelAverageViews}
+                    averageViewsFormatted={video.channelAverageViewsFormatted}
+                    channelTitle={video.channelTitle}
+                    subscriberCountFormatted={video.channelSubscribers}
+                    onClick={() => handleVideoClick(video)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <p>No videos match your filters</p>
+                <Button
+                  variant="link"
+                  onClick={() => setFilters({ dateRange: 'all', duration: 'all', minViews: 0, onlyPositiveOutliers: false })}
+                  className="text-red-500"
+                >
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Empty state */}
