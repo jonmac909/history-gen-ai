@@ -5,12 +5,13 @@
  * Uses public Invidious instances for channel/video data
  */
 
-// Public Invidious instances (fallback order)
+// Public Invidious instances with API enabled (fallback order)
+// Only inv.perditum.com has API enabled as of Jan 2025
+// Others are backup in case it goes down
 const INVIDIOUS_INSTANCES = [
-  'https://vid.puffyan.us',
-  'https://invidious.nerdvpn.de',
-  'https://inv.nadeko.net',
-  'https://invidious.privacyredirect.com',
+  'https://inv.perditum.com',
+  'https://yewtu.be',
+  'https://invidious.lunar.icu',
 ];
 
 let currentInstanceIndex = 0;
@@ -175,6 +176,12 @@ export async function getChannel(channelId: string): Promise<InvidiousChannel> {
   return await response.json() as InvidiousChannel;
 }
 
+// Response type for channel videos endpoint
+interface ChannelVideosResponse {
+  videos: InvidiousVideo[];
+  continuation?: string;
+}
+
 /**
  * Get channel videos with pagination
  */
@@ -188,22 +195,29 @@ export async function getChannelVideos(
   const { maxResults = 50, sortBy = 'newest' } = options;
 
   const videos: InvidiousVideo[] = [];
-  let page = 1;
-  const perPage = 30; // Invidious default
+  let continuation: string | undefined;
+  let attempts = 0;
 
-  while (videos.length < maxResults) {
-    const response = await fetchWithRetry(
-      `/api/v1/channels/${channelId}/videos?page=${page}&sort_by=${sortBy}`
-    );
-    const pageVideos = await response.json() as InvidiousVideo[];
+  while (videos.length < maxResults && attempts < 10) {
+    const url = continuation
+      ? `/api/v1/channels/${channelId}/videos?continuation=${continuation}&sort_by=${sortBy}`
+      : `/api/v1/channels/${channelId}/videos?sort_by=${sortBy}`;
+
+    const response = await fetchWithRetry(url);
+    const data = await response.json() as ChannelVideosResponse;
+
+    // Handle both array response and object with videos property
+    const pageVideos = Array.isArray(data) ? data : (data.videos || []);
 
     if (pageVideos.length === 0) break;
 
     videos.push(...pageVideos);
-    page++;
 
-    // Safety limit
-    if (page > 10) break;
+    // Get continuation token for next page
+    continuation = Array.isArray(data) ? undefined : data.continuation;
+    if (!continuation) break;
+
+    attempts++;
   }
 
   return videos.slice(0, maxResults);

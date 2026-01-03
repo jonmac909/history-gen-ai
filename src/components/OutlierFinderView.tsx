@@ -592,15 +592,6 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
               Analyze Channel
             </Button>
             <Button
-              onClick={handleAnalyzeNiche}
-              disabled={!channelInput.trim()}
-              variant="outline"
-              className="rounded-full text-gray-600 border-gray-300"
-            >
-              <Compass className="h-4 w-4 mr-2" />
-              Analyze Niche
-            </Button>
-            <Button
               onClick={handleViewAll}
               disabled={savedChannels.length === 0}
               variant="outline"
