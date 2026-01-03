@@ -1397,7 +1397,40 @@ const Index = () => {
   };
 
   // Open a project from history
-  const handleOpenProject = (project: Project) => {
+  // Helper to reconstruct audio segments from storage for old projects
+  const reconstructAudioSegments = async (projectId: string, script: string): Promise<AudioSegment[]> => {
+    const segments: AudioSegment[] = [];
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
+    // Try to find segment files (1-10)
+    for (let i = 1; i <= 10; i++) {
+      const segmentPath = `${projectId}/voiceover-segment-${i}.wav`;
+      const { data } = await supabase.storage
+        .from('generated-assets')
+        .createSignedUrl(segmentPath, 3600);
+
+      if (data?.signedUrl) {
+        // Split script into roughly equal parts for text approximation
+        const scriptParts = script.split(/[.!?]+/).filter(s => s.trim());
+        const partSize = Math.ceil(scriptParts.length / 10);
+        const startIdx = (i - 1) * partSize;
+        const endIdx = Math.min(i * partSize, scriptParts.length);
+        const segmentText = scriptParts.slice(startIdx, endIdx).join('. ').trim() + '.';
+
+        segments.push({
+          index: i,
+          audioUrl: data.signedUrl,
+          text: segmentText || `Segment ${i}`,
+          duration: 0, // Unknown without fetching audio
+          size: 0,
+        });
+      }
+    }
+
+    return segments;
+  };
+
+  const handleOpenProject = async (project: Project) => {
     // Set project state
     setProjectId(project.id);
     setVideoTitle(project.videoTitle);
@@ -1413,9 +1446,23 @@ const Index = () => {
       setAudioUrl(project.audioUrl);
     }
     if (project.audioDuration) setPendingAudioDuration(project.audioDuration);
+
+    // Load audio segments - reconstruct from storage if missing
     if (project.audioSegments && project.audioSegments.length > 0) {
       setPendingAudioSegments(project.audioSegments);
+    } else if (project.audioUrl && project.script) {
+      // Old project without segments - try to reconstruct from storage
+      const reconstructed = await reconstructAudioSegments(project.id, project.script);
+      if (reconstructed.length > 0) {
+        setPendingAudioSegments(reconstructed);
+        // Save reconstructed segments to project for future
+        upsertProject({
+          id: project.id,
+          audioSegments: reconstructed,
+        }).catch(err => console.error('[handleOpenProject] Failed to save reconstructed segments:', err));
+      }
     }
+
     if (project.srtContent) {
       setPendingSrtContent(project.srtContent);
       setSrtContent(project.srtContent);
