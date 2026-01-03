@@ -41,10 +41,10 @@ function formatTimeAgo(dateString: string): string {
 }
 
 function getOutlierBadgeStyle(multiplier: number): string {
-  if (multiplier >= 3) return 'bg-red-500 text-white';
-  if (multiplier >= 2) return 'bg-orange-400 text-white';
-  if (multiplier >= 1.5) return 'bg-yellow-400 text-gray-900';
-  return 'bg-green-500 text-white';
+  if (multiplier >= 5) return 'bg-red-500 text-white';
+  if (multiplier >= 3) return 'bg-orange-400 text-white';
+  if (multiplier >= 2) return 'bg-yellow-400 text-gray-900';
+  return 'bg-gray-400 text-white';
 }
 
 export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, subscriberCountFormatted, onClick }: OutlierVideoCardProps) {
