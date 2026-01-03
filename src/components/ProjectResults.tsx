@@ -462,13 +462,14 @@ export function ProjectResults({
     const imageUrls = imageAssets.map(a => a.url!);
     let timings: { startSeconds: number; endSeconds: number }[] = [];
 
-    if (imagePrompts && imagePrompts.length > 0) {
+    // Only use imagePrompts if they match image count exactly
+    if (imagePrompts && imagePrompts.length === imageAssets.length) {
       timings = imagePrompts.map(p => ({
         startSeconds: p.startSeconds,
         endSeconds: p.endSeconds
       }));
     } else {
-      // Calculate from SRT timings
+      // Calculate evenly distributed timings from SRT
       const srtTimings = parseSRTTimings(srtContent);
       const totalDuration = srtTimings.length > 0 ? srtTimings[srtTimings.length - 1].endTime : 0;
       const imageDuration = totalDuration / imageAssets.length;
