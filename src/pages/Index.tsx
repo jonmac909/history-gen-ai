@@ -2043,6 +2043,11 @@ const Index = () => {
             });
           }}
           onSaveVersion={handleSaveVersion}
+          onTitleChange={(newTitle) => {
+            setVideoTitle(newTitle);
+            // Save title change to project
+            autoSave("complete", { videoTitle: newTitle });
+          }}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

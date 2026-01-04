@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -81,6 +81,8 @@ interface ProjectResultsProps {
   onViewAllProjects?: () => void;
   // Save version
   onSaveVersion?: () => void;
+  // Title change
+  onTitleChange?: (newTitle: string) => void;
 }
 
 // Parse SRT to get timing info
@@ -201,6 +203,7 @@ export function ProjectResults({
   onSwitchProject,
   onViewAllProjects,
   onSaveVersion,
+  onTitleChange,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -225,12 +228,53 @@ export function ProjectResults({
   const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
   const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
 
+  // State for title editing
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(projectTitle || "");
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
   // Reset all video URLs when project changes
   useEffect(() => {
     setBasicVideoUrl(videoUrl || null);
     setEmbersVideoUrl(initialEmbersVideoUrl || null);
     setSmokeEmbersVideoUrl(initialSmokeEmbersVideoUrl || null);
   }, [projectId, videoUrl, initialEmbersVideoUrl, initialSmokeEmbersVideoUrl]);
+
+  // Sync edited title with projectTitle prop
+  useEffect(() => {
+    setEditedTitle(projectTitle || "");
+    setIsEditingTitle(false);
+  }, [projectTitle, projectId]);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  // Handlers for title editing
+  const handleSaveTitle = () => {
+    const trimmedTitle = editedTitle.trim();
+    if (trimmedTitle && trimmedTitle !== projectTitle) {
+      onTitleChange?.(trimmedTitle);
+    }
+    setIsEditingTitle(false);
+  };
+
+  const handleCancelTitleEdit = () => {
+    setEditedTitle(projectTitle || "");
+    setIsEditingTitle(false);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSaveTitle();
+    } else if (e.key === 'Escape') {
+      handleCancelTitleEdit();
+    }
+  };
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
@@ -772,9 +816,43 @@ export function ProjectResults({
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
       {/* Header with Project Title and Other Projects dropdown on right */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-foreground truncate max-w-[500px]">
-          {projectTitle || "Untitled Project"}
-        </h1>
+        {isEditingTitle ? (
+          <div className="flex items-center gap-2 max-w-[500px]">
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={editedTitle}
+              onChange={(e) => setEditedTitle(e.target.value)}
+              onKeyDown={handleTitleKeyDown}
+              onBlur={handleSaveTitle}
+              className="text-2xl font-bold bg-transparent border-b-2 border-primary outline-none w-full min-w-[200px]"
+              maxLength={100}
+            />
+            <Button variant="ghost" size="icon" onClick={handleSaveTitle} className="shrink-0 h-8 w-8">
+              <Check className="w-4 h-4 text-green-600" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleCancelTitleEdit} className="shrink-0 h-8 w-8">
+              <X className="w-4 h-4 text-muted-foreground" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 max-w-[500px] group">
+            <h1 className="text-2xl font-bold text-foreground truncate">
+              {projectTitle || "Untitled Project"}
+            </h1>
+            {onTitleChange && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsEditingTitle(true)}
+                className="shrink-0 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Edit project name"
+              >
+                <Pencil className="w-4 h-4 text-muted-foreground" />
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Other Projects dropdown - aligned right */}
         {(otherProjects.length > 0 || onViewAllProjects) && (
