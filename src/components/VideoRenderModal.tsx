@@ -108,6 +108,27 @@ export function VideoRenderModal({
     }
   }, [isOpen, existingVideoUrl]);
 
+  // Auto-confirm when rendering completes in full automation mode
+  const autoConfirmTriggered = useRef(false);
+  useEffect(() => {
+    if (autoRender && videoUrl && !isRendering && !autoConfirmTriggered.current) {
+      autoConfirmTriggered.current = true;
+      console.log('[VideoRenderModal] Auto-confirming after render complete');
+      // Small delay to ensure state is settled
+      const timer = setTimeout(() => {
+        onConfirm(videoUrl);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [autoRender, videoUrl, isRendering, onConfirm]);
+
+  // Reset auto-confirm flag when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      autoConfirmTriggered.current = false;
+    }
+  }, [isOpen]);
+
   const handleRender = async () => {
     setIsRendering(true);
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });

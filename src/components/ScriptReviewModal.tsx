@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { rateScript, type ScriptRatingResult } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
@@ -24,6 +25,7 @@ interface ScriptReviewModalProps {
   onBack?: () => void;
   onForward?: () => void;
   onRegenerate?: (fixPrompt: string) => void;
+  regenerationProgress?: number | null;  // 0-100 or null when not regenerating
 }
 
 export function ScriptReviewModal({
@@ -35,14 +37,17 @@ export function ScriptReviewModal({
   onCancel,
   onBack,
   onForward,
-  onRegenerate
+  onRegenerate,
+  regenerationProgress
 }: ScriptReviewModalProps) {
   const [editedScript, setEditedScript] = useState(script);
   const [isEditing, setIsEditing] = useState(false);
   const [isRating, setIsRating] = useState(false);
   const [rating, setRating] = useState<ScriptRatingResult | null>(null);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   const [hasRatedAfterRegen, setHasRatedAfterRegen] = useState(false);
+
+  // Regeneration is now controlled by parent via regenerationProgress prop
+  const isRegenerating = regenerationProgress !== null && regenerationProgress !== undefined;
 
   // Update editedScript when script prop changes
   useEffect(() => {
@@ -54,12 +59,12 @@ export function ScriptReviewModal({
     }
   }, [script]);
 
-  // Auto-rate when modal opens with a script
+  // Auto-rate when modal opens with a script, or when script changes (after regeneration)
   useEffect(() => {
     if (isOpen && script && !rating && !isRating) {
       handleRate();
     }
-  }, [isOpen, script]);
+  }, [isOpen, script, rating]);
 
   const wordCount = editedScript.split(/\s+/).filter(Boolean).length;
 
@@ -91,12 +96,11 @@ export function ScriptReviewModal({
   const handleRegenerate = async () => {
     if (!onRegenerate || !rating?.fixPrompt) return;
 
-    setIsRegenerating(true);
     setHasRatedAfterRegen(false);
 
     try {
       await onRegenerate(rating.fixPrompt);
-      // The parent component will update the script prop
+      // The parent component will update the script prop and regenerationProgress
       // Rating will happen automatically when the new script loads
       setHasRatedAfterRegen(true);
     } catch (error) {
@@ -106,8 +110,6 @@ export function ScriptReviewModal({
         description: "Could not regenerate the script.",
         variant: "destructive",
       });
-    } finally {
-      setIsRegenerating(false);
     }
   };
 
@@ -182,81 +184,96 @@ export function ScriptReviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Rating Feedback Panel */}
-        {rating && rating.grade !== 'A' && (
-          <div className="border rounded-lg p-3 bg-muted/50 space-y-2">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {hasRatedAfterRegen ? 'Re-evaluation Result' : 'Feedback'}
-                </p>
-                <p className="text-sm text-muted-foreground">{rating.summary}</p>
-                {rating.issues && rating.issues.length > 0 && (
-                  <ul className="mt-2 text-sm text-muted-foreground list-disc list-inside space-y-0.5">
-                    {rating.issues.map((issue, i) => (
-                      <li key={i}>{issue}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-            {/* Regenerate button with auto-fix */}
-            {onRegenerate && rating.fixPrompt && (
-              <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRegenerate}
-                  disabled={isRegenerating}
-                  className="gap-1"
-                >
-                  {isRegenerating ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Regenerating...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-3 h-3" />
-                      Auto-Fix & Regenerate
-                    </>
-                  )}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  AI will fix: {rating.fixPrompt.substring(0, 60)}...
-                </span>
+        <div className="flex-1 min-h-0 py-4 flex flex-col gap-3">
+          {/* Script Content - fixed height so it doesn't shift */}
+          <div className="flex-1 min-h-0 relative">
+            {/* Regeneration overlay */}
+            {isRegenerating && (
+              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-lg">
+                <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
+                <p className="text-sm font-medium mb-2">Regenerating Script...</p>
+                <div className="w-48">
+                  <Progress value={regenerationProgress || 0} className="h-2" />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">{regenerationProgress || 0}%</p>
               </div>
             )}
+            {isEditing ? (
+              <Textarea
+                value={editedScript}
+                onChange={(e) => setEditedScript(e.target.value)}
+                className="h-full font-mono text-sm resize-none"
+                placeholder="Script content..."
+                disabled={isRegenerating}
+              />
+            ) : (
+              <ScrollArea className="h-full rounded-lg border border-border bg-muted/30 p-4">
+                <pre className="whitespace-pre-wrap font-mono text-sm text-foreground leading-relaxed">
+                  {editedScript}
+                </pre>
+              </ScrollArea>
+            )}
           </div>
-        )}
 
-        {/* Grade A success message */}
-        {rating?.grade === 'A' && (
-          <div className="border rounded-lg p-3 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
-            <div className="flex items-center gap-2">
-              <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
-              <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                Excellent! {rating.summary}
-              </p>
+          {/* Rating Feedback Panel - below script to avoid layout shift */}
+          {rating && rating.grade !== 'A' && (
+            <div className="border rounded-lg p-3 bg-muted/50 space-y-2 shrink-0">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {hasRatedAfterRegen ? 'Re-evaluation Result' : 'Feedback'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{rating.summary}</p>
+                  {rating.issues && rating.issues.length > 0 && (
+                    <ul className="mt-2 text-sm text-muted-foreground list-disc list-inside space-y-0.5">
+                      {rating.issues.map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              {/* Regenerate button with auto-fix */}
+              {onRegenerate && rating.fixPrompt && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleRegenerate}
+                    disabled={isRegenerating}
+                    className="gap-1"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Regenerating...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3 h-3" />
+                        Auto-Fix & Regenerate
+                      </>
+                    )}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    AI will fix: {rating.fixPrompt.substring(0, 60)}...
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="flex-1 min-h-0 py-4">
-          {isEditing ? (
-            <Textarea
-              value={editedScript}
-              onChange={(e) => setEditedScript(e.target.value)}
-              className="h-[45vh] font-mono text-sm resize-none"
-              placeholder="Script content..."
-            />
-          ) : (
-            <ScrollArea className="h-[45vh] rounded-lg border border-border bg-muted/30 p-4">
-              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground leading-relaxed">
-                {editedScript}
-              </pre>
-            </ScrollArea>
+          {/* Grade A success message - below script */}
+          {rating?.grade === 'A' && (
+            <div className="border rounded-lg p-3 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                  Excellent! {rating.summary}
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
@@ -266,11 +283,6 @@ export function ScriptReviewModal({
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
-              </Button>
-            )}
-            {onForward && (
-              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
             <Button
@@ -301,16 +313,23 @@ export function ScriptReviewModal({
             )}
           </div>
 
-          {/* Right side: Exit + Continue */}
+          {/* Right side: Exit + Forward/Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          <Button onClick={handleConfirm}>
-            <Check className="w-4 h-4 mr-2" />
-            Generate Audio
-          </Button>
+          {onForward ? (
+            <Button onClick={onForward}>
+              Audio
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button onClick={handleConfirm}>
+              <Check className="w-4 h-4 mr-2" />
+              Generate Audio
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

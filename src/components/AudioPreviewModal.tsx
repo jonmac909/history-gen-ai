@@ -233,16 +233,17 @@ export function AudioPreviewModal({
             Cancel
           </Button>
 
-          {onForward && (
-            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-              <ChevronRight className="w-5 h-5" />
+          {onForward ? (
+            <Button onClick={onForward} className="w-full sm:w-auto">
+              Captions
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button onClick={onConfirm} className="w-full sm:w-auto">
+              <Check className="w-4 h-4 mr-2" />
+              Confirm
             </Button>
           )}
-
-          <Button onClick={onConfirm} className="w-full sm:w-auto">
-            <Check className="w-4 h-4 mr-2" />
-            Confirm
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

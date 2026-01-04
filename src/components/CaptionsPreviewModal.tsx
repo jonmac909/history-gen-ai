@@ -149,11 +149,6 @@ export function CaptionsPreviewModal({
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
-            {onForward && (
-              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-                <ChevronRight className="w-5 h-5" />
-              </Button>
-            )}
             <Button
               variant="outline"
               onClick={() => setIsEditing(!isEditing)}
@@ -167,16 +162,23 @@ export function CaptionsPreviewModal({
             </Button>
           </div>
 
-          {/* Right side: Exit + Continue */}
+          {/* Right side: Exit + Forward/Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          <Button onClick={handleConfirm}>
-            <Check className="w-4 h-4 mr-2" />
-            Create Image Prompts
-          </Button>
+          {onForward ? (
+            <Button onClick={onForward}>
+              Prompts
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button onClick={handleConfirm}>
+              <Check className="w-4 h-4 mr-2" />
+              Create Image Prompts
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

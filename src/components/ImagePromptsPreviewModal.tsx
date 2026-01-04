@@ -404,27 +404,29 @@ export function ImagePromptsPreviewModal({
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
-            {onForward && (
-              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-                <ChevronRight className="w-5 h-5" />
-              </Button>
-            )}
             <Button variant="outline" onClick={handleDownload}>
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
           </div>
 
-          {/* Right side: Exit + Continue */}
+          {/* Right side: Exit + Forward/Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          <Button onClick={handleConfirm}>
-            <Check className="w-4 h-4 mr-2" />
-            Generate Images
-          </Button>
+          {onForward ? (
+            <Button onClick={onForward}>
+              Images
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button onClick={handleConfirm}>
+              <Check className="w-4 h-4 mr-2" />
+              Generate Images
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

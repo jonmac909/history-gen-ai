@@ -265,6 +265,7 @@ Multi-step generation with user review at each stage:
 **UI Features:**
 - **All preview modals** include:
   - Back button to return to previous pipeline step
+  - Forward button with labeled destination (e.g., "Audio →", "Captions →", "Video →")
   - Download button to save progress (script.txt, voiceover.wav, captions.srt, image-prompts.json, or all images)
 - `ImagesPreviewModal`: Click thumbnails to open full-size lightbox
   - Close with ESC key or click outside the image
@@ -282,10 +283,16 @@ Multi-step generation with user review at each stage:
 - Default voice sample: `clone_voice.mp3` in `public/voices/` (auto-loaded for new projects)
 - `PronunciationModal`: Edit pronunciation fixes dictionary (accessible from Audio preview modal)
 - `ProjectResults`: Final downloads page with export options:
+  - **Always shows all 10 pipeline items** (Script, Audio, Captions, Prompts, Images, Video, Visual Effects, Thumbnails, YouTube, Tags) regardless of data state
+  - Items show "Pending" when data doesn't exist, with upload/download buttons appearing contextually
   - Script, Audio, Captions, Images (ZIP) downloads
   - **Timeline Export (FCPXML)**: Client-side XML for DaVinci Resolve/FCP/Premiere
   - **Render Video (MP4)**: Server-side FFmpeg rendering via `/render-video`
   - **YouTube Upload**: Direct upload to YouTube as private draft with thumbnail selection
+- `ScriptReviewModal`: Script review with AI rating (A/B/C grades)
+  - In-modal regeneration with inline progress bar
+  - Auto-rates after regeneration completes
+  - Shows feedback panel with "Auto-Fix & Regenerate" button for non-A grades
 
 ### Audio Generation Architecture
 

@@ -1088,341 +1088,333 @@ export function ProjectResults({
         {/* Left Column: Pipeline Steps */}
         <div className="flex flex-col space-y-0 divide-y divide-border border rounded-lg p-4">
           {/* Script */}
-          {onGoToScript && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToScript}
-            >
-              <div className="flex items-center gap-3">
-                <FileText className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Script</span>
-                <span className="text-sm text-muted-foreground">
-                  {assets.find(a => a.id === 'script')
-                    ? assets.find(a => a.id === 'script')!.size
-                    : 'Pending'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {onScriptUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      scriptUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingScript}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload script"
-                  >
-                    {isUploadingScript ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
-                {assets.find(a => a.id === 'script') && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
-                    }}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Download"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                )}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToScript ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToScript}
+          >
+            <div className="flex items-center gap-3">
+              <FileText className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Script</span>
+              <span className="text-sm text-muted-foreground">
+                {assets.find(a => a.id === 'script')
+                  ? assets.find(a => a.id === 'script')!.size
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {onScriptUpload && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) => toggleApproval('script', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('script')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('script') ? 'Mark as not approved' : 'Mark as approved'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    scriptUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingScript}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload script"
                 >
-                  {approvedSteps.includes('script') ? (
-                    <CheckSquare className="w-4 h-4" />
+                  {isUploadingScript ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Square className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                   )}
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Audio */}
-          {onGoToAudio && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToAudio}
-            >
-              <div className="flex items-center gap-3">
-                <Mic className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Audio</span>
-                <span className="text-sm text-muted-foreground">
-                  {assets.find(a => a.id === 'audio')
-                    ? assets.find(a => a.id === 'audio')!.size
-                    : 'Pending'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {onAudioUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      audioUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingAudio}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload audio"
-                  >
-                    {isUploadingAudio ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
-                {assets.find(a => a.id === 'audio') && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
-                    }}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Download"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                )}
+              )}
+              {assets.find(a => a.id === 'script') && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) => toggleApproval('audio', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('audio')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('audio') ? 'Mark as not approved' : 'Mark as approved'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download"
                 >
-                  {approvedSteps.includes('audio') ? (
-                    <CheckSquare className="w-4 h-4" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
+                  <Download className="w-4 h-4" />
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Captions */}
-          {onGoToCaptions && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToCaptions}
-            >
-              <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Captions</span>
-                <span className="text-sm text-muted-foreground">
-                  {srtContent
-                    ? `${(srtContent.match(/^\d+$/gm) || []).length} segments`
-                    : 'Pending'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {onCaptionsUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      captionsUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingCaptions}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload captions"
-                  >
-                    {isUploadingCaptions ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
-                {srtContent && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const blob = new Blob([srtContent], { type: 'text/plain' });
-                      const url = window.URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = url;
-                      link.download = 'captions.srt';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      window.URL.revokeObjectURL(url);
-                    }}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Download"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => toggleApproval('captions', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('captions')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('captions') ? 'Mark as not approved' : 'Mark as approved'}
-                >
-                  {approvedSteps.includes('captions') ? (
-                    <CheckSquare className="w-4 h-4" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Image Prompts */}
-          {imagePrompts && imagePrompts.length > 0 && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToPrompts}
-            >
-              <div className="flex items-center gap-3">
-                <Palette className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Prompts</span>
-                <span className="text-sm text-muted-foreground">
-                  {imagePrompts.length} scenes
-                </span>
-              </div>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={(e) => toggleApproval('prompts', e)}
+                onClick={(e) => toggleApproval('script', e)}
                 className={`h-8 w-8 ${
-                  approvedSteps.includes('prompts')
+                  approvedSteps.includes('script')
                     ? 'text-green-600 dark:text-green-400'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
-                title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
+                title={approvedSteps.includes('script') ? 'Mark as not approved' : 'Mark as approved'}
               >
-                {approvedSteps.includes('prompts') ? (
+                {approvedSteps.includes('script') ? (
                   <CheckSquare className="w-4 h-4" />
                 ) : (
                   <Square className="w-4 h-4" />
                 )}
               </Button>
             </div>
-          )}
+          </div>
 
-          {/* Images */}
-          {onGoToImages && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToImages}
-            >
-              <div className="flex items-center gap-3">
-                <Image className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Images</span>
-                <span className="text-sm text-muted-foreground">
-                  {assets.some(a => a.id.startsWith('image-') && a.url)
-                    ? `${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`
-                    : 'Pending'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {onImagesUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      imagesUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingImages}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload images"
-                  >
-                    {isUploadingImages ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
-                {assets.some(a => a.id.startsWith('image-') && a.url) && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownloadAllImagesAsZip();
-                    }}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Download ZIP"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                )}
+          {/* Audio */}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToAudio ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToAudio}
+          >
+            <div className="flex items-center gap-3">
+              <Mic className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Audio</span>
+              <span className="text-sm text-muted-foreground">
+                {assets.find(a => a.id === 'audio')
+                  ? assets.find(a => a.id === 'audio')!.size
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {onAudioUpload && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) => toggleApproval('images', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('images')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('images') ? 'Mark as not approved' : 'Mark as approved'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    audioUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingAudio}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload audio"
                 >
-                  {approvedSteps.includes('images') ? (
-                    <CheckSquare className="w-4 h-4" />
+                  {isUploadingAudio ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Square className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                   )}
                 </Button>
-              </div>
+              )}
+              {assets.find(a => a.id === 'audio') && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApproval('audio', e)}
+                className={`h-8 w-8 ${
+                  approvedSteps.includes('audio')
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={approvedSteps.includes('audio') ? 'Mark as not approved' : 'Mark as approved'}
+              >
+                {approvedSteps.includes('audio') ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </Button>
             </div>
-          )}
+          </div>
+
+          {/* Captions */}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToCaptions ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToCaptions}
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquare className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Captions</span>
+              <span className="text-sm text-muted-foreground">
+                {srtContent
+                  ? `${(srtContent.match(/^\d+$/gm) || []).length} segments`
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {onCaptionsUpload && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    captionsUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingCaptions}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload captions"
+                >
+                  {isUploadingCaptions ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                </Button>
+              )}
+              {srtContent && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const blob = new Blob([srtContent], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'captions.srt';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApproval('captions', e)}
+                className={`h-8 w-8 ${
+                  approvedSteps.includes('captions')
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={approvedSteps.includes('captions') ? 'Mark as not approved' : 'Mark as approved'}
+              >
+                {approvedSteps.includes('captions') ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Image Prompts */}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToPrompts ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToPrompts}
+          >
+            <div className="flex items-center gap-3">
+              <Palette className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Prompts</span>
+              <span className="text-sm text-muted-foreground">
+                {imagePrompts && imagePrompts.length > 0
+                  ? `${imagePrompts.length} scenes`
+                  : 'Pending'}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => toggleApproval('prompts', e)}
+              className={`h-8 w-8 ${
+                approvedSteps.includes('prompts')
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
+            >
+              {approvedSteps.includes('prompts') ? (
+                <CheckSquare className="w-4 h-4" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
+
+          {/* Images */}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToImages ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToImages}
+          >
+            <div className="flex items-center gap-3">
+              <Image className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Images</span>
+              <span className="text-sm text-muted-foreground">
+                {assets.some(a => a.id.startsWith('image-') && a.url)
+                  ? `${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {onImagesUpload && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    imagesUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingImages}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload images"
+                >
+                  {isUploadingImages ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                </Button>
+              )}
+              {assets.some(a => a.id.startsWith('image-') && a.url) && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadAllImagesAsZip();
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download ZIP"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApproval('images', e)}
+                className={`h-8 w-8 ${
+                  approvedSteps.includes('images')
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={approvedSteps.includes('images') ? 'Mark as not approved' : 'Mark as approved'}
+              >
+                {approvedSteps.includes('images') ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </div>
 
           {/* Video Render */}
-          {onGoToRender && (() => {
+          {(() => {
             const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
             const hasVideo = videoVersions > 0;
 
             return (
               <div
-                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
+                className={`flex items-center justify-between py-3 ${onGoToRender ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
                 onClick={onGoToRender}
               >
                 <div className="flex items-center gap-3">
                   <Film className="w-5 h-5 text-muted-foreground" />
                   <span className="font-medium text-foreground">Video</span>
                   <span className="text-sm text-muted-foreground">
-                    {hasVideo ? `V${videoVersions} ready` : 'Render'}
+                    {hasVideo ? `V${videoVersions} ready` : 'Pending'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -1463,21 +1455,22 @@ export function ProjectResults({
           })()}
 
           {/* Visual Effects */}
-          {audioUrl && imagePrompts && imagePrompts.length > 0 && srtContent && (() => {
+          {(() => {
             const hasEmbers = !!embersVideoUrl;
             const hasSmokeEmbers = !!smokeEmbersVideoUrl;
             const effectCount = [hasEmbers, hasSmokeEmbers].filter(Boolean).length;
+            const canRenderEffects = audioUrl && imagePrompts && imagePrompts.length > 0 && srtContent;
 
             return (
               <div
-                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-                onClick={() => setIsVideoRenderModalOpen(true)}
+                className={`flex items-center justify-between py-3 ${canRenderEffects ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+                onClick={canRenderEffects ? () => setIsVideoRenderModalOpen(true) : undefined}
               >
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-muted-foreground" />
                   <span className="font-medium text-foreground">Visual Effects</span>
                   <span className="text-sm text-muted-foreground">
-                    {effectCount > 0 ? `${effectCount} effect${effectCount > 1 ? 's' : ''} rendered` : 'Add effects'}
+                    {effectCount > 0 ? `${effectCount} effect${effectCount > 1 ? 's' : ''} rendered` : 'Pending'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -1518,112 +1511,108 @@ export function ProjectResults({
           })()}
 
           {/* Thumbnails */}
-          {onGoToThumbnails && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToThumbnails}
-            >
-              <div className="flex items-center gap-3">
-                <Target className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Thumbnails</span>
-                <span className="text-sm text-muted-foreground">
-                  {thumbnails && thumbnails.length > 0
-                    ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
-                      ? 'Selected'
-                      : `${thumbnails.length} ready`
-                    : 'Generate'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {/* Upload button */}
-                {onThumbnailUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      thumbnailUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingThumbnail}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload thumbnail"
-                  >
-                    {isUploadingThumbnail ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToThumbnails ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToThumbnails}
+          >
+            <div className="flex items-center gap-3">
+              <Target className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Thumbnails</span>
+              <span className="text-sm text-muted-foreground">
+                {thumbnails && thumbnails.length > 0
+                  ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
+                    ? 'Selected'
+                    : `${thumbnails.length} ready`
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Upload button */}
+              {onThumbnailUpload && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) => toggleApproval('thumbnails', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('thumbnails')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    thumbnailUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingThumbnail}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload thumbnail"
                 >
-                  {approvedSteps.includes('thumbnails') ? (
-                    <CheckSquare className="w-4 h-4" />
+                  {isUploadingThumbnail ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Square className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                   )}
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {/* YouTube Upload */}
-          {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={() => setIsYouTubeModalOpen(true)}
-            >
-              <div className="flex items-center gap-3">
-                <Youtube className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">YouTube</span>
-                <span className="text-sm text-muted-foreground">Upload</span>
-              </div>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={(e) => toggleApproval('youtube', e)}
+                onClick={(e) => toggleApproval('thumbnails', e)}
                 className={`h-8 w-8 ${
-                  approvedSteps.includes('youtube')
+                  approvedSteps.includes('thumbnails')
                     ? 'text-green-600 dark:text-green-400'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
-                title={approvedSteps.includes('youtube') ? 'Mark as not approved' : 'Mark as approved'}
+                title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
               >
-                {approvedSteps.includes('youtube') ? (
+                {approvedSteps.includes('thumbnails') ? (
                   <CheckSquare className="w-4 h-4" />
                 ) : (
                   <Square className="w-4 h-4" />
                 )}
               </Button>
             </div>
-          )}
+          </div>
 
-          {assets.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No assets generated yet.</p>
-            </div>
-          )}
+          {/* YouTube Upload */}
+          {(() => {
+            const hasVideo = basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl;
+
+            return (
+              <div
+                className={`flex items-center justify-between py-3 ${hasVideo ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+                onClick={hasVideo ? () => setIsYouTubeModalOpen(true) : undefined}
+              >
+                <div className="flex items-center gap-3">
+                  <Youtube className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-medium text-foreground">YouTube</span>
+                  <span className="text-sm text-muted-foreground">
+                    {hasVideo ? 'Upload' : 'Pending'}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('youtube', e)}
+                  className={`h-8 w-8 ${
+                    approvedSteps.includes('youtube')
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('youtube') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('youtube') ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            );
+          })()}
+
 
           {/* Tags Section */}
-          {onTagsChange && (
-            <div className="py-3 space-y-3">
+          <div className="py-3 space-y-3">
               <div className="flex items-center gap-3">
                 <Tag className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Tags</span>
-                {tags.length > 0 && (
-                  <span className="text-sm text-muted-foreground">
-                    {tags.length} tag{tags.length !== 1 ? 's' : ''}
-                  </span>
-                )}
+                <span className="text-sm text-muted-foreground">
+                  {tags.length > 0 ? `${tags.length} tag${tags.length !== 1 ? 's' : ''}` : 'None'}
+                </span>
               </div>
               {/* Existing tags */}
               {tags.length > 0 && (
@@ -1634,57 +1623,60 @@ export function ProjectResults({
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm bg-primary/10 text-primary"
                     >
                       {tag}
-                      <button
-                        onClick={() => {
-                          const newTags = tags.filter((_, i) => i !== index);
-                          onTagsChange(newTags);
-                        }}
-                        className="ml-0.5 hover:text-destructive transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      {onTagsChange && (
+                        <button
+                          onClick={() => {
+                            const newTags = tags.filter((_, i) => i !== index);
+                            onTagsChange(newTags);
+                          }}
+                          className="ml-0.5 hover:text-destructive transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </span>
                   ))}
                 </div>
               )}
               {/* Add new tag */}
-              <div className="flex gap-2 pl-8">
-                <Input
-                  value={newTagInput}
-                  onChange={(e) => setNewTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newTagInput.trim()) {
-                      e.preventDefault();
-                      const trimmed = newTagInput.trim();
-                      if (!tags.includes(trimmed)) {
-                        onTagsChange([...tags, trimmed]);
+              {onTagsChange && (
+                <div className="flex gap-2 pl-8">
+                  <Input
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newTagInput.trim()) {
+                        e.preventDefault();
+                        const trimmed = newTagInput.trim();
+                        if (!tags.includes(trimmed)) {
+                          onTagsChange([...tags, trimmed]);
+                        }
+                        setNewTagInput("");
                       }
-                      setNewTagInput("");
-                    }
-                  }}
-                  placeholder="Add tag (e.g., Medieval, Ancient Egypt)"
-                  className="flex-1 h-8 text-sm"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (newTagInput.trim()) {
-                      const trimmed = newTagInput.trim();
-                      if (!tags.includes(trimmed)) {
-                        onTagsChange([...tags, trimmed]);
+                    }}
+                    placeholder="Add tag (e.g., Medieval, Ancient Egypt)"
+                    className="flex-1 h-8 text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (newTagInput.trim()) {
+                        const trimmed = newTagInput.trim();
+                        if (!tags.includes(trimmed)) {
+                          onTagsChange([...tags, trimmed]);
+                        }
+                        setNewTagInput("");
                       }
-                      setNewTagInput("");
-                    }
-                  }}
-                  disabled={!newTagInput.trim()}
-                  className="h-8 px-2"
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
+                    }}
+                    disabled={!newTagInput.trim()}
+                    className="h-8 px-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
 
           {/* Update Title, Save Version & Duplicate Buttons */}
           {(onTitleChange || onSaveVersion || onDuplicate) && (

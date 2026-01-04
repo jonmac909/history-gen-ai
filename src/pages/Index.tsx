@@ -186,6 +186,7 @@ const Index = () => {
   // Step-by-step state
   const [pendingScript, setPendingScript] = useState("");
   const [confirmedScript, setConfirmedScript] = useState("");
+  const [scriptRegenProgress, setScriptRegenProgress] = useState<number | null>(null);
   const [projectId, setProjectId] = useState("");
   const [videoTitle, setVideoTitle] = useState("History Documentary");
   const [pendingAudioUrl, setPendingAudioUrl] = useState("");
@@ -1429,7 +1430,7 @@ const Index = () => {
     disableAutoAndGoTo("review-script");
   };
 
-  // Regenerate script with AI fix prompt
+  // Regenerate script with AI fix prompt (stays in same modal)
   const handleScriptRegenerate = async (fixPrompt: string) => {
     const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
     if (!currentTemplate?.template) {
@@ -1449,10 +1450,8 @@ ${fixPrompt}
 
 Please regenerate the script with these issues fixed.`;
 
-    setViewState("processing");
-    setProcessingSteps([
-      { id: "script", label: "Regenerating Script", status: "active", sublabel: "0%" }
-    ]);
+    // Stay on review-script, show progress inline
+    setScriptRegenProgress(0);
 
     try {
       const scriptResult = await rewriteScriptStreaming(
@@ -1462,9 +1461,7 @@ Please regenerate the script with these issues fixed.`;
         settings.aiModel,
         settings.wordCount,
         (progress) => {
-          setProcessingSteps([
-            { id: "script", label: "Regenerating Script", status: "active", sublabel: `${progress}%` }
-          ]);
+          setScriptRegenProgress(progress);
         }
       );
 
@@ -1484,10 +1481,8 @@ Please regenerate the script with these issues fixed.`;
 
       toast({
         title: "Script Regenerated",
-        description: "The script has been updated with fixes. Please review.",
+        description: "The script has been updated. Rating...",
       });
-
-      setViewState("review-script");
     } catch (error) {
       console.error("Script regeneration error:", error);
       toast({
@@ -1495,7 +1490,8 @@ Please regenerate the script with these issues fixed.`;
         description: error instanceof Error ? error.message : "Failed to regenerate script",
         variant: "destructive",
       });
-      setViewState("review-script"); // Go back to review with original script
+    } finally {
+      setScriptRegenProgress(null);
     }
   };
 
