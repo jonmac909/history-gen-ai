@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Check, X, Image as ImageIcon, RefreshCw, ZoomIn, Edit2, ChevronLeft, ChevronRight, Download, CheckSquare, Square, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
@@ -30,7 +31,9 @@ interface ImagesPreviewModalProps {
   onBack?: () => void;
   onForward?: () => void;
   onRegenerate?: (index: number, editedPrompt?: string) => void;
+  onRegenerateMultiple?: (indices: number[], editedPrompts?: Map<number, string>) => Promise<void>;
   regeneratingIndex?: number;
+  regeneratingIndices?: Set<number>;
 }
 
 // Parse SRT content and extract text for a given time range
@@ -89,7 +92,9 @@ export function ImagesPreviewModal({
   onBack,
   onForward,
   onRegenerate,
-  regeneratingIndex
+  onRegenerateMultiple,
+  regeneratingIndex,
+  regeneratingIndices = new Set()
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [imageKeys, setImageKeys] = useState<Record<number, number>>({});
@@ -98,12 +103,29 @@ export function ImagesPreviewModal({
   const prevImagesRef = useRef<string[]>([]);
   const prevRegeneratingIndexRef = useRef<number | undefined>(undefined);
 
+  // Multi-select state
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [showBatchEdit, setShowBatchEdit] = useState(false);
+  const [findText, setFindText] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [appendText, setAppendText] = useState("");
+
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  const openLightbox = (index: number) => setLightboxIndex(index);
+  const openLightbox = (index: number) => {
+    if (!isMultiSelectMode) {
+      setLightboxIndex(index);
+    }
+  };
   const closeLightbox = () => setLightboxIndex(null);
+
+  // Check if an image is regenerating (support both single and multi)
+  const isRegenerating = (index: number) => {
+    return regeneratingIndex === index || regeneratingIndices.has(index);
+  };
 
   // Track image URL changes to bust cache - compare with previous URLs
   useEffect(() => {
@@ -228,6 +250,91 @@ export function ImagesPreviewModal({
     setEditedPrompt("");
   };
 
+  // Multi-select handlers
+  const toggleSelection = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedIndices(new Set(images.map((_, i) => i)));
+  };
+
+  const clearSelection = () => {
+    setSelectedIndices(new Set());
+  };
+
+  const exitMultiSelect = () => {
+    setIsMultiSelectMode(false);
+    setSelectedIndices(new Set());
+    setShowBatchEdit(false);
+    setFindText("");
+    setReplaceText("");
+    setAppendText("");
+  };
+
+  // Batch regenerate selected images
+  const handleBatchRegenerate = async () => {
+    if (selectedIndices.size === 0) return;
+
+    if (onRegenerateMultiple) {
+      await onRegenerateMultiple(Array.from(selectedIndices));
+    } else if (onRegenerate) {
+      // Fallback: regenerate one by one (sequential)
+      for (const index of selectedIndices) {
+        onRegenerate(index);
+      }
+    }
+  };
+
+  // Apply batch edit and regenerate
+  const handleApplyBatchEdit = async () => {
+    if (selectedIndices.size === 0 || !prompts) return;
+
+    const editedPrompts = new Map<number, string>();
+
+    for (const index of selectedIndices) {
+      const prompt = prompts[index];
+      if (!prompt) continue;
+
+      let newDescription = prompt.sceneDescription;
+
+      // Apply find/replace
+      if (findText && replaceText) {
+        newDescription = newDescription.split(findText).join(replaceText);
+      }
+
+      // Apply append
+      if (appendText) {
+        newDescription = `${newDescription}. ${appendText}`;
+      }
+
+      editedPrompts.set(index, newDescription);
+    }
+
+    if (onRegenerateMultiple) {
+      await onRegenerateMultiple(Array.from(selectedIndices), editedPrompts);
+    } else if (onRegenerate) {
+      // Fallback: regenerate one by one with edits
+      for (const [index, newPrompt] of editedPrompts) {
+        onRegenerate(index, newPrompt);
+      }
+    }
+
+    setShowBatchEdit(false);
+    setFindText("");
+    setReplaceText("");
+    setAppendText("");
+  };
+
   const handleDownloadAll = async () => {
     // Download each image sequentially
     for (let i = 0; i < images.length; i++) {
@@ -288,7 +395,127 @@ export function ImagesPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Prompt editing panel */}
+        {/* Multi-select toggle and batch actions */}
+        <div className="flex items-center justify-between gap-2 border-b pb-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant={isMultiSelectMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => isMultiSelectMode ? exitMultiSelect() : setIsMultiSelectMode(true)}
+            >
+              {isMultiSelectMode ? (
+                <>
+                  <X className="w-4 h-4 mr-1" />
+                  Exit Multi-Select
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="w-4 h-4 mr-1" />
+                  Multi-Select
+                </>
+              )}
+            </Button>
+
+            {isMultiSelectMode && (
+              <>
+                <Button variant="outline" size="sm" onClick={selectAll}>
+                  Select All
+                </Button>
+                {selectedIndices.size > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearSelection}>
+                    Clear ({selectedIndices.size})
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Batch actions when images are selected */}
+          {isMultiSelectMode && selectedIndices.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                {selectedIndices.size} selected
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowBatchEdit(true)}
+                disabled={regeneratingIndices.size > 0}
+              >
+                <Edit2 className="w-4 h-4 mr-1" />
+                Edit Prompts
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleBatchRegenerate}
+                disabled={regeneratingIndices.size > 0}
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Regenerate
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Batch edit panel */}
+        {showBatchEdit && (
+          <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Edit {selectedIndices.size} Image Prompts</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowBatchEdit(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">
+                  Find & Replace in scene descriptions:
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Find text..."
+                    value={findText}
+                    onChange={(e) => setFindText(e.target.value)}
+                    className="flex-1"
+                  />
+                  <span className="text-muted-foreground self-center">→</span>
+                  <Input
+                    placeholder="Replace with..."
+                    value={replaceText}
+                    onChange={(e) => setReplaceText(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">
+                  Or append to all descriptions:
+                </label>
+                <Input
+                  placeholder="e.g., wearing historically accurate medieval clothing"
+                  value={appendText}
+                  onChange={(e) => setAppendText(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowBatchEdit(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleApplyBatchEdit}
+                disabled={(!findText && !appendText) || regeneratingIndices.size > 0}
+              >
+                Apply & Regenerate Selected
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Prompt editing panel (single image) */}
         {editingIndex !== null && prompts && prompts[editingIndex] && (
           <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
             <div className="flex items-center justify-between">
@@ -335,9 +562,9 @@ export function ImagesPreviewModal({
               <Button
                 size="sm"
                 onClick={handleSaveAndRegenerate}
-                disabled={regeneratingIndex === editingIndex}
+                disabled={isRegenerating(editingIndex)}
               >
-                {regeneratingIndex === editingIndex ? (
+                {isRegenerating(editingIndex) ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                     Regenerating...
@@ -358,51 +585,85 @@ export function ImagesPreviewModal({
             {images.map((imageUrl, index) => (
               <div
                 key={`${index}-${imageKeys[index] || 0}`}
-                className="relative aspect-video rounded-lg overflow-hidden border border-border bg-muted/30 group cursor-pointer"
-                onClick={() => openLightbox(index)}
+                className={`relative aspect-video rounded-lg overflow-hidden border bg-muted/30 group cursor-pointer ${
+                  selectedIndices.has(index) ? 'ring-2 ring-primary border-primary' : 'border-border'
+                }`}
+                onClick={(e) => isMultiSelectMode ? toggleSelection(index, e) : openLightbox(index)}
               >
                 <img
                   src={getImageUrl(imageUrl, index)}
                   alt={`Generated image ${index + 1}`}
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />
+
+                {/* Image number badge */}
                 <div className="absolute bottom-2 left-2 px-2 py-1 bg-background/80 rounded text-xs font-medium">
                   {index + 1}
                 </div>
-                {/* Zoom hint on hover */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-70 transition-opacity" />
-                </div>
-                {/* Action buttons on hover */}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1">
-                  {prompts && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-8 p-0"
-                      onClick={(e) => handleEditClick(e, index)}
-                      disabled={regeneratingIndex === index}
-                      title="Edit prompt"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                  {onRegenerate && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-8 p-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRegenerate(index);
-                      }}
-                      disabled={regeneratingIndex === index}
-                      title="Regenerate this image"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${regeneratingIndex === index ? 'animate-spin' : ''}`} />
-                    </Button>
-                  )}
-                </div>
+
+                {/* Multi-select checkbox */}
+                {isMultiSelectMode && (
+                  <div
+                    className="absolute top-2 left-2 z-20"
+                    onClick={(e) => toggleSelection(index, e)}
+                  >
+                    {selectedIndices.has(index) ? (
+                      <CheckSquare className="w-6 h-6 text-primary bg-background rounded" />
+                    ) : (
+                      <Square className="w-6 h-6 text-muted-foreground bg-background/80 rounded" />
+                    )}
+                  </div>
+                )}
+
+                {/* Regenerating overlay - ALWAYS visible when regenerating */}
+                {isRegenerating(index) && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-30">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-8 h-8 text-white animate-spin" />
+                      <span className="text-white text-xs">Regenerating...</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Zoom hint on hover (hidden when regenerating or multi-select) */}
+                {!isRegenerating(index) && !isMultiSelectMode && (
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                    <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-70 transition-opacity" />
+                  </div>
+                )}
+
+                {/* Action buttons on hover (hidden when regenerating or multi-select) */}
+                {!isRegenerating(index) && !isMultiSelectMode && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1">
+                    {prompts && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => handleEditClick(e, index)}
+                        disabled={isRegenerating(index)}
+                        title="Edit prompt"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {onRegenerate && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRegenerate(index);
+                        }}
+                        disabled={isRegenerating(index)}
+                        title="Regenerate this image"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

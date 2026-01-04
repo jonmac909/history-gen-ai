@@ -153,6 +153,7 @@ const Index = () => {
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
+  const [regeneratingImageIndices, setRegeneratingImageIndices] = useState<Set<number>>(new Set());
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
@@ -993,6 +994,88 @@ const Index = () => {
       });
     } finally {
       setRegeneratingImageIndex(undefined);
+    }
+  };
+
+  // Regenerate multiple images in parallel (with optional edited prompts)
+  const handleRegenerateMultipleImages = async (indices: number[], editedPrompts?: Map<number, string>) => {
+    if (indices.length === 0) return;
+
+    // Set all indices as regenerating
+    setRegeneratingImageIndices(new Set(indices));
+
+    const MAX_CONCURRENT = 4; // Match RunPod worker limit
+
+    try {
+      // Process in batches of MAX_CONCURRENT
+      for (let i = 0; i < indices.length; i += MAX_CONCURRENT) {
+        const batch = indices.slice(i, i + MAX_CONCURRENT);
+
+        await Promise.all(batch.map(async (index) => {
+          if (!imagePrompts[index]) return;
+
+          // Get prompt (use edited version if provided)
+          let promptToUse = imagePrompts[index];
+          const editedDescription = editedPrompts?.get(index);
+
+          if (editedDescription) {
+            promptToUse = {
+              ...imagePrompts[index],
+              sceneDescription: editedDescription,
+              prompt: imagePrompts[index].prompt.replace(imagePrompts[index].sceneDescription, editedDescription)
+            };
+            // Update the prompts state with the edited version
+            setImagePrompts(prev => {
+              const newPrompts = [...prev];
+              newPrompts[index] = promptToUse;
+              return newPrompts;
+            });
+          }
+
+          try {
+            const imageResult = await generateImagesStreaming(
+              [promptToUse],
+              settings.quality,
+              "16:9",
+              () => {},
+              projectId
+            );
+
+            if (imageResult.success && imageResult.images && imageResult.images.length > 0) {
+              // Update the image at the specific index
+              setPendingImages(prev => {
+                const newImages = [...prev];
+                newImages[index] = imageResult.images![0];
+                return newImages;
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to regenerate image ${index + 1}:`, error);
+          } finally {
+            // Remove this index from regenerating set
+            setRegeneratingImageIndices(prev => {
+              const next = new Set(prev);
+              next.delete(index);
+              return next;
+            });
+          }
+        }));
+      }
+
+      toast({
+        title: "Images Regenerated",
+        description: `${indices.length} images have been regenerated.`,
+      });
+
+    } catch (error) {
+      console.error("Batch regeneration error:", error);
+      toast({
+        title: "Regeneration Failed",
+        description: error instanceof Error ? error.message : "Failed to regenerate images",
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingImageIndices(new Set());
     }
   };
 
@@ -2057,13 +2140,15 @@ const Index = () => {
         images={pendingImages}
         prompts={imagePrompts}
         script={confirmedScript}
-        srtContent={srtContent}
+        srtContent={pendingSrtContent || srtContent}
         onConfirm={handleImagesConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToPrompts}
         onForward={() => setViewState("review-thumbnails")}
         onRegenerate={handleRegenerateImage}
+        onRegenerateMultiple={handleRegenerateMultipleImages}
         regeneratingIndex={regeneratingImageIndex}
+        regeneratingIndices={regeneratingImageIndices}
       />
 
       {/* Thumbnail Generator Modal */}
