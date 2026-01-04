@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Video, Download, Loader2, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
+import { Sparkles, Download, Loader2, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { renderVideoStreaming, type RenderVideoProgress } from "@/lib/api";
 
-interface VideoRenderModalProps {
+interface VisualEffectsModalProps {
   isOpen: boolean;
   projectId: string;
   projectTitle?: string;
@@ -21,13 +21,12 @@ interface VideoRenderModalProps {
   imageUrls: string[];
   imageTimings: { startSeconds: number; endSeconds: number }[];
   srtContent: string;
-  existingVideoUrl?: string;  // Pre-rendered video URL (skip rendering if provided)
-  autoRender?: boolean;  // Auto-start rendering when modal opens (for full automation mode)
+  existingVideoUrl?: string;  // Pre-rendered video URL with effects (skip rendering if provided)
   onConfirm: (videoUrl: string) => void;
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
-  onForward?: () => void;  // Navigate to next step (YouTube upload)
+  onForward?: () => void;  // Navigate to next step (Thumbnails)
 }
 
 // Download file from URL
@@ -48,7 +47,7 @@ const downloadFromUrl = async (url: string, filename: string) => {
   document.body.removeChild(link);
 };
 
-export function VideoRenderModal({
+export function VisualEffectsModal({
   isOpen,
   projectId,
   projectTitle,
@@ -57,13 +56,12 @@ export function VideoRenderModal({
   imageTimings,
   srtContent,
   existingVideoUrl,
-  autoRender = false,
   onConfirm,
   onCancel,
   onBack,
   onSkip,
   onForward,
-}: VideoRenderModalProps) {
+}: VisualEffectsModalProps) {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(existingVideoUrl || null);
@@ -72,7 +70,7 @@ export function VideoRenderModal({
   // Sync with existingVideoUrl prop when it changes or modal opens
   useEffect(() => {
     if (existingVideoUrl) {
-      console.log('[VideoRenderModal] Setting video URL from prop:', existingVideoUrl);
+      console.log('[VisualEffectsModal] Setting video URL from prop:', existingVideoUrl);
       setVideoUrl(existingVideoUrl);
       autoRenderTriggered.current = true;
     }
@@ -81,19 +79,20 @@ export function VideoRenderModal({
   // Also sync when modal opens (in case state was reset)
   useEffect(() => {
     if (isOpen && existingVideoUrl && !videoUrl) {
-      console.log('[VideoRenderModal] Modal opened with existing video, syncing:', existingVideoUrl);
+      console.log('[VisualEffectsModal] Modal opened with existing video, syncing:', existingVideoUrl);
       setVideoUrl(existingVideoUrl);
       autoRenderTriggered.current = true;
     }
   }, [isOpen, existingVideoUrl]);
 
-  // Auto-start rendering when modal opens (ONLY if autoRender=true AND no existing video)
+  // AUTO-START rendering when modal opens (always, unless already have video)
   useEffect(() => {
-    if (isOpen && autoRender && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
+    if (isOpen && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
+      console.log('[VisualEffectsModal] Auto-starting smoke+embers render...');
       autoRenderTriggered.current = true;
       handleRender();
     }
-  }, [isOpen, autoRender, existingVideoUrl]);
+  }, [isOpen, existingVideoUrl]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -113,7 +112,7 @@ export function VideoRenderModal({
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
 
     try {
-      // Render without any effects (basic video)
+      // Render with smoke + embers effects
       const result = await renderVideoStreaming(
         projectId,
         audioUrl,
@@ -127,14 +126,14 @@ export function VideoRenderModal({
             setVideoUrl(url);
             toast({
               title: "Video Ready",
-              description: "Your video has been rendered!",
+              description: "Your video with smoke + embers effects has been rendered!",
             });
           },
           onCaptionError: (error) => {
             console.warn('Caption error (ignored):', error);
           }
         },
-        { embers: false, smoke_embers: false },  // No effects
+        { embers: false, smoke_embers: true },  // Smoke + embers effects
         true  // Use GPU rendering (faster)
       );
 
@@ -162,10 +161,10 @@ export function VideoRenderModal({
   const handleDownload = async () => {
     if (!videoUrl) return;
 
-    const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '.mp4';
+    const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '_smoke_embers.mp4';
     toast({
       title: "Downloading...",
-      description: "Downloading video...",
+      description: "Downloading video with smoke + embers...",
     });
 
     try {
@@ -193,7 +192,7 @@ export function VideoRenderModal({
     switch (stage) {
       case 'downloading': return 'Downloading assets';
       case 'preparing': return 'Preparing timeline';
-      case 'rendering': return 'Rendering video';
+      case 'rendering': return 'Rendering with effects';
       case 'uploading': return 'Uploading video';
       default: return stage;
     }
@@ -219,15 +218,13 @@ export function VideoRenderModal({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Video className="w-5 h-5 text-primary" />
-            {videoUrl ? 'Video Ready' : (isRendering || renderProgress) ? 'Rendering Video' : 'Render Video'}
+            <Sparkles className="w-5 h-5 text-orange-400" />
+            {videoUrl ? 'Visual Effects Ready' : 'Adding Visual Effects'}
           </DialogTitle>
           <DialogDescription>
             {videoUrl
-              ? 'Your video is ready! Continue to add visual effects.'
-              : (isRendering || renderProgress)
-                ? 'Rendering your video...'
-                : 'Render your video from images and audio.'}
+              ? 'Your video with smoke + embers effects is ready!'
+              : 'Rendering your video with cinematic smoke + embers effects...'}
           </DialogDescription>
         </DialogHeader>
 
@@ -268,7 +265,7 @@ export function VideoRenderModal({
               </p>
               {renderProgress.stage === 'rendering' && (
                 <p className="text-xs text-muted-foreground">
-                  This may take a few minutes depending on video length...
+                  Adding smoke + embers effects may take a few minutes...
                 </p>
               )}
             </>
@@ -278,19 +275,19 @@ export function VideoRenderModal({
           {!videoUrl && !renderProgress && isRendering && (
             <div className="flex flex-col items-center gap-3 py-8">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Starting render...</p>
+              <p className="text-sm text-muted-foreground">Starting effects render...</p>
             </div>
           )}
 
-          {/* Render button when not auto-rendering */}
+          {/* Re-render button if needed */}
           {!videoUrl && !renderProgress && !isRendering && (
             <div className="space-y-4 py-4">
               <p className="text-sm text-muted-foreground text-center">
-                This will render your video without effects. You can add visual effects (smoke + embers) in the next step.
+                Render failed or was cancelled. Click to try again.
               </p>
               <Button onClick={handleRender} className="w-full gap-2">
-                <Video className="w-4 h-4" />
-                Render Video
+                <Sparkles className="w-4 h-4" />
+                Render with Effects
               </Button>
             </div>
           )}
@@ -328,7 +325,7 @@ export function VideoRenderModal({
               onClick={onForward}
               disabled={isRendering && !videoUrl}
             >
-              Visual Effects
+              Thumbnails
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (

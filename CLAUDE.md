@@ -168,6 +168,9 @@ npm run dev              # Start dev server (http://localhost:8080)
 npm run build            # Production build
 npm run lint             # Run ESLint
 npm run preview          # Preview production build
+npm test                 # Run unit tests (watch mode)
+npm run test:run         # Run tests once (CI)
+npm run test:coverage    # Run tests with coverage
 npx playwright test      # Run E2E tests (CI runs on push/PR)
 ```
 
