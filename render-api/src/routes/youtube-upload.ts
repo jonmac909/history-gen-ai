@@ -523,6 +523,7 @@ router.post('/', async (req: Request, res: Response) => {
         ffmpeg(inputPath)
           .outputOptions([
             '-map_metadata', '-1',      // Strip ALL metadata
+            '-bsf:v', 'filter_units=remove_types=6',  // Remove SEI NAL units (x264 encoder string)
             '-fflags', '+bitexact',     // Don't write FFmpeg version to container
             '-flags:v', '+bitexact',    // Don't write encoder info to video stream
             '-flags:a', '+bitexact',    // Don't write encoder info to audio stream
