@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette, Check, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -9,6 +9,43 @@ import { supabase } from "@/integrations/supabase/client";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
+
+// Status badge component
+type StepStatus = 'pending' | 'in_progress' | 'auto' | 'approved';
+
+function StatusBadge({ status }: { status: StepStatus }) {
+  switch (status) {
+    case 'approved':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+          <Check className="w-3 h-3" />
+          Approved
+        </span>
+      );
+    case 'auto':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+          <Circle className="w-3 h-3 fill-current" />
+          Auto
+        </span>
+      );
+    case 'in_progress':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          In Progress
+        </span>
+      );
+    case 'pending':
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          <Circle className="w-3 h-3" />
+          Pending
+        </span>
+      );
+  }
+}
 
 export interface GeneratedAsset {
   id: string;
@@ -727,7 +764,10 @@ export function ProjectResults({
                   <FileText className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Script</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Script</p>
+                    <StatusBadge status="auto" />
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {assets.find(a => a.id === 'script')!.size}
                   </p>
@@ -764,7 +804,10 @@ export function ProjectResults({
                   <Mic className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Audio</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Audio</p>
+                    <StatusBadge status="auto" />
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {assets.find(a => a.id === 'audio')!.size}
                   </p>
@@ -801,7 +844,10 @@ export function ProjectResults({
                   <Palette className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Image Prompts</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Image Prompts</p>
+                    <StatusBadge status="auto" />
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {imagePrompts.length} scene descriptions
                   </p>
@@ -824,9 +870,12 @@ export function ProjectResults({
                   <ImageIcon className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Images</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Images</p>
+                    <StatusBadge status="auto" />
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated images
+                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
                   </p>
                 </div>
               </div>
@@ -861,11 +910,24 @@ export function ProjectResults({
                   <Image className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">Thumbnails</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Thumbnails</p>
+                    {thumbnails && thumbnails.length > 0 ? (
+                      selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0 ? (
+                        <StatusBadge status="approved" />
+                      ) : (
+                        <StatusBadge status="auto" />
+                      )
+                    ) : (
+                      <StatusBadge status="pending" />
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {thumbnails && thumbnails.length > 0
-                      ? `${thumbnails.length} generated thumbnails`
-                      : 'Generate YouTube thumbnails'}
+                      ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
+                        ? 'Thumbnail selected'
+                        : `${thumbnails.length} generated`
+                      : 'Generate thumbnails'}
                   </p>
                 </div>
               </div>
@@ -874,43 +936,58 @@ export function ProjectResults({
           )}
 
           {/* Video Render */}
-          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (
-            <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
-              onClick={onGoToRender}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-orange-400" />
+          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (() => {
+            // Count video versions
+            const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
+            const hasVideo = videoVersions > 0;
+
+            return (
+              <div
+                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+                onClick={onGoToRender}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-foreground">Video Render</p>
+                      {hasVideo ? (
+                        <StatusBadge status="auto" />
+                      ) : (
+                        <StatusBadge status="pending" />
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {hasVideo
+                        ? `V${videoVersions} rendered${smokeEmbersVideoUrl ? ' (smoke + embers)' : embersVideoUrl ? ' (embers)' : ''}`
+                        : 'Render video with effects'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-foreground">Video Render</p>
-                  <p className="text-sm text-muted-foreground">
-                    {smokeEmbersVideoUrl ? 'Rendered with smoke + embers' : 'Render video with effects'}
-                  </p>
+                <div className="flex items-center gap-2">
+                  {smokeEmbersVideoUrl && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadVideo('smoke_embers');
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Download Video"
+                    >
+                      <Download className="w-5 h-5" />
+                    </Button>
+                  )}
+                  {onGoToRender && (
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {smokeEmbersVideoUrl && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownloadVideo('smoke_embers');
-                    }}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Download Video"
-                  >
-                    <Download className="w-5 h-5" />
-                  </Button>
-                )}
-                {onGoToRender && (
-                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                )}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
