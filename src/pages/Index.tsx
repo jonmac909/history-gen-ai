@@ -56,27 +56,63 @@ type InputMode = "url" | "title";
 type ViewState = "create" | "outlier-finder" | "processing" | "review-script" | "review-audio" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
+const LAST_SETTINGS_KEY = "historygenai-last-settings";
+
+// Default settings (used when no saved settings exist)
+const DEFAULT_SETTINGS: GenerationSettings = {
+  projectTitle: "",
+  fullAutomation: false,
+  scriptTemplate: "template-a",
+  imageTemplate: "image-a",
+  aiModel: "claude-sonnet-4-5",
+  voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.wav",
+  speed: 1,
+  imageCount: 10,
+  wordCount: 1000,
+  quality: "basic",
+  ttsEmotionMarker: "(sincere) (soft tone)",
+  ttsTemperature: 0.9,
+  ttsTopP: 0.85,
+  ttsRepetitionPenalty: 1.1,
+};
+
+// Load last used settings from localStorage
+function loadLastSettings(): GenerationSettings {
+  try {
+    const saved = localStorage.getItem(LAST_SETTINGS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Merge with defaults to ensure all fields exist
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        // Always reset project title for new projects
+        projectTitle: "",
+      };
+    }
+  } catch (e) {
+    console.error("[Index] Failed to load last settings:", e);
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+// Save settings to localStorage (called when settings change)
+function saveLastSettings(settings: GenerationSettings): void {
+  try {
+    // Don't save project-specific fields
+    const { projectTitle, customScript, ...persistableSettings } = settings;
+    localStorage.setItem(LAST_SETTINGS_KEY, JSON.stringify(persistableSettings));
+  } catch (e) {
+    console.error("[Index] Failed to save settings:", e);
+  }
+}
+
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [viewState, setViewState] = useState<ViewState>("create");
-  const [settings, setSettings] = useState<GenerationSettings>({
-    projectTitle: "",
-    fullAutomation: false,
-    scriptTemplate: "template-a",
-    imageTemplate: "image-a",
-    aiModel: "claude-sonnet-4-5",
-    voiceSampleUrl: "https://historygenai.netlify.app/voices/clone_voice.wav",
-    speed: 1,
-    imageCount: 10,
-    wordCount: 1000,
-    quality: "basic",
-    // TTS settings (Fish Speech)
-    ttsEmotionMarker: "(sincere) (soft tone)",
-    ttsTemperature: 0.9,
-    ttsTopP: 0.85,
-    ttsRepetitionPenalty: 1.1,
-  });
+  // Load settings from localStorage (persists across sessions)
+  const [settings, setSettings] = useState<GenerationSettings>(loadLastSettings);
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(defaultImageTemplates);
@@ -135,6 +171,11 @@ const Index = () => {
   useEffect(() => {
     migrateFromLocalStorage();
   }, []);
+
+  // Persist settings to localStorage whenever they change
+  useEffect(() => {
+    saveLastSettings(settings);
+  }, [settings]);
 
   // Check for in-progress project on load and when returning to create view
   useEffect(() => {
