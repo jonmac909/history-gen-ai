@@ -517,21 +517,32 @@ export function ThumbnailGeneratorModal({
                 <label className="text-sm font-medium">Reference:</label>
 
                 {examplePreview ? (
-                  <div className="relative">
-                    <img
-                      src={examplePreview}
-                      alt="Example thumbnail"
-                      className="w-full h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-                      style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                      onClick={() => setLightboxImage(examplePreview)}
-                    />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <img
+                        src={examplePreview}
+                        alt="Example thumbnail"
+                        className="w-full h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                        style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                        onClick={() => setLightboxImage(examplePreview)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
+                        onClick={handleRemoveImage}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
-                      onClick={handleRemoveImage}
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-1"
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      <X className="w-4 h-4" />
+                      <Upload className="w-3 h-3" />
+                      Change Reference
                     </Button>
                   </div>
                 ) : (

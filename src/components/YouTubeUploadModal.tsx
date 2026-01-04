@@ -40,9 +40,13 @@ import { generateYouTubeMetadata } from "@/lib/api";
 
 interface YouTubeUploadModalProps {
   isOpen: boolean;
+  videoUrl?: string; // Not used in metadata-only mode but accepted for compatibility
   projectTitle?: string;
   script?: string;
+  thumbnails?: string[]; // Not used in metadata-only mode but accepted for compatibility
+  selectedThumbnailIndex?: number; // Not used in metadata-only mode but accepted for compatibility
   onClose: () => void;
+  onSuccess?: () => void; // Alias for onConfirm for compatibility
   onConfirm?: () => void;
   onBack?: () => void;
   onSkip?: () => void;
@@ -67,9 +71,13 @@ const CATEGORIES = [
 
 export function YouTubeUploadModal({
   isOpen,
+  videoUrl: _videoUrl, // Accepted but not used
   projectTitle,
   script,
+  thumbnails: _thumbnails, // Accepted but not used
+  selectedThumbnailIndex: _selectedThumbnailIndex, // Accepted but not used
   onClose,
+  onSuccess,
   onConfirm,
   onBack,
   onSkip,
@@ -100,6 +108,7 @@ export function YouTubeUploadModal({
 
   useEffect(() => {
     if (isOpen) {
+      console.log('[YouTubeUploadModal] Opening - script length:', script?.length || 0, 'projectTitle:', projectTitle);
       checkConnection();
       setTitle(initialTitle || projectTitle || "");
       setDescription(initialDescription || "");
@@ -108,7 +117,7 @@ export function YouTubeUploadModal({
       setSelectedPlaylist(initialPlaylistId || null);
       setTitleOptions([]);
     }
-  }, [isOpen, projectTitle, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
+  }, [isOpen, projectTitle, script, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
 
   useEffect(() => {
     if (isOpen && onMetadataChange) {
@@ -152,7 +161,10 @@ export function YouTubeUploadModal({
 
   // Generate 10 title ideas with AI
   const handleGenerateTitles = async () => {
+    console.log('[YouTubeUploadModal] handleGenerateTitles called, script length:', script?.length || 0);
+
     if (!script || script.trim().length === 0) {
+      console.log('[YouTubeUploadModal] No script available');
       toast({
         title: "Script Required",
         description: "No script available for title generation.",
@@ -162,8 +174,10 @@ export function YouTubeUploadModal({
     }
 
     setIsGenerating(true);
+    console.log('[YouTubeUploadModal] Calling generateYouTubeMetadata API...');
     try {
       const result = await generateYouTubeMetadata(projectTitle || "Historical Documentary", script);
+      console.log('[YouTubeUploadModal] API result:', result.success, 'titles:', result.titles?.length);
 
       if (result.success && result.titles && result.titles.length > 0) {
         setTitleOptions(result.titles);
@@ -223,7 +237,9 @@ export function YouTubeUploadModal({
     if (onMetadataChange) {
       onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
     }
+    // Support both onConfirm and onSuccess for compatibility
     onConfirm?.();
+    onSuccess?.();
     onClose();
   };
 

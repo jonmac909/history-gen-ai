@@ -2136,7 +2136,7 @@ const Index = () => {
                       <Slider
                         value={[settings.imageCount]}
                         min={1}
-                        max={50}
+                        max={500}
                         step={1}
                         onValueChange={([value]) => setSettings(prev => ({ ...prev, imageCount: value }))}
                         className="flex-1"
