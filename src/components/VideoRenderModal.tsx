@@ -31,6 +31,7 @@ interface VideoRenderModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
+  onForward?: () => void;  // Navigate to next step (YouTube upload)
 }
 
 // Download file from URL
@@ -65,6 +66,7 @@ export function VideoRenderModal({
   onCancel,
   onBack,
   onSkip,
+  onForward,
 }: VideoRenderModalProps) {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
@@ -385,19 +387,29 @@ export function VideoRenderModal({
             )}
           </div>
 
-          {/* Right side: Exit + Continue */}
+          {/* Right side: Exit + Forward/Continue */}
           <Button variant="outline" onClick={onCancel} disabled={isRendering && !videoUrl}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          <Button
-            onClick={handleConfirm}
-            disabled={!videoUrl}
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Continue
-          </Button>
+          {onForward ? (
+            <Button
+              onClick={onForward}
+              disabled={isRendering && !videoUrl}
+            >
+              YouTube
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleConfirm}
+              disabled={!videoUrl}
+            >
+              <Check className="w-4 h-4 mr-2" />
+              Continue
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

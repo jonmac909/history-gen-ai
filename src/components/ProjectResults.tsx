@@ -1805,6 +1805,11 @@ export function ProjectResults({
             setIsVideoRenderModalOpen(false);
           }}
           onCancel={() => setIsVideoRenderModalOpen(false)}
+          onForward={() => {
+            // Close visual effects modal and open YouTube modal
+            setIsVideoRenderModalOpen(false);
+            setIsYouTubeModalOpen(true);
+          }}
         />
       )}
     </div>
