@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, FileText, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Check, X, Edit3, FileText, ChevronLeft, ChevronRight, Download, Minus, Plus, Image as ImageIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 
 interface CaptionsPreviewModalProps {
   isOpen: boolean;
@@ -19,6 +20,8 @@ interface CaptionsPreviewModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  imageCount?: number;
+  onImageCountChange?: (count: number) => void;
 }
 
 export function CaptionsPreviewModal({
@@ -27,7 +30,9 @@ export function CaptionsPreviewModal({
   onConfirm,
   onCancel,
   onBack,
-  onForward
+  onForward,
+  imageCount,
+  onImageCountChange
 }: CaptionsPreviewModalProps) {
   const [editedSrt, setEditedSrt] = useState(srtContent);
   const [isEditing, setIsEditing] = useState(false);
@@ -73,6 +78,51 @@ export function CaptionsPreviewModal({
             Review the generated SRT captions before generating images.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Image Count Selector */}
+        {imageCount !== undefined && onImageCountChange && (
+          <div className="border rounded-lg p-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">How many images?</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onImageCountChange(Math.max(1, imageCount - 1))}
+                  disabled={imageCount <= 1}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={imageCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val) && val >= 1 && val <= 200) {
+                      onImageCountChange(val);
+                    }
+                  }}
+                  className="w-16 h-8 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onImageCountChange(Math.min(200, imageCount + 1))}
+                  disabled={imageCount >= 200}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 min-h-0 py-4">
           {isEditing ? (

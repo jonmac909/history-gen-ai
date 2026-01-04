@@ -9,6 +9,52 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Predefined image style options
+const IMAGE_STYLES = [
+  {
+    value: 'dutch-golden-age',
+    label: 'Dutch Golden Age',
+    prompt: 'In the style of Dutch Golden Age painting, rich warm tones, dramatic chiaroscuro lighting, Rembrandt-like composition, detailed textures, oil painting aesthetic, museum quality, historical accuracy'
+  },
+  {
+    value: 'renaissance',
+    label: 'Renaissance',
+    prompt: 'In the style of Italian Renaissance art, classical composition, soft sfumato technique, Da Vinci-inspired, harmonious proportions, rich earth tones, fresco-like quality, timeless elegance'
+  },
+  {
+    value: 'medieval',
+    label: 'Medieval Illumination',
+    prompt: 'In the style of medieval illuminated manuscripts, rich gold leaf accents, vibrant jewel-tone colors, decorative borders, flat perspective, intricate patterns, religious iconography influence'
+  },
+  {
+    value: 'romantic',
+    label: 'Romantic Era',
+    prompt: 'In the style of Romantic era painting, dramatic landscapes, emotional and sublime lighting, Turner-inspired atmosphere, sweeping vistas, nature\'s power, golden hour ambiance'
+  },
+  {
+    value: 'baroque',
+    label: 'Baroque',
+    prompt: 'In the style of Baroque painting, dramatic contrast and tenebrism, rich saturated colors, Caravaggio-inspired lighting, theatrical composition, dynamic movement, emotional intensity'
+  },
+  {
+    value: 'impressionist',
+    label: 'Impressionist',
+    prompt: 'In the style of Impressionist painting, visible brushstrokes, natural outdoor light, Monet-inspired color palette, atmospheric effects, soft edges, everyday scenes captured beautifully'
+  },
+  {
+    value: 'custom',
+    label: 'Custom Style',
+    prompt: ''
+  },
+];
 
 interface ImagePrompt {
   index: number;
@@ -128,7 +174,8 @@ export function ImagePromptsPreviewModal({
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
   const [editedStyle, setEditedStyle] = useState(stylePrompt);
-  const [isStyleExpanded, setIsStyleExpanded] = useState(true);
+  const [isStyleExpanded, setIsStyleExpanded] = useState(false);
+  const [selectedStyleKey, setSelectedStyleKey] = useState<string>('custom');
 
   // Sync with props when prompts change
   useEffect(() => {
@@ -156,6 +203,18 @@ export function ImagePromptsPreviewModal({
   };
 
   const styleHasChanges = editedStyle !== stylePrompt;
+
+  // Handle style preset selection
+  const handleStyleSelect = (styleKey: string) => {
+    setSelectedStyleKey(styleKey);
+    const style = IMAGE_STYLES.find(s => s.value === styleKey);
+    if (style && style.prompt) {
+      setEditedStyle(style.prompt);
+      setIsStyleExpanded(false); // Collapse when using preset
+    } else if (styleKey === 'custom') {
+      setIsStyleExpanded(true); // Expand for custom editing
+    }
+  };
 
   const handleDownload = () => {
     const data = editedPrompts.map(p => ({
@@ -201,15 +260,39 @@ export function ImagePromptsPreviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Master Style Prompt Editor */}
+        {/* Image Style Selector */}
+        <div className="border rounded-lg p-3 bg-muted/30">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Palette className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Image Style</span>
+            </div>
+            <Select value={selectedStyleKey} onValueChange={handleStyleSelect}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select a style..." />
+              </SelectTrigger>
+              <SelectContent>
+                {IMAGE_STYLES.map((style) => (
+                  <SelectItem key={style.value} value={style.value}>
+                    {style.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Master Style Prompt Editor (collapsible for custom editing) */}
         <div className="border rounded-lg bg-muted/30">
           <button
             onClick={() => setIsStyleExpanded(!isStyleExpanded)}
             className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Palette className="w-5 h-5 text-primary" />
-              <span className="font-medium">Master Style Prompt</span>
+              <Edit2 className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {selectedStyleKey === 'custom' ? 'Custom Style Prompt' : 'View/Edit Style Prompt'}
+              </span>
               {styleHasChanges && <span className="text-xs text-yellow-500">(edited)</span>}
             </div>
             {isStyleExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -218,11 +301,14 @@ export function ImagePromptsPreviewModal({
           {isStyleExpanded && (
             <div className="px-3 pb-3 space-y-2">
               <p className="text-xs text-muted-foreground">
-                This style is applied to all images. Edit to change the overall look and feel.
+                This style is applied to all images. Edit to customize the look and feel.
               </p>
               <textarea
                 value={editedStyle}
-                onChange={(e) => setEditedStyle(e.target.value)}
+                onChange={(e) => {
+                  setEditedStyle(e.target.value);
+                  setSelectedStyleKey('custom'); // Switch to custom when manually editing
+                }}
                 className="w-full min-h-[120px] p-3 text-sm bg-background border rounded resize-y"
                 placeholder="Describe the visual style..."
               />

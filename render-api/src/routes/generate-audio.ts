@@ -606,28 +606,12 @@ function getAudioDuration(filePath: string): Promise<number> {
 }
 
 // Main post-processing function
+// NOTE: Disabled audio-level repetition removal - it was too aggressive and cutting good audio.
+// Text-level repetition removal (removeTextRepetitions) before TTS is sufficient.
 async function postProcessAudio(audioBuffer: Buffer): Promise<Buffer> {
-  try {
-    // Step 1: Transcribe to detect repetitions
-    const segments = await transcribeForRepetitionDetection(audioBuffer);
-    if (segments.length === 0) {
-      logger.info('No transcription available, skipping post-processing');
-      return audioBuffer;
-    }
-
-    // Step 2: Detect repetitions
-    const repetitions = detectRepetitions(segments);
-    if (repetitions.length === 0) {
-      logger.info('No repetitions detected');
-      return audioBuffer;
-    }
-
-    // Step 3: Remove repeated segments
-    return await removeAudioSegments(audioBuffer, repetitions);
-  } catch (error) {
-    logger.error('Post-processing failed, returning original audio:', error);
-    return audioBuffer;
-  }
+  // Skip audio post-processing entirely - return original audio unchanged
+  logger.info('Post-processing skipped (disabled - text-level removal is sufficient)');
+  return audioBuffer;
 }
 
 // ============================================================
@@ -1982,22 +1966,27 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
       buffer.fill(0);
     }
 
-    // Adjust final size if estimate was off
+    // Adjust final size if estimate was off - MUST trim buffer to actual size
     const actualCombinedSize = offset;
+    let trimmedAudio: Buffer;
     if (actualCombinedSize !== combinedAudio.length) {
-      console.log(`Size adjustment: estimated ${combinedAudio.length}, actual ${actualCombinedSize}`);
-      combinedAudio.writeUInt32LE(actualCombinedSize - 8, 4);
-      combinedAudio.writeUInt32LE(actualCombinedSize - headerSize, dataIdxInCombined + 4);
+      console.log(`Size adjustment: estimated ${combinedAudio.length}, actual ${actualCombinedSize} - trimming buffer`);
+      // CRITICAL: Copy to new buffer of actual size to avoid garbage bytes at end
+      trimmedAudio = Buffer.from(combinedAudio.subarray(0, actualCombinedSize));
+      trimmedAudio.writeUInt32LE(actualCombinedSize - 8, 4);
+      trimmedAudio.writeUInt32LE(actualCombinedSize - headerSize, dataIdxInCombined + 4);
+    } else {
+      trimmedAudio = combinedAudio;
     }
 
     let totalDuration = segmentResults.reduce((sum, r) => sum + r.durationSeconds, 0);
     let combinedDuration = firstExtracted.byteRate > 0 ? (actualCombinedSize - headerSize) / firstExtracted.byteRate : totalDuration;
 
-    console.log(`Combined audio: ${combinedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
+    console.log(`Combined audio: ${trimmedAudio.length} bytes, ${Math.round(combinedDuration)}s`);
 
     // Post-process to remove repeated audio segments
     sendEvent({ type: 'progress', progress: 90, message: 'Removing repeated segments...' });
-    let finalAudio: Buffer = await postProcessAudio(combinedAudio);
+    let finalAudio: Buffer = await postProcessAudio(trimmedAudio);
     console.log(`Post-processed audio: ${finalAudio.length} bytes`);
 
     // Apply speed adjustment if not 1.0

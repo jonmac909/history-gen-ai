@@ -2025,6 +2025,8 @@ const Index = () => {
           onBack={handleBackToScript}
           onForward={canGoForwardFromAudio() ? handleForwardToPrompts : undefined}
           regeneratingIndex={regeneratingSegmentIndex}
+          imageCount={settings.imageCount}
+          onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
         />
       ) : (
         <AudioPreviewModal
