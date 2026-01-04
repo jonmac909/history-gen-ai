@@ -1462,10 +1462,10 @@ export function ProjectResults({
         </div>
 
         {/* Right Column: Video Preview */}
-        <div className="space-y-4">
+        <div className="flex flex-col space-y-4">
           {/* Video/Thumbnail Preview - YouTube-style */}
           <div
-            className="relative aspect-video bg-muted rounded-xl overflow-hidden border"
+            className="relative aspect-video bg-muted rounded-xl overflow-hidden border flex-shrink-0"
             onMouseEnter={() => {
               setIsHoveringPreview(true);
               // Auto-play on hover if not already playing
@@ -1560,15 +1560,15 @@ export function ProjectResults({
           </div>
 
           {/* Title and description under preview - YouTube-style */}
-          <div className="space-y-3">
-            <h2 className="font-semibold text-foreground line-clamp-2 text-lg">
+          <div className="space-y-3 flex-grow">
+            <h2 className="font-semibold text-foreground text-lg break-words">
               {youtubeTitle || projectTitle || "Untitled"}
             </h2>
 
             {/* Description preview - simulating YouTube */}
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground min-h-[4rem]">
               {youtubeDescription ? (
-                <p className="line-clamp-3 whitespace-pre-wrap">
+                <p className="line-clamp-4 whitespace-pre-wrap">
                   {youtubeDescription}
                 </p>
               ) : (
