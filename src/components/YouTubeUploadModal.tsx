@@ -86,6 +86,9 @@ export function YouTubeUploadModal({
   initialCategoryId,
   initialPlaylistId,
 }: YouTubeUploadModalProps) {
+  // Debug: log props on every render
+  console.log('[YouTubeUploadModal] RENDER - isOpen:', isOpen, 'script length:', script?.length, 'projectTitle:', projectTitle);
+
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
