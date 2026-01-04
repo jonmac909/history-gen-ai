@@ -1362,18 +1362,23 @@ export function ProjectResults({
 
           {/* Tags Section */}
           {onTagsChange && (
-            <div className="pt-4 mt-4 border-t space-y-3">
-              <div className="flex items-center gap-2">
-                <Tag className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Tags</span>
+            <div className="py-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <Tag className="w-5 h-5 text-muted-foreground" />
+                <span className="font-medium text-foreground">Tags</span>
+                {tags.length > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {tags.length} tag{tags.length !== 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
               {/* Existing tags */}
               {tags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pl-8">
                   {tags.map((tag, index) => (
                     <span
                       key={index}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm bg-primary/10 text-primary"
                     >
                       {tag}
                       <button
@@ -1390,7 +1395,7 @@ export function ProjectResults({
                 </div>
               )}
               {/* Add new tag */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 pl-8">
                 <Input
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
