@@ -181,6 +181,9 @@ const Index = () => {
   // Pipeline approval tracking
   type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
   const [approvedSteps, setApprovedSteps] = useState<PipelineStep[]>([]);
+  // YouTube metadata state
+  const [youtubeTitle, setYoutubeTitle] = useState("");
+  const [youtubeDescription, setYoutubeDescription] = useState("");
 
   // Migrate localStorage to Supabase on first load
   useEffect(() => {
@@ -1870,6 +1873,12 @@ const Index = () => {
           }}
           approvedSteps={approvedSteps}
           onApproveStep={handleApproveStep}
+          youtubeTitle={youtubeTitle}
+          youtubeDescription={youtubeDescription}
+          onYouTubeMetadataChange={(title, description) => {
+            setYoutubeTitle(title);
+            setYoutubeDescription(description);
+          }}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
