@@ -169,6 +169,8 @@ export function YouTubeUploadModal({
 
   // AI-powered metadata generation
   const handleGenerateMetadata = async () => {
+    console.log('[YouTubeUploadModal] handleGenerateMetadata called, script length:', script?.length);
+
     if (!script || script.trim().length === 0) {
       toast({
         title: "Script Required",
@@ -180,9 +182,12 @@ export function YouTubeUploadModal({
 
     setIsGeneratingMetadata(true);
     try {
+      console.log('[YouTubeUploadModal] Calling API...');
       const result = await generateYouTubeMetadata(projectTitle || "Historical Documentary", script);
+      console.log('[YouTubeUploadModal] API result:', JSON.stringify(result).slice(0, 500));
 
       if (result.success && result.titles) {
+        console.log('[YouTubeUploadModal] Got', result.titles.length, 'titles');
         setGeneratedTitles(result.titles);
         setShowTitleSelector(true);
 
