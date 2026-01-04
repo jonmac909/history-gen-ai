@@ -1701,10 +1701,37 @@ const Index = () => {
     // User wants to review/edit, not auto-skip steps
     setSettings(prev => ({ ...prev, fullAutomation: false }));
 
+    // CRITICAL: Reset ALL state first before loading new project
+    // Without this, old project data persists when new project lacks certain fields
+    setPendingScript("");
+    setConfirmedScript("");
+    setPendingAudioUrl("");
+    setAudioUrl("");
+    setPendingAudioDuration(0);
+    setPendingAudioSegments([]);
+    setPendingSrtContent("");
+    setSrtContent("");
+    setPendingSrtUrl("");
+    setPendingImages([]);
+    setImagePrompts([]);
+    setVideoUrl(undefined);
+    setVideoUrlCaptioned(undefined);
+    setEmbersVideoUrl(undefined);
+    setSmokeEmbersVideoUrl(undefined);
+    setGeneratedThumbnails([]);
+    setSelectedThumbnailIndex(undefined);
+    setApprovedSteps({});
+    setYoutubeTitle("");
+    setYoutubeDescription("");
+    setYoutubeTags("");
+    setYoutubeCategoryId("27");
+    setYoutubePlaylistId(null);
+    setGeneratedAssets([]);
+
     // Set project state
     setProjectId(project.id);
     setVideoTitle(project.videoTitle);
-    setSourceUrl(project.videoTitle);
+    setSourceUrl(project.sourceUrl || "");
 
     // Set asset state for ALL views (so back navigation works)
     if (project.script) {
