@@ -289,14 +289,39 @@ export function ImagesPreviewModal({
         </DialogHeader>
 
         {/* Prompt editing panel */}
-        {editingIndex !== null && prompts && (
+        {editingIndex !== null && prompts && prompts[editingIndex] && (
           <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-medium">Edit Prompt for Image {editingIndex + 1}</span>
+              <div className="flex items-center gap-3">
+                <span className="font-medium">Edit Prompt for Image {editingIndex + 1}</span>
+                {/* Time range display */}
+                {prompts[editingIndex].startSeconds !== undefined && prompts[editingIndex].endSeconds !== undefined && (
+                  <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
+                    {Math.floor(prompts[editingIndex].startSeconds! / 60)}:{String(Math.floor(prompts[editingIndex].startSeconds! % 60)).padStart(2, '0')}
+                    {' → '}
+                    {Math.floor(prompts[editingIndex].endSeconds! / 60)}:{String(Math.floor(prompts[editingIndex].endSeconds! % 60)).padStart(2, '0')}
+                  </span>
+                )}
+              </div>
               <Button size="sm" variant="ghost" onClick={handleCancelEdit}>
                 <X className="w-4 h-4" />
               </Button>
             </div>
+
+            {/* Script context from SRT */}
+            {srtContent && prompts[editingIndex].startSeconds !== undefined && prompts[editingIndex].endSeconds !== undefined && (
+              <div className="bg-muted/50 rounded p-3 border border-border/50">
+                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Script for this scene</div>
+                <p className="text-sm text-foreground/80 leading-relaxed italic">
+                  "{extractSrtTextForTimeRange(
+                    srtContent,
+                    prompts[editingIndex].startSeconds!,
+                    prompts[editingIndex].endSeconds!
+                  ) || 'No matching audio for this time range'}"
+                </p>
+              </div>
+            )}
+
             <textarea
               value={editedPrompt}
               onChange={(e) => setEditedPrompt(e.target.value)}
