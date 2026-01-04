@@ -432,6 +432,68 @@ async function generateSingleChunk(
   }
 }
 
+// Script rating result interface
+export interface ScriptRatingResult {
+  success: boolean;
+  grade?: 'A' | 'B' | 'C';
+  summary?: string;
+  issues?: string[];
+  fixPrompt?: string;
+  error?: string;
+}
+
+// Rate a script and get feedback
+export async function rateScript(
+  script: string,
+  template?: string,
+  title?: string
+): Promise<ScriptRatingResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/rewrite-script/rate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ script, template, title })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Script rating error:', response.status, errorText);
+      return { success: false, error: `Failed to rate script: ${response.status}` };
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      return { success: false, error: data.error || 'Rating failed' };
+    }
+
+    return {
+      success: true,
+      grade: data.grade,
+      summary: data.summary,
+      issues: data.issues,
+      fixPrompt: data.fixPrompt
+    };
+  } catch (error) {
+    console.error('Script rating error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to rate script'
+    };
+  }
+}
+
 export async function generateAudio(script: string, voiceSampleUrl: string, projectId: string): Promise<AudioResult> {
   console.log('Generating audio with voice cloning...');
   console.log('Voice sample URL:', voiceSampleUrl);

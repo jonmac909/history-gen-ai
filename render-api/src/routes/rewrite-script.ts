@@ -508,4 +508,108 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
   }
 });
 
+// Rate a script and provide feedback
+router.post('/rate', async (req: Request, res: Response) => {
+  try {
+    const { script, template, title } = req.body;
+
+    if (!script) {
+      return res.status(400).json({ error: 'Script is required' });
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
+    const anthropic = new Anthropic({ apiKey });
+
+    const systemPrompt = `You are an expert script evaluator for YouTube documentary narration scripts. Your job is to grade scripts and provide actionable feedback.
+
+GRADING CRITERIA:
+- A: Excellent - Engaging, well-structured, historically accurate, flows naturally, perfect for narration
+- B: Good but needs improvement - Has some issues that should be fixed before production
+- C: Needs significant work - Has major issues that must be addressed
+
+EVALUATION ASPECTS:
+1. Narrative Flow: Does the script flow naturally as spoken narration?
+2. Historical Accuracy: Are facts presented accurately and credibly?
+3. Engagement: Is it interesting and captivating for viewers?
+4. Structure: Does it have a clear beginning, middle, and end?
+5. TTS Compatibility: Is it free of elements that would sound awkward when read aloud (headers, formatting, etc.)?
+6. Pacing: Is the information density appropriate?
+
+RESPONSE FORMAT:
+You must respond with valid JSON in this exact format:
+{
+  "grade": "A" | "B" | "C",
+  "summary": "One sentence overall assessment",
+  "issues": ["List of specific issues found", "Only include if grade is B or C"],
+  "fixPrompt": "If grade is B or C, provide a specific instruction to fix the script. This will be used as a prompt to regenerate. Example: 'Remove all markdown formatting, improve the opening hook, and add more dramatic tension to the climax.'"
+}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: `Please evaluate this script for a YouTube documentary titled "${title || 'History Documentary'}".
+
+Template guidance used for generation:
+${template ? template.substring(0, 500) + '...' : 'No template provided'}
+
+SCRIPT TO EVALUATE:
+${script.substring(0, 10000)}${script.length > 10000 ? '...[truncated]' : ''}`
+        }
+      ]
+    });
+
+    const responseText = response.content[0]?.type === 'text' ? response.content[0].text : '';
+
+    // Parse JSON response
+    try {
+      // Extract JSON from response (handle markdown code blocks if present)
+      let jsonStr = responseText;
+      const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      const rating = JSON.parse(jsonStr);
+
+      // Validate response structure
+      if (!rating.grade || !['A', 'B', 'C'].includes(rating.grade)) {
+        throw new Error('Invalid grade in response');
+      }
+
+      res.json({
+        success: true,
+        grade: rating.grade,
+        summary: rating.summary || '',
+        issues: rating.issues || [],
+        fixPrompt: rating.fixPrompt || ''
+      });
+    } catch (parseError) {
+      console.error('Failed to parse rating response:', responseText);
+      // Fallback - try to extract grade from text
+      const gradeMatch = responseText.match(/grade["\s:]+([ABC])/i);
+      res.json({
+        success: true,
+        grade: gradeMatch ? gradeMatch[1].toUpperCase() : 'B',
+        summary: 'Could not parse detailed feedback',
+        issues: ['Review manually'],
+        fixPrompt: ''
+      });
+    }
+  } catch (error) {
+    console.error('Script rating error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Rating failed'
+    });
+  }
+});
+
 export default router;

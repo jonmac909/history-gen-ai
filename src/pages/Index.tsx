@@ -1427,6 +1427,76 @@ const Index = () => {
     disableAutoAndGoTo("review-script");
   };
 
+  // Regenerate script with AI fix prompt
+  const handleScriptRegenerate = async (fixPrompt: string) => {
+    const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
+    if (!currentTemplate?.template) {
+      toast({
+        title: "Template Missing",
+        description: "No script template found for regeneration.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Append fix instructions to template
+    const modifiedTemplate = `${currentTemplate.template}
+
+CRITICAL FIX REQUIRED:
+${fixPrompt}
+
+Please regenerate the script with these issues fixed.`;
+
+    setViewState("processing");
+    setProcessingSteps([
+      { id: "script", label: "Regenerating Script", status: "active", sublabel: "0%" }
+    ]);
+
+    try {
+      const scriptResult = await rewriteScriptStreaming(
+        pendingScript, // Use current script as basis
+        modifiedTemplate,
+        videoTitle || "History Documentary",
+        settings.aiModel,
+        settings.wordCount,
+        (progress) => {
+          setProcessingSteps([
+            { id: "script", label: "Regenerating Script", status: "active", sublabel: `${progress}%` }
+          ]);
+        }
+      );
+
+      if (!scriptResult.success || !scriptResult.script) {
+        throw new Error(scriptResult.error || "Failed to regenerate script");
+      }
+
+      setPendingScript(scriptResult.script);
+
+      // Auto-save the regenerated script
+      if (projectId) {
+        autoSave("script", {
+          id: projectId,
+          script: scriptResult.script
+        });
+      }
+
+      toast({
+        title: "Script Regenerated",
+        description: "The script has been updated with fixes. Please review.",
+      });
+
+      setViewState("review-script");
+    } catch (error) {
+      console.error("Script regeneration error:", error);
+      toast({
+        title: "Regeneration Failed",
+        description: error instanceof Error ? error.message : "Failed to regenerate script",
+        variant: "destructive",
+      });
+      setViewState("review-script"); // Go back to review with original script
+    }
+  };
+
   const handleBackToAudio = () => {
     disableAutoAndGoTo("review-audio");
   };
@@ -2586,10 +2656,13 @@ const Index = () => {
       <ScriptReviewModal
         isOpen={viewState === "review-script"}
         script={pendingScript}
+        title={videoTitle}
+        template={scriptTemplates.find(t => t.id === settings.scriptTemplate)?.template}
         onConfirm={handleScriptConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToCreate}
         onForward={canGoForwardFromScript() ? handleForwardToAudio : undefined}
+        onRegenerate={handleScriptRegenerate}
       />
 
       {/* Audio Preview Modal - Show segments modal if we have segments, otherwise legacy single audio */}

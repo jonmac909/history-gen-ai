@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight, RefreshCw, Star, AlertCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,35 +11,105 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { rateScript, type ScriptRatingResult } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 
 interface ScriptReviewModalProps {
   isOpen: boolean;
   script: string;
+  title?: string;
+  template?: string;
   onConfirm: (script: string) => void;
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  onRegenerate?: (fixPrompt: string) => void;
 }
 
 export function ScriptReviewModal({
   isOpen,
   script,
+  title,
+  template,
   onConfirm,
   onCancel,
   onBack,
-  onForward
+  onForward,
+  onRegenerate
 }: ScriptReviewModalProps) {
   const [editedScript, setEditedScript] = useState(script);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRating, setIsRating] = useState(false);
+  const [rating, setRating] = useState<ScriptRatingResult | null>(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [hasRatedAfterRegen, setHasRatedAfterRegen] = useState(false);
 
   // Update editedScript when script prop changes
   useEffect(() => {
     if (script) {
       setEditedScript(script);
+      // Reset rating when script changes (new script loaded)
+      setRating(null);
+      setHasRatedAfterRegen(false);
     }
   }, [script]);
 
+  // Auto-rate when modal opens with a script
+  useEffect(() => {
+    if (isOpen && script && !rating && !isRating) {
+      handleRate();
+    }
+  }, [isOpen, script]);
+
   const wordCount = editedScript.split(/\s+/).filter(Boolean).length;
+
+  const handleRate = async () => {
+    setIsRating(true);
+    try {
+      const result = await rateScript(editedScript, template, title);
+      if (result.success) {
+        setRating(result);
+      } else {
+        toast({
+          title: "Rating Failed",
+          description: result.error || "Could not rate the script.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Rating error:', error);
+      toast({
+        title: "Rating Error",
+        description: "An error occurred while rating the script.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRating(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!onRegenerate || !rating?.fixPrompt) return;
+
+    setIsRegenerating(true);
+    setHasRatedAfterRegen(false);
+
+    try {
+      await onRegenerate(rating.fixPrompt);
+      // The parent component will update the script prop
+      // Rating will happen automatically when the new script loads
+      setHasRatedAfterRegen(true);
+    } catch (error) {
+      console.error('Regeneration error:', error);
+      toast({
+        title: "Regeneration Failed",
+        description: "Could not regenerate the script.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const handleConfirm = () => {
     onConfirm(editedScript);
@@ -55,6 +125,15 @@ export function ScriptReviewModal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const getGradeColor = (grade?: 'A' | 'B' | 'C') => {
+    switch (grade) {
+      case 'A': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30';
+      case 'B': return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30';
+      case 'C': return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30';
+      default: return 'text-muted-foreground bg-muted';
+    }
   };
 
   // Show loading if script is empty
@@ -86,22 +165,94 @@ export function ScriptReviewModal({
             <span className="text-sm font-normal text-muted-foreground ml-2">
               {wordCount.toLocaleString()} words
             </span>
+            {/* Rating Badge */}
+            {isRating ? (
+              <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-muted flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Rating...
+              </span>
+            ) : rating?.grade && (
+              <span className={`ml-2 px-2 py-0.5 text-sm font-bold rounded-full ${getGradeColor(rating.grade)}`}>
+                Grade: {rating.grade}
+              </span>
+            )}
           </DialogTitle>
           <DialogDescription>
             Review and edit the generated script before creating audio.
           </DialogDescription>
         </DialogHeader>
 
+        {/* Rating Feedback Panel */}
+        {rating && rating.grade !== 'A' && (
+          <div className="border rounded-lg p-3 bg-muted/50 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">
+                  {hasRatedAfterRegen ? 'Re-evaluation Result' : 'Feedback'}
+                </p>
+                <p className="text-sm text-muted-foreground">{rating.summary}</p>
+                {rating.issues && rating.issues.length > 0 && (
+                  <ul className="mt-2 text-sm text-muted-foreground list-disc list-inside space-y-0.5">
+                    {rating.issues.map((issue, i) => (
+                      <li key={i}>{issue}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            {/* Regenerate button with auto-fix */}
+            {onRegenerate && rating.fixPrompt && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRegenerate}
+                  disabled={isRegenerating}
+                  className="gap-1"
+                >
+                  {isRegenerating ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Regenerating...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3" />
+                      Auto-Fix & Regenerate
+                    </>
+                  )}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  AI will fix: {rating.fixPrompt.substring(0, 60)}...
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Grade A success message */}
+        {rating?.grade === 'A' && (
+          <div className="border rounded-lg p-3 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
+              <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                Excellent! {rating.summary}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 min-h-0 py-4">
           {isEditing ? (
             <Textarea
               value={editedScript}
               onChange={(e) => setEditedScript(e.target.value)}
-              className="h-[50vh] font-mono text-sm resize-none"
+              className="h-[45vh] font-mono text-sm resize-none"
               placeholder="Script content..."
             />
           ) : (
-            <ScrollArea className="h-[50vh] rounded-lg border border-border bg-muted/30 p-4">
+            <ScrollArea className="h-[45vh] rounded-lg border border-border bg-muted/30 p-4">
               <pre className="whitespace-pre-wrap font-mono text-sm text-foreground leading-relaxed">
                 {editedScript}
               </pre>
@@ -110,7 +261,7 @@ export function ScriptReviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {/* Left side: Navigation + Edit/Download */}
+          {/* Left side: Navigation + Edit/Download/Re-rate */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
@@ -133,6 +284,21 @@ export function ScriptReviewModal({
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
+            {/* Manual re-rate button if script was edited */}
+            {isEditing && (
+              <Button
+                variant="outline"
+                onClick={handleRate}
+                disabled={isRating}
+              >
+                {isRating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Star className="w-4 h-4 mr-2" />
+                )}
+                Re-rate
+              </Button>
+            )}
           </div>
 
           {/* Right side: Exit + Continue */}

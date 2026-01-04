@@ -83,6 +83,11 @@ interface ProjectResultsProps {
   onTitleChange?: (newTitle: string) => void;
   // Thumbnail upload
   onThumbnailUpload?: (thumbnailUrl: string) => void;
+  // Asset uploads (script, audio, captions, images)
+  onScriptUpload?: (script: string) => void;
+  onAudioUpload?: (audioUrl: string) => void;
+  onCaptionsUpload?: (srtContent: string) => void;
+  onImagesUpload?: (imageUrls: string[]) => void;
   // Tags
   tags?: string[];
   onTagsChange?: (tags: string[]) => void;
@@ -207,6 +212,10 @@ export function ProjectResults({
   onDuplicate,
   onTitleChange,
   onThumbnailUpload,
+  onScriptUpload,
+  onAudioUpload,
+  onCaptionsUpload,
+  onImagesUpload,
   tags = [],
   onTagsChange,
 }: ProjectResultsProps) {
@@ -308,6 +317,16 @@ export function ProjectResults({
   // Thumbnail upload
   const thumbnailUploadRef = useRef<HTMLInputElement>(null);
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
+
+  // Asset upload refs and states
+  const scriptUploadRef = useRef<HTMLInputElement>(null);
+  const audioUploadRef = useRef<HTMLInputElement>(null);
+  const captionsUploadRef = useRef<HTMLInputElement>(null);
+  const imagesUploadRef = useRef<HTMLInputElement>(null);
+  const [isUploadingScript, setIsUploadingScript] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isUploadingCaptions, setIsUploadingCaptions] = useState(false);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -421,6 +440,151 @@ export function ProjectResults({
       // Reset file input
       if (thumbnailUploadRef.current) {
         thumbnailUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle script file upload
+  const handleScriptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onScriptUpload) return;
+
+    setIsUploadingScript(true);
+    try {
+      const text = await file.text();
+      onScriptUpload(text);
+      toast({
+        title: "Script Uploaded",
+        description: "Your script has been loaded.",
+      });
+    } catch (error) {
+      console.error('Script upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to read script file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingScript(false);
+      if (scriptUploadRef.current) {
+        scriptUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle audio file upload
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onAudioUpload || !projectId) return;
+
+    setIsUploadingAudio(true);
+    try {
+      const audioFileName = `${projectId}/voiceover.wav`;
+      const { error: uploadError } = await supabase.storage
+        .from("generated-assets")
+        .upload(audioFileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("generated-assets")
+        .getPublicUrl(audioFileName);
+
+      onAudioUpload(publicUrl);
+      toast({
+        title: "Audio Uploaded",
+        description: "Your audio file has been uploaded.",
+      });
+    } catch (error) {
+      console.error('Audio upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload audio.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingAudio(false);
+      if (audioUploadRef.current) {
+        audioUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle captions file upload
+  const handleCaptionsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onCaptionsUpload) return;
+
+    setIsUploadingCaptions(true);
+    try {
+      const text = await file.text();
+      onCaptionsUpload(text);
+      toast({
+        title: "Captions Uploaded",
+        description: "Your captions have been loaded.",
+      });
+    } catch (error) {
+      console.error('Captions upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to read captions file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingCaptions(false);
+      if (captionsUploadRef.current) {
+        captionsUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle images upload (multiple files)
+  const handleImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !onImagesUpload || !projectId) return;
+
+    setIsUploadingImages(true);
+    try {
+      const uploadedUrls: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const imageFileName = `${projectId}/images/image_${String(i + 1).padStart(3, '0')}.png`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("generated-assets")
+          .upload(imageFileName, file, { upsert: true });
+
+        if (uploadError) {
+          console.error(`Failed to upload image ${i + 1}:`, uploadError);
+          continue;
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("generated-assets")
+          .getPublicUrl(imageFileName);
+
+        uploadedUrls.push(publicUrl);
+      }
+
+      if (uploadedUrls.length > 0) {
+        onImagesUpload(uploadedUrls);
+        toast({
+          title: "Images Uploaded",
+          description: `${uploadedUrls.length} image(s) have been uploaded.`,
+        });
+      }
+    } catch (error) {
+      console.error('Images upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload images.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingImages(false);
+      if (imagesUploadRef.current) {
+        imagesUploadRef.current.value = '';
       }
     }
   };
@@ -879,9 +1043,9 @@ export function ProjectResults({
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
       {/* Header with Project Title */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6">
         {isEditingTitle ? (
-          <div className="flex items-center gap-2 max-w-[500px]">
+          <div className="flex items-center gap-2">
             <input
               ref={titleInputRef}
               type="text"
@@ -889,7 +1053,7 @@ export function ProjectResults({
               onChange={(e) => setEditedTitle(e.target.value)}
               onKeyDown={handleTitleKeyDown}
               onBlur={handleSaveTitle}
-              className="text-2xl font-bold bg-transparent border-b-2 border-primary outline-none w-full min-w-[200px]"
+              className="text-2xl font-bold bg-transparent border-b-2 border-primary outline-none flex-1 min-w-[200px]"
               maxLength={100}
             />
             <Button variant="ghost" size="icon" onClick={handleSaveTitle} className="shrink-0 h-8 w-8">
@@ -900,8 +1064,8 @@ export function ProjectResults({
             </Button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 max-w-[500px] group">
-            <h1 className="text-2xl font-bold text-foreground truncate">
+          <div className="flex items-start gap-2 group">
+            <h1 className="text-2xl font-bold text-foreground break-words">
               {projectTitle || "Untitled Project"}
             </h1>
             {onTitleChange && (
@@ -917,7 +1081,6 @@ export function ProjectResults({
             )}
           </div>
         )}
-
       </div>
 
       {/* Two Column Layout */}
@@ -925,7 +1088,7 @@ export function ProjectResults({
         {/* Left Column: Pipeline Steps */}
         <div className="flex flex-col space-y-0 divide-y divide-border border rounded-lg p-4">
           {/* Script */}
-          {assets.find(a => a.id === 'script') && (
+          {onGoToScript && (
             <div
               className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToScript}
@@ -934,22 +1097,45 @@ export function ProjectResults({
                 <FileText className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Script</span>
                 <span className="text-sm text-muted-foreground">
-                  {assets.find(a => a.id === 'script')!.size}
+                  {assets.find(a => a.id === 'script')
+                    ? assets.find(a => a.id === 'script')!.size
+                    : 'Pending'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
+                {onScriptUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      scriptUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingScript}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload script"
+                  >
+                    {isUploadingScript ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+                {assets.find(a => a.id === 'script') && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
+                    }}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Download"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -972,7 +1158,7 @@ export function ProjectResults({
           )}
 
           {/* Audio */}
-          {assets.find(a => a.id === 'audio') && (
+          {onGoToAudio && (
             <div
               className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToAudio}
@@ -981,22 +1167,45 @@ export function ProjectResults({
                 <Mic className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Audio</span>
                 <span className="text-sm text-muted-foreground">
-                  {assets.find(a => a.id === 'audio')!.size}
+                  {assets.find(a => a.id === 'audio')
+                    ? assets.find(a => a.id === 'audio')!.size
+                    : 'Pending'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
+                {onAudioUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      audioUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingAudio}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload audio"
+                  >
+                    {isUploadingAudio ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+                {assets.find(a => a.id === 'audio') && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
+                    }}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Download"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1019,7 +1228,7 @@ export function ProjectResults({
           )}
 
           {/* Captions */}
-          {srtContent && (
+          {onGoToCaptions && (
             <div
               className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToCaptions}
@@ -1028,30 +1237,53 @@ export function ProjectResults({
                 <MessageSquare className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Captions</span>
                 <span className="text-sm text-muted-foreground">
-                  {(srtContent.match(/^\d+$/gm) || []).length} segments
+                  {srtContent
+                    ? `${(srtContent.match(/^\d+$/gm) || []).length} segments`
+                    : 'Pending'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const blob = new Blob([srtContent], { type: 'text/plain' });
-                    const url = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = 'captions.srt';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
+                {onCaptionsUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      captionsUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingCaptions}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload captions"
+                  >
+                    {isUploadingCaptions ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+                {srtContent && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const blob = new Blob([srtContent], { type: 'text/plain' });
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = 'captions.srt';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                    }}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Download"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1118,10 +1350,29 @@ export function ProjectResults({
                 <span className="text-sm text-muted-foreground">
                   {assets.some(a => a.id.startsWith('image-') && a.url)
                     ? `${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`
-                    : 'Generate'}
+                    : 'Pending'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                {onImagesUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      imagesUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingImages}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload images"
+                  >
+                    {isUploadingImages ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
                 {assets.some(a => a.id.startsWith('image-') && a.url) && (
                   <Button
                     variant="ghost"
@@ -1773,13 +2024,42 @@ export function ProjectResults({
         </DialogContent>
       </Dialog>
 
-      {/* Hidden file input for thumbnail upload */}
+      {/* Hidden file inputs */}
       <input
         ref={thumbnailUploadRef}
         type="file"
         accept="image/png,image/jpeg,image/jpg,image/webp"
         className="hidden"
         onChange={handleThumbnailUpload}
+      />
+      <input
+        ref={scriptUploadRef}
+        type="file"
+        accept=".txt,.md,text/plain,text/markdown"
+        className="hidden"
+        onChange={handleScriptUpload}
+      />
+      <input
+        ref={audioUploadRef}
+        type="file"
+        accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg"
+        className="hidden"
+        onChange={handleAudioUpload}
+      />
+      <input
+        ref={captionsUploadRef}
+        type="file"
+        accept=".srt,.vtt,text/plain"
+        className="hidden"
+        onChange={handleCaptionsUpload}
+      />
+      <input
+        ref={imagesUploadRef}
+        type="file"
+        accept="image/*,.png,.jpg,.jpeg,.webp"
+        multiple
+        className="hidden"
+        onChange={handleImagesUpload}
       />
 
       {/* YouTube Metadata Modal */}

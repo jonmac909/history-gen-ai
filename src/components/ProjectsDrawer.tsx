@@ -52,12 +52,16 @@ const STATUS_OPTIONS: { value: ProjectStatus; label: string; icon: typeof Clock 
   { value: 'archived', label: 'Archived', icon: Archive },
 ];
 
+// Filter options including 'all'
+type FilterOption = 'all' | ProjectStatus;
+
 export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
+  const [statusFilter, setStatusFilter] = useState<FilterOption>('all');
 
   // Load all projects when drawer opens
   useEffect(() => {
@@ -175,6 +179,11 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
     }
   };
 
+  // Filter projects based on current filter
+  const filteredProjects = statusFilter === 'all'
+    ? allProjects
+    : allProjects.filter(p => p.status === statusFilter);
+
   // Count non-archived projects for badge
   const activeProjectCount = allProjects.filter(p => p.status !== 'archived').length;
 
@@ -214,9 +223,60 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
                 </Button>
               )}
             </SheetTitle>
+
+            {/* Status Filter Tabs */}
+            <div className="flex gap-1 mt-3 border-b pb-2">
+              <Button
+                variant={statusFilter === 'all' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => setStatusFilter('all')}
+              >
+                All
+                <span className="ml-1 text-muted-foreground">
+                  ({allProjects.length})
+                </span>
+              </Button>
+              <Button
+                variant={statusFilter === 'in_progress' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs gap-1"
+                onClick={() => setStatusFilter('in_progress')}
+              >
+                <Clock className="w-3 h-3" />
+                In Progress
+                <span className="ml-0.5 text-muted-foreground">
+                  ({allProjects.filter(p => p.status === 'in_progress').length})
+                </span>
+              </Button>
+              <Button
+                variant={statusFilter === 'live' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs gap-1"
+                onClick={() => setStatusFilter('live')}
+              >
+                <Globe className="w-3 h-3" />
+                Live
+                <span className="ml-0.5 text-muted-foreground">
+                  ({allProjects.filter(p => p.status === 'live').length})
+                </span>
+              </Button>
+              <Button
+                variant={statusFilter === 'archived' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs gap-1"
+                onClick={() => setStatusFilter('archived')}
+              >
+                <Archive className="w-3 h-3" />
+                Archived
+                <span className="ml-0.5 text-muted-foreground">
+                  ({allProjects.filter(p => p.status === 'archived').length})
+                </span>
+              </Button>
+            </div>
           </SheetHeader>
 
-          <div className="mt-6 space-y-2 max-h-[calc(100vh-120px)] overflow-y-auto">
+          <div className="mt-4 space-y-2 max-h-[calc(100vh-180px)] overflow-y-auto">
             {isLoading ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
@@ -228,8 +288,13 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
                 <p>No projects yet</p>
                 <p className="text-sm mt-1">Projects will appear here as you work</p>
               </div>
+            ) : filteredProjects.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No {statusFilter === 'in_progress' ? 'in progress' : statusFilter} projects</p>
+              </div>
             ) : (
-              allProjects.map(project => (
+              filteredProjects.map(project => (
                 <ProjectCard
                   key={project.id}
                   project={project}
