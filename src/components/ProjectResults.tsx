@@ -809,9 +809,9 @@ export function ProjectResults({
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* Left Column: Pipeline Steps */}
-        <div className="space-y-0 divide-y divide-border">
+        <div className="space-y-0 divide-y divide-border border rounded-lg p-4">
           {/* Script */}
           {assets.find(a => a.id === 'script') && (
             <div
@@ -1360,14 +1360,14 @@ export function ProjectResults({
               </div>
             )}
 
-            {/* Push to Live button */}
+            {/* Upload button */}
             <Button
               onClick={() => setIsYouTubeModalOpen(true)}
               disabled={!previewVideoUrl}
               className="w-full gap-2 bg-black hover:bg-black/90 text-white"
             >
               <Upload className="w-4 h-4" />
-              Push to Live
+              Upload
             </Button>
 
             {/* Connect/Disconnect */}
