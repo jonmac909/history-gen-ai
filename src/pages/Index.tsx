@@ -1297,6 +1297,12 @@ const Index = () => {
     }
   };
 
+  const handleForwardToCaptions = () => {
+    if (pendingSrtContent) {
+      setViewState("review-captions");
+    }
+  };
+
   const handleForwardToPrompts = () => {
     if (imagePrompts.length > 0) {
       setViewState("review-prompts");
@@ -1311,7 +1317,8 @@ const Index = () => {
 
   // Check if forward navigation is available for each step
   const canGoForwardFromScript = () => pendingAudioUrl || pendingAudioSegments.length > 0;
-  const canGoForwardFromAudio = () => imagePrompts.length > 0;
+  const canGoForwardFromAudio = () => !!pendingSrtContent;
+  const canGoForwardFromCaptions = () => imagePrompts.length > 0;
   const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
   // Handle pipeline step approval
@@ -2215,7 +2222,7 @@ const Index = () => {
           onRegenerate={handleSegmentRegenerate}
           onCancel={handleCancelRequest}
           onBack={handleBackToScript}
-          onForward={canGoForwardFromAudio() ? handleForwardToPrompts : undefined}
+          onForward={canGoForwardFromAudio() ? handleForwardToCaptions : undefined}
           regeneratingIndex={regeneratingSegmentIndex}
         />
       ) : (
@@ -2237,6 +2244,7 @@ const Index = () => {
         onConfirm={(srt) => handleCaptionsConfirm(srt)}
         onCancel={handleCancelRequest}
         onBack={handleBackToAudio}
+        onForward={canGoForwardFromCaptions() ? handleForwardToPrompts : undefined}
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />

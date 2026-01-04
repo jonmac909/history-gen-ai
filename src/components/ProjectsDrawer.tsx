@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { FolderOpen, Trash2, Archive, Clock, Image, Music, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -29,6 +29,7 @@ import {
   getRootProjects,
   getProjectVersions,
   deleteProject,
+  archiveProject,
   getStepLabel,
   formatDuration,
   formatDate,
@@ -44,6 +45,7 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
 
   // Load root projects when drawer opens (versions are loaded on-demand)
@@ -102,6 +104,29 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
     }
   };
 
+  const handleArchive = async (project: Project) => {
+    setArchivingId(project.id);
+
+    try {
+      await archiveProject(project.id);
+      setProjects(prev => prev.filter(p => p.id !== project.id));
+
+      toast({
+        title: "Project Archived",
+        description: `"${project.videoTitle}" has been archived.`,
+      });
+    } catch (error) {
+      console.error("Error archiving project:", error);
+      toast({
+        title: "Archive Failed",
+        description: "Could not archive project. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
   // Separate in-progress and completed projects
   const inProgressProjects = projects.filter(p => p.status === 'in_progress');
   const completedProjects = projects.filter(p => p.status === 'completed');
@@ -155,7 +180,9 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
                         project={project}
                         onOpen={onOpenProject}
                         onDelete={() => setConfirmDelete(project)}
+                        onArchive={() => handleArchive(project)}
                         deletingId={deletingId}
+                        archivingId={archivingId}
                         setIsOpen={setIsOpen}
                       />
                     ))}
@@ -175,7 +202,9 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
                         project={project}
                         onOpen={onOpenProject}
                         onDelete={() => setConfirmDelete(project)}
+                        onArchive={() => handleArchive(project)}
                         deletingId={deletingId}
+                        archivingId={archivingId}
                         setIsOpen={setIsOpen}
                       />
                     ))}
@@ -216,13 +245,17 @@ function ProjectCard({
   project,
   onOpen,
   onDelete,
+  onArchive,
   deletingId,
+  archivingId,
   setIsOpen,
 }: {
   project: Project;
   onOpen?: (project: Project) => void;
   onDelete: () => void;
+  onArchive: () => void;
   deletingId: string | null;
+  archivingId: string | null;
   setIsOpen: (open: boolean) => void;
 }) {
   const [versions, setVersions] = useState<Project[]>([]);
@@ -309,12 +342,26 @@ function ProjectCard({
           <Button
             variant="ghost"
             size="icon"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            disabled={archivingId === project.id}
+            title="Archive project"
+          >
+            <Archive className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="shrink-0 text-muted-foreground hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
             disabled={deletingId === project.id}
+            title="Delete project"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
