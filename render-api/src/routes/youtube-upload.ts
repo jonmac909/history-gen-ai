@@ -2,6 +2,16 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import sharp from 'sharp';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+// Set ffmpeg path for metadata scrubbing
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+}
 
 const router = Router();
 
@@ -472,16 +482,84 @@ router.post('/', async (req: Request, res: Response) => {
       throw new Error(`Failed to download video: ${videoResponse.status}`);
     }
 
-    const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-    const videoSize = videoBuffer.length;
+    let videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+    let videoSize = videoBuffer.length;
 
     console.log(`Video downloaded: ${(videoSize / 1024 / 1024).toFixed(2)} MB`);
 
     sendEvent({
       type: 'progress',
       stage: 'downloading',
-      percent: 20,
+      percent: 15,
       message: `Video downloaded (${(videoSize / 1024 / 1024).toFixed(1)} MB)`
+    });
+
+    // Phase 1.5: Scrub FFmpeg metadata to prevent YouTube bot flagging
+    // YouTube flags videos with Lavf/Lavc muxer metadata as "Programmatic Mass Content"
+    sendEvent({
+      type: 'progress',
+      stage: 'processing',
+      percent: 18,
+      message: 'Removing bot fingerprint metadata...'
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yt-upload-'));
+    const inputPath = path.join(tempDir, 'input.mp4');
+    const outputPath = path.join(tempDir, 'clean.mp4');
+
+    try {
+      // Write video to temp file
+      fs.writeFileSync(inputPath, videoBuffer);
+
+      // Run FFmpeg to strip metadata (instant - no re-encoding)
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-map_metadata', '-1',  // Strip ALL metadata (removes Lavf/Lavc fingerprint)
+            '-c:v', 'copy',         // Copy video stream without re-encoding
+            '-c:a', 'copy',         // Copy audio stream without re-encoding
+            '-movflags', '+faststart',  // Optimize for streaming
+            '-y'
+          ])
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log('[Metadata scrub] FFmpeg:', cmd);
+          })
+          .on('error', (err) => {
+            console.error('[Metadata scrub] FFmpeg error:', err);
+            reject(err);
+          })
+          .on('end', () => {
+            console.log('[Metadata scrub] Metadata stripped successfully');
+            resolve();
+          })
+          .run();
+      });
+
+      // Read the clean video back
+      videoBuffer = fs.readFileSync(outputPath);
+      videoSize = videoBuffer.length;
+
+      console.log(`Clean video: ${(videoSize / 1024 / 1024).toFixed(2)} MB (metadata stripped)`);
+    } catch (scrubError) {
+      console.error('[Metadata scrub] Failed, using original:', scrubError);
+      // Continue with original video if scrubbing fails
+    } finally {
+      // Clean up temp files
+      try {
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir);
+      } catch (cleanupError) {
+        console.warn('[Metadata scrub] Cleanup error:', cleanupError);
+      }
+    }
+
+    sendEvent({
+      type: 'progress',
+      stage: 'processing',
+      percent: 22,
+      message: 'Metadata cleaned, preparing upload...'
     });
 
     // Phase 2: Initialize resumable upload
@@ -503,6 +581,7 @@ router.post('/', async (req: Request, res: Response) => {
       status: {
         privacyStatus: privacyStatus || 'private',
         selfDeclaredMadeForKids: false,
+        notifySubscribers: true,  // Notify subscribers to avoid bot flagging
       }
     };
 
