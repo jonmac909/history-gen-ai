@@ -1001,7 +1001,7 @@ export function ProjectResults({
           )}
 
           {/* Images */}
-          {assets.some(a => a.id.startsWith('image-') && a.url) && (
+          {onGoToImages && (
             <div
               className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToImages}
@@ -1010,22 +1010,26 @@ export function ProjectResults({
                 <Image className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Images</span>
                 <span className="text-sm text-muted-foreground">
-                  {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
+                  {assets.some(a => a.id.startsWith('image-') && a.url)
+                    ? `${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`
+                    : 'Generate'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadAllImagesAsZip();
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download ZIP"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
+                {assets.some(a => a.id.startsWith('image-') && a.url) && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadAllImagesAsZip();
+                    }}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Download ZIP"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1085,7 +1089,7 @@ export function ProjectResults({
           )}
 
           {/* Video Render */}
-          {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (() => {
+          {onGoToRender && (() => {
             const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
             const hasVideo = videoVersions > 0;
 
