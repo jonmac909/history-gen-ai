@@ -224,55 +224,37 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
               )}
             </SheetTitle>
 
-            {/* Status Filter Tabs */}
-            <div className="flex gap-1 mt-3 border-b pb-2">
-              <Button
-                variant={statusFilter === 'all' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5 text-xs"
-                onClick={() => setStatusFilter('all')}
-              >
-                All
-                <span className="ml-1 text-muted-foreground">
-                  ({allProjects.length})
-                </span>
-              </Button>
-              <Button
-                variant={statusFilter === 'in_progress' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5 text-xs gap-1"
-                onClick={() => setStatusFilter('in_progress')}
-              >
-                <Clock className="w-3 h-3" />
-                In Progress
-                <span className="ml-0.5 text-muted-foreground">
-                  ({allProjects.filter(p => p.status === 'in_progress').length})
-                </span>
-              </Button>
-              <Button
-                variant={statusFilter === 'live' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5 text-xs gap-1"
-                onClick={() => setStatusFilter('live')}
-              >
-                <Globe className="w-3 h-3" />
-                Live
-                <span className="ml-0.5 text-muted-foreground">
-                  ({allProjects.filter(p => p.status === 'live').length})
-                </span>
-              </Button>
-              <Button
-                variant={statusFilter === 'archived' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5 text-xs gap-1"
-                onClick={() => setStatusFilter('archived')}
-              >
-                <Archive className="w-3 h-3" />
-                Archived
-                <span className="ml-0.5 text-muted-foreground">
-                  ({allProjects.filter(p => p.status === 'archived').length})
-                </span>
-              </Button>
+            {/* Status Filter Dropdown */}
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-xs text-muted-foreground">Filter:</span>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as FilterOption)}>
+                <SelectTrigger className="h-7 w-[140px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">
+                    All ({allProjects.length})
+                  </SelectItem>
+                  <SelectItem value="in_progress" className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3 h-3" />
+                      In Progress ({allProjects.filter(p => p.status === 'in_progress').length})
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="live" className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Globe className="w-3 h-3" />
+                      Live ({allProjects.filter(p => p.status === 'live').length})
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="archived" className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Archive className="w-3 h-3" />
+                      Archived ({allProjects.filter(p => p.status === 'archived').length})
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </SheetHeader>
 
@@ -377,7 +359,6 @@ function ProjectCard({
 
   // Get current status (map 'completed' to 'live' for display)
   const displayStatus = project.status === 'completed' ? 'live' : (project.status as ProjectStatus);
-  const StatusIcon = STATUS_OPTIONS.find(s => s.value === displayStatus)?.icon || Clock;
 
   return (
     <div className="space-y-1">
@@ -405,10 +386,9 @@ function ProjectCard({
             onValueChange={(value) => onStatusChange(value as ProjectStatus)}
           >
             <SelectTrigger
-              className="h-7 w-[100px] text-xs"
+              className="h-7 w-[110px] text-xs"
               onClick={(e) => e.stopPropagation()}
             >
-              <StatusIcon className="w-3 h-3 mr-1" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
