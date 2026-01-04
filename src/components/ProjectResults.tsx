@@ -1269,7 +1269,7 @@ export function ProjectResults({
           })()}
 
           {/* Visual Effects */}
-          {(basicVideoUrl || videoUrl) && audioUrl && imagePrompts && imagePrompts.length > 0 && (() => {
+          {audioUrl && imagePrompts && imagePrompts.length > 0 && srtContent && (() => {
             const hasEmbers = !!embersVideoUrl;
             const hasSmokeEmbers = !!smokeEmbersVideoUrl;
             const effectCount = [hasEmbers, hasSmokeEmbers].filter(Boolean).length;
