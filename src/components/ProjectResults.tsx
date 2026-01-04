@@ -1355,20 +1355,21 @@ export function ProjectResults({
         </DialogContent>
       </Dialog>
 
-      {/* YouTube Upload Modal */}
+      {/* YouTube Metadata Modal */}
       <YouTubeUploadModal
         isOpen={isYouTubeModalOpen}
-        videoUrl={embersVideoUrl || smokeEmbersVideoUrl || basicVideoUrl || initialSmokeEmbersVideoUrl || initialEmbersVideoUrl || videoUrl || ''}
         projectTitle={projectTitle}
         script={script}
-        thumbnails={thumbnails}
-        selectedThumbnailIndex={selectedThumbnailIndex}
         initialTitle={youtubeTitle}
         initialDescription={youtubeDescription}
-        onMetadataChange={onYouTubeMetadataChange}
+        onMetadataChange={(title, description) => {
+          // Update parent with just title and description for preview
+          if (onYouTubeMetadataChange) {
+            onYouTubeMetadataChange(title, description);
+          }
+        }}
         onClose={() => setIsYouTubeModalOpen(false)}
-        onSuccess={(youtubeUrl) => {
-          console.log('Video uploaded to YouTube:', youtubeUrl);
+        onConfirm={() => {
           setIsYouTubeModalOpen(false);
         }}
       />
