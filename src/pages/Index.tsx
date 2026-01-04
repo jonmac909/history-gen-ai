@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -2148,7 +2148,19 @@ const Index = () => {
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
                   >
                     <Sparkles className="w-5 h-5 mr-2" />
-                    Generate
+                    Generate Script
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, fullAutomation: true }));
+                      handleGenerate();
+                    }}
+                    disabled={viewState !== "create" || !inputValue.trim()}
+                    variant="outline"
+                    className="w-full rounded-xl py-6 text-base border-primary/30 hover:bg-primary/10"
+                  >
+                    <Zap className="w-5 h-5 mr-2" />
+                    Full Auto Generate
                   </Button>
                 </div>
               )}
