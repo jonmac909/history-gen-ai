@@ -528,6 +528,9 @@ const Index = () => {
       }
 
       // Set up project with custom script - ALWAYS new project from main page
+      // CRITICAL: Reset all pending state FIRST to clear old project data
+      resetPendingState();
+
       setSourceUrl("Custom Script");
       const useProjectId = crypto.randomUUID();
       setProjectId(useProjectId);
@@ -1584,6 +1587,9 @@ const Index = () => {
       return;
     }
 
+    // CRITICAL: Reset all pending state FIRST to clear old project data
+    resetPendingState();
+
     // Set project title
     const title = captionsProjectTitle.trim() || "Untitled Project";
     setVideoTitle(title);
@@ -1702,6 +1708,9 @@ const Index = () => {
       toast({ title: "No captions", description: "Please upload or paste captions (SRT) first.", variant: "destructive" });
       return;
     }
+
+    // CRITICAL: Reset all pending state FIRST to clear old project data
+    resetPendingState();
 
     // Set project title
     const title = imagesProjectTitle.trim() || "Untitled Project";
