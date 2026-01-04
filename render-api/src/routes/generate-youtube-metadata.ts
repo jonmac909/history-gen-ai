@@ -59,32 +59,33 @@ Video Title (for context): ${title || 'Historical Documentary'}
 Script Content:
 ${truncatedScript}
 
-Generate the following in JSON format:
-{
-  "titles": [
-    // Generate exactly 10 title options (max 100 characters each)
-    // Mix different styles:
-    // - 2-3 curiosity-driven titles with questions or mystery
-    // - 2-3 dramatic/emotional titles
-    // - 2-3 educational/informative titles
-    // - 2 clickbait-style (but still accurate) titles
-    // Include relevant years/dates when applicable
-    // Use power words: secrets, hidden, untold, forgotten, shocking, etc.
-  ],
-  "description": "// A compelling 2-3 paragraph description (500-1000 characters):\\n// - Start with a hook that creates curiosity\\n// - Summarize the key historical content\\n// - Include relevant keywords naturally\\n// - End with a call-to-action\\n// Use line breaks (\\n) for formatting",
-  "tags": [
-    // Generate exactly 15-20 highly relevant tags for YouTube SEO
-    // Each tag should be lowercase and focused:
-    // - 3-4 specific topic keywords (e.g., "roman empire", "medieval history")
-    // - 3-4 era/time period tags (e.g., "ancient history", "15th century")
-    // - 3-4 key figures/places mentioned (e.g., "julius caesar", "constantinople")
-    // - 3-4 broader category tags (e.g., "history documentary", "educational", "history channel")
-    // - 2-3 trending/popular history tags (e.g., "dark history", "untold stories")
-    // DO NOT include generic tags like "video" or "youtube"
-  ]
-}
+Generate the following JSON with these requirements:
 
-Return ONLY valid JSON, no markdown code blocks or other text.`;
+TITLES (exactly 10 options, max 100 characters each):
+- 2-3 curiosity-driven titles with questions or mystery
+- 2-3 dramatic/emotional titles
+- 2-3 educational/informative titles
+- 2 clickbait-style (but still accurate) titles
+- Include relevant years/dates when applicable
+- Use power words: secrets, hidden, untold, forgotten, shocking, etc.
+
+DESCRIPTION (500-1000 characters):
+- Start with a hook that creates curiosity
+- Summarize the key historical content
+- Include relevant keywords naturally
+- End with a call-to-action
+- Use \\n for line breaks
+
+TAGS (15-20 lowercase tags):
+- 3-4 specific topic keywords (e.g., "roman empire", "medieval history")
+- 3-4 era/time period tags (e.g., "ancient history", "15th century")
+- 3-4 key figures/places mentioned (e.g., "julius caesar", "constantinople")
+- 3-4 broader category tags (e.g., "history documentary", "educational")
+- 2-3 trending history tags (e.g., "dark history", "untold stories")
+- DO NOT include generic tags like "video" or "youtube"
+
+Return ONLY this JSON structure (no markdown, no code blocks):
+{"titles": ["title1", "title2", ...], "description": "...", "tags": ["tag1", "tag2", ...]}`;
 
     console.log('[generate-youtube-metadata] Calling Claude API...');
 
