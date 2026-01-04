@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Archive, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2, Heart, ArchiveRestore } from "lucide-react";
+import { FolderOpen, Trash2, ChevronRight, ChevronDown, Loader2, Heart, Globe, Clock, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -19,17 +19,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getRootProjects,
   getProjectVersions,
   deleteProject,
-  archiveProject,
   getArchivedProjects,
   toggleFavorite,
   upsertProject,
@@ -42,23 +43,39 @@ interface ProjectsDrawerProps {
   onViewFavorites?: () => void;
 }
 
+// Status options for projects
+type ProjectStatus = 'in_progress' | 'live' | 'archived';
+
+const STATUS_OPTIONS: { value: ProjectStatus; label: string; icon: typeof Clock }[] = [
+  { value: 'in_progress', label: 'In Progress', icon: Clock },
+  { value: 'live', label: 'Live', icon: Globe },
+  { value: 'archived', label: 'Archived', icon: Archive },
+];
+
 export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
 
-  // Load root projects and archived projects when drawer opens
+  // Load all projects when drawer opens
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
       Promise.all([getRootProjects(), getArchivedProjects()])
         .then(([rootProjects, archived]) => {
-          setProjects(rootProjects);
-          setArchivedProjects(archived);
+          // Combine all projects, mapping 'completed' to 'live' for display
+          const allCombined = [
+            ...rootProjects.map(p => ({
+              ...p,
+              status: p.status === 'completed' ? 'live' as const : p.status
+            })),
+            ...archived
+          ];
+          // Sort by updatedAt descending
+          allCombined.sort((a, b) => b.updatedAt - a.updatedAt);
+          setAllProjects(allCombined);
         })
         .catch(err => console.error('[ProjectsDrawer] Failed to load projects:', err))
         .finally(() => setIsLoading(false));
@@ -91,7 +108,7 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
 
       // Remove from project store (Supabase)
       await deleteProject(project.id);
-      setProjects(prev => prev.filter(p => p.id !== project.id));
+      setAllProjects(prev => prev.filter(p => p.id !== project.id));
 
       toast({
         title: "Project Deleted",
@@ -110,57 +127,29 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
     }
   };
 
-  const handleArchive = async (project: Project) => {
-    setArchivingId(project.id);
-
+  const handleStatusChange = async (project: Project, newStatus: ProjectStatus) => {
     try {
-      await archiveProject(project.id);
-      setProjects(prev => prev.filter(p => p.id !== project.id));
-      // Add to archived list
-      setArchivedProjects(prev => [{ ...project, status: 'archived' }, ...prev]);
+      // Map 'live' back to 'completed' for database
+      const dbStatus = newStatus === 'live' ? 'completed' : newStatus;
+      await upsertProject({ id: project.id, status: dbStatus });
 
+      // Update local state
+      setAllProjects(prev => prev.map(p =>
+        p.id === project.id ? { ...p, status: newStatus } : p
+      ));
+
+      const statusLabel = STATUS_OPTIONS.find(s => s.value === newStatus)?.label || newStatus;
       toast({
-        title: "Project Archived",
-        description: `"${project.videoTitle}" has been archived.`,
+        title: "Status Updated",
+        description: `"${project.videoTitle}" is now ${statusLabel}.`,
       });
     } catch (error) {
-      console.error("Error archiving project:", error);
+      console.error("Error updating status:", error);
       toast({
-        title: "Archive Failed",
-        description: "Could not archive project. Try again.",
+        title: "Error",
+        description: "Could not update project status.",
         variant: "destructive",
       });
-    } finally {
-      setArchivingId(null);
-    }
-  };
-
-  const handleUnarchive = async (project: Project) => {
-    setArchivingId(project.id);
-
-    try {
-      // Update status to completed (or in_progress based on currentStep)
-      const newStatus = project.currentStep === 'complete' ? 'completed' : 'in_progress';
-      await upsertProject({ id: project.id, status: newStatus });
-
-      // Remove from archived list
-      setArchivedProjects(prev => prev.filter(p => p.id !== project.id));
-      // Add to projects list
-      setProjects(prev => [{ ...project, status: newStatus }, ...prev]);
-
-      toast({
-        title: "Project Restored",
-        description: `"${project.videoTitle}" has been restored.`,
-      });
-    } catch (error) {
-      console.error("Error unarchiving project:", error);
-      toast({
-        title: "Restore Failed",
-        description: "Could not restore project. Try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setArchivingId(null);
     }
   };
 
@@ -169,7 +158,7 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
     try {
       const newValue = await toggleFavorite(project.id);
       // Update project in the list
-      setProjects(prev => prev.map(p =>
+      setAllProjects(prev => prev.map(p =>
         p.id === project.id ? { ...p, isFavorite: newValue } : p
       ));
       toast({
@@ -186,9 +175,8 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
     }
   };
 
-  // Separate in-progress and completed projects
-  const inProgressProjects = projects.filter(p => p.status === 'in_progress');
-  const completedProjects = projects.filter(p => p.status === 'completed');
+  // Count non-archived projects for badge
+  const activeProjectCount = allProjects.filter(p => p.status !== 'archived').length;
 
   return (
     <>
@@ -197,9 +185,9 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
           <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
             <FolderOpen className="w-4 h-4" />
             <span className="hidden sm:inline">Projects</span>
-            {projects.length > 0 && (
+            {activeProjectCount > 0 && (
               <span className="bg-primary/20 text-primary text-xs px-1.5 py-0.5 rounded-full">
-                {projects.length}
+                {activeProjectCount}
               </span>
             )}
           </Button>
@@ -228,89 +216,31 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
             </SheetTitle>
           </SheetHeader>
 
-          <div className="mt-6 space-y-4 max-h-[calc(100vh-120px)] overflow-y-auto">
+          <div className="mt-6 space-y-2 max-h-[calc(100vh-120px)] overflow-y-auto">
             {isLoading ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
                 <p>Loading projects...</p>
               </div>
-            ) : projects.length === 0 ? (
+            ) : allProjects.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p>No projects yet</p>
                 <p className="text-sm mt-1">Projects will appear here as you work</p>
               </div>
             ) : (
-              <>
-                {/* In-Progress Projects */}
-                {inProgressProjects.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <PlayCircle className="w-4 h-4" />
-                      In Progress ({inProgressProjects.length})
-                    </div>
-                    {inProgressProjects.map(project => (
-                      <ProjectCard
-                        key={project.id}
-                        project={project}
-                        onOpen={onOpenProject}
-                        onDelete={() => setConfirmDelete(project)}
-                        onArchive={() => handleArchive(project)}
-                        onToggleFavorite={(e) => handleToggleFavorite(project, e)}
-                        deletingId={deletingId}
-                        archivingId={archivingId}
-                        setIsOpen={setIsOpen}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Completed Projects */}
-                {completedProjects.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Completed ({completedProjects.length})
-                    </div>
-                    {completedProjects.map(project => (
-                      <ProjectCard
-                        key={project.id}
-                        project={project}
-                        onOpen={onOpenProject}
-                        onDelete={() => setConfirmDelete(project)}
-                        onArchive={() => handleArchive(project)}
-                        onToggleFavorite={(e) => handleToggleFavorite(project, e)}
-                        deletingId={deletingId}
-                        archivingId={archivingId}
-                        setIsOpen={setIsOpen}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Archived Projects */}
-                {archivedProjects.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Archive className="w-4 h-4" />
-                      Archived ({archivedProjects.length})
-                    </div>
-                    {archivedProjects.map(project => (
-                      <ProjectCard
-                        key={project.id}
-                        project={project}
-                        onOpen={onOpenProject}
-                        onDelete={() => setConfirmDelete(project)}
-                        onUnarchive={() => handleUnarchive(project)}
-                        isArchived
-                        deletingId={deletingId}
-                        archivingId={archivingId}
-                        setIsOpen={setIsOpen}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
+              allProjects.map(project => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  onOpen={onOpenProject}
+                  onDelete={() => setConfirmDelete(project)}
+                  onStatusChange={(status) => handleStatusChange(project, status)}
+                  onToggleFavorite={(e) => handleToggleFavorite(project, e)}
+                  deletingId={deletingId}
+                  setIsOpen={setIsOpen}
+                />
+              ))
             )}
           </div>
         </SheetContent>
@@ -340,28 +270,22 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
   );
 }
 
-// Separate component for project cards with version dropdown
+// Separate component for project cards with status selector
 function ProjectCard({
   project,
   onOpen,
   onDelete,
-  onArchive,
-  onUnarchive,
+  onStatusChange,
   onToggleFavorite,
-  isArchived = false,
   deletingId,
-  archivingId,
   setIsOpen,
 }: {
   project: Project;
   onOpen?: (project: Project) => void;
   onDelete: () => void;
-  onArchive?: () => void;
-  onUnarchive?: () => void;
+  onStatusChange: (status: ProjectStatus) => void;
   onToggleFavorite?: (e: React.MouseEvent) => void;
-  isArchived?: boolean;
   deletingId: string | null;
-  archivingId: string | null;
   setIsOpen: (open: boolean) => void;
 }) {
   const [versions, setVersions] = useState<Project[]>([]);
@@ -386,10 +310,14 @@ function ProjectCard({
     setIsVersionsOpen(!isVersionsOpen);
   };
 
+  // Get current status (map 'completed' to 'live' for display)
+  const displayStatus = project.status === 'completed' ? 'live' : (project.status as ProjectStatus);
+  const StatusIcon = STATUS_OPTIONS.find(s => s.value === displayStatus)?.icon || Clock;
+
   return (
     <div className="space-y-1">
       <div
-        className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
+        className="flex items-start justify-between p-3 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
         onClick={() => {
           if (onOpen) {
             onOpen(project);
@@ -397,75 +325,69 @@ function ProjectCard({
           }
         }}
       >
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-foreground truncate">
+        <div className="flex-1 min-w-0 mr-2">
+          <p className="font-medium text-foreground truncate text-sm">
             {project.videoTitle}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {formatDate(project.updatedAt, true)}
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Status selector */}
+          <Select
+            value={displayStatus}
+            onValueChange={(value) => onStatusChange(value as ProjectStatus)}
+          >
+            <SelectTrigger
+              className="h-7 w-[100px] text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <StatusIcon className="w-3 h-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <option.icon className="w-3 h-3" />
+                    {option.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {/* Version dropdown toggle */}
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            className="shrink-0 h-7 w-7 text-muted-foreground hover:text-foreground"
             onClick={handleVersionToggle}
             title="Show previous versions"
           >
             {loadingVersions ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <ChevronDown className={`w-4 h-4 transition-transform ${isVersionsOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isVersionsOpen ? 'rotate-180' : ''}`} />
             )}
           </Button>
-          {/* Favorite button - only for non-archived */}
-          {!isArchived && onToggleFavorite && (
+          {/* Favorite button */}
+          {onToggleFavorite && (
             <Button
               variant="ghost"
               size="icon"
-              className={`shrink-0 ${project.isFavorite ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`}
+              className={`shrink-0 h-7 w-7 ${project.isFavorite ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`}
               onClick={onToggleFavorite}
               title={project.isFavorite ? "Remove from favorites" : "Add to favorites"}
             >
-              <Heart className={`w-4 h-4 ${project.isFavorite ? 'fill-current' : ''}`} />
+              <Heart className={`w-3.5 h-3.5 ${project.isFavorite ? 'fill-current' : ''}`} />
             </Button>
           )}
-          {/* Archive/Unarchive button */}
-          {isArchived ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnarchive?.();
-              }}
-              disabled={archivingId === project.id}
-              title="Restore project"
-            >
-              <ArchiveRestore className="w-4 h-4" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onArchive?.();
-              }}
-              disabled={archivingId === project.id}
-              title="Archive project"
-            >
-              <Archive className="w-4 h-4" />
-            </Button>
-          )}
+          {/* Delete button */}
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 text-muted-foreground hover:text-destructive"
+            className="shrink-0 h-7 w-7 text-muted-foreground hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
@@ -473,7 +395,7 @@ function ProjectCard({
             disabled={deletingId === project.id}
             title="Delete project"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>

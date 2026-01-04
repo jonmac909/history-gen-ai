@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -2016,115 +2016,21 @@ const Index = () => {
                 />
               </div>
 
-              {/* Generation Mode */}
+              {/* Word Count */}
               <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Mode</label>
-                <div className="flex bg-muted rounded-lg p-1 flex-1">
-                  <button
-                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: false }))}
-                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                      !settings.fullAutomation
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Step-by-Step
-                  </button>
-                  <button
-                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: true }))}
-                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                      settings.fullAutomation
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Full Auto
-                  </button>
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
+                <div className="flex items-center gap-3 flex-1">
+                  <Slider
+                    value={[settings.wordCount]}
+                    min={500}
+                    max={30000}
+                    step={100}
+                    onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
+                    className="flex-1"
+                  />
+                  <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
                 </div>
               </div>
-
-              {/* Full Auto Settings - only visible when Full Auto mode is selected */}
-              {settings.fullAutomation && (
-                <>
-                  {/* Script Template */}
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Script Style</label>
-                    <Select
-                      value={settings.scriptTemplate}
-                      onValueChange={(value) => setSettings(prev => ({ ...prev, scriptTemplate: value }))}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select script style" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {scriptTemplates.map((template) => (
-                          <SelectItem key={template.id} value={template.id}>
-                            {template.name || template.id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Image Template */}
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Style</label>
-                    <Select
-                      value={settings.imageTemplate}
-                      onValueChange={(value) => setSettings(prev => ({ ...prev, imageTemplate: value }))}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select image style" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {imageTemplates.map((template) => (
-                          <SelectItem key={template.id} value={template.id}>
-                            {template.name || template.id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Word Count */}
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
-                    <div className="flex items-center gap-3 flex-1">
-                      <Slider
-                        value={[settings.wordCount]}
-                        min={500}
-                        max={30000}
-                        step={100}
-                        onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
-                        className="flex-1"
-                      />
-                      <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  {/* Image Count */}
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Count</label>
-                    <div className="flex items-center gap-3 flex-1">
-                      <Slider
-                        value={[settings.imageCount]}
-                        min={1}
-                        max={50}
-                        step={1}
-                        onValueChange={([value]) => setSettings(prev => ({ ...prev, imageCount: value }))}
-                        className="flex-1"
-                      />
-                      <span className="text-sm text-muted-foreground w-16 text-right">{settings.imageCount}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <p className="text-xs text-muted-foreground text-center">
-                {settings.fullAutomation
-                  ? "Automatically runs all steps without review"
-                  : "Review and approve each step before proceeding"}
-              </p>
             </div>
 
             {/* Two input modes: YouTube URL or Custom Script */}
@@ -2196,6 +2102,18 @@ const Index = () => {
                   >
                     <Sparkles className="w-5 h-5 mr-2" />
                     Generate Script
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, fullAutomation: true }));
+                      handleGenerate();
+                    }}
+                    disabled={viewState !== "create" || !inputValue.trim()}
+                    variant="outline"
+                    className="w-full rounded-xl py-6 text-base border-primary/30 hover:bg-primary/10"
+                  >
+                    <Zap className="w-5 h-5 mr-2" />
+                    Full Auto Generate
                   </Button>
                 </div>
               )}
