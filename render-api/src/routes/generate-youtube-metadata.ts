@@ -112,6 +112,8 @@ Return ONLY this JSON structure (no markdown, no code blocks):
     try {
       // Clean up response - remove markdown code blocks if present
       let jsonText = textContent.text.trim();
+      console.log('[generate-youtube-metadata] Raw response (first 500 chars):', jsonText.slice(0, 500));
+
       if (jsonText.startsWith('```json')) {
         jsonText = jsonText.slice(7);
       }
@@ -124,6 +126,7 @@ Return ONLY this JSON structure (no markdown, no code blocks):
       jsonText = jsonText.trim();
 
       metadata = JSON.parse(jsonText);
+      console.log('[generate-youtube-metadata] Parsed - titles:', metadata.titles?.length, 'description:', !!metadata.description, 'tags:', metadata.tags?.length);
     } catch (parseError) {
       console.error('[generate-youtube-metadata] Failed to parse JSON:', textContent.text);
       throw new Error('Failed to parse Claude response as JSON');

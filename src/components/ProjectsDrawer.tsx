@@ -330,7 +330,7 @@ function ProjectCard({
             {project.videoTitle}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {formatDate(project.updatedAt, true)}
+            {formatDate(project.updatedAt, true)} • <span className="font-mono">{project.id.slice(0, 8)}</span>
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
