@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Video, Sparkles, Download, Loader2, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
+import { Video, Sparkles, Download, Loader2, ChevronLeft, ChevronRight, X, Check, Flame } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,12 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "@/hooks/use-toast";
 import { renderVideoStreaming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+
+type EffectType = 'none' | 'embers' | 'smoke_embers';
 
 interface VideoRenderModalProps {
   isOpen: boolean;
@@ -65,6 +69,7 @@ export function VideoRenderModal({
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(existingVideoUrl || null);
+  const [selectedEffect, setSelectedEffect] = useState<EffectType>('smoke_embers');
   const autoRenderTriggered = useRef(!!existingVideoUrl);
 
   // Sync with existingVideoUrl prop when it changes or modal opens
@@ -110,10 +115,10 @@ export function VideoRenderModal({
     setIsRendering(true);
     setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
 
-    // Smoke + Embers effects
+    // Set effects based on selection
     const effects: VideoEffects = {
-      embers: false,
-      smoke_embers: true
+      embers: selectedEffect === 'embers',
+      smoke_embers: selectedEffect === 'smoke_embers'
     };
 
     try {
@@ -128,9 +133,10 @@ export function VideoRenderModal({
           onProgress: (progress) => setRenderProgress(progress),
           onVideoReady: (url) => {
             setVideoUrl(url);
+            const effectLabel = selectedEffect === 'smoke_embers' ? 'smoke + embers' : selectedEffect === 'embers' ? 'embers' : 'no effects';
             toast({
               title: "Video Ready",
-              description: "Your video with smoke + embers has been rendered!",
+              description: `Your video with ${effectLabel} has been rendered!`,
             });
           },
           onCaptionError: (error) => {
@@ -165,10 +171,12 @@ export function VideoRenderModal({
   const handleDownload = async () => {
     if (!videoUrl) return;
 
-    const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '_smoke_embers.mp4';
+    const effectSuffix = selectedEffect === 'smoke_embers' ? '_smoke_embers' : selectedEffect === 'embers' ? '_embers' : '';
+    const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + effectSuffix + '.mp4';
+    const effectLabel = selectedEffect === 'smoke_embers' ? 'smoke + embers' : selectedEffect === 'embers' ? 'embers' : 'no effects';
     toast({
       title: "Downloading...",
-      description: "Downloading video with smoke + embers...",
+      description: `Downloading video with ${effectLabel}...`,
     });
 
     try {
@@ -227,10 +235,10 @@ export function VideoRenderModal({
           </DialogTitle>
           <DialogDescription>
             {videoUrl
-              ? 'Your video with smoke + embers effect is ready!'
+              ? 'Your video is ready!'
               : (isRendering || renderProgress)
-                ? 'Rendering your video with smoke and embers overlay...'
-                : 'Add cinematic smoke and embers effects to your video.'}
+                ? 'Rendering your video...'
+                : 'Choose visual effects and render your video.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -285,16 +293,70 @@ export function VideoRenderModal({
             </div>
           )}
 
-          {/* Render button when not auto-rendering */}
+          {/* Effect selection and render button when not auto-rendering */}
           {!videoUrl && !renderProgress && !isRendering && (
-            <div className="flex flex-col items-center gap-4 py-6">
-              <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-                <Video className="w-8 h-8 text-orange-500" />
+            <div className="space-y-6 py-4">
+              {/* Effect Selection */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Visual Effects</Label>
+                <RadioGroup
+                  value={selectedEffect}
+                  onValueChange={(value) => setSelectedEffect(value as EffectType)}
+                  className="grid grid-cols-1 gap-2"
+                >
+                  <label
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selectedEffect === 'none'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                  >
+                    <RadioGroupItem value="none" id="effect-none" />
+                    <div className="flex items-center gap-2">
+                      <Video className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">None</span>
+                        <p className="text-xs text-muted-foreground">Clean video without effects</p>
+                      </div>
+                    </div>
+                  </label>
+                  <label
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selectedEffect === 'embers'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                  >
+                    <RadioGroupItem value="embers" id="effect-embers" />
+                    <div className="flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-orange-500" />
+                      <div>
+                        <span className="font-medium">Embers</span>
+                        <p className="text-xs text-muted-foreground">Floating ember particles</p>
+                      </div>
+                    </div>
+                  </label>
+                  <label
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selectedEffect === 'smoke_embers'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                  >
+                    <RadioGroupItem value="smoke_embers" id="effect-smoke-embers" />
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-orange-400" />
+                      <div>
+                        <span className="font-medium">Smoke + Embers</span>
+                        <p className="text-xs text-muted-foreground">Cinematic smoke with embers</p>
+                      </div>
+                    </div>
+                  </label>
+                </RadioGroup>
               </div>
-              <p className="text-sm text-muted-foreground text-center">
-                Click the button below to render your video with smoke and embers effects.
-              </p>
-              <Button onClick={handleRender} className="gap-2">
+
+              {/* Render Button */}
+              <Button onClick={handleRender} className="w-full gap-2">
                 <Sparkles className="w-4 h-4" />
                 Render Video
               </Button>
