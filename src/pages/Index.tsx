@@ -3,7 +3,6 @@ import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -1878,133 +1877,135 @@ const Index = () => {
                 />
               </div>
 
-              {/* Word Count & Full Automation row */}
-              <div className="flex items-center gap-6">
+              {/* Word Count */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
                 <div className="flex items-center gap-3 flex-1">
-                  <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
-                  <div className="flex items-center gap-3 flex-1">
-                    <Slider
-                      value={[settings.wordCount]}
-                      min={500}
-                      max={30000}
-                      step={100}
-                      onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
-                      className="flex-1"
-                    />
-                    <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={settings.fullAutomation}
-                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, fullAutomation: checked }))}
-                    id="full-automation"
+                  <Slider
+                    value={[settings.wordCount]}
+                    min={500}
+                    max={30000}
+                    step={100}
+                    onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
+                    className="flex-1"
                   />
-                  <label htmlFor="full-automation" className="text-sm font-medium text-muted-foreground cursor-pointer">
-                    Auto
-                  </label>
+                  <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
                 </div>
               </div>
+
+              {/* Generation Mode */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Mode</label>
+                <div className="flex bg-muted rounded-lg p-1 flex-1">
+                  <button
+                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: false }))}
+                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                      !settings.fullAutomation
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Step-by-Step
+                  </button>
+                  <button
+                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: true }))}
+                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                      settings.fullAutomation
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Full Auto
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                {settings.fullAutomation
+                  ? "Automatically runs all steps without review"
+                  : "Review and approve each step before proceeding"}
+              </p>
             </div>
 
-            {/* Two entry mode buttons */}
-            <div className="flex gap-3 justify-center mb-2">
-              <Button
-                variant={entryMode === "script" ? "default" : "outline"}
-                onClick={() => setEntryMode("script")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Generate Script
-              </Button>
-              <Button
-                variant={entryMode === "images" ? "default" : "outline"}
-                onClick={() => setEntryMode("images")}
-                className="flex-1 max-w-[200px] py-6"
-              >
-                <Image className="w-4 h-4 mr-2" />
-                Generate Images
-              </Button>
-            </div>
+            {/* Two input modes: YouTube URL or Custom Script */}
+            <div className="w-full max-w-2xl mx-auto space-y-4">
+              {/* Mode toggle tabs */}
+              <div className="flex bg-muted rounded-lg p-1">
+                <button
+                  onClick={() => {
+                    setInputMode("url");
+                    setSettings(prev => ({ ...prev, customScript: "" }));
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    inputMode === "url" && !settings.customScript?.trim()
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Youtube className="w-4 h-4" />
+                  YouTube URL
+                </button>
+                <button
+                  onClick={() => setInputMode("title")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    inputMode === "title" || settings.customScript?.trim()
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  Paste Script
+                </button>
+              </div>
 
-            {/* Content based on entry mode */}
-            {entryMode === "script" && (
-              <>
-                {settings.customScript && settings.customScript.trim().length > 0 ? (
-                  // Custom script mode - simplified UI
-                  <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-medium text-foreground">
-                          Custom Script Ready
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {settings.customScript.trim().split(/\s+/).length} words
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={viewState !== "create"}
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
-                    >
-                      <Mic className="w-5 h-5 mr-2" />
-                      Generate Audio from Custom Script
-                    </Button>
-                  </div>
-                ) : (
-                  // Normal mode - YouTube URL input
-                  <div className="bg-card rounded-2xl shadow-sm border border-border p-2 flex items-center gap-2">
-                    <button
-                      onClick={toggleInputMode}
-                      className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-xl hover:bg-secondary transition-colors cursor-pointer"
-                    >
-                      {inputMode === "url" ? (
-                        <Youtube className="w-5 h-5 text-red-500" />
-                      ) : (
-                        <FileText className="w-5 h-5 text-primary" />
-                      )}
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {inputMode === "url" ? "URL" : "Title"}
-                      </span>
-                    </button>
-
+              {/* YouTube URL mode */}
+              {inputMode === "url" && !settings.customScript?.trim() && (
+                <div className="bg-card rounded-2xl shadow-sm border border-border p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Youtube className="w-5 h-5 text-red-500 shrink-0" />
                     <Input
-                      type={inputMode === "url" ? "url" : "text"}
+                      type="url"
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
-                      className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
+                      placeholder="Paste YouTube URL..."
+                      className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base"
                     />
-
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={viewState !== "create"}
-                      className="shrink-0 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded-xl px-5"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Generate
-                    </Button>
                   </div>
-                )}
-
-                {/* Find Outliers button */}
-                <div className="mt-4">
                   <Button
-                    variant="outline"
-                    onClick={() => setViewState("outlier-finder")}
-                    className="text-muted-foreground hover:text-foreground"
+                    onClick={handleGenerate}
+                    disabled={viewState !== "create" || !inputValue.trim()}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
                   >
-                    <TrendingUp className="w-4 h-4 mr-2" />
-                    Find Outlier Videos
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    Generate Script
                   </Button>
                 </div>
-              </>
-            )}
+              )}
+
+              {/* Custom Script mode */}
+              {(inputMode === "title" || settings.customScript?.trim()) && (
+                <div className="bg-card rounded-2xl shadow-sm border border-border p-4 space-y-4">
+                  <textarea
+                    value={settings.customScript || ""}
+                    onChange={(e) => setSettings(prev => ({ ...prev, customScript: e.target.value }))}
+                    placeholder="Paste your script here..."
+                    className="w-full h-40 p-3 text-sm border rounded-lg resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  {settings.customScript?.trim() && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      {settings.customScript.trim().split(/\s+/).length} words
+                    </p>
+                  )}
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={viewState !== "create" || !settings.customScript?.trim()}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
+                  >
+                    <Mic className="w-5 h-5 mr-2" />
+                    Generate Audio
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {entryMode === "images" && (
               <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
