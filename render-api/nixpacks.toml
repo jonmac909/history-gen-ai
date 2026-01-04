@@ -11,4 +11,4 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm start"
+cmd = "PORT=10000 npm start"
