@@ -2120,6 +2120,32 @@ const Index = () => {
                   placeholder="Enter project title..."
                   className="flex-1"
                 />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    const title = settings.projectTitle?.trim() || "Untitled Project";
+                    const newProjectId = crypto.randomUUID();
+                    setCurrentProjectId(newProjectId);
+                    setVideoTitle(title);
+                    await upsertProject({
+                      id: newProjectId,
+                      videoTitle: title,
+                      sourceUrl: youtubeUrl || "",
+                      settings: settings,
+                      status: 'in_progress',
+                      currentStep: 'script',
+                      versionNumber: 1,
+                    });
+                    toast({
+                      title: "Added to Projects",
+                      description: `"${title}" has been saved to your projects.`,
+                    });
+                  }}
+                  className="shrink-0"
+                >
+                  Add Project
+                </Button>
               </div>
 
               {/* Word Count */}
