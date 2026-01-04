@@ -761,8 +761,12 @@ export function ProjectResults({
     }
   };
 
-  // Get first image URL for preview thumbnail
+  // Get first image URL for fallback preview
   const firstImageUrl = assets.find(a => a.id.startsWith('image-') && a.url)?.url;
+  // Get selected thumbnail for YouTube-style preview
+  const selectedThumbnailUrl = thumbnails && selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
+    ? thumbnails[selectedThumbnailIndex]
+    : thumbnails?.[0]; // Fall back to first thumbnail if none selected
   // Get best available video for preview
   const previewVideoUrl = smokeEmbersVideoUrl || embersVideoUrl || basicVideoUrl || initialSmokeEmbersVideoUrl || initialEmbersVideoUrl || videoUrl;
   // Filter other projects (exclude current)
@@ -1177,28 +1181,41 @@ export function ProjectResults({
 
         {/* Right Column: Video Preview */}
         <div className="space-y-4">
-          {/* Video/Image Preview */}
+          {/* Video/Thumbnail Preview - YouTube-style */}
           <div className="relative aspect-video bg-muted rounded-xl overflow-hidden border">
-            {previewVideoUrl ? (
+            {/* Show thumbnail as poster when not playing, video when playing */}
+            {previewVideoUrl && (
               <video
                 ref={videoRef}
                 src={previewVideoUrl}
-                className="w-full h-full object-cover"
+                poster={selectedThumbnailUrl || firstImageUrl}
+                className={`w-full h-full object-cover ${!isPlaying ? 'hidden' : ''}`}
                 playsInline
                 onEnded={() => setIsPlaying(false)}
                 onPause={() => setIsPlaying(false)}
                 onPlay={() => setIsPlaying(true)}
               />
-            ) : firstImageUrl ? (
-              <img
-                src={firstImageUrl}
-                alt="Preview"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                <Video className="w-12 h-12 opacity-30" />
-              </div>
+            )}
+
+            {/* Show thumbnail/image when not playing */}
+            {!isPlaying && (
+              selectedThumbnailUrl ? (
+                <img
+                  src={selectedThumbnailUrl}
+                  alt="Thumbnail"
+                  className="w-full h-full object-cover"
+                />
+              ) : firstImageUrl ? (
+                <img
+                  src={firstImageUrl}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                  <Video className="w-12 h-12 opacity-30" />
+                </div>
+              )
             )}
 
             {/* Play/Pause button overlay - only show if video exists */}
