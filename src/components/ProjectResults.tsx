@@ -225,18 +225,12 @@ export function ProjectResults({
   const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
   const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
 
-  // Sync state with props when they change (handles case where component mounts before state propagates)
+  // Reset all video URLs when project changes
   useEffect(() => {
-    if (initialEmbersVideoUrl && !embersVideoUrl) {
-      setEmbersVideoUrl(initialEmbersVideoUrl);
-    }
-  }, [initialEmbersVideoUrl]);
-
-  useEffect(() => {
-    if (initialSmokeEmbersVideoUrl && !smokeEmbersVideoUrl) {
-      setSmokeEmbersVideoUrl(initialSmokeEmbersVideoUrl);
-    }
-  }, [initialSmokeEmbersVideoUrl]);
+    setBasicVideoUrl(videoUrl || null);
+    setEmbersVideoUrl(initialEmbersVideoUrl || null);
+    setSmokeEmbersVideoUrl(initialSmokeEmbersVideoUrl || null);
+  }, [projectId, videoUrl, initialEmbersVideoUrl, initialSmokeEmbersVideoUrl]);
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
