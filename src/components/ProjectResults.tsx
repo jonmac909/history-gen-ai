@@ -231,6 +231,7 @@ export function ProjectResults({
 
   // State for video preview playback
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isHoveringPreview, setIsHoveringPreview] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // State for project dropdown
@@ -1153,14 +1154,18 @@ export function ProjectResults({
         {/* Right Column: Video Preview */}
         <div className="space-y-4">
           {/* Video/Thumbnail Preview - YouTube-style */}
-          <div className="relative aspect-video bg-muted rounded-xl overflow-hidden border">
-            {/* Show thumbnail as poster when not playing, video when playing */}
+          <div
+            className="relative aspect-video bg-muted rounded-xl overflow-hidden border"
+            onMouseEnter={() => setIsHoveringPreview(true)}
+            onMouseLeave={() => setIsHoveringPreview(false)}
+          >
+            {/* Video element - shown when playing OR hovering */}
             {previewVideoUrl && (
               <video
                 ref={videoRef}
                 src={previewVideoUrl}
                 poster={selectedThumbnailUrl || firstImageUrl}
-                className={`w-full h-full object-cover ${!isPlaying ? 'hidden' : ''}`}
+                className={`w-full h-full object-cover ${!isPlaying && !isHoveringPreview ? 'hidden' : ''}`}
                 playsInline
                 onEnded={() => setIsPlaying(false)}
                 onPause={() => setIsPlaying(false)}
@@ -1168,8 +1173,8 @@ export function ProjectResults({
               />
             )}
 
-            {/* Show thumbnail/image when not playing */}
-            {!isPlaying && (
+            {/* Show thumbnail/image when not playing and not hovering */}
+            {!isPlaying && !isHoveringPreview && (
               selectedThumbnailUrl ? (
                 <img
                   src={selectedThumbnailUrl}

@@ -1010,25 +1010,6 @@ export function YouTubeUploadModal({
                 </div>
               )}
 
-              {/* Upload Button */}
-              <Button
-                onClick={handleUpload}
-                disabled={!title.trim() || isUploading || (isScheduled && !scheduledDate)}
-                className="w-full gap-2"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    Upload to YouTube
-                  </>
-                )}
-              </Button>
-
               {/* Disconnect Option */}
               <div className="pt-2 border-t">
                 <Button
@@ -1061,11 +1042,21 @@ export function YouTubeUploadModal({
             )}
           </div>
 
-          {/* Right side: Exit */}
-          <Button variant="outline" onClick={onClose}>
+          {/* Right side: Exit + Upload */}
+          <Button variant="outline" onClick={onClose} disabled={isUploading && !uploadResult}>
             <X className="w-4 h-4 mr-2" />
             {uploadResult ? "Done" : "Exit"}
           </Button>
+
+          {!uploadResult && isConnected && (
+            <Button
+              onClick={handleUpload}
+              disabled={!title.trim() || isUploading || (isScheduled && !scheduledDate)}
+            >
+              <Check className="w-4 h-4 mr-2" />
+              {isUploading ? "Uploading..." : "Upload"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
