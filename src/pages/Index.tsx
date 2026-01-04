@@ -56,6 +56,7 @@ import {
   archiveProject,
   migrateFromLocalStorage,
   getStepLabel,
+  createProjectVersion,
   type Project,
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -356,31 +357,62 @@ const Index = () => {
     if (savedProject.youtubeCategoryId) setYoutubeCategoryId(savedProject.youtubeCategoryId);
     if (savedProject.youtubePlaylistId !== undefined) setYoutubePlaylistId(savedProject.youtubePlaylistId);
 
-    // Navigate to the appropriate view based on saved step
-    switch (savedProject.currentStep) {
-      case "script":
-        setViewState("review-script");
-        break;
-      case "audio":
-        setViewState("review-audio");
-        break;
-      case "captions":
-        // Captions step removed - go to prompts instead
-        setViewState("review-prompts");
-        break;
-      case "prompts":
-        setViewState("review-prompts");
-        break;
-      case "images":
-      case "complete":
-        setViewState("review-images");
-        break;
+    // Build generated assets for results view (same logic as handleOpenProject)
+    const assets: GeneratedAsset[] = [];
+    if (savedProject.script) {
+      assets.push({
+        id: "script",
+        name: "Rewritten Script",
+        type: "Markdown",
+        size: `${Math.round(savedProject.script.length / 1024)} KB`,
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        content: savedProject.script,
+      });
     }
+    if (savedProject.audioUrl) {
+      assets.push({
+        id: "audio",
+        name: "Voiceover Audio",
+        type: "MP3",
+        size: savedProject.audioDuration ? `${Math.round(savedProject.audioDuration / 60)} min` : "Unknown",
+        icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+        url: savedProject.audioUrl,
+      });
+      setAudioUrl(savedProject.audioUrl);
+    }
+    if (savedProject.srtContent) {
+      assets.push({
+        id: "captions",
+        name: "Captions",
+        type: "SRT",
+        size: `${Math.round(savedProject.srtContent.length / 1024)} KB`,
+        icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+        url: savedProject.srtUrl,
+        content: savedProject.srtContent,
+      });
+      setSrtContent(savedProject.srtContent);
+    }
+    if (savedProject.imageUrls) {
+      savedProject.imageUrls.forEach((imageUrl, index) => {
+        assets.push({
+          id: `image-${index + 1}`,
+          name: `Image ${index + 1}`,
+          type: "PNG",
+          size: "~1 MB",
+          icon: <Image className="w-5 h-5 text-muted-foreground" />,
+          url: imageUrl,
+        });
+      });
+    }
+    setGeneratedAssets(assets);
+
+    // Go directly to results page
+    setViewState("results");
 
     setSavedProject(null);
     toast({
-      title: "Project Resumed",
-      description: `Continuing from: ${getStepLabel(savedProject.currentStep)}`,
+      title: "Project Opened",
+      description: `Loaded "${savedProject.videoTitle}"`,
     });
   };
 
@@ -1394,6 +1426,34 @@ const Index = () => {
     autoSave("complete", { approvedSteps: newApprovedSteps });
   };
 
+  // Save a version of the current project
+  const handleSaveVersion = async () => {
+    if (!projectId) {
+      toast({
+        title: "No Project",
+        description: "No project to save a version of.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const newVersionId = await createProjectVersion(projectId);
+      toast({
+        title: "Version Saved",
+        description: `Saved version of "${videoTitle}"`,
+      });
+      console.log(`[handleSaveVersion] Created version ${newVersionId} for project ${projectId}`);
+    } catch (error) {
+      console.error('[handleSaveVersion] Error:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save version.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle audio file upload for "Generate Captions" mode
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2001,6 +2061,7 @@ const Index = () => {
               youtubePlaylistId: playlistId,
             });
           }}
+          onSaveVersion={handleSaveVersion}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

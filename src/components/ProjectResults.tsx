@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -79,6 +79,8 @@ interface ProjectResultsProps {
   onSwitchProject?: (projectId: string) => void;
   // View all projects
   onViewAllProjects?: () => void;
+  // Save version
+  onSaveVersion?: () => void;
 }
 
 // Parse SRT to get timing info
@@ -198,6 +200,7 @@ export function ProjectResults({
   onApproveStep,
   onSwitchProject,
   onViewAllProjects,
+  onSaveVersion,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -1176,6 +1179,20 @@ export function ProjectResults({
           {assets.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <p>No assets generated yet.</p>
+            </div>
+          )}
+
+          {/* Save Version Button */}
+          {onSaveVersion && (
+            <div className="pt-4 mt-4 border-t">
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={onSaveVersion}
+              >
+                <Save className="w-4 h-4" />
+                Save Version
+              </Button>
             </div>
           )}
         </div>
