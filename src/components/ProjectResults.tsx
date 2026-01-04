@@ -919,9 +919,9 @@ export function ProjectResults({
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
         {/* Left Column: Pipeline Steps */}
-        <div className="space-y-0 divide-y divide-border border rounded-lg p-4">
+        <div className="flex flex-col space-y-0 divide-y divide-border border rounded-lg p-4">
           {/* Script */}
           {assets.find(a => a.id === 'script') && (
             <div
@@ -1435,7 +1435,7 @@ export function ProjectResults({
 
           {/* Update Title & Save Version Buttons */}
           {(onTitleChange || onSaveVersion) && (
-            <div className="pt-4 mt-4 border-t space-y-2">
+            <div className="pt-4 mt-auto border-t space-y-2">
               {onTitleChange && youtubeTitle && (
                 <Button
                   variant="outline"
