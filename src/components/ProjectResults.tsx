@@ -15,7 +15,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
-import { getAllProjects, type Project } from "@/lib/projectStore";
 
 
 export interface GeneratedAsset {
@@ -75,14 +74,12 @@ interface ProjectResultsProps {
   // Approval tracking
   approvedSteps?: PipelineStep[];
   onApproveStep?: (step: PipelineStep, approved: boolean) => void;
-  // Project switching
-  onSwitchProject?: (projectId: string) => void;
-  // View all projects
-  onViewAllProjects?: () => void;
   // Save version
   onSaveVersion?: () => void;
   // Title change
   onTitleChange?: (newTitle: string) => void;
+  // Thumbnail upload
+  onThumbnailUpload?: (thumbnailUrl: string) => void;
 }
 
 // Parse SRT to get timing info
@@ -200,10 +197,9 @@ export function ProjectResults({
   onImagePromptsHealed,
   approvedSteps = [],
   onApproveStep,
-  onSwitchProject,
-  onViewAllProjects,
   onSaveVersion,
   onTitleChange,
+  onThumbnailUpload,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -294,17 +290,9 @@ export function ProjectResults({
   const [isHoveringPreview, setIsHoveringPreview] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // State for project dropdown
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
-
-  // Load all projects for dropdown
-  useEffect(() => {
-    const loadProjects = async () => {
-      const projects = await getAllProjects();
-      setAllProjects(projects);
-    };
-    loadProjects();
-  }, []);
+  // Thumbnail upload
+  const thumbnailUploadRef = useRef<HTMLInputElement>(null);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -355,6 +343,70 @@ export function ProjectResults({
         description: "Failed to disconnect YouTube account.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Handle thumbnail upload
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a PNG, JPG, or WebP image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Please upload an image under 10MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploadingThumbnail(true);
+    try {
+      // Upload to Supabase storage
+      const fileName = `${projectId}/thumbnails/uploaded_${Date.now()}.${file.name.split('.').pop()}`;
+      const { data, error } = await supabase.storage
+        .from('generated-assets')
+        .upload(fileName, file, { upsert: true });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('generated-assets')
+        .getPublicUrl(fileName);
+
+      if (urlData?.publicUrl && onThumbnailUpload) {
+        onThumbnailUpload(urlData.publicUrl);
+        toast({
+          title: "Thumbnail Uploaded",
+          description: "Your thumbnail has been added to the generated thumbnails.",
+        });
+      }
+    } catch (error) {
+      console.error('Thumbnail upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload thumbnail.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingThumbnail(false);
+      // Reset file input
+      if (thumbnailUploadRef.current) {
+        thumbnailUploadRef.current.value = '';
+      }
     }
   };
 
@@ -809,12 +861,9 @@ export function ProjectResults({
     : thumbnails?.[0]; // Fall back to first thumbnail if none selected
   // Get best available video for preview
   const previewVideoUrl = smokeEmbersVideoUrl || embersVideoUrl || basicVideoUrl || initialSmokeEmbersVideoUrl || initialEmbersVideoUrl || videoUrl;
-  // Filter other projects (exclude current)
-  const otherProjects = allProjects.filter(p => p.id !== projectId && p.status === 'in_progress');
-
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
-      {/* Header with Project Title and Other Projects dropdown on right */}
+      {/* Header with Project Title */}
       <div className="flex items-center justify-between mb-6">
         {isEditingTitle ? (
           <div className="flex items-center gap-2 max-w-[500px]">
@@ -854,39 +903,6 @@ export function ProjectResults({
           </div>
         )}
 
-        {/* Other Projects dropdown - aligned right */}
-        {(otherProjects.length > 0 || onViewAllProjects) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                Other Projects
-                <ChevronDown className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[300px]">
-              {onViewAllProjects && (
-                <DropdownMenuItem
-                  onClick={onViewAllProjects}
-                  className="cursor-pointer font-medium"
-                >
-                  View All Projects
-                </DropdownMenuItem>
-              )}
-              {otherProjects.length > 0 && onViewAllProjects && (
-                <div className="h-px bg-border my-1" />
-              )}
-              {otherProjects.map((project) => (
-                <DropdownMenuItem
-                  key={project.id}
-                  onClick={() => onSwitchProject?.(project.id)}
-                  className="cursor-pointer"
-                >
-                  <span className="truncate">{project.videoTitle || "Untitled Project"}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
 
       {/* Two Column Layout */}
@@ -1143,23 +1159,45 @@ export function ProjectResults({
                     : 'Generate'}
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => toggleApproval('thumbnails', e)}
-                className={`h-8 w-8 ${
-                  approvedSteps.includes('thumbnails')
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
-              >
-                {approvedSteps.includes('thumbnails') ? (
-                  <CheckSquare className="w-4 h-4" />
-                ) : (
-                  <Square className="w-4 h-4" />
+              <div className="flex items-center gap-1">
+                {/* Upload button */}
+                {onThumbnailUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      thumbnailUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingThumbnail}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload thumbnail"
+                  >
+                    {isUploadingThumbnail ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
                 )}
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('thumbnails', e)}
+                  className={`h-8 w-8 ${
+                    approvedSteps.includes('thumbnails')
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('thumbnails') ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
@@ -1561,6 +1599,15 @@ export function ProjectResults({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Hidden file input for thumbnail upload */}
+      <input
+        ref={thumbnailUploadRef}
+        type="file"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
+        className="hidden"
+        onChange={handleThumbnailUpload}
+      />
 
       {/* YouTube Metadata Modal */}
       <YouTubeUploadModal

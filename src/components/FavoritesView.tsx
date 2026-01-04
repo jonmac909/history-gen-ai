@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Video, Heart, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getFavoriteProjects, type Project } from "@/lib/projectStore";
+import { getFavoriteProjects, toggleFavorite, type Project } from "@/lib/projectStore";
+import { toast } from "@/hooks/use-toast";
 
 interface FavoritesViewProps {
   onSelectProject: (project: Project) => void;
@@ -45,6 +46,27 @@ export function FavoritesView({
   // Get display title for a project
   const getProjectTitle = (project: Project): string => {
     return project.videoTitle || "Untitled Project";
+  };
+
+  // Handle unfavorite
+  const handleUnfavorite = async (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation(); // Prevent selecting the project
+    try {
+      await toggleFavorite(projectId);
+      // Remove from local state immediately for responsive UI
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      toast({
+        title: "Removed from favorites",
+        description: "Project has been removed from your favorites.",
+      });
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove from favorites.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -100,10 +122,14 @@ export function FavoritesView({
                       <Video className="w-10 h-10 text-muted-foreground opacity-30" />
                     </div>
                   )}
-                  {/* Favorite indicator */}
-                  <div className="absolute top-2 right-2">
-                    <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-                  </div>
+                  {/* Unfavorite button */}
+                  <button
+                    onClick={(e) => handleUnfavorite(e, project.id)}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 hover:bg-black/70 transition-colors"
+                    title="Remove from favorites"
+                  >
+                    <Heart className="w-5 h-5 text-red-500 fill-red-500 hover:fill-red-400" />
+                  </button>
                 </div>
 
                 {/* Info */}

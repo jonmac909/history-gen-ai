@@ -2048,6 +2048,18 @@ const Index = () => {
             // Save title change to project
             autoSave("complete", { videoTitle: newTitle });
           }}
+          onThumbnailUpload={(thumbnailUrl) => {
+            // Add uploaded thumbnail to the list
+            const updatedThumbnails = [...generatedThumbnails, thumbnailUrl];
+            setGeneratedThumbnails(updatedThumbnails);
+            // Auto-select the newly uploaded thumbnail
+            setSelectedThumbnailIndex(updatedThumbnails.length - 1);
+            // Save to project
+            autoSave("complete", {
+              thumbnails: updatedThumbnails,
+              selectedThumbnailIndex: updatedThumbnails.length - 1
+            });
+          }}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

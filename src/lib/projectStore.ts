@@ -589,6 +589,7 @@ export async function createProjectVersion(parentId: string): Promise<string> {
   const newVersionNumber = maxVersion + 1;
 
   // Create new version as copy of parent
+  // Versions are NOT favorited by default - only root projects can be favorites
   const newId = crypto.randomUUID();
   const newProject: Project = {
     ...parent,
@@ -598,6 +599,7 @@ export async function createProjectVersion(parentId: string): Promise<string> {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     status: 'in_progress',
+    isFavorite: false,  // Versions should not inherit favorite status
   };
 
   await upsertProject(newProject);
