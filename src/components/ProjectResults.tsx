@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette, Check, Circle } from "lucide-react";
+import { Download, RefreshCw, Layers, Image, ChevronLeft, ChevronRight, Video, Loader2, Sparkles, Youtube, FileText, Mic, ImageIcon, Palette, Check, Circle, Square, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -57,6 +57,9 @@ export interface GeneratedAsset {
   content?: string;
 }
 
+// Pipeline step types for approval tracking
+type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
+
 interface ProjectResultsProps {
   sourceUrl: string;
   onNewProject: () => void;
@@ -83,6 +86,7 @@ interface ProjectResultsProps {
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
   onGoToAudio?: () => void;
+  onGoToCaptions?: () => void;
   onGoToPrompts?: () => void;
   onGoToImages?: () => void;
   onGoToThumbnails?: () => void;
@@ -90,6 +94,9 @@ interface ProjectResultsProps {
   onGoToYouTube?: () => void;
   // Callback to heal/update image prompts when count doesn't match images
   onImagePromptsHealed?: (healedPrompts: ImagePromptWithTiming[]) => void;
+  // Approval tracking
+  approvedSteps?: PipelineStep[];
+  onApproveStep?: (step: PipelineStep, approved: boolean) => void;
 }
 
 // Parse SRT to get timing info
@@ -192,13 +199,30 @@ export function ProjectResults({
   script,
   onGoToScript,
   onGoToAudio,
+  onGoToCaptions,
   onGoToPrompts,
   onGoToImages,
   onGoToThumbnails,
   onGoToRender,
   onGoToYouTube,
   onImagePromptsHealed,
+  approvedSteps = [],
+  onApproveStep,
 }: ProjectResultsProps) {
+  // Helper to get step status
+  const getStepStatus = (step: PipelineStep): StepStatus => {
+    return approvedSteps.includes(step) ? 'approved' : 'auto';
+  };
+
+  // Helper to toggle step approval
+  const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onApproveStep) {
+      const isCurrentlyApproved = approvedSteps.includes(step);
+      onApproveStep(step, !isCurrentlyApproved);
+    }
+  };
+
   // State for video rendering - three separate videos (basic, embers, smoke_embers)
   const [isRenderingBasic, setIsRenderingBasic] = useState(false);
   const [isRenderingEmbers, setIsRenderingEmbers] = useState(false);
@@ -735,7 +759,7 @@ export function ProjectResults({
             </Button>
           )}
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Project Ready</h1>
+            <h1 className="text-3xl font-bold text-foreground mb-2">{projectTitle || "Untitled Project"}</h1>
             <p className="text-muted-foreground">{sourceUrl}</p>
           </div>
         </div>
@@ -752,17 +776,35 @@ export function ProjectResults({
           {/* Script */}
           {assets.find(a => a.id === 'script') && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('script')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
               onClick={onGoToScript}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-primary" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('script', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('script')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('script') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('script') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Script</p>
-                    <StatusBadge status="auto" />
+                    <StatusBadge status={getStepStatus('script')} />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {assets.find(a => a.id === 'script')!.size}
@@ -792,17 +834,35 @@ export function ProjectResults({
           {/* Audio */}
           {assets.find(a => a.id === 'audio') && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('audio')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
               onClick={onGoToAudio}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Mic className="w-5 h-5 text-primary" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('audio', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('audio')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('audio') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('audio') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Audio</p>
-                    <StatusBadge status="auto" />
+                    <StatusBadge status={getStepStatus('audio')} />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {assets.find(a => a.id === 'audio')!.size}
@@ -829,20 +889,105 @@ export function ProjectResults({
             </div>
           )}
 
+          {/* Captions */}
+          {srtContent && (
+            <div
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('captions')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
+              onClick={onGoToCaptions}
+            >
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('captions', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('captions')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('captions') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('captions') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Captions</p>
+                    <StatusBadge status={getStepStatus('captions')} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {(srtContent.match(/^\d+$/gm) || []).length} segments
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Download SRT content
+                    const blob = new Blob([srtContent], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'captions.srt';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+                {onGoToCaptions && (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Image Prompts */}
           {imagePrompts && imagePrompts.length > 0 && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('prompts')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
               onClick={onGoToPrompts}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Palette className="w-5 h-5 text-primary" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('prompts', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('prompts')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('prompts') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Image Prompts</p>
-                    <StatusBadge status="auto" />
+                    <StatusBadge status={getStepStatus('prompts')} />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {imagePrompts.length} scene descriptions
@@ -858,17 +1003,35 @@ export function ProjectResults({
           {/* Images */}
           {assets.some(a => a.id.startsWith('image-') && a.url) && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('images')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
               onClick={onGoToImages}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <ImageIcon className="w-5 h-5 text-primary" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('images', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('images')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('images') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('images') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Images</p>
-                    <StatusBadge status="auto" />
+                    <StatusBadge status={getStepStatus('images')} />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
@@ -898,22 +1061,36 @@ export function ProjectResults({
           {/* Thumbnails */}
           {onGoToThumbnails && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('thumbnails')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-primary/20'
+              }`}
               onClick={onGoToThumbnails}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                  <Image className="w-5 h-5 text-primary" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('thumbnails', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('thumbnails')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('thumbnails') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Thumbnails</p>
                     {thumbnails && thumbnails.length > 0 ? (
-                      selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0 ? (
-                        <StatusBadge status="approved" />
-                      ) : (
-                        <StatusBadge status="auto" />
-                      )
+                      <StatusBadge status={getStepStatus('thumbnails')} />
                     ) : (
                       <StatusBadge status="pending" />
                     )}
@@ -939,18 +1116,36 @@ export function ProjectResults({
 
             return (
               <div
-                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors cursor-pointer"
+                className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                  approvedSteps.includes('render')
+                    ? 'border-green-500/50 hover:border-green-500'
+                    : 'border-border hover:border-primary/20'
+                }`}
                 onClick={onGoToRender}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-orange-400" />
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => toggleApproval('render', e)}
+                    className={`w-10 h-10 rounded-lg ${
+                      approvedSteps.includes('render')
+                        ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-secondary text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={approvedSteps.includes('render') ? 'Mark as not approved' : 'Mark as approved'}
+                  >
+                    {approvedSteps.includes('render') ? (
+                      <CheckSquare className="w-5 h-5" />
+                    ) : (
+                      <Square className="w-5 h-5" />
+                    )}
+                  </Button>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-foreground">Video Render</p>
                       {hasVideo ? (
-                        <StatusBadge status="auto" />
+                        <StatusBadge status={getStepStatus('render')} />
                       ) : (
                         <StatusBadge status="pending" />
                       )}
@@ -988,15 +1183,36 @@ export function ProjectResults({
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
             <div
-              className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors cursor-pointer"
+              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
+                approvedSteps.includes('youtube')
+                  ? 'border-green-500/50 hover:border-green-500'
+                  : 'border-border hover:border-red-500/20'
+              }`}
               onClick={() => setIsYouTubeModalOpen(true)}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <Youtube className="w-5 h-5 text-red-600" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('youtube', e)}
+                  className={`w-10 h-10 rounded-lg ${
+                    approvedSteps.includes('youtube')
+                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+                  }`}
+                  title={approvedSteps.includes('youtube') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('youtube') ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                </Button>
                 <div>
-                  <p className="font-medium text-foreground">YouTube Upload</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">YouTube Upload</p>
+                    <StatusBadge status={getStepStatus('youtube')} />
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     Schedule or upload as draft
                   </p>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, FileText, ChevronLeft, ChevronRight, Download, Minus, Plus, Image as ImageIcon, Palette } from "lucide-react";
+import { Check, X, Edit3, FileText, ChevronLeft, ChevronRight, Download, Minus, Plus, Image as ImageIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,8 +22,6 @@ interface CaptionsPreviewModalProps {
   onForward?: () => void;
   imageCount?: number;
   onImageCountChange?: (count: number) => void;
-  customStylePrompt?: string;
-  onCustomStylePromptChange?: (prompt: string) => void;
 }
 
 export function CaptionsPreviewModal({
@@ -35,8 +33,6 @@ export function CaptionsPreviewModal({
   onForward,
   imageCount,
   onImageCountChange,
-  customStylePrompt,
-  onCustomStylePromptChange,
 }: CaptionsPreviewModalProps) {
   const [editedSrt, setEditedSrt] = useState(srtContent);
   const [isEditing, setIsEditing] = useState(false);
@@ -84,71 +80,47 @@ export function CaptionsPreviewModal({
         </DialogHeader>
 
         {/* Image Generation Settings */}
-        {(imageCount !== undefined || onCustomStylePromptChange) && (
-          <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <ImageIcon className="w-4 h-4 text-primary" />
-              Image Generation Settings
-            </div>
-
-            {/* Image Count */}
-            {imageCount !== undefined && onImageCountChange && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Number of images</span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => onImageCountChange(Math.max(1, imageCount - 1))}
-                    disabled={imageCount <= 1}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={200}
-                    value={imageCount}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val) && val >= 1 && val <= 200) {
-                        onImageCountChange(val);
-                      }
-                    }}
-                    className="w-16 h-8 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => onImageCountChange(Math.min(200, imageCount + 1))}
-                    disabled={imageCount >= 200}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
+        {imageCount !== undefined && onImageCountChange && (
+          <div className="border rounded-lg p-4 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium">Number of images to generate</span>
               </div>
-            )}
-
-            {/* Custom Style Prompt */}
-            {onCustomStylePromptChange && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Palette className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Custom style prompt (optional)</span>
-                </div>
-                <Textarea
-                  value={customStylePrompt || ""}
-                  onChange={(e) => onCustomStylePromptChange(e.target.value)}
-                  placeholder="Paste your custom image style prompt here to override the default template..."
-                  className="h-24 text-sm resize-none"
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onImageCountChange(Math.max(1, imageCount - 1))}
+                  disabled={imageCount <= 1}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={imageCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val) && val >= 1 && val <= 200) {
+                      onImageCountChange(val);
+                    }
+                  }}
+                  className="w-16 h-8 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                {customStylePrompt && customStylePrompt.trim() && (
-                  <p className="text-xs text-primary">Using custom style prompt</p>
-                )}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onImageCountChange(Math.min(200, imageCount + 1))}
+                  disabled={imageCount >= 200}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -170,10 +142,16 @@ export function CaptionsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {/* Left side: Navigation + Edit/Download */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
+              </Button>
+            )}
+            {onForward && (
+              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
             <Button
@@ -189,16 +167,11 @@ export function CaptionsPreviewModal({
             </Button>
           </div>
 
+          {/* Right side: Exit + Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
-            Cancel
+            Exit
           </Button>
-
-          {onForward && (
-            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          )}
 
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />

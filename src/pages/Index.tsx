@@ -177,6 +177,9 @@ const Index = () => {
   const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
   const [customStylePrompt, setCustomStylePrompt] = useState("");
+  // Pipeline approval tracking
+  type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
+  const [approvedSteps, setApprovedSteps] = useState<PipelineStep[]>([]);
 
   // Migrate localStorage to Supabase on first load
   useEffect(() => {
@@ -316,6 +319,7 @@ const Index = () => {
     if (savedProject.smokeEmbersVideoUrl) setSmokeEmbersVideoUrl(savedProject.smokeEmbersVideoUrl);
     if (savedProject.thumbnails) setGeneratedThumbnails(savedProject.thumbnails);
     if (savedProject.selectedThumbnailIndex !== undefined) setSelectedThumbnailIndex(savedProject.selectedThumbnailIndex);
+    if (savedProject.approvedSteps) setApprovedSteps(savedProject.approvedSteps);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.currentStep) {
@@ -1310,6 +1314,24 @@ const Index = () => {
   const canGoForwardFromAudio = () => imagePrompts.length > 0;
   const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
+  // Handle pipeline step approval
+  const handleApproveStep = (step: PipelineStep, approved: boolean) => {
+    setApprovedSteps(prev => {
+      if (approved) {
+        // Add step if not already approved
+        return prev.includes(step) ? prev : [...prev, step];
+      } else {
+        // Remove step from approved list
+        return prev.filter(s => s !== step);
+      }
+    });
+    // Save approval to project
+    const newApprovedSteps = approved
+      ? (approvedSteps.includes(step) ? approvedSteps : [...approvedSteps, step])
+      : approvedSteps.filter(s => s !== step);
+    autoSave("complete", { approvedSteps: newApprovedSteps });
+  };
+
   // Handle audio file upload for "Generate Captions" mode
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1574,6 +1596,7 @@ const Index = () => {
     setInputValue("");
     setSourceUrl("");
     resetPendingState();
+    setApprovedSteps([]);  // Clear approvals for new project
     // No clearProject needed - new project will be a new entry in the store
   };
 
@@ -1685,6 +1708,9 @@ const Index = () => {
     }
     if (project.selectedThumbnailIndex !== undefined) {
       setSelectedThumbnailIndex(project.selectedThumbnailIndex);
+    }
+    if (project.approvedSteps) {
+      setApprovedSteps(project.approvedSteps);
     }
 
     // Build generated assets for results view
@@ -1818,6 +1844,7 @@ const Index = () => {
           script={confirmedScript}
           onGoToScript={handleBackToScript}
           onGoToAudio={handleBackToAudio}
+          onGoToCaptions={handleBackToCaptions}
           onGoToPrompts={handleBackToPrompts}
           onGoToImages={handleBackToImages}
           onGoToThumbnails={handleBackToThumbnails}
@@ -1828,6 +1855,8 @@ const Index = () => {
             // Save healed prompts to project
             autoSave("images", { imagePrompts: healedPrompts });
           }}
+          approvedSteps={approvedSteps}
+          onApproveStep={handleApproveStep}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">
@@ -2201,7 +2230,7 @@ const Index = () => {
         />
       )}
 
-      {/* Captions Preview Modal - Review captions and set image generation settings */}
+      {/* Captions Preview Modal - Review captions and set image count */}
       <CaptionsPreviewModal
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent || ""}
@@ -2210,8 +2239,6 @@ const Index = () => {
         onBack={handleBackToAudio}
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
-        customStylePrompt={customStylePrompt}
-        onCustomStylePromptChange={setCustomStylePrompt}
       />
 
       {/* Image Prompts Preview Modal */}

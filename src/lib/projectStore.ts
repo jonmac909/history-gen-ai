@@ -35,6 +35,9 @@ export interface Project {
   // Thumbnails
   thumbnails?: string[];  // Array of generated thumbnail URLs
   selectedThumbnailIndex?: number;  // Index of selected thumbnail for YouTube upload
+
+  // Approval tracking for pipeline steps
+  approvedSteps?: ('script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube')[];
 }
 
 // Legacy localStorage keys for migration
@@ -66,6 +69,7 @@ function rowToProject(row: {
   settings: unknown;
   thumbnails: unknown;
   selected_thumbnail_index: number | null;
+  approved_steps: unknown;
   parent_project_id: string | null;
   version_number: number | null;
   created_at: string;
@@ -96,6 +100,7 @@ function rowToProject(row: {
     smokeEmbersVideoUrl: row.smoke_embers_video_url || undefined,
     thumbnails: (row.thumbnails as string[]) || undefined,
     selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
+    approvedSteps: (row.approved_steps as Project['approvedSteps']) || undefined,
   };
 }
 
@@ -126,6 +131,7 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
     settings: project.settings || null,
     thumbnails: project.thumbnails || [],
     selected_thumbnail_index: project.selectedThumbnailIndex ?? null,
+    approved_steps: project.approvedSteps || [],
     updated_at: now,
   };
 
