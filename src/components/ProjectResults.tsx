@@ -12,7 +12,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
-import { renderVideoStreaming, generateYouTubeMetadata, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
 import { getAllProjects, type Project } from "@/lib/projectStore";
@@ -54,6 +54,10 @@ interface ProjectResultsProps {
   thumbnails?: string[];  // Generated thumbnails for YouTube upload
   selectedThumbnailIndex?: number;  // Index of previously selected thumbnail
   script?: string;  // Script content for YouTube metadata AI generation
+  // YouTube metadata (shared with YouTubeUploadModal)
+  youtubeTitle?: string;  // YouTube-specific title (different from project title)
+  youtubeDescription?: string;  // YouTube description
+  onYouTubeMetadataChange?: (title: string, description: string) => void;  // Callback to update metadata
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
   onGoToAudio?: () => void;
@@ -170,6 +174,9 @@ export function ProjectResults({
   thumbnails,
   selectedThumbnailIndex,
   script,
+  youtubeTitle,
+  youtubeDescription,
+  onYouTubeMetadataChange,
   onGoToScript,
   onGoToAudio,
   onGoToCaptions,
@@ -229,10 +236,6 @@ export function ProjectResults({
   // State for project dropdown
   const [allProjects, setAllProjects] = useState<Project[]>([]);
 
-  // State for auto-generated description
-  const [generatedDescription, setGeneratedDescription] = useState<string>('');
-  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
-
   // Load all projects for dropdown
   useEffect(() => {
     const loadProjects = async () => {
@@ -241,30 +244,6 @@ export function ProjectResults({
     };
     loadProjects();
   }, []);
-
-  // Auto-generate YouTube description when script is available
-  useEffect(() => {
-    const generateDescription = async () => {
-      if (!script || script.trim().length < 50) return;
-      if (generatedDescription) return; // Already generated
-
-      setIsGeneratingDescription(true);
-      try {
-        const result = await generateYouTubeMetadata(
-          projectTitle || "Historical Documentary",
-          script
-        );
-        if (result.success && result.description) {
-          setGeneratedDescription(result.description);
-        }
-      } catch (error) {
-        console.error('Failed to generate description:', error);
-      } finally {
-        setIsGeneratingDescription(false);
-      }
-    };
-    generateDescription();
-  }, [script, projectTitle, generatedDescription]);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -1248,27 +1227,18 @@ export function ProjectResults({
           {/* Title and description under preview - YouTube-style */}
           <div className="space-y-3">
             <h2 className="font-semibold text-foreground line-clamp-2 text-lg">
-              {projectTitle || "Untitled Project"}
+              {youtubeTitle || projectTitle || "Untitled"}
             </h2>
 
             {/* Description preview - simulating YouTube */}
             <div className="text-sm text-muted-foreground">
-              {isGeneratingDescription ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Generating description...</span>
-                </div>
-              ) : generatedDescription ? (
+              {youtubeDescription ? (
                 <p className="line-clamp-3 whitespace-pre-wrap">
-                  {generatedDescription}
-                </p>
-              ) : script ? (
-                <p className="text-muted-foreground/60 italic">
-                  Description will be auto-generated...
+                  {youtubeDescription}
                 </p>
               ) : (
-                <p className="text-muted-foreground/60">
-                  Generate content to see preview
+                <p className="text-muted-foreground/60 italic">
+                  Click YouTube to set title & description
                 </p>
               )}
             </div>
@@ -1385,6 +1355,9 @@ export function ProjectResults({
         script={script}
         thumbnails={thumbnails}
         selectedThumbnailIndex={selectedThumbnailIndex}
+        initialTitle={youtubeTitle}
+        initialDescription={youtubeDescription}
+        onMetadataChange={onYouTubeMetadataChange}
         onClose={() => setIsYouTubeModalOpen(false)}
         onSuccess={(youtubeUrl) => {
           console.log('Video uploaded to YouTube:', youtubeUrl);

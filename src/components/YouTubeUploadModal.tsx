@@ -61,6 +61,11 @@ interface YouTubeUploadModalProps {
   onSuccess?: (youtubeUrl: string) => void;
   onBack?: () => void;
   onSkip?: () => void;
+  // Callback when title/description changes (for preview sync)
+  onMetadataChange?: (title: string, description: string) => void;
+  // Initial values from parent (for persistence)
+  initialTitle?: string;
+  initialDescription?: string;
 }
 
 // YouTube video categories
@@ -86,6 +91,9 @@ export function YouTubeUploadModal({
   onSuccess,
   onBack,
   onSkip,
+  onMetadataChange,
+  initialTitle,
+  initialDescription,
 }: YouTubeUploadModalProps) {
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -132,8 +140,9 @@ export function YouTubeUploadModal({
   useEffect(() => {
     if (isOpen) {
       checkConnection();
-      // Reset form when opening
-      setTitle(projectTitle || "");
+      // Use saved values if available, otherwise fall back to project title
+      setTitle(initialTitle || projectTitle || "");
+      setDescription(initialDescription || "");
       setUploadResult(null);
       setProgress(null);
       setGeneratedTitles([]);
@@ -157,7 +166,14 @@ export function YouTubeUploadModal({
         setSelectedThumbnail(null);
       }
     }
-  }, [isOpen, projectTitle, thumbnails, selectedThumbnailIndex]);
+  }, [isOpen, projectTitle, thumbnails, selectedThumbnailIndex, initialTitle, initialDescription]);
+
+  // Notify parent when title/description changes
+  useEffect(() => {
+    if (isOpen && onMetadataChange && (title || description)) {
+      onMetadataChange(title, description);
+    }
+  }, [title, description, isOpen, onMetadataChange]);
 
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();
@@ -852,43 +868,18 @@ export function YouTubeUploadModal({
               {/* Thumbnail Selection */}
               <div className="space-y-2">
                 <Label>Thumbnail</Label>
-                <p className="text-xs text-muted-foreground">
-                  {thumbnails && thumbnails.length > 0
-                    ? "Select a generated thumbnail or upload your own"
-                    : "Upload a custom thumbnail (optional - YouTube will auto-generate if not provided)"}
-                </p>
 
-                {/* Generated thumbnails grid */}
-                {thumbnails && thumbnails.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {thumbnails.map((thumb, index) => (
-                      <div
-                        key={index}
-                        className={`relative cursor-pointer rounded-lg border-2 overflow-hidden transition-all ${
-                          selectedThumbnail === thumb && !customThumbnailPreview
-                            ? "border-primary ring-2 ring-primary/20"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        onClick={() => {
-                          setSelectedThumbnail(selectedThumbnail === thumb ? null : thumb);
-                          // Clear custom thumbnail when selecting generated one
-                          if (customThumbnailPreview) {
-                            handleRemoveCustomThumbnail();
-                          }
-                        }}
-                      >
-                        <img
-                          src={thumb}
-                          alt={`Thumbnail ${index + 1}`}
-                          className="w-full aspect-video object-cover"
-                        />
-                        {selectedThumbnail === thumb && !customThumbnailPreview && (
-                          <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
-                            <Check className="w-6 h-6 text-primary" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                {/* Show selected thumbnail as a single preview (already chosen in thumbnails step) */}
+                {selectedThumbnail && !customThumbnailPreview && (
+                  <div className="relative rounded-lg border-2 border-primary ring-2 ring-primary/20 overflow-hidden max-w-[200px]">
+                    <img
+                      src={selectedThumbnail}
+                      alt="Selected thumbnail"
+                      className="w-full aspect-video object-cover"
+                    />
+                    <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                      <Check className="w-6 h-6 text-primary" />
+                    </div>
                   </div>
                 )}
 
