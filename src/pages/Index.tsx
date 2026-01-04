@@ -60,9 +60,10 @@ import {
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 import { OutlierFinderView } from "@/components/OutlierFinderView";
+import { AllProjectsView } from "@/components/AllProjectsView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "outlier-finder" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "all-projects" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
@@ -1813,6 +1814,13 @@ const Index = () => {
           onBack={() => setViewState("create")}
           onSelectVideo={handleSelectOutlierVideo}
         />
+      ) : viewState === "all-projects" ? (
+        <AllProjectsView
+          onSelectProject={handleOpenProject}
+          onNewProject={handleNewProject}
+          onBack={() => setViewState("create")}
+          currentProjectId={projectId}
+        />
       ) : viewState === "results" ? (
         <ProjectResults
           sourceUrl={sourceUrl}
@@ -1864,6 +1872,7 @@ const Index = () => {
           }}
           approvedSteps={approvedSteps}
           onApproveStep={handleApproveStep}
+          onViewAllProjects={() => setViewState("all-projects")}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

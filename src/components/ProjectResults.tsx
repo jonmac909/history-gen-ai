@@ -74,6 +74,8 @@ interface ProjectResultsProps {
   onApproveStep?: (step: PipelineStep, approved: boolean) => void;
   // Project switching
   onSwitchProject?: (projectId: string) => void;
+  // View all projects
+  onViewAllProjects?: () => void;
 }
 
 // Parse SRT to get timing info
@@ -189,6 +191,7 @@ export function ProjectResults({
   approvedSteps = [],
   onApproveStep,
   onSwitchProject,
+  onViewAllProjects,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -768,24 +771,31 @@ export function ProjectResults({
               <h1 className="text-2xl font-bold text-foreground truncate max-w-[500px]">
                 {projectTitle || "Untitled Project"}
               </h1>
-              {otherProjects.length > 0 && (
-                <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-              )}
+              <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
             </button>
           </DropdownMenuTrigger>
-          {otherProjects.length > 0 && (
-            <DropdownMenuContent align="start" className="w-[300px]">
-              {otherProjects.map((project) => (
-                <DropdownMenuItem
-                  key={project.id}
-                  onClick={() => onSwitchProject?.(project.id)}
-                  className="cursor-pointer"
-                >
-                  <span className="truncate">{project.title || "Untitled Project"}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          )}
+          <DropdownMenuContent align="start" className="w-[300px]">
+            {onViewAllProjects && (
+              <DropdownMenuItem
+                onClick={onViewAllProjects}
+                className="cursor-pointer font-medium"
+              >
+                📁 All Projects
+              </DropdownMenuItem>
+            )}
+            {otherProjects.length > 0 && onViewAllProjects && (
+              <div className="h-px bg-border my-1" />
+            )}
+            {otherProjects.map((project) => (
+              <DropdownMenuItem
+                key={project.id}
+                onClick={() => onSwitchProject?.(project.id)}
+                className="cursor-pointer"
+              >
+                <span className="truncate">{project.videoTitle || "Untitled Project"}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
