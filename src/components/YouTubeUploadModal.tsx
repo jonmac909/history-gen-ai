@@ -6,8 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
   X
 } from "lucide-react";
 import {
@@ -19,7 +17,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -44,14 +41,12 @@ import { generateYouTubeMetadata } from "@/lib/api";
 interface YouTubeUploadModalProps {
   isOpen: boolean;
   projectTitle?: string;
-  script?: string; // Script content for AI metadata generation
+  script?: string;
   onClose: () => void;
-  onConfirm?: () => void; // Called when user confirms metadata
+  onConfirm?: () => void;
   onBack?: () => void;
   onSkip?: () => void;
-  // Callback when title/description changes (for preview sync)
   onMetadataChange?: (title: string, description: string, tags: string, categoryId: string, playlistId: string | null) => void;
-  // Initial values from parent (for persistence)
   initialTitle?: string;
   initialDescription?: string;
   initialTags?: string;
@@ -59,7 +54,6 @@ interface YouTubeUploadModalProps {
   initialPlaylistId?: string | null;
 }
 
-// YouTube video categories
 const CATEGORIES = [
   { id: "27", name: "Education" },
   { id: "22", name: "People & Blogs" },
@@ -86,17 +80,10 @@ export function YouTubeUploadModal({
   initialCategoryId,
   initialPlaylistId,
 }: YouTubeUploadModalProps) {
-  // Debug: log props on every render
-  console.log('[YouTubeUploadModal] RENDER - isOpen:', isOpen, 'script length:', script?.length, 'projectTitle:', projectTitle);
-
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
-
-  // Channel state
   const [channels, setChannels] = useState<YouTubeChannel[]>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(false);
-
-  // Playlist state
   const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<string | null>(initialPlaylistId || null);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
@@ -105,29 +92,24 @@ export function YouTubeUploadModal({
   const [title, setTitle] = useState(initialTitle || projectTitle || "");
   const [description, setDescription] = useState(initialDescription || "");
   const [tags, setTags] = useState(initialTags || "");
-  const [categoryId, setCategoryId] = useState(initialCategoryId || "27"); // Default: Education
+  const [categoryId, setCategoryId] = useState(initialCategoryId || "27");
 
   // AI generation state
-  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
-  const [generatedTitles, setGeneratedTitles] = useState<string[]>([]);
-  const [showTitleSelector, setShowTitleSelector] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [titleOptions, setTitleOptions] = useState<string[]>([]);
 
-  // Check connection status on open
   useEffect(() => {
     if (isOpen) {
       checkConnection();
-      // Use saved values if available, otherwise fall back to project title
       setTitle(initialTitle || projectTitle || "");
       setDescription(initialDescription || "");
       setTags(initialTags || "");
       setCategoryId(initialCategoryId || "27");
       setSelectedPlaylist(initialPlaylistId || null);
-      setGeneratedTitles([]);
-      setShowTitleSelector(false);
+      setTitleOptions([]);
     }
   }, [isOpen, projectTitle, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
 
-  // Notify parent when any metadata changes
   useEffect(() => {
     if (isOpen && onMetadataChange) {
       onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
@@ -137,8 +119,6 @@ export function YouTubeUploadModal({
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();
     setIsConnected(status.connected);
-
-    // Fetch channels and playlists when connected
     if (status.connected) {
       await Promise.all([loadChannels(), loadPlaylists()]);
     }
@@ -170,29 +150,23 @@ export function YouTubeUploadModal({
     }
   };
 
-  // AI-powered metadata generation
-  const handleGenerateMetadata = async () => {
-    console.log('[YouTubeUploadModal] handleGenerateMetadata called, script length:', script?.length);
-
+  // Generate 10 title ideas with AI
+  const handleGenerateTitles = async () => {
     if (!script || script.trim().length === 0) {
       toast({
         title: "Script Required",
-        description: "No script available for metadata generation.",
+        description: "No script available for title generation.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsGeneratingMetadata(true);
+    setIsGenerating(true);
     try {
-      console.log('[YouTubeUploadModal] Calling API...');
       const result = await generateYouTubeMetadata(projectTitle || "Historical Documentary", script);
-      console.log('[YouTubeUploadModal] API result:', JSON.stringify(result).slice(0, 500));
 
-      if (result.success && result.titles) {
-        console.log('[YouTubeUploadModal] Got', result.titles.length, 'titles');
-        setGeneratedTitles(result.titles);
-        setShowTitleSelector(true);
+      if (result.success && result.titles && result.titles.length > 0) {
+        setTitleOptions(result.titles);
 
         // Auto-fill description and tags
         if (result.description) {
@@ -203,42 +177,34 @@ export function YouTubeUploadModal({
         }
 
         toast({
-          title: "Metadata Generated",
-          description: "Select a title and review the description & tags.",
+          title: "Generated!",
+          description: `${result.titles.length} title options ready. Click one to select.`,
         });
       } else {
         toast({
           title: "Generation Failed",
-          description: result.error || "Failed to generate metadata.",
+          description: result.error || "Failed to generate titles.",
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error("Metadata generation error:", error);
+      console.error("Title generation error:", error);
       toast({
         title: "Generation Failed",
-        description: error instanceof Error ? error.message : "Failed to generate metadata.",
+        description: error instanceof Error ? error.message : "Failed to generate titles.",
         variant: "destructive",
       });
     } finally {
-      setIsGeneratingMetadata(false);
+      setIsGenerating(false);
     }
   };
 
-  const handleSelectTitle = (selectedTitle: string) => {
-    setTitle(selectedTitle);
-    setShowTitleSelector(false);
-  };
-
-  // Handle switching YouTube channel
   const handleSwitchChannel = async () => {
     try {
       await disconnectYouTube();
       setIsConnected(false);
       setChannels([]);
       setPlaylists([]);
-
-      // Re-authenticate
       const success = await authenticateYouTube();
       if (success) {
         await checkConnection();
@@ -247,15 +213,13 @@ export function YouTubeUploadModal({
       console.error('Error switching channel:', error);
       toast({
         title: "Error",
-        description: "Failed to switch YouTube channel. Please try again.",
+        description: "Failed to switch YouTube channel.",
         variant: "destructive",
       });
     }
   };
 
-  // Handle confirm - save metadata and close
   const handleConfirm = () => {
-    // Notify parent with final metadata
     if (onMetadataChange) {
       onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
     }
@@ -277,7 +241,7 @@ export function YouTubeUploadModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Channel Info - show which channel will receive the upload */}
+          {/* Channel Info */}
           {isConnected === null ? (
             <div className="flex items-center justify-center py-2">
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -291,23 +255,14 @@ export function YouTubeUploadModal({
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2">
                 {channels[0].thumbnailUrl && (
-                  <img
-                    src={channels[0].thumbnailUrl}
-                    alt={channels[0].title}
-                    className="w-8 h-8 rounded-full"
-                  />
+                  <img src={channels[0].thumbnailUrl} alt={channels[0].title} className="w-8 h-8 rounded-full" />
                 )}
                 <div>
                   <p className="text-sm font-medium">{channels[0].title}</p>
                   <p className="text-xs text-muted-foreground">Upload destination</p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSwitchChannel}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
+              <Button variant="ghost" size="sm" onClick={handleSwitchChannel} className="text-xs">
                 Switch
               </Button>
             </div>
@@ -317,94 +272,71 @@ export function YouTubeUploadModal({
             </div>
           ) : null}
 
-          {/* AI Auto-fill Button */}
-          {script && (
-            <Button
-              onClick={handleGenerateMetadata}
-              disabled={isGeneratingMetadata}
-              variant="outline"
-              className="w-full gap-2 border-primary/50 text-primary hover:bg-primary/10"
-            >
-              {isGeneratingMetadata ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating with AI...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Auto-fill with AI (Title, Description, Tags)
-                </>
-              )}
-            </Button>
-          )}
-
           {/* Title Section */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label htmlFor="title">Title *</Label>
-              {generatedTitles.length > 0 && (
+              <Label>Title *</Label>
+              {script && (
                 <Button
-                  variant="ghost"
+                  onClick={handleGenerateTitles}
+                  disabled={isGenerating}
+                  variant="outline"
                   size="sm"
-                  onClick={() => setShowTitleSelector(!showTitleSelector)}
-                  className="h-6 px-2 text-xs gap-1"
+                  className="gap-1"
                 >
-                  {showTitleSelector ? (
-                    <>Hide options <ChevronUp className="w-3 h-3" /></>
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Generating...
+                    </>
                   ) : (
-                    <>Show {generatedTitles.length} options <ChevronDown className="w-3 h-3" /></>
+                    <>
+                      <Sparkles className="w-3 h-3" />
+                      Generate 10 Ideas
+                    </>
                   )}
                 </Button>
               )}
             </div>
 
-            {/* Title Selector (shown after AI generation) */}
-            {showTitleSelector && generatedTitles.length > 0 && (
-              <div className="space-y-1.5 max-h-[250px] overflow-y-auto p-2 bg-muted/30 rounded-lg border">
-                {generatedTitles.map((generatedTitle, index) => (
+            {/* 10 Title Options - always visible when generated */}
+            {titleOptions.length > 0 && (
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto p-2 bg-muted/30 rounded-lg border">
+                <p className="text-xs text-muted-foreground mb-2">Click a title to select it:</p>
+                {titleOptions.map((opt, index) => (
                   <button
                     key={index}
-                    onClick={() => handleSelectTitle(generatedTitle)}
+                    onClick={() => setTitle(opt)}
                     className={`w-full text-left p-2.5 rounded text-sm transition-colors ${
-                      title === generatedTitle
+                      title === opt
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-background hover:bg-accent border border-border'
                     }`}
                   >
-                    <span className="text-muted-foreground mr-2 font-mono">{index + 1}.</span>
-                    {generatedTitle}
+                    <span className="text-muted-foreground mr-2 font-mono text-xs">{index + 1}.</span>
+                    {opt}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* Title Input (always visible for manual editing) */}
+            {/* Manual title input */}
             <input
-              id="youtube-video-title"
-              name="youtube-video-title"
               type="text"
-              autoComplete="new-password"
-              data-lpignore="true"
-              data-form-type="other"
-              data-1p-ignore="true"
-              spellCheck="false"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter video title or select from AI options above"
+              placeholder="Enter video title or generate ideas above"
               maxLength={100}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+              autoComplete="off"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
-            <p className="text-xs text-muted-foreground text-right">
-              {title.length}/100
-            </p>
+            <p className="text-xs text-muted-foreground text-right">{title.length}/100</p>
           </div>
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label>Description</Label>
             <Textarea
-              id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Enter video description"
@@ -414,12 +346,14 @@ export function YouTubeUploadModal({
 
           {/* Tags */}
           <div className="space-y-2">
-            <Label htmlFor="tags">Tags</Label>
-            <Input
-              id="tags"
+            <Label>Tags</Label>
+            <input
+              type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="history, documentary, educational (comma-separated)"
+              autoComplete="off"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
@@ -440,7 +374,7 @@ export function YouTubeUploadModal({
             </Select>
           </div>
 
-          {/* Playlist Selection */}
+          {/* Playlist */}
           <div className="space-y-2">
             <Label>Add to Playlist</Label>
             <Select
@@ -470,22 +404,20 @@ export function YouTubeUploadModal({
           </div>
         </div>
 
-        <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {/* Left side: Navigation */}
+        <DialogFooter className="gap-2 sm:gap-2">
           <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+              <Button variant="outline" size="icon" onClick={onBack} title="Back">
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {onSkip && (
-              <Button variant="outline" size="icon" onClick={onSkip} title="Skip to next step">
+              <Button variant="outline" size="icon" onClick={onSkip} title="Skip">
                 <ChevronRight className="w-5 h-5" />
               </Button>
             )}
           </div>
 
-          {/* Right side: Exit + Confirm */}
           <Button variant="outline" onClick={onClose}>
             <X className="w-4 h-4 mr-2" />
             Exit
