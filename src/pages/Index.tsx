@@ -60,10 +60,10 @@ import {
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 import { OutlierFinderView } from "@/components/OutlierFinderView";
-import { AllProjectsView } from "@/components/AllProjectsView";
+import { FavoritesView } from "@/components/FavoritesView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "outlier-finder" | "all-projects" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
@@ -1795,7 +1795,7 @@ const Index = () => {
           </button>
           
           <div className="flex items-center gap-2">
-            <ProjectsDrawer onOpenProject={handleOpenProject} />
+            <ProjectsDrawer onOpenProject={handleOpenProject} onViewFavorites={() => setViewState("favorites")} />
             <ConfigModal
               scriptTemplates={scriptTemplates}
               onSaveScriptTemplates={handleSaveScriptTemplates}
@@ -1814,12 +1814,10 @@ const Index = () => {
           onBack={() => setViewState("create")}
           onSelectVideo={handleSelectOutlierVideo}
         />
-      ) : viewState === "all-projects" ? (
-        <AllProjectsView
+      ) : viewState === "favorites" ? (
+        <FavoritesView
           onSelectProject={handleOpenProject}
-          onNewProject={handleNewProject}
           onBack={() => setViewState("create")}
-          currentProjectId={projectId}
         />
       ) : viewState === "results" ? (
         <ProjectResults
@@ -1872,7 +1870,6 @@ const Index = () => {
           }}
           approvedSteps={approvedSteps}
           onApproveStep={handleApproveStep}
-          onViewAllProjects={() => setViewState("all-projects")}
         />
       ) : (
         <main className="flex flex-col items-center justify-center px-4 py-32">

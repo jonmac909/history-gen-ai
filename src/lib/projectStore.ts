@@ -38,6 +38,9 @@ export interface Project {
 
   // Approval tracking for pipeline steps
   approvedSteps?: ('script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube')[];
+
+  // Favorites
+  isFavorite?: boolean;
 }
 
 // Legacy localStorage keys for migration
@@ -72,6 +75,7 @@ function rowToProject(row: {
   approved_steps: unknown;
   parent_project_id: string | null;
   version_number: number | null;
+  is_favorite: boolean | null;
   created_at: string;
   updated_at: string;
 }): Project {
@@ -101,6 +105,7 @@ function rowToProject(row: {
     thumbnails: (row.thumbnails as string[]) || undefined,
     selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
     approvedSteps: (row.approved_steps as Project['approvedSteps']) || undefined,
+    isFavorite: row.is_favorite || false,
   };
 }
 
@@ -132,6 +137,7 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
     thumbnails: project.thumbnails || [],
     selected_thumbnail_index: project.selectedThumbnailIndex ?? null,
     approved_steps: project.approvedSteps || [],
+    is_favorite: project.isFavorite || false,
     updated_at: now,
   };
 
@@ -259,6 +265,66 @@ export async function getCompletedProjects(): Promise<Project[]> {
   }
 
   return (data || []).map(rowToProject);
+}
+
+export async function getArchivedProjects(): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('generation_projects')
+    .select('*')
+    .eq('status', 'archived')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[projectStore] Error fetching archived projects:', error);
+    return [];
+  }
+
+  return (data || []).map(rowToProject);
+}
+
+export async function getFavoriteProjects(): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('generation_projects')
+    .select('*')
+    .eq('is_favorite', true)
+    .neq('status', 'archived')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[projectStore] Error fetching favorite projects:', error);
+    return [];
+  }
+
+  return (data || []).map(rowToProject);
+}
+
+export async function toggleFavorite(id: string): Promise<boolean> {
+  // First get current state
+  const { data: current, error: fetchError } = await supabase
+    .from('generation_projects')
+    .select('is_favorite')
+    .eq('id', id)
+    .single();
+
+  if (fetchError) {
+    console.error('[projectStore] Error fetching project for favorite toggle:', fetchError);
+    throw fetchError;
+  }
+
+  const newValue = !current?.is_favorite;
+
+  const { error } = await supabase
+    .from('generation_projects')
+    .update({ is_favorite: newValue, updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) {
+    console.error('[projectStore] Error toggling favorite:', error);
+    throw error;
+  }
+
+  console.log(`[projectStore] Toggled favorite for ${id}: ${newValue}`);
+  return newValue;
 }
 
 export async function getMostRecentInProgress(): Promise<Project | null> {

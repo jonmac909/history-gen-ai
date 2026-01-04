@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -231,6 +231,16 @@ export function ProjectResults({
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+
+  // State for YouTube upload visibility/schedule
+  const [privacyStatus, setPrivacyStatus] = useState<"private" | "unlisted">("private");
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split("T")[0];
+  });
+  const [scheduledTime, setScheduledTime] = useState("12:00");
 
   // State for video preview playback
   const [isPlaying, setIsPlaying] = useState(false);
@@ -757,46 +767,45 @@ export function ProjectResults({
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
-      {/* Header with Project Title Dropdown */}
-      <div className="flex items-center gap-3 mb-6">
-        {onGoToImages && (
-          <Button variant="ghost" size="icon" onClick={onGoToImages} title="Back to images">
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-        )}
+      {/* Header with Project Title and Other Projects dropdown on right */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-foreground truncate max-w-[500px]">
+          {projectTitle || "Untitled Project"}
+        </h1>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity">
-              <h1 className="text-2xl font-bold text-foreground truncate max-w-[500px]">
-                {projectTitle || "Untitled Project"}
-              </h1>
-              <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-[300px]">
-            {onViewAllProjects && (
-              <DropdownMenuItem
-                onClick={onViewAllProjects}
-                className="cursor-pointer font-medium"
-              >
-                📁 All Projects
-              </DropdownMenuItem>
-            )}
-            {otherProjects.length > 0 && onViewAllProjects && (
-              <div className="h-px bg-border my-1" />
-            )}
-            {otherProjects.map((project) => (
-              <DropdownMenuItem
-                key={project.id}
-                onClick={() => onSwitchProject?.(project.id)}
-                className="cursor-pointer"
-              >
-                <span className="truncate">{project.videoTitle || "Untitled Project"}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Other Projects dropdown - aligned right */}
+        {(otherProjects.length > 0 || onViewAllProjects) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                Other Projects
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[300px]">
+              {onViewAllProjects && (
+                <DropdownMenuItem
+                  onClick={onViewAllProjects}
+                  className="cursor-pointer font-medium"
+                >
+                  View All Projects
+                </DropdownMenuItem>
+              )}
+              {otherProjects.length > 0 && onViewAllProjects && (
+                <div className="h-px bg-border my-1" />
+              )}
+              {otherProjects.map((project) => (
+                <DropdownMenuItem
+                  key={project.id}
+                  onClick={() => onSwitchProject?.(project.id)}
+                  className="cursor-pointer"
+                >
+                  <span className="truncate">{project.videoTitle || "Untitled Project"}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Two Column Layout */}
@@ -810,7 +819,7 @@ export function ProjectResults({
               onClick={onGoToScript}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">📝</span>
+                <FileText className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Script</span>
                 <span className="text-sm text-muted-foreground">
                   {assets.find(a => a.id === 'script')!.size}
@@ -857,7 +866,7 @@ export function ProjectResults({
               onClick={onGoToAudio}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🎙️</span>
+                <Mic className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Audio</span>
                 <span className="text-sm text-muted-foreground">
                   {assets.find(a => a.id === 'audio')!.size}
@@ -904,7 +913,7 @@ export function ProjectResults({
               onClick={onGoToCaptions}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">💬</span>
+                <MessageSquare className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Captions</span>
                 <span className="text-sm text-muted-foreground">
                   {(srtContent.match(/^\d+$/gm) || []).length} segments
@@ -959,7 +968,7 @@ export function ProjectResults({
               onClick={onGoToPrompts}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🎨</span>
+                <Palette className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Prompts</span>
                 <span className="text-sm text-muted-foreground">
                   {imagePrompts.length} scenes
@@ -992,7 +1001,7 @@ export function ProjectResults({
               onClick={onGoToImages}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🖼️</span>
+                <Image className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Images</span>
                 <span className="text-sm text-muted-foreground">
                   {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
@@ -1039,7 +1048,7 @@ export function ProjectResults({
               onClick={onGoToThumbnails}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🎯</span>
+                <Target className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">Thumbnails</span>
                 <span className="text-sm text-muted-foreground">
                   {thumbnails && thumbnails.length > 0
@@ -1080,7 +1089,7 @@ export function ProjectResults({
                 onClick={onGoToRender}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">🎬</span>
+                  <Film className="w-5 h-5 text-muted-foreground" />
                   <span className="font-medium text-foreground">Video</span>
                   <span className="text-sm text-muted-foreground">
                     {hasVideo ? `V${videoVersions} ready` : 'Render'}
@@ -1130,7 +1139,7 @@ export function ProjectResults({
               onClick={() => setIsYouTubeModalOpen(true)}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">📤</span>
+                <Youtube className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium text-foreground">YouTube</span>
                 <span className="text-sm text-muted-foreground">Upload</span>
               </div>
@@ -1166,8 +1175,22 @@ export function ProjectResults({
           {/* Video/Thumbnail Preview - YouTube-style */}
           <div
             className="relative aspect-video bg-muted rounded-xl overflow-hidden border"
-            onMouseEnter={() => setIsHoveringPreview(true)}
-            onMouseLeave={() => setIsHoveringPreview(false)}
+            onMouseEnter={() => {
+              setIsHoveringPreview(true);
+              // Auto-play on hover if not already playing
+              if (previewVideoUrl && videoRef.current && !isPlaying) {
+                videoRef.current.currentTime = 0;
+                videoRef.current.muted = true; // Mute for autoplay on hover
+                videoRef.current.play().catch(() => {});
+              }
+            }}
+            onMouseLeave={() => {
+              setIsHoveringPreview(false);
+              // Pause on mouse leave if it was just hover-playing (muted)
+              if (videoRef.current && videoRef.current.muted && !isPlaying) {
+                videoRef.current.pause();
+              }
+            }}
           >
             {/* Video element - shown when playing OR hovering */}
             {previewVideoUrl && (
@@ -1178,8 +1201,18 @@ export function ProjectResults({
                 className={`w-full h-full object-cover ${!isPlaying && !isHoveringPreview ? 'hidden' : ''}`}
                 playsInline
                 onEnded={() => setIsPlaying(false)}
-                onPause={() => setIsPlaying(false)}
-                onPlay={() => setIsPlaying(true)}
+                onPause={() => {
+                  // Only set isPlaying to false if not muted (i.e., user clicked play)
+                  if (!videoRef.current?.muted) {
+                    setIsPlaying(false);
+                  }
+                }}
+                onPlay={() => {
+                  // Only set isPlaying to true if not muted (i.e., user clicked play)
+                  if (!videoRef.current?.muted) {
+                    setIsPlaying(true);
+                  }
+                }}
               />
             )}
 
@@ -1215,8 +1248,12 @@ export function ProjectResults({
                     if (videoRef.current) {
                       if (isPlaying) {
                         videoRef.current.pause();
+                        setIsPlaying(false);
                       } else {
+                        // Unmute for user-initiated play and enable sound
+                        videoRef.current.muted = false;
                         videoRef.current.play();
+                        setIsPlaying(true);
                       }
                     }
                   }}
@@ -1251,17 +1288,77 @@ export function ProjectResults({
             </div>
           </div>
 
-          {/* YouTube Account Status */}
-          <div className="border rounded-lg p-4 space-y-3">
+          {/* YouTube Upload Controls */}
+          <div className="border rounded-lg p-4 space-y-4">
+            {/* Connection status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-lg">🔗</span>
+                <Youtube className="w-5 h-5 text-muted-foreground" />
                 <span className="font-medium">YouTube</span>
               </div>
               <span className={`text-sm ${isYouTubeConnected ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
                 {isYouTubeConnected ? 'Connected' : 'Not connected'}
               </span>
             </div>
+
+            {/* Visibility Controls */}
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Visibility</label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={!isScheduled && privacyStatus === "private" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setIsScheduled(false);
+                    setPrivacyStatus("private");
+                  }}
+                  className="flex-1"
+                >
+                  Private
+                </Button>
+                <Button
+                  type="button"
+                  variant={!isScheduled && privacyStatus === "unlisted" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setIsScheduled(false);
+                    setPrivacyStatus("unlisted");
+                  }}
+                  className="flex-1"
+                >
+                  Unlisted
+                </Button>
+                <Button
+                  type="button"
+                  variant={isScheduled ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setIsScheduled(true)}
+                  className="flex-1"
+                >
+                  Schedule
+                </Button>
+              </div>
+            </div>
+
+            {/* Schedule Date/Time */}
+            {isScheduled && (
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={scheduledDate}
+                  onChange={(e) => setScheduledDate(e.target.value)}
+                  min={new Date().toISOString().split("T")[0]}
+                  className="flex-1 px-3 py-2 text-sm border rounded-md bg-background"
+                />
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm border rounded-md bg-background"
+                />
+              </div>
+            )}
 
             {/* Push to Live button */}
             <Button
@@ -1273,8 +1370,9 @@ export function ProjectResults({
               Push to Live
             </Button>
 
+            {/* Connect/Disconnect */}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
@@ -1285,7 +1383,7 @@ export function ProjectResults({
                 }
               }}
               disabled={isConnectingYouTube}
-              className="w-full"
+              className="w-full text-muted-foreground"
             >
               {isConnectingYouTube ? (
                 <>
@@ -1293,7 +1391,7 @@ export function ProjectResults({
                   Connecting...
                 </>
               ) : isYouTubeConnected ? (
-                'Disconnect'
+                'Disconnect YouTube'
               ) : (
                 'Connect YouTube'
               )}
@@ -1372,8 +1470,8 @@ export function ProjectResults({
         script={script}
         initialTitle={youtubeTitle}
         initialDescription={youtubeDescription}
-        onMetadataChange={(title, description) => {
-          // Update parent with just title and description for preview
+        onMetadataChange={(title, description, _tags, _categoryId, _playlistId) => {
+          // Update parent with title and description for preview
           if (onYouTubeMetadataChange) {
             onYouTubeMetadataChange(title, description);
           }
