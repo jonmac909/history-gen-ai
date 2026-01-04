@@ -12,7 +12,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
-import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+import { renderVideoStreaming, generateYouTubeMetadata, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
 import { getAllProjects, type Project } from "@/lib/projectStore";
@@ -229,6 +229,10 @@ export function ProjectResults({
   // State for project dropdown
   const [allProjects, setAllProjects] = useState<Project[]>([]);
 
+  // State for auto-generated description
+  const [generatedDescription, setGeneratedDescription] = useState<string>('');
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+
   // Load all projects for dropdown
   useEffect(() => {
     const loadProjects = async () => {
@@ -237,6 +241,30 @@ export function ProjectResults({
     };
     loadProjects();
   }, []);
+
+  // Auto-generate YouTube description when script is available
+  useEffect(() => {
+    const generateDescription = async () => {
+      if (!script || script.trim().length < 50) return;
+      if (generatedDescription) return; // Already generated
+
+      setIsGeneratingDescription(true);
+      try {
+        const result = await generateYouTubeMetadata(
+          projectTitle || "Historical Documentary",
+          script
+        );
+        if (result.success && result.description) {
+          setGeneratedDescription(result.description);
+        }
+      } catch (error) {
+        console.error('Failed to generate description:', error);
+      } finally {
+        setIsGeneratingDescription(false);
+      }
+    };
+    generateDescription();
+  }, [script, projectTitle, generatedDescription]);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -1200,14 +1228,33 @@ export function ProjectResults({
             )}
           </div>
 
-          {/* Title and description under preview */}
-          <div>
-            <h2 className="font-semibold text-foreground line-clamp-2">
+          {/* Title and description under preview - YouTube-style */}
+          <div className="space-y-3">
+            <h2 className="font-semibold text-foreground line-clamp-2 text-lg">
               {projectTitle || "Untitled Project"}
             </h2>
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
-              {script ? script.slice(0, 150) + (script.length > 150 ? '...' : '') : previewVideoUrl ? "Video ready" : firstImageUrl ? "Images generated" : "No content yet"}
-            </p>
+
+            {/* Description preview - simulating YouTube */}
+            <div className="text-sm text-muted-foreground">
+              {isGeneratingDescription ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Generating description...</span>
+                </div>
+              ) : generatedDescription ? (
+                <p className="line-clamp-3 whitespace-pre-wrap">
+                  {generatedDescription}
+                </p>
+              ) : script ? (
+                <p className="text-muted-foreground/60 italic">
+                  Description will be auto-generated...
+                </p>
+              ) : (
+                <p className="text-muted-foreground/60">
+                  Generate content to see preview
+                </p>
+              )}
+            </div>
           </div>
 
           {/* YouTube Account Status */}
