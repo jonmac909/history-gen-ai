@@ -127,45 +127,52 @@ function rowToProject(row: {
 }
 
 // Convert Project to database row format
+// IMPORTANT: Only include fields that are explicitly provided to avoid overwriting existing values
 function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean = false) {
   const now = new Date().toISOString();
   const row: Record<string, unknown> = {
     id: project.id,
-    source_url: project.sourceUrl || '',
-    source_type: 'youtube',
-    status: project.status || 'in_progress',
-    video_title: project.videoTitle || null,
-    current_step: project.currentStep || 'script',
-    parent_project_id: project.parentProjectId || null,
-    version_number: project.versionNumber || 1,
-    script_content: project.script || null,
-    audio_url: project.audioUrl || null,
-    audio_duration: project.audioDuration || null,
-    audio_segments: project.audioSegments || [],
-    srt_url: project.srtUrl || null,
-    srt_content: project.srtContent || null,
-    image_prompts: project.imagePrompts || [],
-    image_urls: project.imageUrls || [],
-    video_url: project.videoUrl || null,
-    video_url_captioned: project.videoUrlCaptioned || null,
-    embers_video_url: project.embersVideoUrl || null,
-    smoke_embers_video_url: project.smokeEmbersVideoUrl || null,
-    settings: project.settings || null,
-    thumbnails: project.thumbnails || [],
-    selected_thumbnail_index: project.selectedThumbnailIndex ?? null,
-    approved_steps: project.approvedSteps || [],
-    is_favorite: project.isFavorite || false,
-    youtube_title: project.youtubeTitle || null,
-    youtube_description: project.youtubeDescription || null,
-    youtube_tags: project.youtubeTags || null,
-    youtube_category_id: project.youtubeCategoryId || null,
-    youtube_playlist_id: project.youtubePlaylistId || null,
     updated_at: now,
   };
 
-  // Only set created_at for new projects
+  // Only include fields that are explicitly provided (not undefined)
+  if (project.sourceUrl !== undefined) row.source_url = project.sourceUrl || '';
+  if (isNew) row.source_type = 'youtube';
+  if (project.status !== undefined) row.status = project.status;
+  if (project.videoTitle !== undefined) row.video_title = project.videoTitle || null;
+  if (project.currentStep !== undefined) row.current_step = project.currentStep;
+  if (project.parentProjectId !== undefined) row.parent_project_id = project.parentProjectId || null;
+  if (project.versionNumber !== undefined) row.version_number = project.versionNumber;
+  if (project.script !== undefined) row.script_content = project.script || null;
+  if (project.audioUrl !== undefined) row.audio_url = project.audioUrl || null;
+  if (project.audioDuration !== undefined) row.audio_duration = project.audioDuration || null;
+  if (project.audioSegments !== undefined) row.audio_segments = project.audioSegments || [];
+  if (project.srtUrl !== undefined) row.srt_url = project.srtUrl || null;
+  if (project.srtContent !== undefined) row.srt_content = project.srtContent || null;
+  if (project.imagePrompts !== undefined) row.image_prompts = project.imagePrompts || [];
+  if (project.imageUrls !== undefined) row.image_urls = project.imageUrls || [];
+  if (project.videoUrl !== undefined) row.video_url = project.videoUrl || null;
+  if (project.videoUrlCaptioned !== undefined) row.video_url_captioned = project.videoUrlCaptioned || null;
+  if (project.embersVideoUrl !== undefined) row.embers_video_url = project.embersVideoUrl || null;
+  if (project.smokeEmbersVideoUrl !== undefined) row.smoke_embers_video_url = project.smokeEmbersVideoUrl || null;
+  if (project.settings !== undefined) row.settings = project.settings || null;
+  if (project.thumbnails !== undefined) row.thumbnails = project.thumbnails || [];
+  if (project.selectedThumbnailIndex !== undefined) row.selected_thumbnail_index = project.selectedThumbnailIndex ?? null;
+  if (project.approvedSteps !== undefined) row.approved_steps = project.approvedSteps || [];
+  if (project.isFavorite !== undefined) row.is_favorite = project.isFavorite;
+  if (project.youtubeTitle !== undefined) row.youtube_title = project.youtubeTitle || null;
+  if (project.youtubeDescription !== undefined) row.youtube_description = project.youtubeDescription || null;
+  if (project.youtubeTags !== undefined) row.youtube_tags = project.youtubeTags || null;
+  if (project.youtubeCategoryId !== undefined) row.youtube_category_id = project.youtubeCategoryId || null;
+  if (project.youtubePlaylistId !== undefined) row.youtube_playlist_id = project.youtubePlaylistId;
+
+  // For new projects, set defaults for required fields
   if (isNew) {
     row.created_at = now;
+    if (!row.source_url) row.source_url = '';
+    if (!row.status) row.status = 'in_progress';
+    if (!row.current_step) row.current_step = 'script';
+    if (!row.version_number) row.version_number = 1;
   }
 
   return row;
@@ -611,6 +618,34 @@ export async function createProjectVersion(parentId: string): Promise<string> {
   }
 
   return newId;
+}
+
+// Auto-backup interval tracking
+const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const lastBackupTimes: Map<string, number> = new Map();
+
+// Check if a project needs a backup based on time elapsed
+export function shouldCreateBackup(projectId: string): boolean {
+  const lastBackup = lastBackupTimes.get(projectId) || 0;
+  return Date.now() - lastBackup > BACKUP_INTERVAL_MS;
+}
+
+// Create an auto-backup version of a project (time-based)
+export async function createAutoBackup(projectId: string): Promise<string | null> {
+  if (!shouldCreateBackup(projectId)) {
+    console.log(`[projectStore] Skipping backup for ${projectId} - too recent`);
+    return null;
+  }
+
+  try {
+    const newVersionId = await createProjectVersion(projectId);
+    lastBackupTimes.set(projectId, Date.now());
+    console.log(`[projectStore] Auto-backup created: ${newVersionId} for project ${projectId}`);
+    return newVersionId;
+  } catch (error) {
+    console.error(`[projectStore] Failed to create auto-backup for ${projectId}:`, error);
+    return null;
+  }
 }
 
 // Get root projects only (for Projects drawer - hides versions)

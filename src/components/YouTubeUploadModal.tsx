@@ -372,12 +372,20 @@ export function YouTubeUploadModal({
             )}
 
             {/* Title Input (always visible for manual editing) */}
-            <Input
-              id="title"
+            <input
+              id="youtube-video-title"
+              name="youtube-video-title"
+              type="text"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              data-1p-ignore="true"
+              spellCheck="false"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Enter video title or select from AI options above"
               maxLength={100}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             />
             <p className="text-xs text-muted-foreground text-right">
               {title.length}/100
