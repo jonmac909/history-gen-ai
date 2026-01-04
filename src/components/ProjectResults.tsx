@@ -739,10 +739,6 @@ export function ProjectResults({
             <p className="text-muted-foreground">{sourceUrl}</p>
           </div>
         </div>
-        <Button variant="outline" onClick={onNewProject} className="gap-2">
-          <RefreshCw className="w-4 h-4" />
-          New Project
-        </Button>
       </div>
 
       {/* Pipeline Steps */}

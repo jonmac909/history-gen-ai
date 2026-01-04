@@ -1842,9 +1842,18 @@ const Index = () => {
 
           <div className="w-full max-w-3xl mx-auto text-center space-y-8">
             <div className="space-y-3">
-              <h1 className="text-4xl md:text-5xl font-bold text-foreground tracking-tight">
-                Create Your History AI Video
-              </h1>
+              <div className="flex items-center justify-center gap-3">
+                <h1 className="text-4xl md:text-5xl font-bold text-foreground tracking-tight">
+                  Create Your History AI Video
+                </h1>
+                <SettingsPopover
+                  settings={settings}
+                  onSettingsChange={setSettings}
+                  scriptTemplates={scriptTemplates}
+                  imageTemplates={imageTemplates}
+                  requireTitle={!projectId}
+                />
+              </div>
               <p className="text-lg text-muted-foreground">
                 {settings.customScript && settings.customScript.trim().length > 0
                   ? "Using custom script - click Generate to start audio production"
@@ -1878,27 +1887,18 @@ const Index = () => {
                 {settings.customScript && settings.customScript.trim().length > 0 ? (
                   // Custom script mode - simplified UI
                   <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-primary" />
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-medium text-foreground">
-                            Custom Script Ready
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {settings.customScript.trim().split(/\s+/).length} words
-                          </p>
-                        </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-primary" />
                       </div>
-                      <SettingsPopover
-                        settings={settings}
-                        onSettingsChange={setSettings}
-                        scriptTemplates={scriptTemplates}
-                        imageTemplates={imageTemplates}
-                        requireTitle={!projectId}
-                      />
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-foreground">
+                          Custom Script Ready
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {settings.customScript.trim().split(/\s+/).length} words
+                        </p>
+                      </div>
                     </div>
                     <Button
                       onClick={handleGenerate}
@@ -1932,14 +1932,6 @@ const Index = () => {
                       onChange={(e) => setInputValue(e.target.value)}
                       placeholder={inputMode === "url" ? "Paste YouTube URL..." : "Enter Video Title..."}
                       className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
-                    />
-
-                    <SettingsPopover
-                      settings={settings}
-                      onSettingsChange={setSettings}
-                      scriptTemplates={scriptTemplates}
-                      imageTemplates={imageTemplates}
-                      requireTitle={!projectId}
                     />
 
                     <Button
