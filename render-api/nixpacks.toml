@@ -2,7 +2,8 @@
 # Install fontconfig and fonts for FFmpeg subtitle rendering
 
 [phases.setup]
-aptPkgs = ["fontconfig", "fonts-dejavu-core", "fonts-liberation"]
+# fontconfig/fonts for FFmpeg, plus libvips for sharp image processing
+aptPkgs = ["fontconfig", "fonts-dejavu-core", "fonts-liberation", "libvips-dev"]
 
 [phases.install]
 cmds = ["npm ci"]
