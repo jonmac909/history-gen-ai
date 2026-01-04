@@ -184,6 +184,9 @@ const Index = () => {
   // YouTube metadata state
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeDescription, setYoutubeDescription] = useState("");
+  const [youtubeTags, setYoutubeTags] = useState("");
+  const [youtubeCategoryId, setYoutubeCategoryId] = useState("27"); // Default: Education
+  const [youtubePlaylistId, setYoutubePlaylistId] = useState<string | null>(null);
 
   // Migrate localStorage to Supabase on first load
   useEffect(() => {
@@ -293,6 +296,11 @@ const Index = () => {
       smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
       thumbnails: overrides?.thumbnails || generatedThumbnails,
       selectedThumbnailIndex: overrides?.selectedThumbnailIndex ?? selectedThumbnailIndex,
+      youtubeTitle: overrides?.youtubeTitle || youtubeTitle || undefined,
+      youtubeDescription: overrides?.youtubeDescription || youtubeDescription || undefined,
+      youtubeTags: overrides?.youtubeTags || youtubeTags || undefined,
+      youtubeCategoryId: overrides?.youtubeCategoryId || youtubeCategoryId || undefined,
+      youtubePlaylistId: overrides?.youtubePlaylistId !== undefined ? overrides.youtubePlaylistId : youtubePlaylistId,
     }).catch(err => console.error('[autoSave] Failed to save project:', err));
   };
 
@@ -324,6 +332,12 @@ const Index = () => {
     if (savedProject.thumbnails) setGeneratedThumbnails(savedProject.thumbnails);
     if (savedProject.selectedThumbnailIndex !== undefined) setSelectedThumbnailIndex(savedProject.selectedThumbnailIndex);
     if (savedProject.approvedSteps) setApprovedSteps(savedProject.approvedSteps);
+    // Restore YouTube metadata
+    if (savedProject.youtubeTitle) setYoutubeTitle(savedProject.youtubeTitle);
+    if (savedProject.youtubeDescription) setYoutubeDescription(savedProject.youtubeDescription);
+    if (savedProject.youtubeTags) setYoutubeTags(savedProject.youtubeTags);
+    if (savedProject.youtubeCategoryId) setYoutubeCategoryId(savedProject.youtubeCategoryId);
+    if (savedProject.youtubePlaylistId !== undefined) setYoutubePlaylistId(savedProject.youtubePlaylistId);
 
     // Navigate to the appropriate view based on saved step
     switch (savedProject.currentStep) {
@@ -1723,6 +1737,12 @@ const Index = () => {
     if (project.approvedSteps) {
       setApprovedSteps(project.approvedSteps);
     }
+    // Restore YouTube metadata
+    if (project.youtubeTitle) setYoutubeTitle(project.youtubeTitle);
+    if (project.youtubeDescription) setYoutubeDescription(project.youtubeDescription);
+    if (project.youtubeTags) setYoutubeTags(project.youtubeTags);
+    if (project.youtubeCategoryId) setYoutubeCategoryId(project.youtubeCategoryId);
+    if (project.youtubePlaylistId !== undefined) setYoutubePlaylistId(project.youtubePlaylistId);
 
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [];
@@ -1801,8 +1821,8 @@ const Index = () => {
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 text-muted-foreground hover:text-foreground"
-              onClick={() => window.open('/outliers', '_blank')}
+              className={`gap-2 ${viewState === "outlier-finder" ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setViewState("outlier-finder")}
             >
               <TrendingUp className="w-4 h-4" />
               <span className="hidden sm:inline">Outliers</span>
@@ -1884,9 +1904,23 @@ const Index = () => {
           onApproveStep={handleApproveStep}
           youtubeTitle={youtubeTitle}
           youtubeDescription={youtubeDescription}
-          onYouTubeMetadataChange={(title, description) => {
+          youtubeTags={youtubeTags}
+          youtubeCategoryId={youtubeCategoryId}
+          youtubePlaylistId={youtubePlaylistId}
+          onYouTubeMetadataChange={(title, description, tags, categoryId, playlistId) => {
             setYoutubeTitle(title);
             setYoutubeDescription(description);
+            setYoutubeTags(tags);
+            setYoutubeCategoryId(categoryId);
+            setYoutubePlaylistId(playlistId);
+            // Save YouTube metadata to project
+            autoSave("complete", {
+              youtubeTitle: title,
+              youtubeDescription: description,
+              youtubeTags: tags,
+              youtubeCategoryId: categoryId,
+              youtubePlaylistId: playlistId,
+            });
           }}
         />
       ) : (

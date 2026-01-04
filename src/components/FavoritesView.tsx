@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { getFavoriteProjects, type Project } from "@/lib/projectStore";
 
 interface FavoritesViewProps {
-  onSelectProject: (projectId: string) => void;
+  onSelectProject: (project: Project) => void;
   onBack?: () => void;
 }
 
@@ -84,7 +84,7 @@ export function FavoritesView({
             return (
               <button
                 key={project.id}
-                onClick={() => onSelectProject(project.id)}
+                onClick={() => onSelectProject(project)}
                 className="group text-left rounded-xl overflow-hidden border transition-all hover:scale-[1.02] hover:shadow-lg border-border hover:border-primary/40"
               >
                 {/* Thumbnail */}

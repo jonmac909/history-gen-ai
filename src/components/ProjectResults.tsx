@@ -57,7 +57,10 @@ interface ProjectResultsProps {
   // YouTube metadata (shared with YouTubeUploadModal)
   youtubeTitle?: string;  // YouTube-specific title (different from project title)
   youtubeDescription?: string;  // YouTube description
-  onYouTubeMetadataChange?: (title: string, description: string) => void;  // Callback to update metadata
+  youtubeTags?: string;  // Comma-separated tags
+  youtubeCategoryId?: string;  // YouTube category ID
+  youtubePlaylistId?: string | null;  // Playlist to add video to
+  onYouTubeMetadataChange?: (title: string, description: string, tags: string, categoryId: string, playlistId: string | null) => void;  // Callback to update metadata
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
   onGoToAudio?: () => void;
@@ -178,6 +181,9 @@ export function ProjectResults({
   script,
   youtubeTitle,
   youtubeDescription,
+  youtubeTags,
+  youtubeCategoryId,
+  youtubePlaylistId,
   onYouTubeMetadataChange,
   onGoToScript,
   onGoToAudio,
@@ -1470,10 +1476,13 @@ export function ProjectResults({
         script={script}
         initialTitle={youtubeTitle}
         initialDescription={youtubeDescription}
-        onMetadataChange={(title, description, _tags, _categoryId, _playlistId) => {
-          // Update parent with title and description for preview
+        initialTags={youtubeTags}
+        initialCategoryId={youtubeCategoryId}
+        initialPlaylistId={youtubePlaylistId}
+        onMetadataChange={(title, description, tags, categoryId, playlistId) => {
+          // Update parent with all metadata for persistence and preview
           if (onYouTubeMetadataChange) {
-            onYouTubeMetadataChange(title, description);
+            onYouTubeMetadataChange(title, description, tags, categoryId, playlistId);
           }
         }}
         onClose={() => setIsYouTubeModalOpen(false)}

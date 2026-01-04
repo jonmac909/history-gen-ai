@@ -41,6 +41,13 @@ export interface Project {
 
   // Favorites
   isFavorite?: boolean;
+
+  // YouTube metadata
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  youtubeTags?: string;
+  youtubeCategoryId?: string;
+  youtubePlaylistId?: string | null;
 }
 
 // Legacy localStorage keys for migration
@@ -76,6 +83,11 @@ function rowToProject(row: {
   parent_project_id: string | null;
   version_number: number | null;
   is_favorite: boolean | null;
+  youtube_title: string | null;
+  youtube_description: string | null;
+  youtube_tags: string | null;
+  youtube_category_id: string | null;
+  youtube_playlist_id: string | null;
   created_at: string;
   updated_at: string;
 }): Project {
@@ -106,6 +118,11 @@ function rowToProject(row: {
     selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
     approvedSteps: (row.approved_steps as Project['approvedSteps']) || undefined,
     isFavorite: row.is_favorite || false,
+    youtubeTitle: row.youtube_title || undefined,
+    youtubeDescription: row.youtube_description || undefined,
+    youtubeTags: row.youtube_tags || undefined,
+    youtubeCategoryId: row.youtube_category_id || undefined,
+    youtubePlaylistId: row.youtube_playlist_id || undefined,
   };
 }
 
@@ -138,6 +155,11 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
     selected_thumbnail_index: project.selectedThumbnailIndex ?? null,
     approved_steps: project.approvedSteps || [],
     is_favorite: project.isFavorite || false,
+    youtube_title: project.youtubeTitle || null,
+    youtube_description: project.youtubeDescription || null,
+    youtube_tags: project.youtubeTags || null,
+    youtube_category_id: project.youtubeCategoryId || null,
+    youtube_playlist_id: project.youtubePlaylistId || null,
     updated_at: now,
   };
 
