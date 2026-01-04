@@ -228,7 +228,7 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
             <div className="flex items-center gap-2 mt-3">
               <span className="text-xs text-muted-foreground">Filter:</span>
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as FilterOption)}>
-                <SelectTrigger className="h-7 w-[140px] text-xs">
+                <SelectTrigger className="h-7 w-[130px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -236,22 +236,22 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
                     All ({allProjects.length})
                   </SelectItem>
                   <SelectItem value="in_progress" className="text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3 h-3" />
-                      In Progress ({allProjects.filter(p => p.status === 'in_progress').length})
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span className="whitespace-nowrap">In Progress ({allProjects.filter(p => p.status === 'in_progress').length})</span>
+                    </span>
                   </SelectItem>
                   <SelectItem value="live" className="text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <Globe className="w-3 h-3" />
-                      Live ({allProjects.filter(p => p.status === 'live').length})
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <Globe className="w-3 h-3 shrink-0" />
+                      <span className="whitespace-nowrap">Live ({allProjects.filter(p => p.status === 'live').length})</span>
+                    </span>
                   </SelectItem>
                   <SelectItem value="archived" className="text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <Archive className="w-3 h-3" />
-                      Archived ({allProjects.filter(p => p.status === 'archived').length})
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <Archive className="w-3 h-3 shrink-0" />
+                      <span className="whitespace-nowrap">Archived ({allProjects.filter(p => p.status === 'archived').length})</span>
+                    </span>
                   </SelectItem>
                 </SelectContent>
               </Select>

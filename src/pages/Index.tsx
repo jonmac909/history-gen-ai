@@ -605,6 +605,9 @@ const Index = () => {
       return;
     }
 
+    // CRITICAL: Reset pending state FIRST to clear any old project data
+    resetPendingState();
+
     setSourceUrl(inputValue);
     // ALWAYS generate a new projectId for new generations from the main page
     // This prevents overwriting existing project files when starting fresh
@@ -618,7 +621,6 @@ const Index = () => {
 
     setProcessingSteps(steps);
     setViewState("processing");
-    resetPendingState();
 
     try {
       updateStep("transcript", "active");
