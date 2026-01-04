@@ -3,8 +3,6 @@ import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, C
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1297,57 +1295,21 @@ export function ProjectResults({
           {/* Update Title & Save Version Buttons */}
           {(onTitleChange || onSaveVersion) && (
             <div className="pt-4 mt-4 border-t space-y-2">
-              {onTitleChange && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="update-title" className="text-sm font-medium">
-                      Project Title
-                    </Label>
-                    {youtubeTitle && youtubeTitle !== projectTitle && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs text-primary"
-                        onClick={() => {
-                          setEditedTitle(youtubeTitle);
-                          onTitleChange(youtubeTitle);
-                          toast({
-                            title: "Title Updated",
-                            description: "Using YouTube title as project title.",
-                          });
-                        }}
-                      >
-                        Use YouTube Title
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      id="update-title"
-                      value={editedTitle}
-                      onChange={(e) => setEditedTitle(e.target.value)}
-                      placeholder="Enter project title..."
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        if (editedTitle.trim() && editedTitle !== projectTitle) {
-                          onTitleChange(editedTitle.trim());
-                          toast({
-                            title: "Title Updated",
-                            description: "Project title has been updated everywhere.",
-                          });
-                        }
-                      }}
-                      disabled={!editedTitle.trim() || editedTitle === projectTitle}
-                      title="Save title"
-                    >
-                      <Check className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+              {onTitleChange && youtubeTitle && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    onTitleChange(youtubeTitle);
+                    toast({
+                      title: "Title Updated",
+                      description: "Project title updated from YouTube title.",
+                    });
+                  }}
+                >
+                  <Pencil className="w-4 h-4" />
+                  Update Title
+                </Button>
               )}
               {onSaveVersion && (
                 <Button
