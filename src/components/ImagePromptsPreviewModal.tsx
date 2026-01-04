@@ -175,6 +175,15 @@ export function ImagePromptsPreviewModal({
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
   const [isStyleExpanded, setIsStyleExpanded] = useState(false);
 
+  // Pagination for large prompt lists (prevents stack overflow with 500+ items)
+  const PROMPTS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(0);
+  const totalPages = Math.ceil(editedPrompts.length / PROMPTS_PER_PAGE);
+  const visiblePrompts = editedPrompts.slice(
+    currentPage * PROMPTS_PER_PAGE,
+    (currentPage + 1) * PROMPTS_PER_PAGE
+  );
+
   // Detect if incoming stylePrompt matches a preset, default to Dutch Golden Age
   const detectStyleKey = (prompt: string): string => {
     const match = IMAGE_STYLES.find(s => s.prompt && s.prompt === prompt);
@@ -197,6 +206,7 @@ export function ImagePromptsPreviewModal({
   // Sync with props when prompts change
   useEffect(() => {
     setEditedPrompts(prompts);
+    setCurrentPage(0); // Reset to first page when prompts change
   }, [prompts]);
 
   // Sync style prompt when prop changes (but only if it's substantive)
@@ -346,8 +356,37 @@ export function ImagePromptsPreviewModal({
         </div>
 
         <div className="overflow-y-auto max-h-[50vh] py-4 pr-2">
+          {/* Pagination controls for large lists */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mb-3 pb-3 border-b">
+              <span className="text-sm text-muted-foreground">
+                Showing {currentPage * PROMPTS_PER_PAGE + 1}-{Math.min((currentPage + 1) * PROMPTS_PER_PAGE, editedPrompts.length)} of {editedPrompts.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                  disabled={currentPage === 0}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm">
+                  Page {currentPage + 1} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={currentPage >= totalPages - 1}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="space-y-3">
-            {editedPrompts.map((prompt) => (
+            {visiblePrompts.map((prompt) => (
               <PromptCard
                 key={prompt.index}
                 prompt={prompt}

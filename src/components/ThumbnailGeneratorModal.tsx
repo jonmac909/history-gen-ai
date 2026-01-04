@@ -51,12 +51,11 @@ export function ThumbnailGeneratorModal({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load default thumbnail on mount
+  // Load default thumbnail on mount or when project changes
   useEffect(() => {
-    if (!examplePreview && !exampleImage) {
-      loadDefaultThumbnail();
-    }
-  }, []);
+    // Reset to default when project changes
+    loadDefaultThumbnail();
+  }, [projectId]);
 
   const loadDefaultThumbnail = async () => {
     setIsUploading(true);

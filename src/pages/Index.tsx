@@ -11,16 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { SettingsPopover, type GenerationSettings } from "@/components/SettingsPopover";
 import { ProcessingModal, type GenerationStep } from "@/components/ProcessingModal";
 import { ConfigModal, type ScriptTemplate, type ImageTemplate, type CartesiaVoice } from "@/components/ConfigModal";
@@ -177,7 +167,6 @@ const Index = () => {
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [regeneratingImageIndices, setRegeneratingImageIndices] = useState<Set<number>>(new Set());
-  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [uploadedScript, setUploadedScript] = useState("");
@@ -1327,11 +1316,7 @@ const Index = () => {
   };
 
   const handleCancelRequest = () => {
-    setShowExitConfirmation(true);
-  };
-
-  const handleConfirmExit = () => {
-    setShowExitConfirmation(false);
+    // Auto-save is always enabled, so no confirmation needed
     // If we have a loaded project, go back to results without resetting assets
     // Otherwise reset everything and go to create page
     if (generatedAssets.length > 0) {
@@ -1340,10 +1325,6 @@ const Index = () => {
       resetPendingState();
       setViewState("create");
     }
-  };
-
-  const handleCancelExit = () => {
-    setShowExitConfirmation(false);
   };
 
   // Back navigation handlers - disable fullAutomation when manually navigating back
@@ -2559,22 +2540,6 @@ const Index = () => {
         onBack={handleBackToRender}
         onSkip={handleYouTubeSkip}
       />
-
-      {/* Exit Confirmation Dialog */}
-      <AlertDialog open={showExitConfirmation} onOpenChange={setShowExitConfirmation}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Exit Project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your progress is automatically saved. You can resume from the Projects drawer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelExit}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmExit}>Exit</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
