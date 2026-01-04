@@ -24,7 +24,6 @@ interface ImagesPreviewModalProps {
   isOpen: boolean;
   images: string[];
   prompts?: ImagePrompt[];
-  script?: string;
   srtContent?: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -85,7 +84,6 @@ export function ImagesPreviewModal({
   isOpen,
   images,
   prompts,
-  script,
   srtContent,
   onConfirm,
   onCancel,
@@ -106,10 +104,13 @@ export function ImagesPreviewModal({
   // Multi-select state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [showBatchEdit, setShowBatchEdit] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
   const [appendText, setAppendText] = useState("");
+
+  // Track recently regenerated images for highlighting
+  const [recentlyRegenerated, setRecentlyRegenerated] = useState<Set<number>>(new Set());
+  const [pendingRegeneration, setPendingRegeneration] = useState<Set<number>>(new Set());
 
   // Refs for lightbox elements (needed for capture-phase click handling)
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -275,7 +276,6 @@ export function ImagesPreviewModal({
   const exitMultiSelect = () => {
     setIsMultiSelectMode(false);
     setSelectedIndices(new Set());
-    setShowBatchEdit(false);
     setFindText("");
     setReplaceText("");
     setAppendText("");
@@ -285,6 +285,9 @@ export function ImagesPreviewModal({
   const handleBatchRegenerate = async () => {
     if (selectedIndices.size === 0) return;
 
+    // Mark selected images as pending regeneration
+    setPendingRegeneration(new Set(selectedIndices));
+
     if (onRegenerateMultiple) {
       await onRegenerateMultiple(Array.from(selectedIndices));
     } else if (onRegenerate) {
@@ -293,6 +296,10 @@ export function ImagesPreviewModal({
         onRegenerate(index);
       }
     }
+
+    // After regeneration, mark them as recently regenerated
+    setRecentlyRegenerated(prev => new Set([...prev, ...selectedIndices]));
+    setPendingRegeneration(new Set());
   };
 
   // Apply batch edit and regenerate
@@ -320,6 +327,9 @@ export function ImagesPreviewModal({
       editedPrompts.set(index, newDescription);
     }
 
+    // Mark selected images as pending regeneration
+    setPendingRegeneration(new Set(selectedIndices));
+
     if (onRegenerateMultiple) {
       await onRegenerateMultiple(Array.from(selectedIndices), editedPrompts);
     } else if (onRegenerate) {
@@ -329,7 +339,10 @@ export function ImagesPreviewModal({
       }
     }
 
-    setShowBatchEdit(false);
+    // After regeneration, mark them as recently regenerated
+    setRecentlyRegenerated(prev => new Set([...prev, ...selectedIndices]));
+    setPendingRegeneration(new Set());
+
     setFindText("");
     setReplaceText("");
     setAppendText("");
@@ -349,19 +362,6 @@ export function ImagesPreviewModal({
       // Small delay between downloads
       await new Promise(resolve => setTimeout(resolve, 300));
     }
-  };
-
-  const handleDownloadScript = () => {
-    if (!script) return;
-    const blob = new Blob([script], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'script.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -438,80 +438,91 @@ export function ImagesPreviewModal({
               </span>
               <Button
                 size="sm"
-                variant="outline"
-                onClick={() => setShowBatchEdit(true)}
-                disabled={regeneratingIndices.size > 0}
-              >
-                <Edit2 className="w-4 h-4 mr-1" />
-                Edit Prompts
-              </Button>
-              <Button
-                size="sm"
                 onClick={handleBatchRegenerate}
-                disabled={regeneratingIndices.size > 0}
+                disabled={regeneratingIndices.size > 0 || pendingRegeneration.size > 0}
               >
-                <RefreshCw className="w-4 h-4 mr-1" />
+                <RefreshCw className={`w-4 h-4 mr-1 ${pendingRegeneration.size > 0 ? 'animate-spin' : ''}`} />
                 Regenerate
               </Button>
             </div>
           )}
         </div>
 
-        {/* Batch edit panel */}
-        {showBatchEdit && (
-          <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">Edit {selectedIndices.size} Image Prompts</span>
-              <Button size="sm" variant="ghost" onClick={() => setShowBatchEdit(false)}>
-                <X className="w-4 h-4" />
-              </Button>
+        {/* Inline batch edit panel - always visible when in multi-select mode */}
+        {isMultiSelectMode && selectedIndices.size > 0 && (
+          <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+            <div className="flex items-center gap-2">
+              <Edit2 className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Batch Edit Prompts</span>
+              <span className="text-xs text-muted-foreground">
+                (Changes apply to {selectedIndices.size} selected image{selectedIndices.size > 1 ? 's' : ''})
+              </span>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-muted-foreground block mb-1">
-                  Find & Replace in scene descriptions:
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Find text..."
-                    value={findText}
-                    onChange={(e) => setFindText(e.target.value)}
-                    className="flex-1"
-                  />
-                  <span className="text-muted-foreground self-center">→</span>
-                  <Input
-                    placeholder="Replace with..."
-                    value={replaceText}
-                    onChange={(e) => setReplaceText(e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">
-                  Or append to all descriptions:
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Find text in prompts:
                 </label>
                 <Input
-                  placeholder="e.g., wearing historically accurate medieval clothing"
-                  value={appendText}
-                  onChange={(e) => setAppendText(e.target.value)}
+                  placeholder="e.g., beer, tankard, mug..."
+                  value={findText}
+                  onChange={(e) => setFindText(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Replace with:
+                </label>
+                <Input
+                  placeholder="e.g., clay mug"
+                  value={replaceText}
+                  onChange={(e) => setReplaceText(e.target.value)}
+                  className="h-9"
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowBatchEdit(false)}>
-                Cancel
-              </Button>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">
+                Or append to all selected prompts:
+              </label>
+              <Input
+                placeholder="e.g., wearing historically accurate medieval clothing"
+                value={appendText}
+                onChange={(e) => setAppendText(e.target.value)}
+                className="h-9"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
               <Button
+                size="sm"
                 onClick={handleApplyBatchEdit}
-                disabled={(!findText && !appendText) || regeneratingIndices.size > 0}
+                disabled={(!findText && !appendText) || regeneratingIndices.size > 0 || pendingRegeneration.size > 0}
               >
-                Apply & Regenerate Selected
+                <RefreshCw className={`w-4 h-4 mr-1 ${pendingRegeneration.size > 0 ? 'animate-spin' : ''}`} />
+                Apply & Regenerate
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Recently regenerated indicator */}
+        {recentlyRegenerated.size > 0 && (
+          <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <span className="text-sm text-green-700 dark:text-green-400">
+              ✓ {recentlyRegenerated.size} image{recentlyRegenerated.size > 1 ? 's' : ''} regenerated
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setRecentlyRegenerated(new Set())}
+              className="h-7 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40"
+            >
+              Clear
+            </Button>
           </div>
         )}
 
@@ -593,7 +604,17 @@ export function ImagesPreviewModal({
                 <img
                   src={getImageUrl(imageUrl, index)}
                   alt={`Generated image ${index + 1}`}
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  className={`w-full h-full object-cover transition-all group-hover:scale-105 ${
+                    // Desaturate non-regenerated images when there's a pending batch regeneration
+                    pendingRegeneration.size > 0 && !pendingRegeneration.has(index) && !regeneratingIndices.has(index)
+                      ? 'grayscale opacity-50'
+                      : ''
+                  } ${
+                    // Highlight recently regenerated images with a subtle glow
+                    recentlyRegenerated.has(index) && !isRegenerating(index)
+                      ? 'ring-2 ring-green-500 ring-offset-2'
+                      : ''
+                  }`}
                 />
 
                 {/* Image number badge */}
@@ -680,12 +701,6 @@ export function ImagesPreviewModal({
             {onForward && (
               <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
                 <ChevronRight className="w-5 h-5" />
-              </Button>
-            )}
-            {script && (
-              <Button variant="outline" onClick={handleDownloadScript}>
-                <Download className="w-4 h-4 mr-2" />
-                Script
               </Button>
             )}
             <Button variant="outline" onClick={handleDownloadAll}>

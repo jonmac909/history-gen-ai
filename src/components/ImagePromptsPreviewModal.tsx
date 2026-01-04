@@ -173,18 +173,38 @@ export function ImagePromptsPreviewModal({
   onForward
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
-  const [editedStyle, setEditedStyle] = useState(stylePrompt);
   const [isStyleExpanded, setIsStyleExpanded] = useState(false);
-  const [selectedStyleKey, setSelectedStyleKey] = useState<string>('custom');
+
+  // Detect if incoming stylePrompt matches a preset, default to Dutch Golden Age
+  const detectStyleKey = (prompt: string): string => {
+    const match = IMAGE_STYLES.find(s => s.prompt && s.prompt === prompt);
+    if (match) return match.value;
+    // If no match and prompt is empty or very short, default to Dutch Golden Age
+    if (!prompt || prompt.trim().length < 20) return 'dutch-golden-age';
+    return 'custom';
+  };
+
+  const [selectedStyleKey, setSelectedStyleKey] = useState<string>(() => detectStyleKey(stylePrompt));
+  const [editedStyle, setEditedStyle] = useState(() => {
+    // If stylePrompt is empty/short, use Dutch Golden Age preset
+    if (!stylePrompt || stylePrompt.trim().length < 20) {
+      const dutchStyle = IMAGE_STYLES.find(s => s.value === 'dutch-golden-age');
+      return dutchStyle?.prompt || stylePrompt;
+    }
+    return stylePrompt;
+  });
 
   // Sync with props when prompts change
   useEffect(() => {
     setEditedPrompts(prompts);
   }, [prompts]);
 
-  // Sync style prompt when prop changes
+  // Sync style prompt when prop changes (but only if it's substantive)
   useEffect(() => {
-    setEditedStyle(stylePrompt);
+    if (stylePrompt && stylePrompt.trim().length >= 20) {
+      setEditedStyle(stylePrompt);
+      setSelectedStyleKey(detectStyleKey(stylePrompt));
+    }
   }, [stylePrompt]);
 
   const handleUpdatePrompt = (updatedPrompt: ImagePrompt) => {

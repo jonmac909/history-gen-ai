@@ -2265,7 +2265,6 @@ const Index = () => {
         isOpen={viewState === "review-images"}
         images={pendingImages}
         prompts={imagePrompts}
-        script={confirmedScript}
         srtContent={pendingSrtContent || srtContent}
         onConfirm={handleImagesConfirm}
         onCancel={handleCancelRequest}

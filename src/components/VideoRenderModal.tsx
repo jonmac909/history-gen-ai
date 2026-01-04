@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Video, Sparkles, Download, Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Video, Sparkles, Download, Loader2, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -302,27 +302,39 @@ export function VideoRenderModal({
           )}
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <div className="flex gap-2 w-full sm:w-auto">
+        <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {/* Left side: Navigation + Download */}
+          <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" onClick={onBack} disabled={isRendering && !videoUrl}>
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back
+              <Button variant="outline" size="icon" onClick={onBack} disabled={isRendering && !videoUrl} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {onSkip && (
-              <Button variant="ghost" onClick={onSkip} disabled={isRendering && !videoUrl}>
-                Skip
+              <Button variant="outline" size="icon" onClick={onSkip} disabled={isRendering && !videoUrl} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            )}
+            {videoUrl && (
+              <Button variant="outline" onClick={handleDownload}>
+                <Download className="w-4 h-4 mr-2" />
+                Download
               </Button>
             )}
           </div>
+
+          {/* Right side: Exit + Continue */}
+          <Button variant="outline" onClick={onCancel} disabled={isRendering && !videoUrl}>
+            <X className="w-4 h-4 mr-2" />
+            Exit
+          </Button>
+
           <Button
             onClick={handleConfirm}
             disabled={!videoUrl}
-            className="w-full sm:w-auto gap-2"
           >
-            Continue to YouTube
-            <ChevronRight className="w-4 h-4" />
+            <Check className="w-4 h-4 mr-2" />
+            Continue
           </Button>
         </DialogFooter>
       </DialogContent>

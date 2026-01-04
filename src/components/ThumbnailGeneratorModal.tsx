@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, Check, ArrowUp, Expand } from "lucide-react";
+import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, ChevronRight, Check, ArrowUp, Expand } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -743,26 +743,38 @@ export function ThumbnailGeneratorModal({
           )}
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <div className="flex gap-2 w-full sm:w-auto">
+        <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {/* Left side: Navigation + Download */}
+          <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" onClick={onBack} className="gap-2">
-                <ChevronLeft className="w-4 h-4" />
-                Back
+              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {onSkip && (
-              <Button variant="ghost" onClick={onSkip}>
-                Skip
+              <Button variant="outline" size="icon" onClick={onSkip} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            )}
+            {generatedThumbnails.length > 0 && (
+              <Button variant="outline" onClick={handleDownloadAllAsZip}>
+                <Download className="w-4 h-4 mr-2" />
+                Download
               </Button>
             )}
           </div>
+
+          {/* Right side: Exit + Continue */}
+          <Button variant="outline" onClick={onCancel}>
+            <X className="w-4 h-4 mr-2" />
+            Exit
+          </Button>
+
           <Button
             onClick={handleComplete}
             disabled={generatedThumbnails.length > 0 && !selectedThumbnail}
-            className="gap-2 w-full sm:w-auto"
           >
-            <Check className="w-4 h-4" />
+            <Check className="w-4 h-4 mr-2" />
             {generatedThumbnails.length > 0 && !selectedThumbnail
               ? 'Select a Thumbnail'
               : 'Continue'}

@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Unlink,
   ChevronLeft,
+  ChevronRight,
   Sparkles,
   ChevronDown,
   ChevronUp,
@@ -1054,22 +1055,25 @@ export function YouTubeUploadModal({
           )}
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <div className="flex gap-2 w-full sm:w-auto sm:mr-auto">
+        <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {/* Left side: Navigation */}
+          <div className="flex gap-2 mr-auto">
             {onBack && !isUploading && !uploadResult && (
-              <Button variant="outline" onClick={onBack}>
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back
+              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+                <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {onSkip && !isUploading && !uploadResult && (
-              <Button variant="ghost" onClick={onSkip}>
-                Skip
+              <Button variant="outline" size="icon" onClick={onSkip} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
           </div>
+
+          {/* Right side: Exit */}
           <Button variant="outline" onClick={onClose}>
-            {uploadResult ? "Done" : "Cancel"}
+            <X className="w-4 h-4 mr-2" />
+            {uploadResult ? "Done" : "Exit"}
           </Button>
         </DialogFooter>
       </DialogContent>
