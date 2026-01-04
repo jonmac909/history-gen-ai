@@ -127,6 +127,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`🚀 Rewriting script with ${selectedModel}...`);
     console.log(`📊 Max tokens: ${MAX_TOKENS} | Words/iteration: ${WORDS_PER_ITERATION}`);
+    console.log(`📝 Transcript length: ${transcript?.length || 0} chars`);
+    console.log(`📝 Transcript preview: ${transcript?.substring(0, 200)}...`);
+    console.log(`📝 Title: ${title}`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
@@ -183,7 +186,15 @@ CONTENT RULES:
             const wordLimit = Math.min(WORDS_PER_ITERATION, targetWords);
             messages = [{
               role: 'user',
-              content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nIMPORTANT: Write EXACTLY ${wordLimit} words of pure narration. Do not exceed ${wordLimit} words. Stop writing when you reach ${wordLimit} words.`
+              content: `CRITICAL: You MUST rewrite the following transcript into a documentary script. Do NOT make up content or use your training data. ONLY use information from this transcript:
+
+=== TRANSCRIPT START ===
+${transcript}
+=== TRANSCRIPT END ===
+
+Title: ${title || 'Historical Documentary'}
+
+Transform this transcript into ${wordLimit} words of polished documentary narration. Stay faithful to the transcript's content - do not add topics, facts, or stories not present in the transcript above.`
             }];
           } else {
             // Continuation iterations
@@ -191,7 +202,15 @@ CONTENT RULES:
             messages = [
               {
                 role: 'user',
-                content: `Create a historical documentary script based on this content:\n\n${transcript}\n\nTitle: ${title || 'Historical Documentary'}\n\nWrite ${wordLimit} words of pure narration.`
+                content: `CRITICAL: You MUST rewrite the following transcript into a documentary script. Do NOT make up content. ONLY use information from this transcript:
+
+=== TRANSCRIPT START ===
+${transcript}
+=== TRANSCRIPT END ===
+
+Title: ${title || 'Historical Documentary'}
+
+Write ${wordLimit} words of pure narration based ONLY on the transcript above.`
               },
               {
                 role: 'assistant',

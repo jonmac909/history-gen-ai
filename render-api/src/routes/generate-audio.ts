@@ -43,6 +43,16 @@ const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY = 1000;
 const RETRY_MAX_DELAY = 10000;
 
+// Audio pause durations (in seconds) for different punctuation marks
+const PAUSE_DURATIONS = {
+  SENTENCE_END: 0.4,      // Period (.), exclamation (!), question (?)
+  PARAGRAPH: 0.8,         // Double newline or explicit paragraph break
+  ELLIPSIS: 0.6,          // Ellipsis (...) - dramatic pause
+  COMMA: 0.15,            // Comma (,) - brief pause (TTS usually handles this)
+  SEMICOLON: 0.25,        // Semicolon (;) or colon (:)
+  DASH: 0.2,              // Em dash (—) or double dash (--)
+};
+
 const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID || "7gv5y0snx5xiwk";
 const RUNPOD_API_URL = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}`;
 
@@ -264,6 +274,60 @@ function createWavFromPcm(pcmData: Buffer, sampleRate: number, channels: number,
   header.writeUInt32LE(pcmData.length, 40);
 
   return Buffer.concat([header, pcmData]);
+}
+
+// Generate silence WAV buffer of specified duration
+function generateSilence(durationSeconds: number, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Buffer {
+  const bytesPerSample = bitsPerSample / 8;
+  const numSamples = Math.floor(sampleRate * durationSeconds * channels);
+  const pcmData = Buffer.alloc(numSamples * bytesPerSample); // All zeros = silence
+  return createWavFromPcm(pcmData, sampleRate, channels, bitsPerSample);
+}
+
+// Determine pause duration based on text ending punctuation
+function getPauseDuration(text: string, isLastChunk: boolean = false): number {
+  if (isLastChunk) return 0; // No pause after last chunk
+
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+
+  // Check for paragraph break marker (we'll add this during text processing)
+  if (trimmed.endsWith('[PARA]')) {
+    return PAUSE_DURATIONS.PARAGRAPH;
+  }
+
+  // Check ending punctuation
+  const lastChar = trimmed.slice(-1);
+  const lastThree = trimmed.slice(-3);
+  const lastTwo = trimmed.slice(-2);
+
+  // Ellipsis (... or …)
+  if (lastThree === '...' || lastChar === '…') {
+    return PAUSE_DURATIONS.ELLIPSIS;
+  }
+
+  // Em dash or double dash
+  if (lastChar === '—' || lastTwo === '--') {
+    return PAUSE_DURATIONS.DASH;
+  }
+
+  // Sentence-ending punctuation
+  if (lastChar === '.' || lastChar === '!' || lastChar === '?') {
+    return PAUSE_DURATIONS.SENTENCE_END;
+  }
+
+  // Semicolon or colon
+  if (lastChar === ';' || lastChar === ':') {
+    return PAUSE_DURATIONS.SEMICOLON;
+  }
+
+  // Comma - TTS usually handles this, but add small pause at chunk boundary
+  if (lastChar === ',') {
+    return PAUSE_DURATIONS.COMMA;
+  }
+
+  // Default: small pause between chunks that don't end with punctuation
+  return 0.1;
 }
 
 // Transcribe a single audio chunk
@@ -753,19 +817,38 @@ function splitIntoSegments(text: string, segmentCount: number = DEFAULT_SEGMENT_
   return segments;
 }
 
-// Split text into safe chunks at sentence boundaries
+// Split text into safe chunks at sentence boundaries, preserving paragraph markers
 function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH): string[] {
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  // First, mark paragraph breaks with a special token
+  // Paragraph = 2+ newlines, or newline followed by indentation
+  const withParagraphMarkers = text
+    .replace(/\n{2,}/g, ' [PARA] ')  // Double+ newlines become paragraph marker
+    .replace(/\n\s{2,}/g, ' [PARA] ') // Newline + indentation = paragraph
+    .replace(/\n/g, ' ');  // Single newlines become spaces
+
+  const sentences = withParagraphMarkers.split(/(?<=[.!?])\s+/);
   const chunks: string[] = [];
   let currentChunk = "";
 
   for (const sentence of sentences) {
-    if (sentence.length > maxLength) {
+    // Check if this sentence starts with paragraph marker
+    const startsWithPara = sentence.trim().startsWith('[PARA]');
+    const cleanSentence = sentence.replace(/\[PARA\]\s*/g, '').trim();
+
+    if (!cleanSentence) continue;
+
+    // If starting new paragraph and we have content, mark previous chunk
+    if (startsWithPara && currentChunk) {
+      chunks.push(currentChunk.trim() + ' [PARA]');
+      currentChunk = "";
+    }
+
+    if (cleanSentence.length > maxLength) {
       if (currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = "";
       }
-      const parts = sentence.split(/,\s*/);
+      const parts = cleanSentence.split(/,\s*/);
       let partChunk = "";
       for (const part of parts) {
         if (part.length > maxLength) {
@@ -784,11 +867,11 @@ function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH)
         }
       }
       if (partChunk) chunks.push(partChunk.trim());
-    } else if ((currentChunk + " " + sentence).length > maxLength) {
+    } else if ((currentChunk + " " + cleanSentence).length > maxLength) {
       if (currentChunk) chunks.push(currentChunk.trim());
-      currentChunk = sentence;
+      currentChunk = cleanSentence;
     } else {
-      currentChunk = currentChunk ? currentChunk + " " + sentence : sentence;
+      currentChunk = currentChunk ? currentChunk + " " + cleanSentence : cleanSentence;
     }
   }
 
@@ -796,7 +879,7 @@ function splitIntoChunks(text: string, maxLength: number = MAX_TTS_CHUNK_LENGTH)
     chunks.push(currentChunk.trim());
   }
 
-  return chunks.filter(c => c.length > 0);
+  return chunks.filter(c => c.length > 0 && c !== '[PARA]');
 }
 
 // Download voice sample and convert to base64
@@ -1260,6 +1343,45 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
   return { wav: output, durationSeconds };
 }
 
+// Concatenate WAV files with automatic pause insertion based on text punctuation
+function concatenateWavFilesWithPauses(
+  audioChunks: Buffer[],
+  textChunks: string[]
+): { wav: Buffer; durationSeconds: number } {
+  if (audioChunks.length === 0) {
+    throw new Error('No audio chunks to concatenate');
+  }
+
+  // Build array of buffers including silence between chunks
+  const buffersWithPauses: Buffer[] = [];
+
+  for (let i = 0; i < audioChunks.length; i++) {
+    // Add the audio chunk
+    buffersWithPauses.push(audioChunks[i]);
+
+    // Add silence after chunk based on punctuation (except for last chunk)
+    const isLastChunk = i === audioChunks.length - 1;
+    const chunkText = textChunks[i] || '';
+    const pauseDuration = getPauseDuration(chunkText, isLastChunk);
+
+    if (pauseDuration > 0) {
+      // Get audio format from first chunk to match silence format
+      const wavInfo = extractWavInfo(audioChunks[0]);
+      const silenceBuffer = generateSilence(
+        pauseDuration,
+        wavInfo.sampleRate,
+        wavInfo.channels,
+        wavInfo.bitsPerSample
+      );
+      buffersWithPauses.push(silenceBuffer);
+      logger.debug(`Added ${pauseDuration}s pause after chunk ${i + 1} ending with: "${chunkText.slice(-20)}"`);
+    }
+  }
+
+  // Use existing concatenation logic
+  return concatenateWavFiles(buffersWithPauses);
+}
+
 // Adjust audio speed using FFmpeg
 // speed < 1.0 = slower (longer duration), speed > 1.0 = faster (shorter duration)
 async function adjustAudioSpeed(wavBuffer: Buffer, speed: number): Promise<Buffer> {
@@ -1493,6 +1615,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
     sendEvent({ type: 'progress', progress: 10, message: `Processing ${chunks.length} chunks...` });
 
     const audioChunks: Buffer[] = [];
+    const successfulTextChunks: string[] = []; // Track text for pause insertion
 
     // Process each chunk sequentially (no voice cloning in streaming mode)
     for (let i = 0; i < chunks.length; i++) {
@@ -1506,6 +1629,7 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
         // Use retry logic with exponential backoff
         const audioData = await generateTTSChunkWithRetry(chunkText, apiKey, undefined, i, chunks.length, ttsJobSettings);
         audioChunks.push(audioData);
+        successfulTextChunks.push(chunkText); // Track successful text
         console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
       } catch (err) {
         console.error(`Failed to process chunk ${i + 1} after all retries:`, err);
@@ -1520,9 +1644,10 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
 
     console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
-    sendEvent({ type: 'progress', progress: 70, message: 'Concatenating audio chunks...' });
+    sendEvent({ type: 'progress', progress: 70, message: 'Concatenating audio chunks with pauses...' });
 
-    let { wav: finalAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    // Use pause-aware concatenation for consistent breaks
+    let { wav: finalAudio, durationSeconds } = concatenateWavFilesWithPauses(audioChunks, successfulTextChunks);
 
     console.log(`Concatenated audio: ${finalAudio.length} bytes from ${audioChunks.length} chunks`);
 
@@ -1707,6 +1832,7 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
         let segmentAudio: Buffer | null = null;
         let totalDurationSeconds = 0;
         let successfulChunks = 0;
+        let lastSuccessfulChunkText = ''; // Track for pause insertion
 
         // Process each chunk in this segment sequentially
         for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
@@ -1731,11 +1857,21 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
             if (segmentAudio === null) {
               segmentAudio = audioData;
             } else {
+              // Add pause based on previous chunk's ending punctuation
+              const pauseDuration = getPauseDuration(lastSuccessfulChunkText, false);
+              if (pauseDuration > 0) {
+                const wavInfo = extractWavInfo(segmentAudio);
+                const silenceBuffer = generateSilence(pauseDuration, wavInfo.sampleRate, wavInfo.channels, wavInfo.bitsPerSample);
+                const { wav: withPause } = concatenateWavFiles([segmentAudio, silenceBuffer]);
+                segmentAudio = withPause;
+                logger.debug(`Added ${pauseDuration}s pause after: "${lastSuccessfulChunkText.slice(-20)}"`);
+              }
               const { wav: combined, durationSeconds } = concatenateWavFiles([segmentAudio, audioData]);
               totalDurationSeconds = durationSeconds;
               segmentAudio = combined; // Replace with combined version
             }
             successfulChunks++;
+            lastSuccessfulChunkText = chunkText;
 
             // Clear audioData buffer immediately (help GC)
             // TypeScript doesn't allow deleting, but we've already used it
@@ -2082,6 +2218,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
   console.log(`\n=== Processing ${chunks.length} chunks sequentially ===`);
 
   const audioChunks: Buffer[] = [];
+  const successfulTextChunks: string[] = []; // Track text for pause insertion
 
   // Process each chunk sequentially
   for (let i = 0; i < chunks.length; i++) {
@@ -2099,6 +2236,7 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
       // Decode audio
       const audioData = base64ToBuffer(output.audio_base64);
       audioChunks.push(audioData);
+      successfulTextChunks.push(chunkText); // Track successful text
       console.log(`Chunk ${i + 1} completed: ${audioData.length} bytes`);
     } catch (err) {
       console.error(`Failed to process chunk ${i + 1}:`, err);
@@ -2113,7 +2251,8 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
 
   console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
-  let { wav: combinedAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+  // Use pause-aware concatenation for consistent breaks
+  let { wav: combinedAudio, durationSeconds } = concatenateWavFilesWithPauses(audioChunks, successfulTextChunks);
 
   console.log(`Concatenated audio: ${combinedAudio.length} bytes from ${audioChunks.length} chunks`);
 
@@ -2245,7 +2384,7 @@ router.post('/segment', async (req: Request, res: Response) => {
     const PARALLEL_CHUNKS = 5;
     console.log(`Segment ${segmentIndex}: processing ${chunks.length} chunks in batches of ${PARALLEL_CHUNKS}`);
 
-    const results: { index: number; audio: Buffer }[] = [];
+    const results: { index: number; audio: Buffer; text: string }[] = [];
 
     for (let batch = 0; batch < chunks.length; batch += PARALLEL_CHUNKS) {
       const batchChunks = chunks.slice(batch, batch + PARALLEL_CHUNKS);
@@ -2259,7 +2398,7 @@ router.post('/segment', async (req: Request, res: Response) => {
           const output = await pollJobStatus(jobId, RUNPOD_API_KEY);
           const audioData = base64ToBuffer(output.audio_base64);
           console.log(`  Chunk ${chunkIndex + 1}/${chunks.length}: ${audioData.length} bytes`);
-          return { index: chunkIndex, audio: audioData };
+          return { index: chunkIndex, audio: audioData, text: chunkText };
         } catch (err) {
           logger.warn(`Skipping chunk ${chunkIndex + 1}: ${err instanceof Error ? err.message : 'Unknown error'}`);
           return null;
@@ -2278,13 +2417,14 @@ router.post('/segment', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'All chunks failed to generate' });
     }
 
-    // Sort by index to maintain correct order, then extract audio buffers
+    // Sort by index to maintain correct order, then extract audio buffers and text
     results.sort((a, b) => a.index - b.index);
     const audioChunks = results.map(r => r.audio);
+    const textChunks = results.map(r => r.text);
     console.log(`Successfully processed ${audioChunks.length}/${chunks.length} chunks`)
 
-    // Concatenate chunks into segment audio
-    const { wav: segmentAudio, durationSeconds } = concatenateWavFiles(audioChunks);
+    // Concatenate chunks with pause insertion based on punctuation
+    const { wav: segmentAudio, durationSeconds } = concatenateWavFilesWithPauses(audioChunks, textChunks);
     const durationRounded = Math.round(durationSeconds * 10) / 10;
 
     console.log(`Segment ${segmentIndex} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
