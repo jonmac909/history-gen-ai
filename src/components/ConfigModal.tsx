@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Settings, FileText, Image } from "lucide-react";
+import { Settings, FileText, Image, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
+import { TTS_EMOTION_MARKERS, type GenerationSettings } from "@/components/SettingsPopover";
 
 export interface ScriptTemplate {
   id: string;
@@ -42,6 +52,16 @@ interface ConfigModalProps {
   onSaveImageTemplates: (templates: ImageTemplate[]) => void;
   cartesiaVoices: CartesiaVoice[];
   onSaveVoices: (voices: CartesiaVoice[]) => void;
+  // Voice settings (part of GenerationSettings)
+  voiceSettings?: {
+    voiceSampleUrl: string | null;
+    ttsEmotionMarker: string;
+    ttsTemperature: number;
+    ttsTopP: number;
+    ttsRepetitionPenalty: number;
+    speed: number;
+  };
+  onVoiceSettingsChange?: (settings: Partial<GenerationSettings>) => void;
 }
 
 export function ConfigModal({
@@ -51,17 +71,48 @@ export function ConfigModal({
   onSaveImageTemplates,
   cartesiaVoices,
   onSaveVoices,
+  voiceSettings,
+  onVoiceSettingsChange,
 }: ConfigModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [scripts, setScripts] = useState<ScriptTemplate[]>(scriptTemplates);
   const [images, setImages] = useState<ImageTemplate[]>(imageTemplates);
   const [voices, setVoices] = useState<CartesiaVoice[]>(cartesiaVoices);
 
+  // Local voice settings state
+  const [localVoiceSettings, setLocalVoiceSettings] = useState(voiceSettings || {
+    voiceSampleUrl: null,
+    ttsEmotionMarker: "(sincere) (soft tone)",
+    ttsTemperature: 0.9,
+    ttsTopP: 0.85,
+    ttsRepetitionPenalty: 1.1,
+    speed: 1,
+  });
+
+  // Sync voice settings when modal opens
+  const handleOpenChange = (open: boolean) => {
+    if (open && voiceSettings) {
+      setLocalVoiceSettings(voiceSettings);
+    }
+    setIsOpen(open);
+  };
+
   const handleSave = () => {
     onSaveScriptTemplates(scripts);
     onSaveImageTemplates(images);
     onSaveVoices(voices);
+    // Save voice settings
+    if (onVoiceSettingsChange) {
+      onVoiceSettingsChange(localVoiceSettings);
+    }
     setIsOpen(false);
+  };
+
+  const updateVoiceSetting = <K extends keyof typeof localVoiceSettings>(
+    key: K,
+    value: typeof localVoiceSettings[K]
+  ) => {
+    setLocalVoiceSettings(prev => ({ ...prev, [key]: value }));
   };
 
   const updateScriptTemplate = (id: string, field: keyof ScriptTemplate, value: string) => {
@@ -77,11 +128,11 @@ export function ConfigModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
           <Settings className="w-4 h-4" />
-          <span className="hidden sm:inline">Settings</span>
+          <span className="hidden sm:inline">Templates</span>
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -97,9 +148,10 @@ export function ConfigModal({
         </DialogHeader>
 
         <Tabs defaultValue="script" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="script">Script</TabsTrigger>
             <TabsTrigger value="image">Image</TabsTrigger>
+            <TabsTrigger value="voice">Voice</TabsTrigger>
           </TabsList>
 
           {/* Script Templates Tab */}
@@ -176,6 +228,142 @@ export function ConfigModal({
                 </div>
               );
             })}
+          </TabsContent>
+
+          {/* Voice Settings Tab */}
+          <TabsContent value="voice" className="space-y-6 py-4">
+            <p className="text-sm text-muted-foreground">
+              Configure voice settings for TTS narration.
+            </p>
+
+            <div className="space-y-6 p-4 border border-border rounded-lg">
+              <div className="flex items-center gap-2 mb-4">
+                <Mic className="w-4 h-4 text-primary" />
+                <span className="font-medium">Voice Configuration</span>
+              </div>
+
+              {/* Voice Sample Upload */}
+              <VoiceSampleUpload
+                voiceSampleUrl={localVoiceSettings.voiceSampleUrl}
+                onVoiceSampleChange={(url) => updateVoiceSetting("voiceSampleUrl", url)}
+              />
+
+              {/* Voice Style */}
+              <div className="space-y-2">
+                <Label>Voice Style</Label>
+                <p className="text-xs text-muted-foreground">
+                  Emotion/tone marker for TTS narration
+                </p>
+                <Select
+                  value={localVoiceSettings.ttsEmotionMarker ?? "(sincere) (soft tone)"}
+                  onValueChange={(value) => updateVoiceSetting("ttsEmotionMarker", value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select voice style" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TTS_EMOTION_MARKERS.map((marker) => (
+                      <SelectItem key={marker.value || "none"} value={marker.value}>
+                        {marker.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Speed */}
+              <div className="space-y-2">
+                <Label>Speech Speed</Label>
+                <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Speed</span>
+                    <span className="text-sm font-medium">{localVoiceSettings.speed.toFixed(2)}x</span>
+                  </div>
+                  <Slider
+                    value={[localVoiceSettings.speed]}
+                    onValueChange={(value) => updateVoiceSetting("speed", value[0])}
+                    min={0.6}
+                    max={1}
+                    step={0.05}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>0.6x</span>
+                    <span>0.8x</span>
+                    <span>1x</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice Expressiveness (Temperature) */}
+              <div className="space-y-2">
+                <Label>Voice Expressiveness</Label>
+                <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Temperature</span>
+                    <span className="text-sm font-medium">{(localVoiceSettings.ttsTemperature ?? 0.9).toFixed(2)}</span>
+                  </div>
+                  <Slider
+                    value={[localVoiceSettings.ttsTemperature ?? 0.9]}
+                    onValueChange={(value) => updateVoiceSetting("ttsTemperature", value[0])}
+                    min={0.1}
+                    max={1.0}
+                    step={0.05}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>Monotone</span>
+                    <span>Expressive</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice Variation (Top-P) */}
+              <div className="space-y-2">
+                <Label>Voice Variation</Label>
+                <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Top-P</span>
+                    <span className="text-sm font-medium">{(localVoiceSettings.ttsTopP ?? 0.85).toFixed(2)}</span>
+                  </div>
+                  <Slider
+                    value={[localVoiceSettings.ttsTopP ?? 0.85]}
+                    onValueChange={(value) => updateVoiceSetting("ttsTopP", value[0])}
+                    min={0.1}
+                    max={1.0}
+                    step={0.05}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>Consistent</span>
+                    <span>Varied</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Repetition Prevention */}
+              <div className="space-y-2">
+                <Label>Repetition Prevention</Label>
+                <div className="px-3 py-3 bg-secondary/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Penalty</span>
+                    <span className="text-sm font-medium">{(localVoiceSettings.ttsRepetitionPenalty ?? 1.1).toFixed(2)}</span>
+                  </div>
+                  <Slider
+                    value={[localVoiceSettings.ttsRepetitionPenalty ?? 1.1]}
+                    onValueChange={(value) => updateVoiceSetting("ttsRepetitionPenalty", value[0])}
+                    min={0.9}
+                    max={2.0}
+                    step={0.1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>0.9 (Natural)</span>
+                    <span>2.0 (Strong)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
 
