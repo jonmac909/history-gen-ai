@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Plus, Play, Pause } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -1148,14 +1148,6 @@ export function ProjectResults({
               <p>No assets generated yet.</p>
             </div>
           )}
-
-          {/* New Project Button */}
-          <div className="pt-4">
-            <Button variant="outline" onClick={onNewProject} className="w-full gap-2">
-              <Plus className="w-4 h-4" />
-              New Project
-            </Button>
-          </div>
         </div>
 
         {/* Right Column: Video Preview */}
@@ -1255,8 +1247,19 @@ export function ProjectResults({
                 {isYouTubeConnected ? 'Connected' : 'Not connected'}
               </span>
             </div>
+
+            {/* Push to Live button */}
             <Button
-              variant={isYouTubeConnected ? "outline" : "default"}
+              onClick={() => setIsYouTubeModalOpen(true)}
+              disabled={!previewVideoUrl}
+              className="w-full gap-2 bg-black hover:bg-black/90 text-white"
+            >
+              <Upload className="w-4 h-4" />
+              Push to Live
+            </Button>
+
+            <Button
+              variant="outline"
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
@@ -1267,7 +1270,7 @@ export function ProjectResults({
                 }
               }}
               disabled={isConnectingYouTube}
-              className={`w-full ${isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}`}
+              className="w-full"
             >
               {isConnectingYouTube ? (
                 <>
