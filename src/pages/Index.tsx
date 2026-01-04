@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -2051,6 +2051,33 @@ const Index = () => {
                   <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
                 </div>
               </div>
+
+              {/* Step-by-Step vs Full Auto toggle */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Mode</label>
+                <div className="flex bg-muted rounded-lg p-1 flex-1">
+                  <button
+                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: false }))}
+                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                      !settings.fullAutomation
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Step-by-Step
+                  </button>
+                  <button
+                    onClick={() => setSettings(prev => ({ ...prev, fullAutomation: true }))}
+                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                      settings.fullAutomation
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Full Auto
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Two input modes: YouTube URL or Custom Script */}
@@ -2121,19 +2148,7 @@ const Index = () => {
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-6 text-base"
                   >
                     <Sparkles className="w-5 h-5 mr-2" />
-                    Generate Script
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setSettings(prev => ({ ...prev, fullAutomation: true }));
-                      handleGenerate();
-                    }}
-                    disabled={viewState !== "create" || !inputValue.trim()}
-                    variant="outline"
-                    className="w-full rounded-xl py-6 text-base border-primary/30 hover:bg-primary/10"
-                  >
-                    <Zap className="w-5 h-5 mr-2" />
-                    Full Auto Generate
+                    Generate
                   </Button>
                 </div>
               )}
