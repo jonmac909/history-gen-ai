@@ -492,7 +492,7 @@ export function ThumbnailGeneratorModal({
   return (
     <Dialog open={isOpen}>
       <DialogContent
-        className="sm:max-w-4xl max-h-[90vh] overflow-y-auto"
+        className="sm:max-w-6xl max-h-[90vh] overflow-y-auto"
         hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
@@ -509,19 +509,19 @@ export function ThumbnailGeneratorModal({
         </DialogHeader>
 
         <div className="py-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left Column - Input Controls */}
-            <div className="space-y-4">
+          <div className="flex gap-6">
+            {/* Left Column - Input Controls (narrower) */}
+            <div className="w-64 shrink-0 space-y-4">
               {/* Upload Example Thumbnail */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Reference Thumbnail:</label>
+                <label className="text-sm font-medium">Reference:</label>
 
                 {examplePreview ? (
-                  <div className="relative inline-block">
+                  <div className="relative">
                     <img
                       src={examplePreview}
                       alt="Example thumbnail"
-                      className="w-full max-w-[200px] h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                      className="w-full h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
                       style={{ aspectRatio: '16/9', objectFit: 'cover' }}
                       onClick={() => setLightboxImage(examplePreview)}
                     />
@@ -536,7 +536,7 @@ export function ThumbnailGeneratorModal({
                   </div>
                 ) : (
                   <div
-                    className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors"
+                    className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors aspect-video flex items-center justify-center"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {isUploading ? (
@@ -566,19 +566,18 @@ export function ThumbnailGeneratorModal({
 
               {/* Image Prompt */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Image Prompt:</label>
+                <label className="text-sm font-medium">Prompt:</label>
                 <Textarea
                   placeholder="Describe style, colors, composition, mood, text..."
                   value={imagePrompt}
                   onChange={(e) => setImagePrompt(e.target.value)}
                   onKeyDown={(e) => e.stopPropagation()}
-                  className="min-h-[100px] resize-y font-mono text-sm"
+                  className="min-h-[80px] resize-y font-mono text-xs"
                 />
               </div>
 
-              {/* Thumbnail Count */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium">Count:</label>
+              {/* Thumbnail Count + Generate */}
+              <div className="flex items-center gap-2">
                 <div className="flex gap-1">
                   {[3, 6, 9].map((count) => (
                     <Button
@@ -587,32 +586,31 @@ export function ThumbnailGeneratorModal({
                       size="sm"
                       onClick={() => setThumbnailCount(count)}
                       disabled={isGenerating}
-                      className="h-7 w-8 px-0"
+                      className="h-7 w-7 px-0 text-xs"
                     >
                       {count}
                     </Button>
                   ))}
                 </div>
+                <Button
+                  onClick={handleGenerate}
+                  disabled={!examplePreview || !imagePrompt.trim() || isGenerating}
+                  size="sm"
+                  className="flex-1 gap-1"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3" />
+                      Generate
+                    </>
+                  )}
+                </Button>
               </div>
-
-              {/* Generate Button */}
-              <Button
-                onClick={handleGenerate}
-                disabled={!examplePreview || !imagePrompt.trim() || isGenerating}
-                className="w-full gap-2"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Generate
-                  </>
-                )}
-              </Button>
 
               {/* Progress */}
               {progress && (
@@ -628,8 +626,8 @@ export function ThumbnailGeneratorModal({
               )}
             </div>
 
-            {/* Right Column - Generated Thumbnails */}
-            <div className="space-y-3">
+            {/* Right Column - Generated Thumbnails (wider) */}
+            <div className="flex-1 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">Generated:</label>
@@ -670,7 +668,7 @@ export function ThumbnailGeneratorModal({
                   <p className="text-xs text-muted-foreground">
                     Click to select. Hover for actions.
                   </p>
-                  <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
                     {generatedThumbnails.map((url, index) => {
                       const isSelected = selectedThumbnail === url;
                       return (

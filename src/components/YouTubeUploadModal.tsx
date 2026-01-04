@@ -261,7 +261,7 @@ export function YouTubeUploadModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="w-5 h-5 text-red-600" />
-            YouTube Metadata
+            YouTube Upload
           </DialogTitle>
           <DialogDescription>
             Set title, description, and tags for your YouTube video
@@ -331,47 +331,52 @@ export function YouTubeUploadModal({
             </Button>
           )}
 
-          {/* Title Selector (shown after AI generation) */}
-          {showTitleSelector && generatedTitles.length > 0 && (
-            <div className="space-y-2 p-3 bg-muted/50 rounded-lg border border-primary/20">
-              <div className="flex items-center justify-between">
-                <Label className="text-primary font-medium">Select a Title:</Label>
+          {/* Title Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="title">Title *</Label>
+              {generatedTitles.length > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowTitleSelector(false)}
-                  className="h-6 px-2 text-xs"
+                  onClick={() => setShowTitleSelector(!showTitleSelector)}
+                  className="h-6 px-2 text-xs gap-1"
                 >
-                  {showTitleSelector ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  {showTitleSelector ? (
+                    <>Hide options <ChevronUp className="w-3 h-3" /></>
+                  ) : (
+                    <>Show {generatedTitles.length} options <ChevronDown className="w-3 h-3" /></>
+                  )}
                 </Button>
-              </div>
-              <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+              )}
+            </div>
+
+            {/* Title Selector (shown after AI generation) */}
+            {showTitleSelector && generatedTitles.length > 0 && (
+              <div className="space-y-1.5 max-h-[250px] overflow-y-auto p-2 bg-muted/30 rounded-lg border">
                 {generatedTitles.map((generatedTitle, index) => (
                   <button
                     key={index}
                     onClick={() => handleSelectTitle(generatedTitle)}
-                    className={`w-full text-left p-2 rounded text-sm transition-colors ${
+                    className={`w-full text-left p-2.5 rounded text-sm transition-colors ${
                       title === generatedTitle
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-background hover:bg-accent border border-border'
                     }`}
                   >
-                    <span className="text-muted-foreground mr-2">{index + 1}.</span>
+                    <span className="text-muted-foreground mr-2 font-mono">{index + 1}.</span>
                     {generatedTitle}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Title */}
-          <div className="space-y-2">
-            <Label htmlFor="title">Title *</Label>
+            {/* Title Input (always visible for manual editing) */}
             <Input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter video title"
+              placeholder="Enter video title or select from AI options above"
               maxLength={100}
             />
             <p className="text-xs text-muted-foreground text-right">
