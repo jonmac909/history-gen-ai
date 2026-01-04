@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, BookOpen, Image as ImageIcon, Minus, Plus } from "lucide-react";
+import { Check, X, Play, Pause, RefreshCw, Volume2, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, BookOpen } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,8 +24,6 @@ interface AudioSegmentsPreviewModalProps {
   onBack?: () => void;
   onForward?: () => void;
   regeneratingIndex: number | null;
-  imageCount?: number;
-  onImageCountChange?: (count: number) => void;
 }
 
 interface AudioSegmentCardProps {
@@ -249,8 +247,6 @@ export function AudioSegmentsPreviewModal({
   onBack,
   onForward,
   regeneratingIndex,
-  imageCount = 10,
-  onImageCountChange,
 }: AudioSegmentsPreviewModalProps) {
   const [isPlayingAll, setIsPlayingAll] = useState(false);
   const [allCurrentTime, setAllCurrentTime] = useState(0);
@@ -359,51 +355,6 @@ export function AudioSegmentsPreviewModal({
             Total duration: {formatTime(totalDuration)}
           </DialogDescription>
         </DialogHeader>
-
-        {/* Image Count Selector */}
-        {onImageCountChange && (
-          <div className="border rounded-lg p-3 bg-muted/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Images to Generate</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => onImageCountChange(Math.max(1, imageCount - 1))}
-                  disabled={imageCount <= 1}
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
-                <Input
-                  type="number"
-                  value={imageCount}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value) || 1;
-                    onImageCountChange(Math.max(1, Math.min(50, val)));
-                  }}
-                  className="w-16 h-8 text-center"
-                  min={1}
-                  max={50}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => onImageCountChange(Math.min(50, imageCount + 1))}
-                  disabled={imageCount >= 50}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="py-4 space-y-4">
           {/* Combined Audio Player - Play All */}

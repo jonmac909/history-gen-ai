@@ -3,6 +3,13 @@ import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -23,6 +30,7 @@ import { AudioPreviewModal } from "@/components/AudioPreviewModal";
 import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModal";
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal";
+import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
 import { VideoRenderModal } from "@/components/VideoRenderModal";
 import { YouTubeUploadModal } from "@/components/YouTubeUploadModal";
@@ -54,7 +62,7 @@ import { ProjectsDrawer } from "@/components/ProjectsDrawer";
 import { OutlierFinderView } from "@/components/OutlierFinderView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "outlier-finder" | "processing" | "review-script" | "review-audio" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-thumbnails" | "review-render" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
@@ -168,6 +176,7 @@ const Index = () => {
   const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
+  const [customStylePrompt, setCustomStylePrompt] = useState("");
 
   // Migrate localStorage to Supabase on first load
   useEffect(() => {
@@ -216,7 +225,16 @@ const Index = () => {
     }
   }, [settings.fullAutomation, viewState, pendingAudioUrl]);
 
-  // Full Automation: Auto-confirm captions when ready (captions step is now skipped automatically)
+  // Full Automation: Auto-confirm captions when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-captions" && pendingSrtContent) {
+      console.log("[Full Automation] Auto-confirming captions...");
+      const timer = setTimeout(() => {
+        handleCaptionsConfirm(pendingSrtContent);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, pendingSrtContent]);
 
   // Full Automation: Auto-confirm prompts when ready
   useEffect(() => {
@@ -792,8 +810,8 @@ const Index = () => {
       setPendingSrtContent(captionsResult.srtContent);
       autoSave("captions", { srtContent: captionsResult.srtContent });
 
-      // Continue to image prompts with accurate timing
-      await handleCaptionsConfirm(captionsResult.srtContent);
+      // Show captions preview modal for user to review and set image settings
+      setViewState("review-captions");
 
     } catch (error) {
       console.error("Audio confirm error:", error);
@@ -1254,6 +1272,10 @@ const Index = () => {
 
   const handleBackToAudio = () => {
     setViewState("review-audio");
+  };
+
+  const handleBackToCaptions = () => {
+    setViewState("review-captions");
   };
 
   const handleBackToPrompts = () => {
@@ -1970,6 +1992,24 @@ const Index = () => {
                       className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base"
                     />
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Scroll className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Select
+                      value={settings.scriptTemplate}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, scriptTemplate: value }))}
+                    >
+                      <SelectTrigger className="flex-1 border-0 bg-muted/50 focus:ring-0 focus:ring-offset-0">
+                        <SelectValue placeholder="Select script template..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scriptTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button
                     onClick={handleGenerate}
                     disabled={viewState !== "create" || !inputValue.trim()}
@@ -2148,8 +2188,6 @@ const Index = () => {
           onBack={handleBackToScript}
           onForward={canGoForwardFromAudio() ? handleForwardToPrompts : undefined}
           regeneratingIndex={regeneratingSegmentIndex}
-          imageCount={settings.imageCount}
-          onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
         />
       ) : (
         <AudioPreviewModal
@@ -2163,14 +2201,27 @@ const Index = () => {
         />
       )}
 
+      {/* Captions Preview Modal - Review captions and set image generation settings */}
+      <CaptionsPreviewModal
+        isOpen={viewState === "review-captions"}
+        srtContent={pendingSrtContent || ""}
+        onConfirm={(srt) => handleCaptionsConfirm(srt)}
+        onCancel={handleCancelRequest}
+        onBack={handleBackToAudio}
+        imageCount={settings.imageCount}
+        onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
+        customStylePrompt={customStylePrompt}
+        onCustomStylePromptChange={setCustomStylePrompt}
+      />
+
       {/* Image Prompts Preview Modal */}
       <ImagePromptsPreviewModal
         isOpen={viewState === "review-prompts"}
         prompts={imagePrompts}
-        stylePrompt={getSelectedImageStyle()}
+        stylePrompt={customStylePrompt.trim() || getSelectedImageStyle()}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancelRequest}
-        onBack={handleBackToAudio}
+        onBack={handleBackToCaptions}
         onForward={canGoForwardFromPrompts() ? handleForwardToImages : undefined}
       />
 
