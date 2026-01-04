@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, PlayCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { FolderOpen, Trash2, Clock, Image, Music, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -18,10 +18,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getAllProjects,
+  getRootProjects,
+  getProjectVersions,
   deleteProject,
   getStepLabel,
   formatDuration,
@@ -40,11 +46,11 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
 
-  // Load projects when drawer opens
+  // Load root projects when drawer opens (versions are loaded on-demand)
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
-      getAllProjects()
+      getRootProjects()
         .then(setProjects)
         .catch(err => console.error('[ProjectsDrawer] Failed to load projects:', err))
         .finally(() => setIsLoading(false));
@@ -205,7 +211,7 @@ export function ProjectsDrawer({ onOpenProject }: ProjectsDrawerProps) {
   );
 }
 
-// Separate component for project cards to reduce repetition
+// Separate component for project cards with version dropdown
 function ProjectCard({
   project,
   onOpen,
@@ -219,64 +225,131 @@ function ProjectCard({
   deletingId: string | null;
   setIsOpen: (open: boolean) => void;
 }) {
+  const [versions, setVersions] = useState<Project[]>([]);
+  const [isVersionsOpen, setIsVersionsOpen] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+
   const isInProgress = project.status === 'in_progress';
   const imageCount = project.imageUrls?.length || 0;
 
+  // Load versions when dropdown is opened
+  const handleVersionToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isVersionsOpen && versions.length === 0) {
+      setLoadingVersions(true);
+      try {
+        const allVersions = await getProjectVersions(project.id);
+        // Filter to only show older versions (not the current one)
+        setVersions(allVersions.filter(v => v.id !== project.id));
+      } catch (err) {
+        console.error('[ProjectCard] Failed to load versions:', err);
+      } finally {
+        setLoadingVersions(false);
+      }
+    }
+    setIsVersionsOpen(!isVersionsOpen);
+  };
+
   return (
-    <div
-      className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
-      onClick={() => {
-        if (onOpen) {
-          onOpen(project);
-          setIsOpen(false);
-        }
-      }}
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="font-medium text-foreground truncate">
-            {project.videoTitle}
-          </p>
-          {isInProgress && (
-            <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
-              {getStepLabel(project.currentStep)}
+    <div className="space-y-1">
+      <div
+        className="flex items-start justify-between p-4 bg-card rounded-lg border border-border hover:border-primary/30 hover:bg-accent/50 transition-colors cursor-pointer group"
+        onClick={() => {
+          if (onOpen) {
+            onOpen(project);
+            setIsOpen(false);
+          }
+        }}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-foreground truncate">
+              {project.videoTitle}
+            </p>
+            {isInProgress && (
+              <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
+                {getStepLabel(project.currentStep)}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {formatDate(project.updatedAt)}
             </span>
-          )}
+            {project.audioDuration && (
+              <span className="flex items-center gap-1">
+                <Music className="w-3 h-3" />
+                {formatDuration(project.audioDuration)}
+              </span>
+            )}
+            {imageCount > 0 && (
+              <span className="flex items-center gap-1">
+                <Image className="w-3 h-3" />
+                {imageCount}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {formatDate(project.updatedAt)}
-          </span>
-          {project.audioDuration && (
-            <span className="flex items-center gap-1">
-              <Music className="w-3 h-3" />
-              {formatDuration(project.audioDuration)}
-            </span>
-          )}
-          {imageCount > 0 && (
-            <span className="flex items-center gap-1">
-              <Image className="w-3 h-3" />
-              {imageCount}
-            </span>
-          )}
+        <div className="flex items-center gap-1">
+          {/* Version dropdown toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={handleVersionToggle}
+            title="Show previous versions"
+          >
+            {loadingVersions ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ChevronDown className={`w-4 h-4 transition-transform ${isVersionsOpen ? 'rotate-180' : ''}`} />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            disabled={deletingId === project.id}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="shrink-0 text-muted-foreground hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          disabled={deletingId === project.id}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      </div>
+
+      {/* Versions dropdown */}
+      {isVersionsOpen && versions.length > 0 && (
+        <div className="ml-4 space-y-1">
+          {versions.map(version => (
+            <div
+              key={version.id}
+              className="flex items-center justify-between p-2 pl-3 bg-muted/50 rounded border border-border/50 hover:bg-accent/30 cursor-pointer text-sm"
+              onClick={() => {
+                if (onOpen) {
+                  onOpen(version);
+                  setIsOpen(false);
+                }
+              }}
+            >
+              <span className="text-muted-foreground">
+                V{version.versionNumber} • {formatDate(version.updatedAt)}
+              </span>
+              <ChevronRight className="w-3 h-3 text-muted-foreground" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* No previous versions message */}
+      {isVersionsOpen && versions.length === 0 && !loadingVersions && (
+        <div className="ml-4 p-2 text-xs text-muted-foreground italic">
+          No previous versions
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,10 @@ export interface Project {
   status: 'in_progress' | 'completed' | 'archived';
   currentStep: 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'complete';
 
+  // Version tracking (max 3 versions per project)
+  parentProjectId?: string;  // ID of parent project (null = root project)
+  versionNumber: number;     // 1 = original, 2+ = versions
+
   // All assets (populated as generated)
   script?: string;
   audioUrl?: string;
@@ -62,6 +66,8 @@ function rowToProject(row: {
   settings: unknown;
   thumbnails: unknown;
   selected_thumbnail_index: number | null;
+  parent_project_id: string | null;
+  version_number: number | null;
   created_at: string;
   updated_at: string;
 }): Project {
@@ -74,6 +80,8 @@ function rowToProject(row: {
     settings: (row.settings as GenerationSettings) || {} as GenerationSettings,
     status: (row.status as Project['status']) || 'in_progress',
     currentStep: (row.current_step as Project['currentStep']) || 'script',
+    parentProjectId: row.parent_project_id || undefined,
+    versionNumber: row.version_number || 1,
     script: row.script_content || undefined,
     audioUrl: row.audio_url || undefined,
     audioDuration: row.audio_duration || undefined,
@@ -101,6 +109,8 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
     status: project.status || 'in_progress',
     video_title: project.videoTitle || null,
     current_step: project.currentStep || 'script',
+    parent_project_id: project.parentProjectId || null,
+    version_number: project.versionNumber || 1,
     script_content: project.script || null,
     audio_url: project.audioUrl || null,
     audio_duration: project.audioDuration || null,
@@ -359,6 +369,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
         settings: saved.settings || {} as GenerationSettings,
         status: 'in_progress',
         currentStep: saved.step || 'script',
+        versionNumber: 1,
         script: saved.script,
         audioUrl: saved.audioUrl,
         audioDuration: saved.audioDuration,
@@ -393,6 +404,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
             settings: {} as GenerationSettings,
             status: 'completed',
             currentStep: 'complete',
+            versionNumber: 1,
             script: item.script,
             audioUrl: item.audioUrl,
             audioDuration: item.audioDuration,
@@ -423,4 +435,97 @@ export async function migrateFromLocalStorage(): Promise<void> {
   localStorage.removeItem(LEGACY_HISTORY_KEY);
 
   console.log("[projectStore] Migration to Supabase complete");
+}
+
+// Get project versions (including the parent and all children)
+export async function getProjectVersions(projectId: string): Promise<Project[]> {
+  // First get the project to find its root
+  const project = await getProject(projectId);
+  if (!project) return [];
+
+  // Find the root project ID (either this project or its parent)
+  const rootId = project.parentProjectId || project.id;
+
+  // Get the root project and all its versions
+  const { data, error } = await supabase
+    .from('generation_projects')
+    .select('*')
+    .or(`id.eq.${rootId},parent_project_id.eq.${rootId}`)
+    .order('version_number', { ascending: false });
+
+  if (error) {
+    console.error('[projectStore] Error fetching project versions:', error);
+    return [];
+  }
+
+  return (data || []).map(rowToProject);
+}
+
+// Create a new version of a project (keeps max 3 versions)
+const MAX_VERSIONS = 3;
+
+export async function createProjectVersion(parentId: string): Promise<string> {
+  // Get the parent project
+  const parent = await getProject(parentId);
+  if (!parent) {
+    throw new Error('Parent project not found');
+  }
+
+  // Find the root project ID
+  const rootId = parent.parentProjectId || parent.id;
+
+  // Get all existing versions
+  const versions = await getProjectVersions(rootId);
+
+  // Calculate next version number
+  const maxVersion = Math.max(...versions.map(v => v.versionNumber), 0);
+  const newVersionNumber = maxVersion + 1;
+
+  // Create new version as copy of parent
+  const newId = crypto.randomUUID();
+  const newProject: Project = {
+    ...parent,
+    id: newId,
+    parentProjectId: rootId,
+    versionNumber: newVersionNumber,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    status: 'in_progress',
+  };
+
+  await upsertProject(newProject);
+  console.log(`[projectStore] Created version ${newVersionNumber} of project ${rootId}`);
+
+  // Prune old versions if we exceed max
+  if (versions.length >= MAX_VERSIONS) {
+    // Sort by version number ascending, remove oldest (excluding root)
+    const toDelete = versions
+      .filter(v => v.id !== rootId && v.parentProjectId)  // Don't delete root
+      .sort((a, b) => a.versionNumber - b.versionNumber)
+      .slice(0, versions.length - MAX_VERSIONS + 1);
+
+    for (const old of toDelete) {
+      await deleteProject(old.id);
+      console.log(`[projectStore] Pruned old version ${old.versionNumber} (${old.id})`);
+    }
+  }
+
+  return newId;
+}
+
+// Get root projects only (for Projects drawer - hides versions)
+export async function getRootProjects(): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('generation_projects')
+    .select('*')
+    .is('parent_project_id', null)
+    .neq('status', 'archived')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[projectStore] Error fetching root projects:', error);
+    return [];
+  }
+
+  return (data || []).map(rowToProject);
 }

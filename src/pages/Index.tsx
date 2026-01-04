@@ -392,10 +392,10 @@ const Index = () => {
         return;
       }
 
-      // Set up project with custom script
+      // Set up project with custom script - reuse existing projectId if available
       setSourceUrl("Custom Script");
-      const newProjectId = crypto.randomUUID();
-      setProjectId(newProjectId);
+      const useProjectId = projectId || crypto.randomUUID();
+      if (!projectId) setProjectId(useProjectId);
       const projectTitle = settings.projectTitle || "Custom Script";
       setVideoTitle(projectTitle);
 
@@ -404,7 +404,7 @@ const Index = () => {
 
       // Auto-save the custom script project
       autoSave("script", {
-        id: newProjectId,
+        id: useProjectId,
         sourceUrl: "Custom Script",
         videoTitle: projectTitle,
         script: settings.customScript!
@@ -468,8 +468,9 @@ const Index = () => {
     }
 
     setSourceUrl(inputValue);
-    const newProjectId = crypto.randomUUID();
-    setProjectId(newProjectId);
+    // Reuse existing projectId if available (e.g., when resuming a project)
+    const useProjectId = projectId || crypto.randomUUID();
+    if (!projectId) setProjectId(useProjectId);
 
     const steps: GenerationStep[] = [
       { id: "transcript", label: "Fetching YouTube Transcript", status: "pending" },
@@ -514,9 +515,9 @@ const Index = () => {
       updateStep("script", "completed");
       setPendingScript(scriptResult.script);
 
-      // Auto-save after script generation (pass newProjectId since state hasn't updated yet)
+      // Auto-save after script generation (pass useProjectId since state hasn't updated yet)
       autoSave("script", {
-        id: newProjectId,
+        id: useProjectId,
         sourceUrl: inputValue,
         videoTitle: settings.projectTitle || transcriptResult.title || "History Documentary",
         script: scriptResult.script
@@ -1336,9 +1337,10 @@ const Index = () => {
 
     try {
       // Upload the audio file to Supabase storage with progress tracking
-      const newProjectId = crypto.randomUUID();
-      setProjectId(newProjectId);
-      const audioFileName = `${newProjectId}/voiceover.wav`;
+      // Reuse existing projectId if available
+      const useProjectId = projectId || crypto.randomUUID();
+      if (!projectId) setProjectId(useProjectId);
+      const audioFileName = `${useProjectId}/voiceover.wav`;
 
       // Use XMLHttpRequest for upload progress
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -1386,7 +1388,7 @@ const Index = () => {
       // Generate captions
       const captionsResult = await generateCaptions(
         publicUrl,
-        newProjectId,
+        useProjectId,
         (progress, message) => {
           const sublabel = message || `${progress}%`;
           setProcessingSteps([
@@ -1404,7 +1406,7 @@ const Index = () => {
 
       // Auto-save after captions generation
       autoSave("captions", {
-        id: newProjectId,
+        id: useProjectId,
         videoTitle: title,
         audioUrl: publicUrl,
         audioDuration: captionsResult.audioDuration,
@@ -1462,10 +1464,10 @@ const Index = () => {
       if (uploadedAudioFileForImages) {
         setProcessingSteps([{ id: "prompts", label: "Uploading audio file...", status: "loading", progress: 5 }]);
 
-        const newProjectId = projectId || crypto.randomUUID();
-        if (!projectId) setProjectId(newProjectId);
+        const useProjectId = projectId || crypto.randomUUID();
+        if (!projectId) setProjectId(useProjectId);
 
-        const audioFileName = `${newProjectId}/voiceover.wav`;
+        const audioFileName = `${useProjectId}/voiceover.wav`;
         const { error: uploadError } = await supabase.storage
           .from("generated-assets")
           .upload(audioFileName, uploadedAudioFileForImages);
@@ -1520,11 +1522,11 @@ const Index = () => {
       setImagePrompts(promptsResult.prompts);
 
       // Auto-save after image prompts generation
-      const newProjectId = projectId || crypto.randomUUID();
-      if (!projectId) setProjectId(newProjectId);
+      const useProjectId = projectId || crypto.randomUUID();
+      if (!projectId) setProjectId(useProjectId);
 
       autoSave("prompts", {
-        id: newProjectId,
+        id: useProjectId,
         videoTitle: title,
         script: scriptText,
         srtContent: captionsText,
