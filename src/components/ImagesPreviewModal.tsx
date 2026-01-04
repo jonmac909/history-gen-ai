@@ -368,7 +368,7 @@ export function ImagesPreviewModal({
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent
-        className="max-w-5xl max-h-[90vh] flex flex-col"
+        className="max-w-7xl max-h-[90vh] flex flex-col"
         onPointerDownOutside={(e) => {
           // Prevent Dialog from closing when clicking on the lightbox overlay
           if (lightboxIndex !== null) {
@@ -591,8 +591,8 @@ export function ImagesPreviewModal({
           </div>
         )}
 
-        <div className="overflow-y-auto max-h-[60vh] py-4 pr-2">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="overflow-y-auto flex-1 py-4 pr-2">
+          <div className="grid grid-cols-3 gap-4">
             {images.map((imageUrl, index) => (
               <div
                 key={`${index}-${imageKeys[index] || 0}`}

@@ -98,6 +98,9 @@ function loadLastSettings(): GenerationSettings {
         ...parsed,
         // Always reset project title for new projects
         projectTitle: "",
+        // CRITICAL: fullAutomation must ALWAYS start as false
+        // User must explicitly click "Full Auto Generate" each time
+        fullAutomation: false,
       };
     }
   } catch (e) {
@@ -109,8 +112,9 @@ function loadLastSettings(): GenerationSettings {
 // Save settings to localStorage (called when settings change)
 function saveLastSettings(settings: GenerationSettings): void {
   try {
-    // Don't save project-specific fields
-    const { projectTitle, customScript, ...persistableSettings } = settings;
+    // Don't save project-specific or session-specific fields
+    // fullAutomation should NEVER persist - it must be explicitly chosen each time
+    const { projectTitle, customScript, fullAutomation, ...persistableSettings } = settings;
     localStorage.setItem(LAST_SETTINGS_KEY, JSON.stringify(persistableSettings));
   } catch (e) {
     console.error("[Index] Failed to save settings:", e);
@@ -1243,6 +1247,7 @@ const Index = () => {
   };
 
   const handleBackToThumbnails = () => {
+    setSettings(prev => ({ ...prev, fullAutomation: false }));
     setViewState("review-thumbnails");
   };
 
@@ -1258,6 +1263,7 @@ const Index = () => {
   };
 
   const handleBackToRender = () => {
+    setSettings(prev => ({ ...prev, fullAutomation: false }));
     setViewState("review-render");
   };
 
@@ -1304,29 +1310,34 @@ const Index = () => {
     setShowExitConfirmation(false);
   };
 
-  // Back navigation handlers
+  // Back navigation handlers - disable fullAutomation when manually navigating back
+  const disableAutoAndGoTo = (view: ViewState) => {
+    setSettings(prev => ({ ...prev, fullAutomation: false }));
+    setViewState(view);
+  };
+
   const handleBackToCreate = () => {
-    setViewState("create");
+    disableAutoAndGoTo("create");
   };
 
   const handleBackToScript = () => {
-    setViewState("review-script");
+    disableAutoAndGoTo("review-script");
   };
 
   const handleBackToAudio = () => {
-    setViewState("review-audio");
+    disableAutoAndGoTo("review-audio");
   };
 
   const handleBackToCaptions = () => {
-    setViewState("review-captions");
+    disableAutoAndGoTo("review-captions");
   };
 
   const handleBackToPrompts = () => {
-    setViewState("review-prompts");
+    disableAutoAndGoTo("review-prompts");
   };
 
   const handleBackToImages = () => {
-    setViewState("review-images");
+    disableAutoAndGoTo("review-images");
   };
 
   // Forward navigation handlers (to skip ahead if data already exists)
@@ -1681,6 +1692,10 @@ const Index = () => {
   };
 
   const handleOpenProject = async (project: Project) => {
+    // Disable fullAutomation when manually opening a project
+    // User wants to review/edit, not auto-skip steps
+    setSettings(prev => ({ ...prev, fullAutomation: false }));
+
     // Set project state
     setProjectId(project.id);
     setVideoTitle(project.videoTitle);
