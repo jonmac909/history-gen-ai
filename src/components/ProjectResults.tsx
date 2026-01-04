@@ -1,15 +1,21 @@
 import { useState, useEffect } from "react";
-import { Download, ChevronLeft, Video, Loader2, Sparkles, Youtube, Square, CheckSquare, LayoutGrid, List } from "lucide-react";
-import { PipelineWidget } from "./PipelineWidget";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
+import { getAllProjects, type Project } from "@/lib/projectStore";
 
 
 export interface GeneratedAsset {
@@ -62,6 +68,8 @@ interface ProjectResultsProps {
   // Approval tracking
   approvedSteps?: PipelineStep[];
   onApproveStep?: (step: PipelineStep, approved: boolean) => void;
+  // Project switching
+  onSwitchProject?: (projectId: string) => void;
 }
 
 // Parse SRT to get timing info
@@ -173,6 +181,7 @@ export function ProjectResults({
   onImagePromptsHealed,
   approvedSteps = [],
   onApproveStep,
+  onSwitchProject,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -213,9 +222,17 @@ export function ProjectResults({
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
 
-  // Layout toggle: 'list' (original) or 'grid' (widget style)
-  // Set to 'grid' by default for the cute widget layout, change to 'list' to revert
-  const [layoutMode, setLayoutMode] = useState<'list' | 'grid'>('grid');
+  // State for project dropdown
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+
+  // Load all projects for dropdown
+  useEffect(() => {
+    const loadProjects = async () => {
+      const projects = await getAllProjects();
+      setAllProjects(projects);
+    };
+    loadProjects();
+  }, []);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -712,235 +729,68 @@ export function ProjectResults({
     }
   };
 
+  // Get first image URL for preview thumbnail
+  const firstImageUrl = assets.find(a => a.id.startsWith('image-') && a.url)?.url;
+  // Get best available video for preview
+  const previewVideoUrl = smokeEmbersVideoUrl || embersVideoUrl || basicVideoUrl || initialSmokeEmbersVideoUrl || initialEmbersVideoUrl || videoUrl;
+  // Filter other projects (exclude current)
+  const otherProjects = allProjects.filter(p => p.id !== projectId && p.status === 'in_progress');
+
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-3">
-          {onGoToImages && (
-            <Button variant="outline" size="icon" onClick={onGoToImages} title="Back to images">
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-          )}
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Project Ready</h1>
-            <p className="text-muted-foreground">{projectTitle || "Untitled Project"}</p>
-          </div>
-        </div>
-        {/* Layout toggle button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setLayoutMode(prev => prev === 'grid' ? 'list' : 'grid')}
-          title={layoutMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
-          className="text-muted-foreground"
-        >
-          {layoutMode === 'grid' ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
-        </Button>
-      </div>
-
-      {/* Pipeline Steps */}
-      <div className="space-y-4">
-        {/* GRID LAYOUT (Widget Style) */}
-        {layoutMode === 'grid' && (
-          <div className="grid grid-cols-3 gap-3">
-            {/* Script */}
-            {assets.find(a => a.id === 'script') && (
-              <PipelineWidget
-                emoji="📝"
-                label="Script"
-                subtitle={assets.find(a => a.id === 'script')!.size}
-                isApproved={approvedSteps.includes('script')}
-                hasDownload
-                onClick={() => onGoToScript?.()}
-                onDownload={() => handleDownload(assets.find(a => a.id === 'script')!, 'script.txt')}
-                onToggleApproval={(e) => toggleApproval('script', e)}
-              />
-            )}
-
-            {/* Audio */}
-            {assets.find(a => a.id === 'audio') && (
-              <PipelineWidget
-                emoji="🎙️"
-                label="Audio"
-                subtitle={assets.find(a => a.id === 'audio')!.size}
-                isApproved={approvedSteps.includes('audio')}
-                hasDownload
-                onClick={() => onGoToAudio?.()}
-                onDownload={() => handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav')}
-                onToggleApproval={(e) => toggleApproval('audio', e)}
-              />
-            )}
-
-            {/* Captions */}
-            {srtContent && (
-              <PipelineWidget
-                emoji="💬"
-                label="Captions"
-                subtitle={`${(srtContent.match(/^\d+$/gm) || []).length} segments`}
-                isApproved={approvedSteps.includes('captions')}
-                hasDownload
-                onClick={() => onGoToCaptions?.()}
-                onDownload={() => {
-                  const blob = new Blob([srtContent], { type: 'text/plain' });
-                  const url = window.URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = 'captions.srt';
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  window.URL.revokeObjectURL(url);
-                }}
-                onToggleApproval={(e) => toggleApproval('captions', e)}
-              />
-            )}
-
-            {/* Image Prompts */}
-            {imagePrompts && imagePrompts.length > 0 && (
-              <PipelineWidget
-                emoji="🎨"
-                label="Prompts"
-                subtitle={`${imagePrompts.length} scenes`}
-                isApproved={approvedSteps.includes('prompts')}
-                onClick={() => onGoToPrompts?.()}
-                onToggleApproval={(e) => toggleApproval('prompts', e)}
-              />
-            )}
-
-            {/* Images */}
-            {assets.some(a => a.id.startsWith('image-') && a.url) && (
-              <PipelineWidget
-                emoji="🖼️"
-                label="Images"
-                subtitle={`${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`}
-                isApproved={approvedSteps.includes('images')}
-                hasDownload
-                onClick={() => onGoToImages?.()}
-                onDownload={handleDownloadAllImagesAsZip}
-                onToggleApproval={(e) => toggleApproval('images', e)}
-              />
-            )}
-
-            {/* Thumbnails */}
-            {onGoToThumbnails && (
-              <PipelineWidget
-                emoji="🎯"
-                label="Thumbnails"
-                subtitle={thumbnails && thumbnails.length > 0
-                  ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
-                    ? 'Selected'
-                    : `${thumbnails.length} ready`
-                  : 'Generate'}
-                isApproved={approvedSteps.includes('thumbnails')}
-                onClick={() => onGoToThumbnails?.()}
-                onToggleApproval={(e) => toggleApproval('thumbnails', e)}
-              />
-            )}
-
-            {/* Video Render */}
-            {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (() => {
-              const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
-              const hasVideo = videoVersions > 0;
-              return (
-                <PipelineWidget
-                  emoji="🎬"
-                  label="Video"
-                  subtitle={hasVideo ? `V${videoVersions} rendered` : 'Render'}
-                  isApproved={approvedSteps.includes('render')}
-                  hasDownload={!!smokeEmbersVideoUrl}
-                  onClick={() => onGoToRender?.()}
-                  onDownload={() => handleDownloadVideo('smoke_embers')}
-                  onToggleApproval={(e) => toggleApproval('render', e)}
-                />
-              );
-            })()}
-
-            {/* YouTube Upload */}
-            {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
-              <PipelineWidget
-                emoji="📤"
-                label="YouTube"
-                subtitle="Upload"
-                isApproved={approvedSteps.includes('youtube')}
-                onClick={() => setIsYouTubeModalOpen(true)}
-                onToggleApproval={(e) => toggleApproval('youtube', e)}
-              />
-            )}
-
-            {/* YouTube Account */}
-            {(() => {
-              const hasVideo = basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl ||
-                              videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl;
-              return (
-                <div
-                  className={`relative flex flex-col items-center p-4 bg-card rounded-xl border transition-all ${
-                    isYouTubeConnected ? 'cursor-pointer hover:scale-[1.02] border-border hover:border-primary/20' : 'border-border'
-                  }`}
-                  onClick={() => {
-                    if (isYouTubeConnected && hasVideo) {
-                      setIsYouTubeModalOpen(true);
-                    }
-                  }}
-                >
-                  <span className="text-3xl mb-2">🔗</span>
-                  <p className="font-medium text-foreground text-sm">Account</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 text-center">
-                    {isYouTubeConnected ? 'Connected' : 'Not connected'}
-                  </p>
-                  <div className="mt-3">
-                    <Button
-                      variant={isYouTubeConnected ? "outline" : "default"}
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (isYouTubeConnected) {
-                          handleYouTubeDisconnect();
-                        } else {
-                          handleYouTubeConnect();
-                        }
-                      }}
-                      disabled={isConnectingYouTube}
-                      className={`h-7 text-xs ${isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}`}
-                    >
-                      {isConnectingYouTube ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : isYouTubeConnected ? (
-                        'Disconnect'
-                      ) : (
-                        'Connect'
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+    <div className="w-full max-w-4xl mx-auto px-4 py-8">
+      {/* Header with Project Title Dropdown */}
+      <div className="flex items-center gap-3 mb-6">
+        {onGoToImages && (
+          <Button variant="ghost" size="icon" onClick={onGoToImages} title="Back to images">
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
         )}
 
-        {/* LIST LAYOUT (Original Style) - Easy to revert by changing default layoutMode to 'list' */}
-        {layoutMode === 'list' && (
-        <div className="space-y-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity">
+              <h1 className="text-2xl font-bold text-foreground truncate max-w-[500px]">
+                {projectTitle || "Untitled Project"}
+              </h1>
+              {otherProjects.length > 0 && (
+                <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          {otherProjects.length > 0 && (
+            <DropdownMenuContent align="start" className="w-[300px]">
+              {otherProjects.map((project) => (
+                <DropdownMenuItem
+                  key={project.id}
+                  onClick={() => onSwitchProject?.(project.id)}
+                  className="cursor-pointer"
+                >
+                  <span className="truncate">{project.title || "Untitled Project"}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          )}
+        </DropdownMenu>
+      </div>
+
+      {/* Two Column Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Left Column: Pipeline Steps */}
+        <div className="space-y-0 divide-y divide-border">
           {/* Script */}
           {assets.find(a => a.id === 'script') && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('script')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToScript}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">📝</span>
-                <div>
-                  <p className="font-medium text-foreground">Script</p>
-                  <p className="text-sm text-muted-foreground">
-                    {assets.find(a => a.id === 'script')!.size}
-                  </p>
-                </div>
+                <span className="text-xl">📝</span>
+                <span className="font-medium text-foreground">Script</span>
+                <span className="text-sm text-muted-foreground">
+                  {assets.find(a => a.id === 'script')!.size}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -948,26 +798,26 @@ export function ProjectResults({
                     e.stopPropagation();
                     handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
                   }}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   title="Download"
                 >
-                  <Download className="w-5 h-5" />
+                  <Download className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => toggleApproval('script', e)}
-                  className={`w-10 h-10 rounded-lg ${
+                  className={`h-8 w-8 ${
                     approvedSteps.includes('script')
-                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={approvedSteps.includes('script') ? 'Mark as not approved' : 'Mark as approved'}
                 >
                   {approvedSteps.includes('script') ? (
-                    <CheckSquare className="w-5 h-5" />
+                    <CheckSquare className="w-4 h-4" />
                   ) : (
-                    <Square className="w-5 h-5" />
+                    <Square className="w-4 h-4" />
                   )}
                 </Button>
               </div>
@@ -977,23 +827,17 @@ export function ProjectResults({
           {/* Audio */}
           {assets.find(a => a.id === 'audio') && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('audio')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToAudio}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">🎙️</span>
-                <div>
-                  <p className="font-medium text-foreground">Audio</p>
-                  <p className="text-sm text-muted-foreground">
-                    {assets.find(a => a.id === 'audio')!.size}
-                  </p>
-                </div>
+                <span className="text-xl">🎙️</span>
+                <span className="font-medium text-foreground">Audio</span>
+                <span className="text-sm text-muted-foreground">
+                  {assets.find(a => a.id === 'audio')!.size}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1001,26 +845,26 @@ export function ProjectResults({
                     e.stopPropagation();
                     handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
                   }}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   title="Download"
                 >
-                  <Download className="w-5 h-5" />
+                  <Download className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => toggleApproval('audio', e)}
-                  className={`w-10 h-10 rounded-lg ${
+                  className={`h-8 w-8 ${
                     approvedSteps.includes('audio')
-                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={approvedSteps.includes('audio') ? 'Mark as not approved' : 'Mark as approved'}
                 >
                   {approvedSteps.includes('audio') ? (
-                    <CheckSquare className="w-5 h-5" />
+                    <CheckSquare className="w-4 h-4" />
                   ) : (
-                    <Square className="w-5 h-5" />
+                    <Square className="w-4 h-4" />
                   )}
                 </Button>
               </div>
@@ -1030,23 +874,17 @@ export function ProjectResults({
           {/* Captions */}
           {srtContent && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('captions')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToCaptions}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">💬</span>
-                <div>
-                  <p className="font-medium text-foreground">Captions</p>
-                  <p className="text-sm text-muted-foreground">
-                    {(srtContent.match(/^\d+$/gm) || []).length} segments
-                  </p>
-                </div>
+                <span className="text-xl">💬</span>
+                <span className="font-medium text-foreground">Captions</span>
+                <span className="text-sm text-muted-foreground">
+                  {(srtContent.match(/^\d+$/gm) || []).length} segments
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1062,26 +900,26 @@ export function ProjectResults({
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(url);
                   }}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   title="Download"
                 >
-                  <Download className="w-5 h-5" />
+                  <Download className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => toggleApproval('captions', e)}
-                  className={`w-10 h-10 rounded-lg ${
+                  className={`h-8 w-8 ${
                     approvedSteps.includes('captions')
-                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={approvedSteps.includes('captions') ? 'Mark as not approved' : 'Mark as approved'}
                 >
                   {approvedSteps.includes('captions') ? (
-                    <CheckSquare className="w-5 h-5" />
+                    <CheckSquare className="w-4 h-4" />
                   ) : (
-                    <Square className="w-5 h-5" />
+                    <Square className="w-4 h-4" />
                   )}
                 </Button>
               </div>
@@ -1091,37 +929,31 @@ export function ProjectResults({
           {/* Image Prompts */}
           {imagePrompts && imagePrompts.length > 0 && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('prompts')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToPrompts}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">🎨</span>
-                <div>
-                  <p className="font-medium text-foreground">Image Prompts</p>
-                  <p className="text-sm text-muted-foreground">
-                    {imagePrompts.length} scene descriptions
-                  </p>
-                </div>
+                <span className="text-xl">🎨</span>
+                <span className="font-medium text-foreground">Prompts</span>
+                <span className="text-sm text-muted-foreground">
+                  {imagePrompts.length} scenes
+                </span>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={(e) => toggleApproval('prompts', e)}
-                className={`w-10 h-10 rounded-lg ${
+                className={`h-8 w-8 ${
                   approvedSteps.includes('prompts')
-                    ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-secondary text-muted-foreground hover:text-foreground'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
               >
                 {approvedSteps.includes('prompts') ? (
-                  <CheckSquare className="w-5 h-5" />
+                  <CheckSquare className="w-4 h-4" />
                 ) : (
-                  <Square className="w-5 h-5" />
+                  <Square className="w-4 h-4" />
                 )}
               </Button>
             </div>
@@ -1130,23 +962,17 @@ export function ProjectResults({
           {/* Images */}
           {assets.some(a => a.id.startsWith('image-') && a.url) && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('images')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToImages}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">🖼️</span>
-                <div>
-                  <p className="font-medium text-foreground">Images</p>
-                  <p className="text-sm text-muted-foreground">
-                    {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
-                  </p>
-                </div>
+                <span className="text-xl">🖼️</span>
+                <span className="font-medium text-foreground">Images</span>
+                <span className="text-sm text-muted-foreground">
+                  {assets.filter(a => a.id.startsWith('image-') && a.url).length} generated
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1154,26 +980,26 @@ export function ProjectResults({
                     e.stopPropagation();
                     handleDownloadAllImagesAsZip();
                   }}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   title="Download ZIP"
                 >
-                  <Download className="w-5 h-5" />
+                  <Download className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => toggleApproval('images', e)}
-                  className={`w-10 h-10 rounded-lg ${
+                  className={`h-8 w-8 ${
                     approvedSteps.includes('images')
-                      ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-secondary text-muted-foreground hover:text-foreground'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={approvedSteps.includes('images') ? 'Mark as not approved' : 'Mark as approved'}
                 >
                   {approvedSteps.includes('images') ? (
-                    <CheckSquare className="w-5 h-5" />
+                    <CheckSquare className="w-4 h-4" />
                   ) : (
-                    <Square className="w-5 h-5" />
+                    <Square className="w-4 h-4" />
                   )}
                 </Button>
               </div>
@@ -1183,41 +1009,35 @@ export function ProjectResults({
           {/* Thumbnails */}
           {onGoToThumbnails && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('thumbnails')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-primary/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={onGoToThumbnails}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">🎯</span>
-                <div>
-                  <p className="font-medium text-foreground">Thumbnails</p>
-                  <p className="text-sm text-muted-foreground">
-                    {thumbnails && thumbnails.length > 0
-                      ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
-                        ? 'Thumbnail selected'
-                        : `${thumbnails.length} generated`
-                      : 'Generate thumbnails'}
-                  </p>
-                </div>
+                <span className="text-xl">🎯</span>
+                <span className="font-medium text-foreground">Thumbnails</span>
+                <span className="text-sm text-muted-foreground">
+                  {thumbnails && thumbnails.length > 0
+                    ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
+                      ? 'Selected'
+                      : `${thumbnails.length} ready`
+                    : 'Generate'}
+                </span>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={(e) => toggleApproval('thumbnails', e)}
-                className={`w-10 h-10 rounded-lg ${
+                className={`h-8 w-8 ${
                   approvedSteps.includes('thumbnails')
-                    ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-secondary text-muted-foreground hover:text-foreground'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
               >
                 {approvedSteps.includes('thumbnails') ? (
-                  <CheckSquare className="w-5 h-5" />
+                  <CheckSquare className="w-4 h-4" />
                 ) : (
-                  <Square className="w-5 h-5" />
+                  <Square className="w-4 h-4" />
                 )}
               </Button>
             </div>
@@ -1225,31 +1045,22 @@ export function ProjectResults({
 
           {/* Video Render */}
           {audioUrl && srtContent && assets.some(a => a.id.startsWith('image-')) && projectId && (() => {
-            // Count video versions
             const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
             const hasVideo = videoVersions > 0;
 
             return (
               <div
-                className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                  approvedSteps.includes('render')
-                    ? 'border-green-500/50 hover:border-green-500'
-                    : 'border-border hover:border-primary/20'
-                }`}
+                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
                 onClick={onGoToRender}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">🎬</span>
-                  <div>
-                    <p className="font-medium text-foreground">Video Render</p>
-                    <p className="text-sm text-muted-foreground">
-                      {hasVideo
-                        ? `V${videoVersions} rendered${smokeEmbersVideoUrl ? ' (smoke + embers)' : embersVideoUrl ? ' (embers)' : ''}`
-                        : 'Render video with effects'}
-                    </p>
-                  </div>
+                  <span className="text-xl">🎬</span>
+                  <span className="font-medium text-foreground">Video</span>
+                  <span className="text-sm text-muted-foreground">
+                    {hasVideo ? `V${videoVersions} ready` : 'Render'}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {smokeEmbersVideoUrl && (
                     <Button
                       variant="ghost"
@@ -1258,27 +1069,27 @@ export function ProjectResults({
                         e.stopPropagation();
                         handleDownloadVideo('smoke_embers');
                       }}
-                      className="text-muted-foreground hover:text-foreground"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       title="Download Video"
                     >
-                      <Download className="w-5 h-5" />
+                      <Download className="w-4 h-4" />
                     </Button>
                   )}
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={(e) => toggleApproval('render', e)}
-                    className={`w-10 h-10 rounded-lg ${
+                    className={`h-8 w-8 ${
                       approvedSteps.includes('render')
-                        ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-secondary text-muted-foreground hover:text-foreground'
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title={approvedSteps.includes('render') ? 'Mark as not approved' : 'Mark as approved'}
                   >
                     {approvedSteps.includes('render') ? (
-                      <CheckSquare className="w-5 h-5" />
+                      <CheckSquare className="w-4 h-4" />
                     ) : (
-                      <Square className="w-5 h-5" />
+                      <Square className="w-4 h-4" />
                     )}
                   </Button>
                 </div>
@@ -1289,114 +1100,126 @@ export function ProjectResults({
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
             <div
-              className={`flex items-center justify-between p-4 bg-card rounded-xl border transition-colors cursor-pointer ${
-                approvedSteps.includes('youtube')
-                  ? 'border-green-500/50 hover:border-green-500'
-                  : 'border-border hover:border-red-500/20'
-              }`}
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
               onClick={() => setIsYouTubeModalOpen(true)}
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg">📤</span>
-                <div>
-                  <p className="font-medium text-foreground">YouTube Upload</p>
-                  <p className="text-sm text-muted-foreground">
-                    Schedule or upload as draft
-                  </p>
-                </div>
+                <span className="text-xl">📤</span>
+                <span className="font-medium text-foreground">YouTube</span>
+                <span className="text-sm text-muted-foreground">Upload</span>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={(e) => toggleApproval('youtube', e)}
-                className={`w-10 h-10 rounded-lg ${
+                className={`h-8 w-8 ${
                   approvedSteps.includes('youtube')
-                    ? 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-secondary text-muted-foreground hover:text-foreground'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title={approvedSteps.includes('youtube') ? 'Mark as not approved' : 'Mark as approved'}
               >
                 {approvedSteps.includes('youtube') ? (
-                  <CheckSquare className="w-5 h-5" />
+                  <CheckSquare className="w-4 h-4" />
                 ) : (
-                  <Square className="w-5 h-5" />
+                  <Square className="w-4 h-4" />
                 )}
               </Button>
             </div>
           )}
 
-          {/* YouTube Account Connect */}
-          {(() => {
-            // Check both state and props for video URL availability
-            const hasVideo = basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl ||
-                            videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl;
-            return (
-              <div
-                className={`flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-red-500/20 transition-colors ${isYouTubeConnected ? 'cursor-pointer' : ''}`}
-                onClick={() => {
-                  // If connected, open upload modal (modal will show message if no video)
-                  if (isYouTubeConnected) {
-                    if (hasVideo) {
-                      setIsYouTubeModalOpen(true);
-                    } else {
-                      toast({
-                        title: "No Video Available",
-                        description: "Please render a video first before uploading to YouTube.",
-                        variant: "destructive",
-                      });
-                    }
-                  }
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-lg">🔗</span>
-                  <div>
-                    <p className="font-medium text-foreground">YouTube Account</p>
-                    <p className="text-sm text-muted-foreground">
-                      {isYouTubeConnected
-                        ? hasVideo
-                          ? 'Connected - Click to upload'
-                          : 'Connected - Render video first'
-                        : 'Not connected'}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant={isYouTubeConnected ? "outline" : "default"}
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isYouTubeConnected) {
-                      handleYouTubeDisconnect();
-                    } else {
-                      handleYouTubeConnect();
-                    }
-                  }}
-                  disabled={isConnectingYouTube}
-                  className={isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}
-                >
-                  {isConnectingYouTube ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : isYouTubeConnected ? (
-                    'Disconnect'
-                  ) : (
-                    'Connect'
-                  )}
-                </Button>
-              </div>
-            );
-          })()}
-        </div>
-        )}
+          {assets.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No assets generated yet.</p>
+            </div>
+          )}
 
-        {assets.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No assets generated yet.</p>
+          {/* New Project Button */}
+          <div className="pt-4">
+            <Button variant="outline" onClick={onNewProject} className="w-full gap-2">
+              <Plus className="w-4 h-4" />
+              New Project
+            </Button>
           </div>
-        )}
+        </div>
+
+        {/* Right Column: Video Preview */}
+        <div className="space-y-4">
+          {/* Video/Image Preview */}
+          <div className="relative aspect-video bg-muted rounded-xl overflow-hidden border">
+            {previewVideoUrl ? (
+              <video
+                src={previewVideoUrl}
+                className="w-full h-full object-cover"
+                muted
+                playsInline
+                onMouseEnter={(e) => e.currentTarget.play()}
+                onMouseLeave={(e) => {
+                  e.currentTarget.pause();
+                  e.currentTarget.currentTime = 0;
+                }}
+              />
+            ) : firstImageUrl ? (
+              <img
+                src={firstImageUrl}
+                alt="Preview"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                <Video className="w-12 h-12 opacity-30" />
+              </div>
+            )}
+          </div>
+
+          {/* Title under preview */}
+          <div>
+            <h2 className="font-semibold text-foreground line-clamp-2">
+              {projectTitle || "Untitled Project"}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {previewVideoUrl ? "Hover to preview video" : firstImageUrl ? "First image preview" : "No preview yet"}
+            </p>
+          </div>
+
+          {/* YouTube Account Status */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔗</span>
+                <span className="font-medium">YouTube</span>
+              </div>
+              <span className={`text-sm ${isYouTubeConnected ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                {isYouTubeConnected ? 'Connected' : 'Not connected'}
+              </span>
+            </div>
+            <Button
+              variant={isYouTubeConnected ? "outline" : "default"}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isYouTubeConnected) {
+                  handleYouTubeDisconnect();
+                } else {
+                  handleYouTubeConnect();
+                }
+              }}
+              disabled={isConnectingYouTube}
+              className={`w-full ${isYouTubeConnected ? "" : "bg-red-600 hover:bg-red-700 text-white"}`}
+            >
+              {isConnectingYouTube ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : isYouTubeConnected ? (
+                'Disconnect'
+              ) : (
+                'Connect YouTube'
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Render Progress Modal */}
