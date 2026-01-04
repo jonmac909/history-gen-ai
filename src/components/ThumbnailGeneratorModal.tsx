@@ -244,12 +244,13 @@ export function ThumbnailGeneratorModal({
     setSelectedThumbnail(null);
 
     try {
-      // Extract base64 from data URL
-      const base64Match = examplePreview.match(/^data:image\/\w+;base64,(.+)$/);
-      if (!base64Match) {
+      // Extract base64 from data URL - use indexOf instead of regex to avoid stack overflow on large strings
+      const base64Prefix = ';base64,';
+      const prefixIndex = examplePreview.indexOf(base64Prefix);
+      if (prefixIndex === -1 || !examplePreview.startsWith('data:image/')) {
         throw new Error("Invalid image format");
       }
-      const base64Data = base64Match[1];
+      const base64Data = examplePreview.substring(prefixIndex + base64Prefix.length);
 
       // Call the thumbnail generation API with the user's prompt
       const result = await generateThumbnailsStreaming(
@@ -396,12 +397,17 @@ export function ThumbnailGeneratorModal({
     setIsUploading(true);
     try {
       // Save current state to history before switching (if we have thumbnails)
+      // Limit history to 5 entries to prevent memory issues with large base64 strings
       if (generatedThumbnails.length > 0 && examplePreview) {
-        setThumbnailHistory(prev => [...prev, {
-          thumbnails: generatedThumbnails,
-          referencePreview: examplePreview,
-          prompt: imagePrompt,
-        }]);
+        setThumbnailHistory(prev => {
+          const newHistory = [...prev, {
+            thumbnails: generatedThumbnails,
+            referencePreview: examplePreview,
+            prompt: imagePrompt,
+          }];
+          // Keep only the last 5 entries
+          return newHistory.slice(-5);
+        });
       }
 
       // Fetch the image and convert to data URL
