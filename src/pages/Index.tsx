@@ -1798,6 +1798,15 @@ const Index = () => {
           </button>
           
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => window.open('/outliers', '_blank')}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span className="hidden sm:inline">Outliers</span>
+            </Button>
             <ProjectsDrawer onOpenProject={handleOpenProject} onViewFavorites={() => setViewState("favorites")} />
             <ConfigModal
               scriptTemplates={scriptTemplates}
