@@ -1292,17 +1292,32 @@ export function ProjectResults({
             </div>
           )}
 
-          {/* Save Version Button */}
-          {onSaveVersion && (
-            <div className="pt-4 mt-4 border-t">
-              <Button
-                variant="outline"
-                className="w-full gap-2"
-                onClick={onSaveVersion}
-              >
-                <Save className="w-4 h-4" />
-                Save Version
-              </Button>
+          {/* Update Title & Save Version Buttons */}
+          {(onTitleChange || onSaveVersion) && (
+            <div className="pt-4 mt-4 border-t space-y-2">
+              {onTitleChange && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    setIsEditingTitle(true);
+                    // Focus will be handled by useEffect
+                  }}
+                >
+                  <Pencil className="w-4 h-4" />
+                  Update Title
+                </Button>
+              )}
+              {onSaveVersion && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={onSaveVersion}
+                >
+                  <Save className="w-4 h-4" />
+                  Save Version
+                </Button>
+              )}
             </div>
           )}
         </div>
