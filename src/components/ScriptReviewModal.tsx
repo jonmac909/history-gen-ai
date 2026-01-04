@@ -110,10 +110,16 @@ export function ScriptReviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+          {/* Left side: Navigation + Edit/Download */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
+              </Button>
+            )}
+            {onForward && (
+              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
             <Button
@@ -129,20 +135,15 @@ export function ScriptReviewModal({
             </Button>
           </div>
 
+          {/* Right side: Exit + Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
-            Cancel
+            Exit
           </Button>
-
-          {onForward && (
-            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          )}
 
           <Button onClick={handleConfirm}>
             <Check className="w-4 h-4 mr-2" />
-            Confirm & Generate Audio
+            Generate Audio
           </Button>
         </DialogFooter>
       </DialogContent>

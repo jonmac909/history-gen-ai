@@ -453,10 +453,16 @@ export function AudioSegmentsPreviewModal({
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
+          {/* Left side: Navigation + Download */}
           <div className="flex gap-2 w-full sm:w-auto sm:mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
+              </Button>
+            )}
+            {onForward && (
+              <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
+                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
             {combinedAudioUrl && (
@@ -466,16 +472,12 @@ export function AudioSegmentsPreviewModal({
               </Button>
             )}
           </div>
+
+          {/* Right side: Exit + Continue */}
           <Button variant="outline" onClick={onCancel} className="w-full sm:w-auto">
             <X className="w-4 h-4 mr-2" />
-            Cancel
+            Exit
           </Button>
-
-          {onForward && (
-            <Button variant="outline" size="icon" onClick={onForward} title="Skip to next step">
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          )}
 
           <Button
             onClick={onConfirmAll}
@@ -483,7 +485,7 @@ export function AudioSegmentsPreviewModal({
             disabled={regeneratingIndex !== null}
           >
             <Check className="w-4 h-4 mr-2" />
-            Confirm All
+            Generate Captions
           </Button>
         </DialogFooter>
       </DialogContent>
