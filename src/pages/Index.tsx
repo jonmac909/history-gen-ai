@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -1853,7 +1855,7 @@ const Index = () => {
                   onSettingsChange={setSettings}
                   scriptTemplates={scriptTemplates}
                   imageTemplates={imageTemplates}
-                  requireTitle={!projectId}
+                  requireTitle={false}
                 />
               </div>
               <p className="text-lg text-muted-foreground">
@@ -1861,6 +1863,49 @@ const Index = () => {
                   ? "Using custom script - click Generate to start audio production"
                   : "From YouTube URL to full production ready assets in minutes"}
               </p>
+            </div>
+
+            {/* Inline settings on main page */}
+            <div className="w-full max-w-2xl mx-auto bg-card rounded-xl border border-border p-4 space-y-4">
+              {/* Project Title */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Project Title</label>
+                <Input
+                  value={settings.projectTitle}
+                  onChange={(e) => setSettings(prev => ({ ...prev, projectTitle: e.target.value }))}
+                  placeholder="Enter project title..."
+                  className="flex-1"
+                />
+              </div>
+
+              {/* Word Count & Full Automation row */}
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-3 flex-1">
+                  <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
+                  <div className="flex items-center gap-3 flex-1">
+                    <Slider
+                      value={[settings.wordCount]}
+                      min={500}
+                      max={30000}
+                      step={100}
+                      onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
+                      className="flex-1"
+                    />
+                    <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={settings.fullAutomation}
+                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, fullAutomation: checked }))}
+                    id="full-automation"
+                  />
+                  <label htmlFor="full-automation" className="text-sm font-medium text-muted-foreground cursor-pointer">
+                    Auto
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* Two entry mode buttons */}

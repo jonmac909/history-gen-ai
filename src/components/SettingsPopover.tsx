@@ -1,7 +1,6 @@
 import React, { useState } from "react";
-import { Settings, Minus, Plus, X, Zap } from "lucide-react";
+import { Settings, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -18,10 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSampleUpload } from "@/components/VoiceSampleUpload";
-import { toast } from "@/hooks/use-toast";
 import type { ScriptTemplate, ImageTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
@@ -64,7 +61,6 @@ interface SettingsPopoverProps {
   onSettingsChange: (settings: GenerationSettings) => void;
   scriptTemplates: ScriptTemplate[];
   imageTemplates: ImageTemplate[];
-  requireTitle?: boolean; // If true, prevent closing without a project title
 }
 
 const defaultScriptLabels: Record<string, string> = {
@@ -84,11 +80,9 @@ export function SettingsPopover({
   onSettingsChange,
   scriptTemplates,
   imageTemplates,
-  requireTitle = false,
 }: SettingsPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
-  const [titleError, setTitleError] = useState(false);
 
   // Sync local settings when props change (but not when modal is open)
   React.useEffect(() => {
@@ -115,17 +109,6 @@ export function SettingsPopover({
   };
 
   const handleClose = () => {
-    // Validate title if required
-    if (requireTitle && !localSettings.projectTitle?.trim()) {
-      setTitleError(true);
-      toast({
-        title: "Project Title Required",
-        description: "Please enter a project title before closing settings.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setTitleError(false);
     onSettingsChange(localSettings);
     setIsOpen(false);
   };
@@ -163,45 +146,6 @@ export function SettingsPopover({
         </DialogHeader>
 
         <div className="space-y-5 py-4 px-1 max-h-[70vh] overflow-y-auto">
-          {/* Project Title */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Project Title:{requireTitle && <span className="text-destructive ml-1">*</span>}
-            </label>
-            <Input
-              placeholder="Enter a name for this project..."
-              value={localSettings.projectTitle || ""}
-              onChange={(e) => {
-                updateSetting("projectTitle", e.target.value);
-                if (e.target.value.trim()) setTitleError(false);
-              }}
-              onKeyDown={(e) => e.stopPropagation()}
-              className={`text-center ${titleError ? "border-destructive focus-visible:ring-destructive" : ""}`}
-            />
-            {titleError && (
-              <p className="text-xs text-destructive text-center">
-                Project title is required
-              </p>
-            )}
-          </div>
-
-          {/* Full Automation Toggle */}
-          <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-primary" />
-              <div>
-                <span className="text-sm font-medium">Full Automation</span>
-                <p className="text-xs text-muted-foreground">
-                  Auto-confirm each step & render video
-                </p>
-              </div>
-            </div>
-            <Switch
-              checked={localSettings.fullAutomation || false}
-              onCheckedChange={(checked) => updateSetting("fullAutomation", checked)}
-            />
-          </div>
-
           {/* Custom Script Input */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-center block">
@@ -409,71 +353,6 @@ export function SettingsPopover({
             </div>
           </div>
 
-          {/* Image Count */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Count:
-            </label>
-            <div className="flex items-center justify-between bg-secondary/50 rounded-lg px-4 py-2">
-              <span className="text-sm text-muted-foreground">Images</span>
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.max(1, localSettings.imageCount - 1))}
-                >
-                  <Minus className="w-4 h-4" />
-                </Button>
-                <Input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={localSettings.imageCount}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10);
-                    if (!isNaN(value) && value >= 1 && value <= 200) {
-                      updateSetting("imageCount", value);
-                    }
-                  }}
-                  className="w-16 h-8 text-center font-medium px-2"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => updateSetting("imageCount", Math.min(200, localSettings.imageCount + 1))}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Word Count */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-center block">
-              Select Your Word Count:
-            </label>
-            <div className="px-3 py-3 bg-secondary/50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Words</span>
-                <span className="text-sm font-medium">{localSettings.wordCount.toLocaleString()}</span>
-              </div>
-              <Slider
-                value={[localSettings.wordCount]}
-                onValueChange={(value) => updateSetting("wordCount", value[0])}
-                min={500}
-                max={30000}
-                step={500}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>500</span>
-                <span>30,000</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         <DialogFooter>
