@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save, Pencil, Check, X } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save, Pencil, Check, X, Tag, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
 import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
+import { VideoRenderModal } from "./VideoRenderModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
 
 
@@ -80,6 +82,9 @@ interface ProjectResultsProps {
   onTitleChange?: (newTitle: string) => void;
   // Thumbnail upload
   onThumbnailUpload?: (thumbnailUrl: string) => void;
+  // Tags
+  tags?: string[];
+  onTagsChange?: (tags: string[]) => void;
 }
 
 // Parse SRT to get timing info
@@ -200,6 +205,8 @@ export function ProjectResults({
   onSaveVersion,
   onTitleChange,
   onThumbnailUpload,
+  tags = [],
+  onTagsChange,
 }: ProjectResultsProps) {
   // Helper to toggle step approval
   const toggleApproval = (step: PipelineStep, e: React.MouseEvent) => {
@@ -228,6 +235,12 @@ export function ProjectResults({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState(projectTitle || "");
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // State for tag input
+  const [newTagInput, setNewTagInput] = useState("");
+
+  // State for video render modal
+  const [isVideoRenderModalOpen, setIsVideoRenderModalOpen] = useState(false);
 
   // Reset all video URLs when project changes
   useEffect(() => {
@@ -1255,6 +1268,61 @@ export function ProjectResults({
             );
           })()}
 
+          {/* Visual Effects */}
+          {(basicVideoUrl || videoUrl) && audioUrl && imagePrompts && imagePrompts.length > 0 && (() => {
+            const hasEmbers = !!embersVideoUrl;
+            const hasSmokeEmbers = !!smokeEmbersVideoUrl;
+            const effectCount = [hasEmbers, hasSmokeEmbers].filter(Boolean).length;
+
+            return (
+              <div
+                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
+                onClick={() => setIsVideoRenderModalOpen(true)}
+              >
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-medium text-foreground">Visual Effects</span>
+                  <span className="text-sm text-muted-foreground">
+                    {effectCount > 0 ? `${effectCount} effect${effectCount > 1 ? 's' : ''} rendered` : 'Add effects'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {hasSmokeEmbers && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadVideo('smoke_embers');
+                      }}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      title="Download Smoke+Embers"
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => toggleApproval('render', e)}
+                    className={`h-8 w-8 ${
+                      approvedSteps.includes('render')
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={approvedSteps.includes('render') ? 'Mark as not approved' : 'Mark as approved'}
+                  >
+                    {approvedSteps.includes('render') ? (
+                      <CheckSquare className="w-4 h-4" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
             <div
@@ -1289,6 +1357,74 @@ export function ProjectResults({
           {assets.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <p>No assets generated yet.</p>
+            </div>
+          )}
+
+          {/* Tags Section */}
+          {onTagsChange && (
+            <div className="pt-4 mt-4 border-t space-y-3">
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Tags</span>
+              </div>
+              {/* Existing tags */}
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
+                    >
+                      {tag}
+                      <button
+                        onClick={() => {
+                          const newTags = tags.filter((_, i) => i !== index);
+                          onTagsChange(newTags);
+                        }}
+                        className="ml-0.5 hover:text-destructive transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Add new tag */}
+              <div className="flex gap-2">
+                <Input
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newTagInput.trim()) {
+                      e.preventDefault();
+                      const trimmed = newTagInput.trim();
+                      if (!tags.includes(trimmed)) {
+                        onTagsChange([...tags, trimmed]);
+                      }
+                      setNewTagInput("");
+                    }
+                  }}
+                  placeholder="Add tag (e.g., Medieval, Ancient Egypt)"
+                  className="flex-1 h-8 text-sm"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (newTagInput.trim()) {
+                      const trimmed = newTagInput.trim();
+                      if (!tags.includes(trimmed)) {
+                        onTagsChange([...tags, trimmed]);
+                      }
+                      setNewTagInput("");
+                    }
+                  }}
+                  disabled={!newTagInput.trim()}
+                  className="h-8 px-2"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           )}
 
@@ -1648,6 +1784,29 @@ export function ProjectResults({
           setIsYouTubeModalOpen(false);
         }}
       />
+
+      {/* Video Render Modal (with visual effects selection) */}
+      {projectId && audioUrl && imagePrompts && imagePrompts.length > 0 && srtContent && (
+        <VideoRenderModal
+          isOpen={isVideoRenderModalOpen}
+          projectId={projectId}
+          projectTitle={projectTitle}
+          audioUrl={audioUrl}
+          imageUrls={imagePrompts.map(p => p.imageUrl).filter((url): url is string => !!url)}
+          imageTimings={imagePrompts.map(p => ({ startSeconds: p.startTime, endSeconds: p.endTime }))}
+          srtContent={srtContent}
+          existingVideoUrl={smokeEmbersVideoUrl || embersVideoUrl || basicVideoUrl || undefined}
+          onConfirm={(videoUrl) => {
+            // Determine which effect was rendered based on URL pattern or just save to smoke_embers
+            setSmokeEmbersVideoUrl(videoUrl);
+            if (onSmokeEmbersVideoRendered) {
+              onSmokeEmbersVideoRendered(videoUrl);
+            }
+            setIsVideoRenderModalOpen(false);
+          }}
+          onCancel={() => setIsVideoRenderModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Video, Heart, ChevronLeft } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Video, Heart, ChevronLeft, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getFavoriteProjects, toggleFavorite, type Project } from "@/lib/projectStore";
 import { toast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ export function FavoritesView({
 }: FavoritesViewProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -29,6 +30,21 @@ export function FavoritesView({
     };
     loadProjects();
   }, []);
+
+  // Get all unique tags from projects
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    projects.forEach(project => {
+      project.tags?.forEach(tag => tagSet.add(tag));
+    });
+    return Array.from(tagSet).sort();
+  }, [projects]);
+
+  // Filter projects by selected tag
+  const filteredProjects = useMemo(() => {
+    if (!selectedTag) return projects;
+    return projects.filter(project => project.tags?.includes(selectedTag));
+  }, [projects, selectedTag]);
 
   // Get thumbnail for a project
   const getProjectThumbnail = (project: Project): string | null => {
@@ -72,7 +88,7 @@ export function FavoritesView({
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-8">
+      <div className="flex items-center gap-3 mb-6">
         {onBack && (
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ChevronLeft className="w-5 h-5" />
@@ -83,6 +99,41 @@ export function FavoritesView({
           <h1 className="text-2xl font-bold text-foreground">Favorites</h1>
         </div>
       </div>
+
+      {/* Tag Filter */}
+      {allTags.length > 0 && (
+        <div className="mb-6 space-y-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Tag className="w-4 h-4" />
+            <span>Filter by tag</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                !selectedTag
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              All
+            </button>
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  selectedTag === tag
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Projects Grid */}
       {isLoading ? (
@@ -97,9 +148,17 @@ export function FavoritesView({
             Add projects to favorites from the Projects drawer
           </p>
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="text-center py-12 space-y-4">
+          <Tag className="w-12 h-12 mx-auto text-muted-foreground opacity-50" />
+          <p className="text-muted-foreground">No projects with tag "{selectedTag}"</p>
+          <Button variant="outline" size="sm" onClick={() => setSelectedTag(null)}>
+            Clear filter
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {projects.map((project) => {
+          {filteredProjects.map((project) => {
             const thumbnail = getProjectThumbnail(project);
             const title = getProjectTitle(project);
 

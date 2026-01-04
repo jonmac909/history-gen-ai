@@ -190,6 +190,9 @@ const Index = () => {
   const [youtubeCategoryId, setYoutubeCategoryId] = useState("27"); // Default: Education
   const [youtubePlaylistId, setYoutubePlaylistId] = useState<string | null>(null);
 
+  // Project tags state
+  const [projectTags, setProjectTags] = useState<string[]>([]);
+
   // Migrate localStorage to Supabase on first load
   useEffect(() => {
     migrateFromLocalStorage();
@@ -304,6 +307,7 @@ const Index = () => {
       youtubeTags: overrides?.youtubeTags || youtubeTags || undefined,
       youtubeCategoryId: overrides?.youtubeCategoryId || youtubeCategoryId || undefined,
       youtubePlaylistId: overrides?.youtubePlaylistId !== undefined ? overrides.youtubePlaylistId : youtubePlaylistId,
+      tags: overrides?.tags || projectTags || undefined,
     }).catch(err => console.error('[autoSave] Failed to save project:', err));
   };
 
@@ -1853,6 +1857,9 @@ const Index = () => {
     if (project.youtubeCategoryId) setYoutubeCategoryId(project.youtubeCategoryId);
     if (project.youtubePlaylistId !== undefined) setYoutubePlaylistId(project.youtubePlaylistId);
 
+    // Restore project tags
+    if (project.tags) setProjectTags(project.tags);
+
     // Build generated assets for results view
     const assets: GeneratedAsset[] = [];
     if (project.script) {
@@ -2059,6 +2066,12 @@ const Index = () => {
               thumbnails: updatedThumbnails,
               selectedThumbnailIndex: updatedThumbnails.length - 1
             });
+          }}
+          tags={projectTags}
+          onTagsChange={(newTags) => {
+            setProjectTags(newTags);
+            // Save tags to project
+            autoSave("complete", { tags: newTags });
           }}
         />
       ) : (

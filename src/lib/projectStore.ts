@@ -42,6 +42,9 @@ export interface Project {
   // Favorites
   isFavorite?: boolean;
 
+  // Tags for organization
+  tags?: string[];
+
   // YouTube metadata
   youtubeTitle?: string;
   youtubeDescription?: string;
@@ -83,6 +86,7 @@ function rowToProject(row: {
   parent_project_id: string | null;
   version_number: number | null;
   is_favorite: boolean | null;
+  tags: unknown;
   youtube_title: string | null;
   youtube_description: string | null;
   youtube_tags: string | null;
@@ -118,6 +122,7 @@ function rowToProject(row: {
     selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
     approvedSteps: (row.approved_steps as Project['approvedSteps']) || undefined,
     isFavorite: row.is_favorite || false,
+    tags: (row.tags as string[]) || undefined,
     youtubeTitle: row.youtube_title || undefined,
     youtubeDescription: row.youtube_description || undefined,
     youtubeTags: row.youtube_tags || undefined,
@@ -160,6 +165,7 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
   if (project.selectedThumbnailIndex !== undefined) row.selected_thumbnail_index = project.selectedThumbnailIndex ?? null;
   if (project.approvedSteps !== undefined) row.approved_steps = project.approvedSteps || [];
   if (project.isFavorite !== undefined) row.is_favorite = project.isFavorite;
+  if (project.tags !== undefined) row.tags = project.tags || [];
   if (project.youtubeTitle !== undefined) row.youtube_title = project.youtubeTitle || null;
   if (project.youtubeDescription !== undefined) row.youtube_description = project.youtubeDescription || null;
   if (project.youtubeTags !== undefined) row.youtube_tags = project.youtubeTags || null;
