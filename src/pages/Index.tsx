@@ -321,6 +321,10 @@ const Index = () => {
   const handleResumeProject = () => {
     if (!savedProject) return;
 
+    // CRITICAL: Disable fullAutomation when manually resuming a project
+    // User is reviewing/editing, not running full automation
+    setSettings(prev => ({ ...prev, fullAutomation: false }));
+
     // Restore state from saved project (but keep current settings so user can change them)
     setProjectId(savedProject.id);
     setSourceUrl(savedProject.sourceUrl);
@@ -1341,27 +1345,28 @@ const Index = () => {
   };
 
   // Forward navigation handlers (to skip ahead if data already exists)
+  // These disable fullAutomation because user is manually navigating
   const handleForwardToAudio = () => {
     if (pendingAudioUrl || pendingAudioSegments.length > 0) {
-      setViewState("review-audio");
+      disableAutoAndGoTo("review-audio");
     }
   };
 
   const handleForwardToCaptions = () => {
     if (pendingSrtContent) {
-      setViewState("review-captions");
+      disableAutoAndGoTo("review-captions");
     }
   };
 
   const handleForwardToPrompts = () => {
     if (imagePrompts.length > 0) {
-      setViewState("review-prompts");
+      disableAutoAndGoTo("review-prompts");
     }
   };
 
   const handleForwardToImages = () => {
     if (pendingImages.length > 0) {
-      setViewState("review-images");
+      disableAutoAndGoTo("review-images");
     }
   };
 
@@ -2345,7 +2350,7 @@ const Index = () => {
         onConfirm={handleImagesConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToPrompts}
-        onForward={() => setViewState("review-thumbnails")}
+        onForward={() => disableAutoAndGoTo("review-thumbnails")}
         onRegenerate={handleRegenerateImage}
         onRegenerateMultiple={handleRegenerateMultipleImages}
         regeneratingIndex={regeneratingImageIndex}
