@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save, Pencil, Check, X, Tag, Plus } from "lucide-react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Play, Pause, Upload, FileText, Mic, MessageSquare, Palette, Image, Target, Film, Youtube, Save, Pencil, Check, X, Tag, Plus, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -76,8 +76,9 @@ interface ProjectResultsProps {
   // Approval tracking
   approvedSteps?: PipelineStep[];
   onApproveStep?: (step: PipelineStep, approved: boolean) => void;
-  // Save version
+  // Save version & Duplicate
   onSaveVersion?: () => void;
+  onDuplicate?: () => void;
   // Title change
   onTitleChange?: (newTitle: string) => void;
   // Thumbnail upload
@@ -203,6 +204,7 @@ export function ProjectResults({
   approvedSteps = [],
   onApproveStep,
   onSaveVersion,
+  onDuplicate,
   onTitleChange,
   onThumbnailUpload,
   tags = [],
@@ -1155,65 +1157,6 @@ export function ProjectResults({
             </div>
           )}
 
-          {/* Thumbnails */}
-          {onGoToThumbnails && (
-            <div
-              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-              onClick={onGoToThumbnails}
-            >
-              <div className="flex items-center gap-3">
-                <Target className="w-5 h-5 text-muted-foreground" />
-                <span className="font-medium text-foreground">Thumbnails</span>
-                <span className="text-sm text-muted-foreground">
-                  {thumbnails && thumbnails.length > 0
-                    ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
-                      ? 'Selected'
-                      : `${thumbnails.length} ready`
-                    : 'Generate'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                {/* Upload button */}
-                {onThumbnailUpload && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      thumbnailUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingThumbnail}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Upload thumbnail"
-                  >
-                    {isUploadingThumbnail ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => toggleApproval('thumbnails', e)}
-                  className={`h-8 w-8 ${
-                    approvedSteps.includes('thumbnails')
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
-                >
-                  {approvedSteps.includes('thumbnails') ? (
-                    <CheckSquare className="w-4 h-4" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* Video Render */}
           {onGoToRender && (() => {
             const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
@@ -1322,6 +1265,65 @@ export function ProjectResults({
               </div>
             );
           })()}
+
+          {/* Thumbnails */}
+          {onGoToThumbnails && (
+            <div
+              className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
+              onClick={onGoToThumbnails}
+            >
+              <div className="flex items-center gap-3">
+                <Target className="w-5 h-5 text-muted-foreground" />
+                <span className="font-medium text-foreground">Thumbnails</span>
+                <span className="text-sm text-muted-foreground">
+                  {thumbnails && thumbnails.length > 0
+                    ? selectedThumbnailIndex !== undefined && selectedThumbnailIndex >= 0
+                      ? 'Selected'
+                      : `${thumbnails.length} ready`
+                    : 'Generate'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {/* Upload button */}
+                {onThumbnailUpload && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      thumbnailUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingThumbnail}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Upload thumbnail"
+                  >
+                    {isUploadingThumbnail ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => toggleApproval('thumbnails', e)}
+                  className={`h-8 w-8 ${
+                    approvedSteps.includes('thumbnails')
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={approvedSteps.includes('thumbnails') ? 'Mark as not approved' : 'Mark as approved'}
+                >
+                  {approvedSteps.includes('thumbnails') ? (
+                    <CheckSquare className="w-4 h-4" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* YouTube Upload */}
           {(basicVideoUrl || embersVideoUrl || smokeEmbersVideoUrl || videoUrl || initialEmbersVideoUrl || initialSmokeEmbersVideoUrl) && (
@@ -1433,8 +1435,8 @@ export function ProjectResults({
             </div>
           )}
 
-          {/* Update Title & Save Version Buttons */}
-          {(onTitleChange || onSaveVersion) && (
+          {/* Update Title, Save Version & Duplicate Buttons */}
+          {(onTitleChange || onSaveVersion || onDuplicate) && (
             <div className="pt-4 mt-auto border-t space-y-2">
               {onTitleChange && youtubeTitle && (
                 <Button
@@ -1452,16 +1454,28 @@ export function ProjectResults({
                   Update Title
                 </Button>
               )}
-              {onSaveVersion && (
-                <Button
-                  variant="outline"
-                  className="w-full gap-2"
-                  onClick={onSaveVersion}
-                >
-                  <Save className="w-4 h-4" />
-                  Save Version
-                </Button>
-              )}
+              <div className="flex gap-2">
+                {onSaveVersion && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    onClick={onSaveVersion}
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Version
+                  </Button>
+                )}
+                {onDuplicate && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    onClick={onDuplicate}
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

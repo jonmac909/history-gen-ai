@@ -28,6 +28,7 @@ interface ThumbnailGeneratorModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
+  onForward?: () => void;  // Navigate to next step (YouTube)
 }
 
 export function ThumbnailGeneratorModal({
@@ -41,6 +42,7 @@ export function ThumbnailGeneratorModal({
   onCancel,
   onBack,
   onSkip,
+  onForward,
 }: ThumbnailGeneratorModalProps) {
   // Default reference thumbnail
   const DEFAULT_THUMBNAIL_URL = "/thumbs/boring.jpg";
@@ -789,21 +791,28 @@ export function ThumbnailGeneratorModal({
             )}
           </div>
 
-          {/* Right side: Exit + Continue */}
+          {/* Right side: Exit + Forward/Continue */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          <Button
-            onClick={handleComplete}
-            disabled={generatedThumbnails.length > 0 && !selectedThumbnail}
-          >
-            <Check className="w-4 h-4 mr-2" />
-            {generatedThumbnails.length > 0 && !selectedThumbnail
-              ? 'Select a Thumbnail'
-              : 'Continue'}
-          </Button>
+          {onForward ? (
+            <Button onClick={onForward}>
+              YouTube
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleComplete}
+              disabled={generatedThumbnails.length > 0 && !selectedThumbnail}
+            >
+              <Check className="w-4 h-4 mr-2" />
+              {generatedThumbnails.length > 0 && !selectedThumbnail
+                ? 'Select a Thumbnail'
+                : 'Continue'}
+            </Button>
+          )}
         </DialogFooter>
 
         {/* Lightbox */}

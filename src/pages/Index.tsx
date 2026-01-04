@@ -48,6 +48,7 @@ import {
   migrateFromLocalStorage,
   getStepLabel,
   createProjectVersion,
+  duplicateProject,
   type Project,
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -59,6 +60,7 @@ type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "rev
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
+const CUSTOM_IMAGE_TEMPLATES_KEY = "historygenai-custom-image-templates";
 
 // Default settings (used when no saved settings exist)
 const DEFAULT_SETTINGS: GenerationSettings = {
@@ -113,6 +115,53 @@ function saveLastSettings(settings: GenerationSettings): void {
   }
 }
 
+// Load custom image template overrides from localStorage
+function loadCustomImageTemplates(): Record<string, { template: string; name?: string }> {
+  try {
+    const saved = localStorage.getItem(CUSTOM_IMAGE_TEMPLATES_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("[Index] Failed to load custom image templates:", e);
+  }
+  return {};
+}
+
+// Save custom image template overrides to localStorage
+function saveCustomImageTemplates(templates: ImageTemplate[]): void {
+  try {
+    // Only save templates that differ from defaults
+    const customOverrides: Record<string, { template: string; name?: string }> = {};
+    for (const template of templates) {
+      const defaultTemplate = defaultImageTemplates.find(d => d.id === template.id);
+      // Save if template content differs from default, or if it's a new custom template
+      if (!defaultTemplate || template.template !== defaultTemplate.template || template.name !== defaultTemplate.name) {
+        customOverrides[template.id] = { template: template.template, name: template.name };
+      }
+    }
+    localStorage.setItem(CUSTOM_IMAGE_TEMPLATES_KEY, JSON.stringify(customOverrides));
+  } catch (e) {
+    console.error("[Index] Failed to save custom image templates:", e);
+  }
+}
+
+// Merge default templates with custom overrides
+function getImageTemplatesWithCustomOverrides(): ImageTemplate[] {
+  const customOverrides = loadCustomImageTemplates();
+  return defaultImageTemplates.map(template => {
+    const override = customOverrides[template.id];
+    if (override) {
+      return {
+        ...template,
+        template: override.template,
+        name: override.name || template.name,
+      };
+    }
+    return template;
+  });
+}
+
 const Index = () => {
   const [inputMode, setInputMode] = useState<InputMode>("url");
   const [inputValue, setInputValue] = useState("");
@@ -121,7 +170,7 @@ const Index = () => {
   const [settings, setSettings] = useState<GenerationSettings>(loadLastSettings);
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
-  const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(defaultImageTemplates);
+  const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(getImageTemplatesWithCustomOverrides);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
 
   // Get the selected image template content for image generation
@@ -438,6 +487,8 @@ const Index = () => {
 
   const handleSaveImageTemplates = (templates: ImageTemplate[]) => {
     setImageTemplates(templates);
+    // Persist custom template overrides to localStorage
+    saveCustomImageTemplates(templates);
   };
 
   const handleSaveVoices = (voices: CartesiaVoice[]) => {
@@ -476,10 +527,10 @@ const Index = () => {
         return;
       }
 
-      // Set up project with custom script - reuse existing projectId if available
+      // Set up project with custom script - ALWAYS new project from main page
       setSourceUrl("Custom Script");
-      const useProjectId = projectId || crypto.randomUUID();
-      if (!projectId) setProjectId(useProjectId);
+      const useProjectId = crypto.randomUUID();
+      setProjectId(useProjectId);
       const projectTitle = settings.projectTitle || "Custom Script";
       setVideoTitle(projectTitle);
 
@@ -552,9 +603,10 @@ const Index = () => {
     }
 
     setSourceUrl(inputValue);
-    // Reuse existing projectId if available (e.g., when resuming a project)
-    const useProjectId = projectId || crypto.randomUUID();
-    if (!projectId) setProjectId(useProjectId);
+    // ALWAYS generate a new projectId for new generations from the main page
+    // This prevents overwriting existing project files when starting fresh
+    const useProjectId = crypto.randomUUID();
+    setProjectId(useProjectId);
 
     const steps: GenerationStep[] = [
       { id: "transcript", label: "Fetching YouTube Transcript", status: "pending" },
@@ -1462,6 +1514,35 @@ const Index = () => {
     }
   };
 
+  // Duplicate the current project as an independent copy
+  const handleDuplicate = async () => {
+    if (!projectId) {
+      toast({
+        title: "No Project",
+        description: "No project to duplicate.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const newId = await duplicateProject(projectId);
+      toast({
+        title: "Project Duplicated",
+        description: `Created copy of "${videoTitle}"`,
+      });
+      console.log(`[handleDuplicate] Duplicated project ${projectId} as ${newId}`);
+      // Optionally navigate to the new project - for now just show success
+    } catch (error) {
+      console.error('[handleDuplicate] Error:', error);
+      toast({
+        title: "Duplicate Failed",
+        description: "Failed to duplicate project.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle audio file upload for "Generate Captions" mode
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1512,9 +1593,9 @@ const Index = () => {
 
     try {
       // Upload the audio file to Supabase storage with progress tracking
-      // Reuse existing projectId if available
-      const useProjectId = projectId || crypto.randomUUID();
-      if (!projectId) setProjectId(useProjectId);
+      // ALWAYS new project from main page caption mode
+      const useProjectId = crypto.randomUUID();
+      setProjectId(useProjectId);
       const audioFileName = `${useProjectId}/voiceover.wav`;
 
       // Use XMLHttpRequest for upload progress
@@ -1626,6 +1707,10 @@ const Index = () => {
     const title = imagesProjectTitle.trim() || "Untitled Project";
     setVideoTitle(title);
 
+    // ALWAYS generate new projectId for new entries from main page images mode
+    const useProjectId = crypto.randomUUID();
+    setProjectId(useProjectId);
+
     setViewState("processing");
     setProcessingSteps([{ id: "prompts", label: "Generating image prompts...", status: "loading", progress: 10 }]);
     setPendingScript(scriptText);
@@ -1638,9 +1723,6 @@ const Index = () => {
       // If audio file provided, upload it and get duration
       if (uploadedAudioFileForImages) {
         setProcessingSteps([{ id: "prompts", label: "Uploading audio file...", status: "loading", progress: 5 }]);
-
-        const useProjectId = projectId || crypto.randomUUID();
-        if (!projectId) setProjectId(useProjectId);
 
         const audioFileName = `${useProjectId}/voiceover.wav`;
         const { error: uploadError } = await supabase.storage
@@ -1696,10 +1778,7 @@ const Index = () => {
 
       setImagePrompts(promptsResult.prompts);
 
-      // Auto-save after image prompts generation
-      const useProjectId = projectId || crypto.randomUUID();
-      if (!projectId) setProjectId(useProjectId);
-
+      // Auto-save after image prompts generation (projectId was set at start of this handler)
       autoSave("prompts", {
         id: useProjectId,
         videoTitle: title,
@@ -2074,6 +2153,7 @@ const Index = () => {
             });
           }}
           onSaveVersion={handleSaveVersion}
+          onDuplicate={handleDuplicate}
           onTitleChange={(newTitle) => {
             setVideoTitle(newTitle);
             // Save title change to project
@@ -2617,6 +2697,7 @@ const Index = () => {
         onCancel={handleCancelRequest}
         onBack={handleBackToEffects}
         onSkip={handleThumbnailsSkip}
+        onForward={() => disableAutoAndGoTo("review-youtube")}
       />
 
       {/* YouTube Upload Modal */}

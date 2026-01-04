@@ -628,6 +628,34 @@ export async function createProjectVersion(parentId: string): Promise<string> {
   return newId;
 }
 
+// Create a duplicate of a project (completely independent copy with new ID)
+export async function duplicateProject(sourceId: string): Promise<string> {
+  // Get the source project
+  const source = await getProject(sourceId);
+  if (!source) {
+    throw new Error('Source project not found');
+  }
+
+  // Create new project as a complete copy with new ID
+  const newId = crypto.randomUUID();
+  const newProject: Project = {
+    ...source,
+    id: newId,
+    parentProjectId: undefined,  // Not a version, independent project
+    versionNumber: 0,
+    videoTitle: `${source.videoTitle} (Copy)`,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    status: 'in_progress',
+    isFavorite: false,
+  };
+
+  await upsertProject(newProject);
+  console.log(`[projectStore] Duplicated project ${sourceId} as ${newId}`);
+
+  return newId;
+}
+
 // Auto-backup interval tracking
 const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const lastBackupTimes: Map<string, number> = new Map();

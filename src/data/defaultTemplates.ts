@@ -259,12 +259,27 @@ const imageMedieval = `Warm classical oil-painting style, inspired by Medieval i
 
 const imageVictorian = `Victorian storybook illustration style, colored pencil and chalk texture. Soft, intimate lighting with warm glowing midtones, avoiding harsh contrast. Rich, earthy palette of warm reds, ochres, umbers, and muted teal-blues. Gentle edges with visible hand-drawn texture. Quiet, reverent, contemplative mood. Old-world, timeless atmosphere with a sense of stillness, intimacy, and human warmth. Romantic historical illustration sensibility with softened realism. Gentle, peaceful tone — not scary, not violent. No violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat digital illustration, no oil painting, no watercolor, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism, no high saturation.`;
 
-const imageCustom = ``;
+const imageBaroque = `Dramatic Baroque painting style inspired by Caravaggio and Rembrandt. Strong chiaroscuro with deep shadows and luminous highlights. Rich, dark palette with jewel-tone accents - deep crimsons, golds, and midnight blues. Theatrical lighting from a single dramatic source. Dynamic compositions with diagonal movement. Emotional intensity and psychological depth. Luxurious fabric textures and metallic gleams. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting, no ultra-sharp realism.`;
+
+const imageRomantic = `Romantic era painting style inspired by Caspar David Friedrich and Turner. Sublime landscapes with tiny human figures dwarfed by nature. Atmospheric perspective with misty distances. Golden hour and twilight lighting. Emotional, contemplative mood. Dramatic skies with billowing clouds. Natural wonders - mountains, forests, ruins, seascapes. Soft, dreamy edges with painterly texture. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no cartoon style, no Pixar or fantasy concept art, no ultra-sharp realism.`;
+
+const imageArtNouveau = `Art Nouveau illustration style inspired by Alphonse Mucha. Elegant flowing lines and organic curves. Decorative borders with floral and botanical motifs. Soft, muted color palette with gold accents. Graceful figures with flowing hair and draped fabric. Intricate patterns inspired by nature - vines, flowers, peacock feathers. Symmetrical compositions with ornamental framing. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no 3D rendering, no photorealism, no cartoon style, no Pixar or fantasy concept art.`;
+
+const imagePreRaphaelite = `Pre-Raphaelite painting style inspired by Rossetti and Waterhouse. Jewel-bright colors with meticulous detail. Luminous skin tones and flowing auburn hair. Medieval and mythological subjects. Rich tapestry-like backgrounds with flowers and foliage. Romantic, dreamlike atmosphere. Highly detailed natural elements. Emotional expressions and symbolic imagery. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no flat illustration, no cartoon style, no Pixar or fantasy concept art, no modern cinematic lighting.`;
+
+const imageJapanese = `Traditional Japanese ukiyo-e woodblock print style. Bold outlines with flat areas of color. Elegant compositions with asymmetrical balance. Nature motifs - cherry blossoms, waves, mountains, birds. Subtle gradients and delicate patterns. Refined, contemplative mood. Seasonal elements and atmospheric effects. Muted, harmonious color palette. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no 3D rendering, no photorealism, no Western oil painting style.`;
+
+const imageByzantine = `Byzantine mosaic and icon painting style. Gold leaf backgrounds with sacred radiance. Stylized figures with solemn, frontal poses. Rich jewel tones - deep blues, purples, crimsons, and emerald greens. Intricate geometric and floral patterns. Hierarchical scale and symbolic composition. Halos and divine light. Ornate borders and decorative elements. Gentle, peaceful tone — not scary, not violent. no violence, no fear, no horror, no threatening mood, no nudity, no sexualized content, no photorealism, no cartoon style, no Pixar or fantasy concept art.`;
 
 export const defaultImageTemplates: ImageTemplate[] = [
   { id: "image-a", template: imageDutch, name: "Dutch Golden Age" },
   { id: "image-b", template: imageItalianRenaissance, name: "Italian Renaissance" },
   { id: "image-c", template: imageMedieval, name: "Medieval Style" },
   { id: "image-d", template: imageVictorian, name: "Victorian" },
-  { id: "image-custom", template: imageCustom, name: "Custom" },
+  { id: "image-e", template: imageBaroque, name: "Baroque" },
+  { id: "image-f", template: imageRomantic, name: "Romantic Era" },
+  { id: "image-g", template: imageArtNouveau, name: "Art Nouveau" },
+  { id: "image-h", template: imagePreRaphaelite, name: "Pre-Raphaelite" },
+  { id: "image-i", template: imageJapanese, name: "Japanese Ukiyo-e" },
+  { id: "image-j", template: imageByzantine, name: "Byzantine" },
 ];
