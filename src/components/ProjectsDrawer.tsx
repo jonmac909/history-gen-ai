@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Trash2, Archive, Clock, Image, Music, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2, Heart, ArchiveRestore } from "lucide-react";
+import { FolderOpen, Trash2, Archive, ChevronRight, ChevronDown, PlayCircle, CheckCircle2, Loader2, Heart, ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -33,8 +33,6 @@ import {
   getArchivedProjects,
   toggleFavorite,
   upsertProject,
-  getStepLabel,
-  formatDuration,
   formatDate,
   type Project,
 } from "@/lib/projectStore";
@@ -370,9 +368,6 @@ function ProjectCard({
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
 
-  const isInProgress = project.status === 'in_progress';
-  const imageCount = project.imageUrls?.length || 0;
-
   // Load versions when dropdown is opened
   const handleVersionToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -403,34 +398,12 @@ function ProjectCard({
         }}
       >
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-medium text-foreground truncate">
-              {project.videoTitle}
-            </p>
-            {isInProgress && (
-              <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
-                {getStepLabel(project.currentStep)}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {formatDate(project.updatedAt)}
-            </span>
-            {project.audioDuration && (
-              <span className="flex items-center gap-1">
-                <Music className="w-3 h-3" />
-                {formatDuration(project.audioDuration)}
-              </span>
-            )}
-            {imageCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Image className="w-3 h-3" />
-                {imageCount}
-              </span>
-            )}
-          </div>
+          <p className="font-medium text-foreground truncate">
+            {project.videoTitle}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {formatDate(project.updatedAt, true)}
+          </p>
         </div>
         <div className="flex items-center gap-1">
           {/* Version dropdown toggle */}

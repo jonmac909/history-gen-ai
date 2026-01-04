@@ -407,8 +407,14 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function formatDate(timestamp: number): string {
+export function formatDate(timestamp: number, dateOnly: boolean = false): string {
   const date = new Date(timestamp);
+  if (dateOnly) {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',

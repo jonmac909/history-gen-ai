@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, ChevronRight, Check, ArrowUp, Expand } from "lucide-react";
+import { Image, Upload, X, Loader2, Download, Sparkles, ChevronLeft, ChevronRight, Check, ArrowUp, Expand, Heart } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,8 @@ interface ThumbnailGeneratorModalProps {
   script?: string;
   initialThumbnails?: string[];
   initialSelectedIndex?: number;
+  favoriteThumbnails?: string[];
+  onFavoriteToggle?: (url: string) => void;
   onConfirm: (thumbnails: string[], selectedIndex: number | undefined) => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -33,6 +35,8 @@ export function ThumbnailGeneratorModal({
   projectId,
   initialThumbnails,
   initialSelectedIndex,
+  favoriteThumbnails = [],
+  onFavoriteToggle,
   onConfirm,
   onCancel,
   onBack,
@@ -488,7 +492,7 @@ export function ThumbnailGeneratorModal({
   return (
     <Dialog open={isOpen}>
       <DialogContent
-        className="sm:max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="sm:max-w-4xl max-h-[90vh] overflow-y-auto"
         hideCloseButton
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
@@ -504,243 +508,250 @@ export function ThumbnailGeneratorModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 py-4">
-          {/* Upload Example Thumbnail */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Upload Reference Thumbnail:</label>
-            <p className="text-xs text-muted-foreground">
-              This image will be used as a base for generating variations
-            </p>
+        <div className="py-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Left Column - Input Controls */}
+            <div className="space-y-4">
+              {/* Upload Example Thumbnail */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Reference Thumbnail:</label>
 
-            {examplePreview ? (
-              <div className="relative inline-block">
-                <img
-                  src={examplePreview}
-                  alt="Example thumbnail"
-                  className="w-48 h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-                  style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                  onClick={() => setLightboxImage(examplePreview)}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
-                  onClick={handleRemoveImage}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <div
-                className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {isUploading ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="text-sm text-muted-foreground">Loading...</span>
+                {examplePreview ? (
+                  <div className="relative inline-block">
+                    <img
+                      src={examplePreview}
+                      alt="Example thumbnail"
+                      className="w-full max-w-[200px] h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                      style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                      onClick={() => setLightboxImage(examplePreview)}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
+                      onClick={handleRemoveImage}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Upload className="w-6 h-6 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      Click to upload reference thumbnail
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      PNG, JPG, or WebP (max 20MB)
-                    </span>
+                  <div
+                    className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {isUploading ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <span className="text-xs text-muted-foreground">Loading...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">
+                          Upload reference
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
               </div>
-            )}
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-          </div>
-
-          {/* Image Prompt */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Image Prompt:</label>
-            <Textarea
-              placeholder="Describe what you want to generate. Include style, colors, composition, mood, and any text/typography..."
-              value={imagePrompt}
-              onChange={(e) => setImagePrompt(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              className="min-h-[150px] resize-y font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Describe the content, style, colors, composition, mood, and any text you want on the thumbnail.
-            </p>
-          </div>
-
-          {/* Thumbnail Count */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">How many thumbnails?</label>
-            <div className="flex gap-2">
-              {[3, 6, 9].map((count) => (
-                <Button
-                  key={count}
-                  variant={thumbnailCount === count ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setThumbnailCount(count)}
-                  disabled={isGenerating}
-                >
-                  {count}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          {/* Generate Button */}
-          <Button
-            onClick={handleGenerate}
-            disabled={!examplePreview || !imagePrompt.trim() || isGenerating}
-            className="w-full gap-2"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Generate Thumbnails
-              </>
-            )}
-          </Button>
-
-          {/* Progress */}
-          {progress && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {progress.stage === 'analyzing' ? 'Processing...' : 'Generating thumbnails...'}
-                </span>
-                <span className="font-medium">{progress.percent}%</span>
+              {/* Image Prompt */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Image Prompt:</label>
+                <Textarea
+                  placeholder="Describe style, colors, composition, mood, text..."
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="min-h-[100px] resize-y font-mono text-sm"
+                />
               </div>
-              <Progress value={progress.percent} className="h-2" />
-              <p className="text-xs text-muted-foreground">{progress.message}</p>
-            </div>
-          )}
 
-          {/* Previous Batch Button - show when there's history, even if no current thumbnails */}
-          {thumbnailHistory.length > 0 && generatedThumbnails.length === 0 && (
-            <div className="flex items-center justify-center py-2">
+              {/* Thumbnail Count */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium">Count:</label>
+                <div className="flex gap-1">
+                  {[3, 6, 9].map((count) => (
+                    <Button
+                      key={count}
+                      variant={thumbnailCount === count ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setThumbnailCount(count)}
+                      disabled={isGenerating}
+                      className="h-7 w-8 px-0"
+                    >
+                      {count}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate Button */}
               <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGoBackInHistory}
-                className="gap-2"
+                onClick={handleGenerate}
+                disabled={!examplePreview || !imagePrompt.trim() || isGenerating}
+                className="w-full gap-2"
               >
-                <ChevronLeft className="w-4 h-4" />
-                Back to Previous Batch ({thumbnailHistory[thumbnailHistory.length - 1].thumbnails.length} thumbnails)
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate
+                  </>
+                )}
               </Button>
-            </div>
-          )}
 
-          {/* Generated Thumbnails */}
-          {generatedThumbnails.length > 0 && (
+              {/* Progress */}
+              {progress && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">
+                      {progress.stage === 'analyzing' ? 'Processing...' : 'Generating...'}
+                    </span>
+                    <span className="font-medium">{progress.percent}%</span>
+                  </div>
+                  <Progress value={progress.percent} className="h-1.5" />
+                </div>
+              )}
+            </div>
+
+            {/* Right Column - Generated Thumbnails */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">Generated Thumbnails:</label>
+                  <label className="text-sm font-medium">Generated:</label>
                   {thumbnailHistory.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={handleGoBackInHistory}
-                      className="gap-1 h-7 text-xs text-muted-foreground hover:text-foreground"
+                      className="gap-1 h-6 text-xs text-muted-foreground hover:text-foreground px-2"
                     >
                       <ChevronLeft className="w-3 h-3" />
-                      Previous Batch
+                      Previous
                     </Button>
                   )}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadAllAsZip}
-                  className="gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download All
-                </Button>
+                {generatedThumbnails.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDownloadAllAsZip}
+                    className="gap-1 h-6 px-2"
+                  >
+                    <Download className="w-3 h-3" />
+                  </Button>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Click to select for YouTube upload. Hover for preview/iterate/download buttons.
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {generatedThumbnails.map((url, index) => {
-                  const isSelected = selectedThumbnail === url;
-                  return (
-                    <div key={index} className="relative group">
-                      <img
-                        src={url}
-                        alt={`Thumbnail ${index + 1}`}
-                        className={`w-full rounded-lg cursor-pointer transition-all ${
-                          isSelected
-                            ? 'ring-4 ring-primary ring-offset-2 opacity-100'
-                            : 'border hover:opacity-90'
-                        }`}
-                        style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                        onClick={() => setSelectedThumbnail(url)}
-                        onDoubleClick={() => setLightboxImage(url)}
-                      />
-                      {isSelected && (
-                        <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-full p-1">
-                          <Check className="w-4 h-4" />
+
+              {generatedThumbnails.length === 0 ? (
+                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {thumbnailHistory.length > 0
+                      ? 'No thumbnails. Click "Previous" to restore last batch.'
+                      : 'Generated thumbnails will appear here'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Click to select. Hover for actions.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                    {generatedThumbnails.map((url, index) => {
+                      const isSelected = selectedThumbnail === url;
+                      return (
+                        <div key={index} className="relative group">
+                          <img
+                            src={url}
+                            alt={`Thumbnail ${index + 1}`}
+                            className={`w-full rounded-lg cursor-pointer transition-all ${
+                              isSelected
+                                ? 'ring-2 ring-primary ring-offset-1 opacity-100'
+                                : 'border hover:opacity-90'
+                            }`}
+                            style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                            onClick={() => setSelectedThumbnail(url)}
+                            onDoubleClick={() => setLightboxImage(url)}
+                          />
+                          {isSelected && (
+                            <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                              <Check className="w-3 h-3" />
+                            </div>
+                          )}
+                          <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {onFavoriteToggle && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 bg-background/80 hover:bg-background"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onFavoriteToggle(url);
+                                }}
+                                title={favoriteThumbnails.includes(url) ? "Remove from favorites" : "Add to favorites"}
+                              >
+                                <Heart className={`w-3 h-3 ${favoriteThumbnails.includes(url) ? 'fill-red-500 text-red-500' : ''}`} />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 bg-background/80 hover:bg-background"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLightboxImage(url);
+                              }}
+                              title="Preview"
+                            >
+                              <Expand className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 bg-background/80 hover:bg-background"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUseAsReference(url);
+                              }}
+                              title="Use as reference"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 bg-background/80 hover:bg-background"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadThumbnail(url, index);
+                              }}
+                              title="Download"
+                            >
+                              <Download className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
-                      )}
-                      <div className="absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 bg-background/80 hover:bg-background"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLightboxImage(url);
-                          }}
-                          title="Preview full size"
-                        >
-                          <Expand className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 bg-background/80 hover:bg-background"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUseAsReference(url);
-                          }}
-                          title="Use as new reference"
-                        >
-                          <ArrowUp className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 bg-background/80 hover:bg-background"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadThumbnail(url, index);
-                          }}
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">

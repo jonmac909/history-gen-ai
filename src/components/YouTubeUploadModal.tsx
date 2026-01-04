@@ -34,6 +34,8 @@ import {
   checkYouTubeConnection,
   fetchYouTubeChannels,
   fetchYouTubePlaylists,
+  disconnectYouTube,
+  authenticateYouTube,
   type YouTubeChannel,
   type YouTubePlaylist,
 } from "@/lib/youtubeAuth";
@@ -220,6 +222,29 @@ export function YouTubeUploadModal({
     setShowTitleSelector(false);
   };
 
+  // Handle switching YouTube channel
+  const handleSwitchChannel = async () => {
+    try {
+      await disconnectYouTube();
+      setIsConnected(false);
+      setChannels([]);
+      setPlaylists([]);
+
+      // Re-authenticate
+      const success = await authenticateYouTube();
+      if (success) {
+        await checkConnection();
+      }
+    } catch (error) {
+      console.error('Error switching channel:', error);
+      toast({
+        title: "Error",
+        description: "Failed to switch YouTube channel. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle confirm - save metadata and close
   const handleConfirm = () => {
     // Notify parent with final metadata
@@ -255,18 +280,28 @@ export function YouTubeUploadModal({
               <span className="text-sm text-muted-foreground">Loading channel info...</span>
             </div>
           ) : channels.length > 0 ? (
-            <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
-              {channels[0].thumbnailUrl && (
-                <img
-                  src={channels[0].thumbnailUrl}
-                  alt={channels[0].title}
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <div>
-                <p className="text-sm font-medium">{channels[0].title}</p>
-                <p className="text-xs text-muted-foreground">Upload destination</p>
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                {channels[0].thumbnailUrl && (
+                  <img
+                    src={channels[0].thumbnailUrl}
+                    alt={channels[0].title}
+                    className="w-8 h-8 rounded-full"
+                  />
+                )}
+                <div>
+                  <p className="text-sm font-medium">{channels[0].title}</p>
+                  <p className="text-xs text-muted-foreground">Upload destination</p>
+                </div>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSwitchChannel}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Switch
+              </Button>
             </div>
           ) : !isConnected ? (
             <div className="p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground">

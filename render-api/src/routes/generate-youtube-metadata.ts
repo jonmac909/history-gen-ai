@@ -73,8 +73,14 @@ Generate the following in JSON format:
   ],
   "description": "// A compelling 2-3 paragraph description (500-1000 characters):\\n// - Start with a hook that creates curiosity\\n// - Summarize the key historical content\\n// - Include relevant keywords naturally\\n// - End with a call-to-action\\n// Use line breaks (\\n) for formatting",
   "tags": [
-    // 15-20 relevant tags for YouTube SEO
-    // Include: topic keywords, era/period, key figures, related topics, broad history terms
+    // Generate exactly 15-20 highly relevant tags for YouTube SEO
+    // Each tag should be lowercase and focused:
+    // - 3-4 specific topic keywords (e.g., "roman empire", "medieval history")
+    // - 3-4 era/time period tags (e.g., "ancient history", "15th century")
+    // - 3-4 key figures/places mentioned (e.g., "julius caesar", "constantinople")
+    // - 3-4 broader category tags (e.g., "history documentary", "educational", "history channel")
+    // - 2-3 trending/popular history tags (e.g., "dark history", "untold stories")
+    // DO NOT include generic tags like "video" or "youtube"
   ]
 }
 
@@ -83,7 +89,7 @@ Return ONLY valid JSON, no markdown code blocks or other text.`;
     console.log('[generate-youtube-metadata] Calling Claude API...');
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       messages: [
         {

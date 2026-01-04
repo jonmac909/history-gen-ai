@@ -156,6 +156,14 @@ const Index = () => {
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [selectedThumbnailIndex, setSelectedThumbnailIndex] = useState<number | undefined>();
+  const [favoriteThumbnails, setFavoriteThumbnails] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('historygenai-favorite-thumbnails');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | undefined>();
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [videoUrlCaptioned, setVideoUrlCaptioned] = useState<string | undefined>();
@@ -192,6 +200,7 @@ const Index = () => {
   useEffect(() => {
     migrateFromLocalStorage();
   }, []);
+
 
   // Persist settings to localStorage whenever they change
   useEffect(() => {
@@ -1205,6 +1214,18 @@ const Index = () => {
     setViewState("review-render");
   };
 
+  // Favorite thumbnail toggle
+  const handleFavoriteThumbnailToggle = (url: string) => {
+    setFavoriteThumbnails(prev => {
+      const newFavorites = prev.includes(url)
+        ? prev.filter(u => u !== url)
+        : [...prev, url];
+      // Persist to localStorage
+      localStorage.setItem('historygenai-favorite-thumbnails', JSON.stringify(newFavorites));
+      return newFavorites;
+    });
+  };
+
   // Video render handlers
   const handleRenderConfirm = (videoUrl: string) => {
     setRenderedVideoUrl(videoUrl);
@@ -1995,78 +2016,6 @@ const Index = () => {
                 />
               </div>
 
-              {/* Script Template */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Script Style</label>
-                <Select
-                  value={settings.scriptTemplate}
-                  onValueChange={(value) => setSettings(prev => ({ ...prev, scriptTemplate: value }))}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select script style" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scriptTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name || template.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Image Template */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Style</label>
-                <Select
-                  value={settings.imageTemplate}
-                  onValueChange={(value) => setSettings(prev => ({ ...prev, imageTemplate: value }))}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select image style" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {imageTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name || template.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Word Count */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
-                <div className="flex items-center gap-3 flex-1">
-                  <Slider
-                    value={[settings.wordCount]}
-                    min={500}
-                    max={30000}
-                    step={100}
-                    onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
-                    className="flex-1"
-                  />
-                  <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* Image Count */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Count</label>
-                <div className="flex items-center gap-3 flex-1">
-                  <Slider
-                    value={[settings.imageCount]}
-                    min={1}
-                    max={50}
-                    step={1}
-                    onValueChange={([value]) => setSettings(prev => ({ ...prev, imageCount: value }))}
-                    className="flex-1"
-                  />
-                  <span className="text-sm text-muted-foreground w-16 text-right">{settings.imageCount}</span>
-                </div>
-              </div>
-
               {/* Generation Mode */}
               <div className="flex items-center gap-3">
                 <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Mode</label>
@@ -2093,6 +2042,84 @@ const Index = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Full Auto Settings - only visible when Full Auto mode is selected */}
+              {settings.fullAutomation && (
+                <>
+                  {/* Script Template */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Script Style</label>
+                    <Select
+                      value={settings.scriptTemplate}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, scriptTemplate: value }))}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select script style" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scriptTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name || template.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Image Template */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Style</label>
+                    <Select
+                      value={settings.imageTemplate}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, imageTemplate: value }))}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select image style" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {imageTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name || template.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Word Count */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
+                    <div className="flex items-center gap-3 flex-1">
+                      <Slider
+                        value={[settings.wordCount]}
+                        min={500}
+                        max={30000}
+                        step={100}
+                        onValueChange={([value]) => setSettings(prev => ({ ...prev, wordCount: value }))}
+                        className="flex-1"
+                      />
+                      <span className="text-sm text-muted-foreground w-16 text-right">{settings.wordCount.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Image Count */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Count</label>
+                    <div className="flex items-center gap-3 flex-1">
+                      <Slider
+                        value={[settings.imageCount]}
+                        min={1}
+                        max={50}
+                        step={1}
+                        onValueChange={([value]) => setSettings(prev => ({ ...prev, imageCount: value }))}
+                        className="flex-1"
+                      />
+                      <span className="text-sm text-muted-foreground w-16 text-right">{settings.imageCount}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
               <p className="text-xs text-muted-foreground text-center">
                 {settings.fullAutomation
                   ? "Automatically runs all steps without review"
@@ -2400,6 +2427,8 @@ const Index = () => {
         script={confirmedScript}
         initialThumbnails={generatedThumbnails}
         initialSelectedIndex={selectedThumbnailIndex}
+        favoriteThumbnails={favoriteThumbnails}
+        onFavoriteToggle={handleFavoriteThumbnailToggle}
         onConfirm={handleThumbnailsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToImages}
