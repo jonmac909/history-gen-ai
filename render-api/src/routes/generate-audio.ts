@@ -156,6 +156,11 @@ function convertNumbersToWords(text: string): string {
 }
 
 // Mandatory normalization before sending to API
+// Pause timing guide:
+// - Comma (,): Short pause (~200ms) - handled naturally by Fish Speech
+// - Period (.): Medium pause (~400ms) - handled naturally by Fish Speech
+// - Ellipsis (...): Longer pause (~600ms) - handled naturally by Fish Speech
+// - Paragraph breaks: Converted to "..." to create longer pauses
 function normalizeText(text: string): string {
   let result = text
     .normalize("NFKD")
@@ -164,6 +169,14 @@ function normalizeText(text: string): string {
     .replace(/['']/g, "'")
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...");
+
+  // Convert paragraph breaks (double newlines) to ellipsis for longer pauses
+  // This ensures paragraph breaks create audible pauses in TTS output
+  // Pattern: end of sentence followed by paragraph break -> add ellipsis
+  result = result.replace(/([.!?])\s*\n\s*\n+\s*/g, '$1...\n\n');
+
+  // Also handle paragraph breaks without ending punctuation (add period + ellipsis)
+  result = result.replace(/([^.!?\n])\s*\n\s*\n+\s*/g, '$1....\n\n');
 
   // Apply pronunciation fixes for difficult words (case-insensitive)
   // Loads dynamically from pronunciation-fixes.json file
