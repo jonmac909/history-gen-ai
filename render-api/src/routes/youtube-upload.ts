@@ -1,12 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
-import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+// Lazy load sharp - it has native dependencies that may fail on some platforms
+let sharp: typeof import('sharp') | null = null;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  console.warn('[youtube-upload] sharp not available, thumbnail compression disabled:', e);
+}
 
 // Set ffmpeg path for metadata scrubbing
 if (ffmpegStatic) {
@@ -697,8 +704,8 @@ router.post('/', async (req: Request, res: Response) => {
               const MAX_THUMB_SIZE = 2 * 1024 * 1024; // 2MB YouTube limit
               const originalBuffer = thumbBuffer; // Keep original for recompression
 
-              // If thumbnail is larger than 2MB, compress it
-              if (thumbBuffer.length > MAX_THUMB_SIZE) {
+              // If thumbnail is larger than 2MB, compress it (requires sharp)
+              if (thumbBuffer.length > MAX_THUMB_SIZE && sharp) {
                 console.log(`[Thumbnail] Original size: ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB, compressing...`);
 
                 let quality = 90;
@@ -725,6 +732,8 @@ router.post('/', async (req: Request, res: Response) => {
 
                 contentType = 'image/jpeg';
                 console.log(`[Thumbnail] Final size: ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+              } else if (thumbBuffer.length > MAX_THUMB_SIZE) {
+                console.warn(`[Thumbnail] Image is ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB but sharp not available for compression`);
               }
 
               // Upload thumbnail to YouTube
