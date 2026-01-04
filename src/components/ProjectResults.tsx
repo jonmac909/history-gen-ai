@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Plus } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Download, ChevronLeft, ChevronDown, Video, Loader2, Sparkles, Square, CheckSquare, Plus, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -221,6 +221,10 @@ export function ProjectResults({
 
   // State for YouTube upload
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+
+  // State for video preview playback
+  const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // State for project dropdown
   const [allProjects, setAllProjects] = useState<Project[]>([]);
@@ -1149,15 +1153,13 @@ export function ProjectResults({
           <div className="relative aspect-video bg-muted rounded-xl overflow-hidden border">
             {previewVideoUrl ? (
               <video
+                ref={videoRef}
                 src={previewVideoUrl}
                 className="w-full h-full object-cover"
-                muted
                 playsInline
-                onMouseEnter={(e) => e.currentTarget.play()}
-                onMouseLeave={(e) => {
-                  e.currentTarget.pause();
-                  e.currentTarget.currentTime = 0;
-                }}
+                onEnded={() => setIsPlaying(false)}
+                onPause={() => setIsPlaying(false)}
+                onPlay={() => setIsPlaying(true)}
               />
             ) : firstImageUrl ? (
               <img
@@ -1170,15 +1172,41 @@ export function ProjectResults({
                 <Video className="w-12 h-12 opacity-30" />
               </div>
             )}
+
+            {/* Play/Pause button overlay - only show if video exists */}
+            {previewVideoUrl && (
+              <div className="absolute bottom-3 left-3">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-10 w-10 rounded-full bg-black/70 hover:bg-black/90 text-white"
+                  onClick={() => {
+                    if (videoRef.current) {
+                      if (isPlaying) {
+                        videoRef.current.pause();
+                      } else {
+                        videoRef.current.play();
+                      }
+                    }
+                  }}
+                >
+                  {isPlaying ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5 ml-0.5" />
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
 
-          {/* Title under preview */}
+          {/* Title and description under preview */}
           <div>
             <h2 className="font-semibold text-foreground line-clamp-2">
               {projectTitle || "Untitled Project"}
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {previewVideoUrl ? "Hover to preview video" : firstImageUrl ? "First image preview" : "No preview yet"}
+            <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
+              {script ? script.slice(0, 150) + (script.length > 150 ? '...' : '') : previewVideoUrl ? "Video ready" : firstImageUrl ? "Images generated" : "No content yet"}
             </p>
           </div>
 
