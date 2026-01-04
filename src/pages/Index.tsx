@@ -2078,6 +2078,47 @@ const Index = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Full Auto Settings - only visible when Full Auto mode is selected */}
+              {settings.fullAutomation && (
+                <>
+                  {/* Image Style */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Style</label>
+                    <Select
+                      value={settings.imageTemplate}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, imageTemplate: value }))}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select image style" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {imageTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name || template.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Image Count */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Image Count</label>
+                    <div className="flex items-center gap-3 flex-1">
+                      <Slider
+                        value={[settings.imageCount]}
+                        min={1}
+                        max={50}
+                        step={1}
+                        onValueChange={([value]) => setSettings(prev => ({ ...prev, imageCount: value }))}
+                        className="flex-1"
+                      />
+                      <span className="text-sm text-muted-foreground w-16 text-right">{settings.imageCount}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Two input modes: YouTube URL or Custom Script */}
