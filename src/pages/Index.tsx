@@ -2701,6 +2701,7 @@ Please regenerate the script with these issues fixed.`;
         onBack={handleBackToCreate}
         onForward={canGoForwardFromScript() ? handleForwardToAudio : undefined}
         onRegenerate={handleScriptRegenerate}
+        regenerationProgress={scriptRegenProgress}
       />
 
       {/* Audio Preview Modal - Show segments modal if we have segments, otherwise legacy single audio */}
