@@ -1323,39 +1323,37 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {onScriptUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    scriptUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingScript}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload script"
-                >
-                  {isUploadingScript ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {assets.find(a => a.id === 'script') && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(assets.find(a => a.id === 'script')!, 'script.txt');
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  scriptUploadRef.current?.click();
+                }}
+                disabled={isUploadingScript || !onScriptUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload script"
+              >
+                {isUploadingScript ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const scriptAsset = assets.find(a => a.id === 'script');
+                  if (scriptAsset) handleDownload(scriptAsset, 'script.txt');
+                }}
+                disabled={!assets.find(a => a.id === 'script')}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1391,39 +1389,37 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {onAudioUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    audioUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingAudio}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload audio"
-                >
-                  {isUploadingAudio ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {assets.find(a => a.id === 'audio') && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(assets.find(a => a.id === 'audio')!, 'voiceover.wav');
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  audioUploadRef.current?.click();
+                }}
+                disabled={isUploadingAudio || !onAudioUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload audio"
+              >
+                {isUploadingAudio ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const audioAsset = assets.find(a => a.id === 'audio');
+                  if (audioAsset) handleDownload(audioAsset, 'voiceover.wav');
+                }}
+                disabled={!assets.find(a => a.id === 'audio')}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1459,31 +1455,29 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {onCaptionsUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    captionsUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingCaptions}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload captions"
-                >
-                  {isUploadingCaptions ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {srtContent && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  captionsUploadRef.current?.click();
+                }}
+                disabled={isUploadingCaptions || !onCaptionsUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload captions"
+              >
+                {isUploadingCaptions ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (srtContent) {
                     const blob = new Blob([srtContent], { type: 'text/plain' });
                     const url = window.URL.createObjectURL(blob);
                     const link = document.createElement('a');
@@ -1493,13 +1487,14 @@ export function ProjectResults({
                     link.click();
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(url);
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+                  }
+                }}
+                disabled={!srtContent}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1535,39 +1530,36 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {onPromptsUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    promptsUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingPrompts}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload prompts (JSON)"
-                >
-                  {isUploadingPrompts ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {imagePrompts && imagePrompts.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadPrompts();
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download prompts (JSON)"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  promptsUploadRef.current?.click();
+                }}
+                disabled={isUploadingPrompts || !onPromptsUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload prompts (JSON)"
+              >
+                {isUploadingPrompts ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (imagePrompts && imagePrompts.length > 0) handleDownloadPrompts();
+                }}
+                disabled={!imagePrompts || imagePrompts.length === 0}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download prompts (JSON)"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1603,39 +1595,36 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {onImagesUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    imagesUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingImages}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload images"
-                >
-                  {isUploadingImages ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {assets.some(a => a.id.startsWith('image-') && a.url) && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadAllImagesAsZip();
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download ZIP"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  imagesUploadRef.current?.click();
+                }}
+                disabled={isUploadingImages || !onImagesUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload images"
+              >
+                {isUploadingImages ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (assets.some(a => a.id.startsWith('image-') && a.url)) handleDownloadAllImagesAsZip();
+                }}
+                disabled={!assets.some(a => a.id.startsWith('image-') && a.url)}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download ZIP"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1674,39 +1663,36 @@ export function ProjectResults({
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {onVideoUpload && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        videoUploadRef.current?.click();
-                      }}
-                      disabled={isUploadingVideo}
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      title="Upload video"
-                    >
-                      {isUploadingVideo ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Upload className="w-4 h-4" />
-                      )}
-                    </Button>
-                  )}
-                  {smokeEmbersVideoUrl && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadVideo('smoke_embers');
-                      }}
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      title="Download Video"
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      videoUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingVideo || !onVideoUpload}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Upload video"
+                  >
+                    {isUploadingVideo ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (smokeEmbersVideoUrl) handleDownloadVideo('smoke_embers');
+                    }}
+                    disabled={!smokeEmbersVideoUrl}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Download Video"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1749,39 +1735,36 @@ export function ProjectResults({
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {onVideoUpload && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        effectsVideoUploadRef.current?.click();
-                      }}
-                      disabled={isUploadingEffectsVideo}
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      title="Upload effects video"
-                    >
-                      {isUploadingEffectsVideo ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Upload className="w-4 h-4" />
-                      )}
-                    </Button>
-                  )}
-                  {hasSmokeEmbers && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadVideo('smoke_embers');
-                      }}
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      title="Download Smoke+Embers"
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      effectsVideoUploadRef.current?.click();
+                    }}
+                    disabled={isUploadingEffectsVideo || !onVideoUpload}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Upload effects video"
+                  >
+                    {isUploadingEffectsVideo ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (hasSmokeEmbers) handleDownloadVideo('smoke_embers');
+                    }}
+                    disabled={!hasSmokeEmbers}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Download Smoke+Embers"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1821,41 +1804,36 @@ export function ProjectResults({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {/* Upload button */}
-              {onThumbnailUpload && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    thumbnailUploadRef.current?.click();
-                  }}
-                  disabled={isUploadingThumbnail}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Upload thumbnail"
-                >
-                  {isUploadingThumbnail ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4" />
-                  )}
-                </Button>
-              )}
-              {/* Download button */}
-              {thumbnails && thumbnails.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadThumbnailsZip();
-                  }}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Download thumbnails (ZIP)"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  thumbnailUploadRef.current?.click();
+                }}
+                disabled={isUploadingThumbnail || !onThumbnailUpload}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Upload thumbnail"
+              >
+                {isUploadingThumbnail ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (thumbnails && thumbnails.length > 0) handleDownloadThumbnailsZip();
+                }}
+                disabled={!thumbnails || thumbnails.length === 0}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                title="Download thumbnails (ZIP)"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
