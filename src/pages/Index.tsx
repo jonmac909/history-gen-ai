@@ -1095,23 +1095,30 @@ const Index = () => {
     setRegeneratingImageIndices(prev => new Set([...prev, index]));
 
     try {
-      // If edited prompt provided, update the imagePrompts state first
-      let promptToUse = imagePrompts[index];
-      if (editedSceneDescription) {
-        promptToUse = {
-          ...imagePrompts[index],
-          sceneDescription: editedSceneDescription,
-          prompt: imagePrompts[index].prompt.replace(imagePrompts[index].sceneDescription, editedSceneDescription)
-        };
-        // Update the prompts state with the edited version
-        setImagePrompts(prev => {
-          const newPrompts = [...prev];
-          newPrompts[index] = promptToUse;
-          return newPrompts;
-        });
-      }
+      // ALWAYS use the current style prompt (from settings or selected template)
+      // This ensures regenerated images match the original style
+      const currentStylePrompt = settings.customStylePrompt?.trim() || getSelectedImageStyle();
+
+      // Get the scene description (use edited version if provided)
+      const sceneDescription = editedSceneDescription || imagePrompts[index].sceneDescription;
+
+      // Rebuild the prompt with current style + scene description
+      const promptToUse: ImagePromptWithTiming = {
+        ...imagePrompts[index],
+        sceneDescription: sceneDescription,
+        prompt: `${currentStylePrompt}. ${sceneDescription}`
+      };
+
+      // Update the prompts state with the rebuilt prompt
+      setImagePrompts(prev => {
+        const newPrompts = [...prev];
+        newPrompts[index] = promptToUse;
+        return newPrompts;
+      });
 
       console.log(`Regenerating image ${index + 1}${editedSceneDescription ? ' with edited prompt' : ''}...`);
+      console.log(`[handleRegenerateImage] Style prompt:`, currentStylePrompt.substring(0, 100));
+      console.log(`[handleRegenerateImage] Full prompt being sent:`, promptToUse.prompt?.substring(0, 200));
 
       const imageResult = await generateImagesStreaming(
         [promptToUse], // Regenerate just this one prompt with timing
@@ -1163,6 +1170,11 @@ const Index = () => {
 
     const MAX_CONCURRENT = 4; // Match RunPod worker limit
 
+    // ALWAYS use the current style prompt (from settings or selected template)
+    // This ensures regenerated images match the original style
+    const currentStylePrompt = settings.customStylePrompt?.trim() || getSelectedImageStyle();
+    console.log(`[handleRegenerateMultipleImages] Using style prompt:`, currentStylePrompt.substring(0, 100));
+
     try {
       // Process in batches of MAX_CONCURRENT
       for (let i = 0; i < indices.length; i += MAX_CONCURRENT) {
@@ -1171,23 +1183,23 @@ const Index = () => {
         await Promise.all(batch.map(async (index) => {
           if (!imagePrompts[index]) return;
 
-          // Get prompt (use edited version if provided)
-          let promptToUse = imagePrompts[index];
+          // Get scene description (use edited version if provided)
           const editedDescription = editedPrompts?.get(index);
+          const sceneDescription = editedDescription || imagePrompts[index].sceneDescription;
 
-          if (editedDescription) {
-            promptToUse = {
-              ...imagePrompts[index],
-              sceneDescription: editedDescription,
-              prompt: imagePrompts[index].prompt.replace(imagePrompts[index].sceneDescription, editedDescription)
-            };
-            // Update the prompts state with the edited version
-            setImagePrompts(prev => {
-              const newPrompts = [...prev];
-              newPrompts[index] = promptToUse;
-              return newPrompts;
-            });
-          }
+          // Rebuild the prompt with current style + scene description
+          const promptToUse: ImagePromptWithTiming = {
+            ...imagePrompts[index],
+            sceneDescription: sceneDescription,
+            prompt: `${currentStylePrompt}. ${sceneDescription}`
+          };
+
+          // Update the prompts state with the rebuilt prompt
+          setImagePrompts(prev => {
+            const newPrompts = [...prev];
+            newPrompts[index] = promptToUse;
+            return newPrompts;
+          });
 
           try {
             const imageResult = await generateImagesStreaming(
