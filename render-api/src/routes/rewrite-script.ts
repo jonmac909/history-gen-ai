@@ -134,21 +134,30 @@ router.post('/', async (req: Request, res: Response) => {
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
 
-CRITICAL FORMATTING RULES - THE SCRIPT WILL BE READ ALOUD BY TEXT-TO-SPEECH:
-- Write ONLY plain text prose narration that can be spoken word-for-word
-- NO markdown formatting whatsoever (no *, **, ***, etc.)
-- NO hashtags (no #Title, #Section, etc.)
-- NO section headers (no "OPENING", "CONCLUSION", "ACT 1", etc.)
-- NO scene markers (no [SCENE 1], no timestamps, no brackets)
-- NO special characters or symbols that aren't meant to be spoken
-- NO title lines at the beginning
-- Just pure narrative prose from start to finish
+ABSOLUTE FORMATTING RULES - VIOLATION WILL CAUSE TTS FAILURE:
+This script will be read aloud by text-to-speech software. ANY non-prose content will cause awkward robotic speech.
 
-CONTENT RULES:
-- Make it dramatic, captivating, and educational
-- Use vivid descriptions and emotional storytelling
-- Write as if you're narrating directly to the listener
-- When continuing a script, seamlessly continue from where you left off`;
+FORBIDDEN (will break TTS):
+❌ Titles or headlines at the start (no "The Fall of Rome", no topic names as headers)
+❌ Markdown formatting (no #, ##, *, **, ***, etc.)
+❌ Hashtags (no #History, #Rome, etc.)
+❌ Section labels (no "OPENING", "INTRODUCTION", "ACT 1", "CONCLUSION", etc.)
+❌ Scene markers (no [SCENE 1], no brackets of any kind)
+❌ Chapter numbers or dividers
+❌ Any line that isn't meant to be spoken aloud
+
+REQUIRED:
+✓ Start immediately with narration prose (first word should be spoken content)
+✓ Pure flowing narrative from first word to last
+✓ Every single word must be speakable by a human narrator
+✓ Dramatic, captivating, educational storytelling
+✓ Vivid descriptions and emotional connection
+✓ Write as if you're speaking directly to the listener
+
+Example of WRONG start: "The Medieval Tavern\n\nIn the heart of medieval Europe..."
+Example of CORRECT start: "In the heart of medieval Europe, where candlelight flickered..."
+
+When continuing a script, seamlessly continue from where you left off.`;
 
     const targetWords = wordCount || 3000;
     console.log(`Target word count: ${targetWords}`);
