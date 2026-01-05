@@ -2730,6 +2730,7 @@ const Index = () => {
         isOpen={viewState === "review-prompts"}
         prompts={imagePrompts}
         stylePrompt={settings.customStylePrompt?.trim() || getSelectedImageStyle()}
+        imageTemplates={imageTemplates}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToCaptions}

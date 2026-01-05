@@ -16,45 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-// Predefined image style options
-const IMAGE_STYLES = [
-  {
-    value: 'dutch-golden-age',
-    label: 'Dutch Golden Age',
-    prompt: 'In the style of Dutch Golden Age painting, rich warm tones, dramatic chiaroscuro lighting, Rembrandt-like composition, detailed textures, oil painting aesthetic, museum quality, historical accuracy'
-  },
-  {
-    value: 'renaissance',
-    label: 'Renaissance',
-    prompt: 'In the style of Italian Renaissance art, classical composition, soft sfumato technique, Da Vinci-inspired, harmonious proportions, rich earth tones, fresco-like quality, timeless elegance'
-  },
-  {
-    value: 'medieval',
-    label: 'Medieval Illumination',
-    prompt: 'In the style of medieval illuminated manuscripts, rich gold leaf accents, vibrant jewel-tone colors, decorative borders, flat perspective, intricate patterns, religious iconography influence'
-  },
-  {
-    value: 'romantic',
-    label: 'Romantic Era',
-    prompt: 'In the style of Romantic era painting, dramatic landscapes, emotional and sublime lighting, Turner-inspired atmosphere, sweeping vistas, nature\'s power, golden hour ambiance'
-  },
-  {
-    value: 'baroque',
-    label: 'Baroque',
-    prompt: 'In the style of Baroque painting, dramatic contrast and tenebrism, rich saturated colors, Caravaggio-inspired lighting, theatrical composition, dynamic movement, emotional intensity'
-  },
-  {
-    value: 'impressionist',
-    label: 'Impressionist',
-    prompt: 'In the style of Impressionist painting, visible brushstrokes, natural outdoor light, Monet-inspired color palette, atmospheric effects, soft edges, everyday scenes captured beautifully'
-  },
-  {
-    value: 'custom',
-    label: 'Custom Style',
-    prompt: ''
-  },
-];
+import type { ImageTemplate } from "@/components/ConfigModal";
 
 interface ImagePrompt {
   index: number;
@@ -70,6 +32,7 @@ interface ImagePromptsPreviewModalProps {
   isOpen: boolean;
   prompts: ImagePrompt[];
   stylePrompt: string;
+  imageTemplates: ImageTemplate[];  // Saved templates from settings
   onConfirm: (editedPrompts: ImagePrompt[], editedStylePrompt: string) => void;
   onCancel: () => void;
   onBack?: () => void;
@@ -167,6 +130,7 @@ export function ImagePromptsPreviewModal({
   isOpen,
   prompts,
   stylePrompt,
+  imageTemplates,
   onConfirm,
   onCancel,
   onBack,
@@ -184,21 +148,20 @@ export function ImagePromptsPreviewModal({
     (currentPage + 1) * PROMPTS_PER_PAGE
   );
 
-  // Detect if incoming stylePrompt matches a preset, default to Dutch Golden Age
+  // Detect if incoming stylePrompt matches a saved template
   const detectStyleKey = (prompt: string): string => {
-    const match = IMAGE_STYLES.find(s => s.prompt && s.prompt === prompt);
-    if (match) return match.value;
-    // If no match and prompt is empty or very short, default to Dutch Golden Age
-    if (!prompt || prompt.trim().length < 20) return 'dutch-golden-age';
+    const match = imageTemplates.find(t => t.template === prompt);
+    if (match) return match.id;
+    // If no match and prompt is empty or very short, default to first template
+    if (!prompt || prompt.trim().length < 20) return imageTemplates[0]?.id || 'custom';
     return 'custom';
   };
 
   const [selectedStyleKey, setSelectedStyleKey] = useState<string>(() => detectStyleKey(stylePrompt));
   const [editedStyle, setEditedStyle] = useState(() => {
-    // If stylePrompt is empty/short, use Dutch Golden Age preset
+    // If stylePrompt is empty/short, use first template
     if (!stylePrompt || stylePrompt.trim().length < 20) {
-      const dutchStyle = IMAGE_STYLES.find(s => s.value === 'dutch-golden-age');
-      return dutchStyle?.prompt || stylePrompt;
+      return imageTemplates[0]?.template || stylePrompt;
     }
     return stylePrompt;
   });
@@ -237,12 +200,14 @@ export function ImagePromptsPreviewModal({
   // Handle style preset selection
   const handleStyleSelect = (styleKey: string) => {
     setSelectedStyleKey(styleKey);
-    const style = IMAGE_STYLES.find(s => s.value === styleKey);
-    if (style && style.prompt) {
-      setEditedStyle(style.prompt);
-      setIsStyleExpanded(false); // Collapse when using preset
-    } else if (styleKey === 'custom') {
+    if (styleKey === 'custom') {
       setIsStyleExpanded(true); // Expand for custom editing
+    } else {
+      const template = imageTemplates.find(t => t.id === styleKey);
+      if (template) {
+        setEditedStyle(template.template);
+        setIsStyleExpanded(false); // Collapse when using preset
+      }
     }
   };
 
@@ -295,20 +260,19 @@ export function ImagePromptsPreviewModal({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Palette className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">
-                {selectedStyleKey === 'custom' ? 'Custom Style' : 'Image Style'}
-              </span>
+              <span className="text-sm font-medium">Image Style</span>
             </div>
             <Select value={selectedStyleKey} onValueChange={handleStyleSelect}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Select a style..." />
               </SelectTrigger>
               <SelectContent>
-                {IMAGE_STYLES.map((style) => (
-                  <SelectItem key={style.value} value={style.value}>
-                    {style.label}
+                {imageTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
                   </SelectItem>
                 ))}
+                <SelectItem value="custom">Custom Style</SelectItem>
               </SelectContent>
             </Select>
           </div>
