@@ -283,14 +283,14 @@ export function ScriptReviewModal({
 
               {/* Topic Drift Alert - show when topics found don't match expected */}
               {rating.topicAnalysis?.hasDrift && (
-                <div className="mt-2 pt-2 border-t border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 rounded p-2 -mx-1">
+                <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded p-2 -mx-1">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                    <CircleAlert className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                      <p className="text-sm font-medium text-red-700 dark:text-red-300">
                         Topic Drift Detected
                       </p>
-                      <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                         Expected: <strong>{rating.topicAnalysis.expectedTopic}</strong>
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -304,32 +304,37 @@ export function ScriptReviewModal({
                         </ul>
                       )}
                       {onRegenerate && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleRegenerate(`Remove all off-topic content. This script should ONLY be about "${rating.topicAnalysis?.expectedTopic}". Expand the on-topic content to fill the full word count with rich details, sensory descriptions, and historical depth about ${rating.topicAnalysis?.expectedTopic}.`)}
-                          disabled={isRegenerating}
-                          className="mt-2 gap-1 bg-orange-600 hover:bg-orange-700"
-                        >
-                          {isRegenerating ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Fixing...
-                            </>
-                          ) : (
-                            <>
-                              <Expand className="w-3 h-3" />
-                              Fix Topic & Expand
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleRegenerate(`Remove all off-topic content. This script should ONLY be about "${rating.topicAnalysis?.expectedTopic}". Expand the on-topic content to fill the full word count with rich details, sensory descriptions, and historical depth about ${rating.topicAnalysis?.expectedTopic}.`)}
+                            disabled={isRegenerating}
+                            className="gap-1"
+                          >
+                            {isRegenerating ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Regenerating...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3 h-3" />
+                                Regenerate on Topic
+                              </>
+                            )}
+                          </Button>
+                          <span className="text-xs text-muted-foreground self-center">
+                            Full rewrite focused on {rating.topicAnalysis.expectedTopic}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Auto-fix button - only show when there are issues but no topic drift (topic drift has its own button) */}
+              {/* Quick Fix button - for minor issues (formatting, tone), not topic drift */}
               {rating.grade !== 'A' && onRegenerate && rating.fixPrompt && !rating.topicAnalysis?.hasDrift && (
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t">
                   <Button
@@ -342,12 +347,12 @@ export function ScriptReviewModal({
                     {isRegenerating ? (
                       <>
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        Editing...
+                        Fixing...
                       </>
                     ) : (
                       <>
-                        <RefreshCw className="w-3 h-3" />
-                        Auto-Fix
+                        <Edit3 className="w-3 h-3" />
+                        Quick Fix
                       </>
                     )}
                   </Button>
