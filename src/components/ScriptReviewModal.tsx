@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight, RefreshCw, Star, AlertCircle } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight, RefreshCw, Star, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +45,7 @@ export function ScriptReviewModal({
   const [isRating, setIsRating] = useState(false);
   const [rating, setRating] = useState<ScriptRatingResult | null>(null);
   const [hasRatedAfterRegen, setHasRatedAfterRegen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(true);
 
   // Regeneration is now controlled by parent via regenerationProgress prop
   const isRegenerating = regenerationProgress !== null && regenerationProgress !== undefined;
@@ -167,15 +168,11 @@ export function ScriptReviewModal({
             <span className="text-sm font-normal text-muted-foreground ml-2">
               {wordCount.toLocaleString()} words
             </span>
-            {/* Rating Badge */}
-            {isRating ? (
+            {/* Rating loading indicator */}
+            {isRating && (
               <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-muted flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Rating...
-              </span>
-            ) : rating?.grade && (
-              <span className={`ml-2 px-2 py-0.5 text-sm font-bold rounded-full ${getGradeColor(rating.grade)}`}>
-                Grade: {rating.grade}
               </span>
             )}
           </DialogTitle>
@@ -185,7 +182,90 @@ export function ScriptReviewModal({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 py-4 flex flex-col gap-3">
-          {/* Script Content - fixed height so it doesn't shift */}
+          {/* Collapsible Feedback Panel - at TOP */}
+          {rating && (
+            <div className="shrink-0">
+              {/* Toggle Button */}
+              <button
+                onClick={() => setIsFeedbackOpen(!isFeedbackOpen)}
+                className="w-full flex items-center justify-between p-2 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {rating.grade === 'A' ? (
+                    <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                  )}
+                  <span className="text-sm font-medium">
+                    {rating.grade === 'A' ? 'Excellent Script!' : 'Feedback Available'}
+                  </span>
+                  <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${getGradeColor(rating.grade)}`}>
+                    Grade: {rating.grade}
+                  </span>
+                </div>
+                {isFeedbackOpen ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+
+              {/* Expandable Content */}
+              {isFeedbackOpen && (
+                <div className={`mt-2 border rounded-lg p-3 ${
+                  rating.grade === 'A'
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                    : 'bg-muted/50'
+                }`}>
+                  {rating.grade === 'A' ? (
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      {rating.summary}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">{rating.summary}</p>
+                      {rating.issues && rating.issues.length > 0 && (
+                        <ul className="text-sm text-muted-foreground list-disc list-inside space-y-0.5">
+                          {rating.issues.map((issue, i) => (
+                            <li key={i}>{issue}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {/* Regenerate button with auto-fix */}
+                      {onRegenerate && rating.fixPrompt && (
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleRegenerate}
+                            disabled={isRegenerating}
+                            className="gap-1"
+                          >
+                            {isRegenerating ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Regenerating...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3 h-3" />
+                                Auto-Fix & Regenerate
+                              </>
+                            )}
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            AI will fix: {rating.fixPrompt.substring(0, 60)}...
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Script Content */}
           <div className="flex-1 min-h-0 relative">
             {/* Regeneration overlay */}
             {isRegenerating && (
@@ -214,67 +294,6 @@ export function ScriptReviewModal({
               </ScrollArea>
             )}
           </div>
-
-          {/* Rating Feedback Panel - below script to avoid layout shift */}
-          {rating && rating.grade !== 'A' && (
-            <div className="border rounded-lg p-3 bg-muted/50 space-y-2 shrink-0">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    {hasRatedAfterRegen ? 'Re-evaluation Result' : 'Feedback'}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{rating.summary}</p>
-                  {rating.issues && rating.issues.length > 0 && (
-                    <ul className="mt-2 text-sm text-muted-foreground list-disc list-inside space-y-0.5">
-                      {rating.issues.map((issue, i) => (
-                        <li key={i}>{issue}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-              {/* Regenerate button with auto-fix */}
-              {onRegenerate && rating.fixPrompt && (
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleRegenerate}
-                    disabled={isRegenerating}
-                    className="gap-1"
-                  >
-                    {isRegenerating ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Regenerating...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-3 h-3" />
-                        Auto-Fix & Regenerate
-                      </>
-                    )}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    AI will fix: {rating.fixPrompt.substring(0, 60)}...
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Grade A success message - below script */}
-          {rating?.grade === 'A' && (
-            <div className="border rounded-lg p-3 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 shrink-0">
-              <div className="flex items-center gap-2">
-                <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
-                <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                  Excellent! {rating.summary}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
