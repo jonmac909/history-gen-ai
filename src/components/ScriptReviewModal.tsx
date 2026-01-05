@@ -158,11 +158,11 @@ export function ScriptReviewModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent
-        className="max-w-4xl max-h-[85vh] flex flex-col"
+        className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             Review Script
             <span className="text-sm font-normal text-muted-foreground ml-2">
@@ -181,7 +181,7 @@ export function ScriptReviewModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 py-4 flex flex-col gap-3">
+        <div className="flex-1 min-h-0 py-4 flex flex-col gap-3 overflow-hidden">
           {/* Collapsible Feedback Panel - at TOP */}
           {rating && (
             <div className="shrink-0">
@@ -266,7 +266,7 @@ export function ScriptReviewModal({
           )}
 
           {/* Script Content */}
-          <div className="flex-1 min-h-0 relative">
+          <div className="flex-1 min-h-0 relative overflow-hidden">
             {/* Regeneration overlay */}
             {isRegenerating && (
               <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-lg">
