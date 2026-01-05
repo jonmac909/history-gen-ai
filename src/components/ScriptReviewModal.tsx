@@ -18,6 +18,7 @@ interface ScriptReviewModalProps {
   isOpen: boolean;
   script: string;
   title?: string;
+  topic?: string;  // Specific topic focus for drift detection
   template?: string;
   onConfirm: (script: string) => void;
   onCancel: () => void;
@@ -31,6 +32,7 @@ export function ScriptReviewModal({
   isOpen,
   script,
   title,
+  topic,
   template,
   onConfirm,
   onCancel,
@@ -78,7 +80,7 @@ export function ScriptReviewModal({
       setPreviousIssues(normalizeIssues(rating.issues as (string | ScriptIssue)[]));
     }
     try {
-      const result = await rateScript(editedScript, template, title);
+      const result = await rateScript(editedScript, template, title, topic);
       if (result.success) {
         setRating(result);
         // If new rating has no issues but we had previous issues, check which weren't fixed

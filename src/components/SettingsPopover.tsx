@@ -23,6 +23,7 @@ import type { ScriptTemplate, ImageTemplate } from "@/components/ConfigModal";
 
 export interface GenerationSettings {
   projectTitle: string;
+  topic: string;  // Specific topic focus (e.g., "Viking Winters", "History of Bread", "Cleopatra")
   fullAutomation: boolean;
   scriptTemplate: string;
   imageTemplate: string;

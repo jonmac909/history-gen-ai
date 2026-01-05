@@ -111,7 +111,7 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { transcript, template, title, model, stream, wordCount } = req.body;
+    const { transcript, template, title, topic, model, stream, wordCount } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: 'Transcript is required' });
@@ -125,11 +125,15 @@ router.post('/', async (req: Request, res: Response) => {
     // Always use Sonnet 4.5 for best quality
     const selectedModel = model || 'claude-sonnet-4-5';
 
+    // Use topic if provided, otherwise fall back to title
+    const topicFocus = topic || title || 'Historical Documentary';
+
     console.log(`🚀 Rewriting script with ${selectedModel}...`);
     console.log(`📊 Max tokens: ${MAX_TOKENS} | Words/iteration: ${WORDS_PER_ITERATION}`);
     console.log(`📝 Transcript length: ${transcript?.length || 0} chars`);
     console.log(`📝 Transcript preview: ${transcript?.substring(0, 200)}...`);
     console.log(`📝 Title: ${title}`);
+    console.log(`📝 Topic: ${topicFocus}`);
 
     const systemPrompt = template || `You are an expert scriptwriter specializing in historical documentary narration.
 Your task is to transform content into compelling, well-structured scripts suitable for history videos.
@@ -193,47 +197,69 @@ When continuing a script, seamlessly continue from where you left off.`;
           if (iteration === 1) {
             // First iteration: start fresh
             const wordLimit = Math.min(WORDS_PER_ITERATION, targetWords);
-            const topicTitle = title || 'Historical Documentary';
             messages = [{
               role: 'user',
-              content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicTitle}".
+              content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicFocus}".
 
 === TOPIC ENFORCEMENT ===
-Your script MUST focus ONLY on: ${topicTitle}
+Your script MUST focus ONLY on: ${topicFocus}
 
-If the transcript contains off-topic content (content NOT related to ${topicTitle}):
+If the transcript contains off-topic content (content NOT related to ${topicFocus}):
 - SKIP that content entirely
 - Do NOT include it in your script
 - Expand the ON-TOPIC content to reach the word count instead
-- If the transcript mostly discusses unrelated topics, extract ONLY the parts about ${topicTitle}
+- If the transcript mostly discusses unrelated topics, extract ONLY the parts about ${topicFocus}
+
+=== PACING FOR SLEEP-FRIENDLY CONTENT ===
+This is a SLEEP-FRIENDLY documentary. The audience listens while falling asleep.
+
+FIRST 20-30 MINUTES (the "Opening"): Make this section especially well-crafted
+- Use rich sensory details: smells, sounds, textures, light, warmth
+- Paint vivid, immersive scenes that transport the listener
+- High-quality prose with careful word choices
+- Still calm and sleep-friendly - NOT exciting or dramatic
+- Draw the viewer into the world of ${topicFocus} with beautiful writing
+
+REMAINDER OF SCRIPT: Maintain quality, prioritize calm flow
+- Keep the content on-topic and historically rich
+- Use a more meditative, flowing rhythm
+- Content can be simpler and more repetitive
+- Viewers are drifting to sleep - be their gentle companion
 
 === TRANSCRIPT START ===
 ${transcript}
 === TRANSCRIPT END ===
 
-Transform this transcript into ${wordLimit} words of polished documentary narration about "${topicTitle}".
-- ONLY include content directly related to ${topicTitle}
+Transform this transcript into ${wordLimit} words of polished documentary narration about "${topicFocus}".
+- ONLY include content directly related to ${topicFocus}
 - If the transcript drifts to other topics, IGNORE those sections
-- Expand and elaborate on the on-topic content to reach the word count`
+- Expand and elaborate on the on-topic content to reach the word count
+- Make the first ~3000 words especially well-crafted with rich sensory details`
             }];
           } else {
-            // Continuation iterations
+            // Continuation iterations - now in the "calm flow" section
             const wordLimit = Math.min(WORDS_PER_ITERATION, wordsRemaining);
-            const topicTitle = title || 'Historical Documentary';
             messages = [
               {
                 role: 'user',
-                content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicTitle}".
+                content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicFocus}".
 
 === TOPIC ENFORCEMENT ===
-Your script MUST focus ONLY on: ${topicTitle}
+Your script MUST focus ONLY on: ${topicFocus}
 IGNORE any off-topic content in the transcript.
+
+=== PACING ===
+We are now in the CALM FLOW section of this sleep-friendly documentary.
+- Keep content on-topic and historically rich
+- Use meditative, flowing rhythm
+- Content can be simpler and more repetitive
+- Viewers are drifting to sleep - be their gentle companion
 
 === TRANSCRIPT START ===
 ${transcript}
 === TRANSCRIPT END ===
 
-Write ${wordLimit} words of pure narration about "${topicTitle}" based ONLY on the relevant parts of the transcript.`
+Write ${wordLimit} words of pure narration about "${topicFocus}" based ONLY on the relevant parts of the transcript.`
               },
               {
                 role: 'assistant',
@@ -241,14 +267,15 @@ Write ${wordLimit} words of pure narration about "${topicTitle}" based ONLY on t
               },
               {
                 role: 'user',
-                content: `Continue the script from where you left off. Stay focused on ${topicTitle}.
+                content: `Continue the script from where you left off. Stay focused on ${topicFocus}.
 
 CRITICAL - DO NOT REPEAT ANY CONTENT:
 - Your previous response ended with the last few sentences shown above
 - Start your continuation with NEW content only
 - Do NOT rewrite or paraphrase sentences you already wrote
 - If you're unsure, skip ahead to genuinely new material
-- Keep ALL content focused on ${topicTitle}
+- Keep ALL content focused on ${topicFocus}
+- Use calm, meditative pacing - viewers are drifting to sleep
 
 Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
               }
@@ -535,7 +562,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
 // Rate a script and provide feedback
 router.post('/rate', async (req: Request, res: Response) => {
   try {
-    const { script, template, title } = req.body;
+    const { script, template, title, topic } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Script is required' });
@@ -545,6 +572,9 @@ router.post('/rate', async (req: Request, res: Response) => {
     if (!apiKey) {
       return res.status(500).json({ error: 'API key not configured' });
     }
+
+    // Use topic if provided, otherwise fall back to title
+    const topicFocus = topic || title || 'History Documentary';
 
     const anthropic = new Anthropic({ apiKey });
 
@@ -641,7 +671,13 @@ Example response with topic drift:
       messages: [
         {
           role: 'user',
-          content: `Please evaluate this script for a YouTube documentary titled "${title || 'History Documentary'}".
+          content: `Please evaluate this script for a YouTube documentary.
+
+EXPECTED TOPIC: "${topicFocus}"
+${title && title !== topicFocus ? `VIDEO TITLE: "${title}"` : ''}
+
+The script should focus ONLY on: ${topicFocus}
+Flag any content that discusses topics NOT related to ${topicFocus} as topic drift.
 
 Template guidance used for generation:
 ${template ? template.substring(0, 500) + '...' : 'No template provided'}

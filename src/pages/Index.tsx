@@ -66,6 +66,7 @@ const CUSTOM_IMAGE_TEMPLATES_KEY = "historygenai-custom-image-templates";
 // Default settings (used when no saved settings exist)
 const DEFAULT_SETTINGS: GenerationSettings = {
   projectTitle: "",
+  topic: "",  // Specific topic to prevent drift (e.g., "Viking Winters", "History of Bread")
   fullAutomation: false,
   scriptTemplate: "template-a",
   imageTemplate: "image-a",
@@ -91,8 +92,9 @@ function loadLastSettings(): GenerationSettings {
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
-        // Always reset project title for new projects
+        // Always reset project-specific fields for new projects
         projectTitle: "",
+        topic: "",
         // CRITICAL: fullAutomation must ALWAYS start as false
         // User must explicitly click "Full Auto Generate" each time
         fullAutomation: false,
@@ -109,7 +111,7 @@ function saveLastSettings(settings: GenerationSettings): void {
   try {
     // Don't save project-specific or session-specific fields
     // fullAutomation should NEVER persist - it must be explicitly chosen each time
-    const { projectTitle, customScript, fullAutomation, ...persistableSettings } = settings;
+    const { projectTitle, topic, customScript, fullAutomation, ...persistableSettings } = settings;
     localStorage.setItem(LAST_SETTINGS_KEY, JSON.stringify(persistableSettings));
   } catch (e) {
     console.error("[Index] Failed to save settings:", e);
@@ -650,7 +652,9 @@ const Index = () => {
           // Show only progress percentage and word count (no script preview)
           const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
           updateStep("script", "active", progressText);
-        }
+        },
+        undefined, // onToken - not used here
+        settings.topic || undefined // Topic for preventing drift
       );
       
       if (!scriptResult.success || !scriptResult.script) {
@@ -2333,6 +2337,17 @@ const Index = () => {
                 />
               </div>
 
+              {/* Topic Focus - prevents topic drift */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Topic</label>
+                <Input
+                  value={settings.topic}
+                  onChange={(e) => setSettings(prev => ({ ...prev, topic: e.target.value }))}
+                  placeholder="e.g., Viking Winters, History of Bread, Cleopatra..."
+                  className="flex-1"
+                />
+              </div>
+
               {/* Word Count */}
               <div className="flex items-center gap-3">
                 <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Word Count</label>
@@ -2672,6 +2687,7 @@ const Index = () => {
         isOpen={viewState === "review-script"}
         script={pendingScript}
         title={videoTitle}
+        topic={settings.topic || undefined}
         template={scriptTemplates.find(t => t.id === settings.scriptTemplate)?.template}
         onConfirm={handleScriptConfirm}
         onCancel={handleCancelRequest}
