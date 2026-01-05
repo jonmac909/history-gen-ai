@@ -345,10 +345,14 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
           if (result.success && result.videos && result.channel) {
             // Update the saved channel with fresh data (thumbnail, subscribers, etc.)
-            if (result.channel.thumbnailUrl && result.channel.thumbnailUrl !== saved.thumbnailUrl) {
+            const realId = result.channel.id;
+            const idChanged = realId !== saved.id;
+            const needsUpdate = idChanged || (result.channel.thumbnailUrl && result.channel.thumbnailUrl !== saved.thumbnailUrl);
+
+            if (needsUpdate) {
               const updatedChannel: SavedChannel = {
                 ...saved,
-                id: result.channel.id,
+                id: realId,
                 title: result.channel.title,
                 thumbnailUrl: result.channel.thumbnailUrl,
                 subscriberCountFormatted: result.channel.subscriberCountFormatted,
@@ -356,7 +360,11 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
                 averageViewsFormatted: result.channel.averageViewsFormatted,
               };
               updatedChannels[index] = updatedChannel;
-              // Update in database (fire and forget)
+              // If ID changed (placeholder -> real ID), delete old entry first
+              if (idChanged) {
+                await deleteSavedChannelFromDB(saved.id);
+              }
+              // Insert/update with real ID
               upsertSavedChannelToDB(updatedChannel, index + 1);
             }
             return result.videos.map(v => ({
