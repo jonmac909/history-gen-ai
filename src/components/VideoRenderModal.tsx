@@ -339,39 +339,27 @@ export function VideoRenderModal({
 
               {/* Video Player */}
               {activeTab === 'effects' && effectsVideoUrl && (
-                <div className="space-y-3">
-                  <video
-                    key={effectsVideoUrl}
-                    src={effectsVideoUrl}
-                    controls
-                    preload="auto"
-                    crossOrigin="anonymous"
-                    className="w-full rounded-lg border"
-                    style={{ maxHeight: '300px' }}
-                  />
-                  <Button onClick={handleDownloadEffects} variant="outline" className="w-full gap-2">
-                    <Download className="w-4 h-4" />
-                    Download Video with Effects
-                  </Button>
-                </div>
+                <video
+                  key={effectsVideoUrl}
+                  src={effectsVideoUrl}
+                  controls
+                  preload="auto"
+                  crossOrigin="anonymous"
+                  className="w-full rounded-lg border"
+                  style={{ maxHeight: '300px' }}
+                />
               )}
 
               {activeTab === 'basic' && basicVideoUrl && (
-                <div className="space-y-3">
-                  <video
-                    key={basicVideoUrl}
-                    src={basicVideoUrl}
-                    controls
-                    preload="auto"
-                    crossOrigin="anonymous"
-                    className="w-full rounded-lg border"
-                    style={{ maxHeight: '300px' }}
-                  />
-                  <Button onClick={handleDownloadBasic} variant="outline" className="w-full gap-2">
-                    <Download className="w-4 h-4" />
-                    Download Basic Video
-                  </Button>
-                </div>
+                <video
+                  key={basicVideoUrl}
+                  src={basicVideoUrl}
+                  controls
+                  preload="auto"
+                  crossOrigin="anonymous"
+                  className="w-full rounded-lg border"
+                  style={{ maxHeight: '300px' }}
+                />
               )}
             </div>
           )}
@@ -439,7 +427,7 @@ export function VideoRenderModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {/* Left side: Navigation */}
+          {/* Left side: Navigation + Download */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} disabled={isRendering} title="Back to previous step">
@@ -449,6 +437,17 @@ export function VideoRenderModal({
             {onSkip && (
               <Button variant="outline" size="icon" onClick={onSkip} disabled={isRendering} title="Skip to next step">
                 <ChevronRight className="w-5 h-5" />
+              </Button>
+            )}
+            {/* Download button - downloads whichever video is on active tab */}
+            {hasAnyVideo && currentPass === 'complete' && (
+              <Button
+                variant="outline"
+                onClick={activeTab === 'effects' ? handleDownloadEffects : handleDownloadBasic}
+                disabled={activeTab === 'effects' ? !effectsVideoUrl : !basicVideoUrl}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download
               </Button>
             )}
           </div>
