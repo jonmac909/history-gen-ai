@@ -386,7 +386,7 @@ function ProjectCard({
             onValueChange={(value) => onStatusChange(value as ProjectStatus)}
           >
             <SelectTrigger
-              className="h-7 w-[110px] text-xs"
+              className="h-7 w-[120px] text-xs"
               onClick={(e) => e.stopPropagation()}
             >
               <SelectValue />
