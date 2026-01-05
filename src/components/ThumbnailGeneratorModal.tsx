@@ -136,20 +136,36 @@ export function ThumbnailGeneratorModal({
   }[]>([]);
 
   // Lightbox state - track index for arrow key navigation
+  // lightboxIndex: -1 = reference, 0+ = generated thumbnails, null = closed
+  // lightboxSource: which tab the lightbox is showing ('generated' | 'favorites' | 'uploaded' | 'reference')
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxSource, setLightboxSource] = useState<'generated' | 'favorites' | 'uploaded' | 'reference'>('generated');
   const lightboxOverlayRef = useRef<HTMLDivElement>(null);
   const lightboxImageRef = useRef<HTMLImageElement>(null);
 
-  // Get current lightbox image URL (-1 = reference image, 0+ = generated thumbnails)
-  const lightboxImage = lightboxIndex !== null
-    ? lightboxIndex === -1
-      ? examplePreview
-      : generatedThumbnails[lightboxIndex]
-    : null;
+  // Get current lightbox image URL based on source
+  const getLightboxImage = (): string | null => {
+    if (lightboxIndex === null) return null;
+    if (lightboxSource === 'reference') return examplePreview;
+    if (lightboxSource === 'favorites') return favoriteThumbnails[lightboxIndex] || null;
+    if (lightboxSource === 'uploaded') return uploadedThumbnails[lightboxIndex] || null;
+    // generated
+    return generatedThumbnails[lightboxIndex] || null;
+  };
+  const lightboxImage = getLightboxImage();
+
+  // Get the array for current lightbox source (for navigation)
+  const getLightboxArray = (): string[] => {
+    if (lightboxSource === 'favorites') return favoriteThumbnails;
+    if (lightboxSource === 'uploaded') return uploadedThumbnails;
+    return generatedThumbnails;
+  };
 
   // Keyboard: ESC to close lightbox, Arrow keys to navigate (capture phase to intercept before Dialog)
   useEffect(() => {
     if (lightboxIndex === null) return;
+
+    const currentArray = getLightboxArray();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -160,7 +176,7 @@ export function ThumbnailGeneratorModal({
         e.preventDefault();
         e.stopPropagation();
         setLightboxIndex(prev =>
-          prev !== null && prev < generatedThumbnails.length - 1 ? prev + 1 : prev
+          prev !== null && prev < currentArray.length - 1 ? prev + 1 : prev
         );
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -173,7 +189,7 @@ export function ThumbnailGeneratorModal({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [lightboxIndex, generatedThumbnails.length]);
+  }, [lightboxIndex, lightboxSource, generatedThumbnails.length, favoriteThumbnails.length, uploadedThumbnails.length]);
 
   // Click handling: background click closes lightbox
   useEffect(() => {
@@ -632,7 +648,10 @@ export function ThumbnailGeneratorModal({
                         alt="Example thumbnail"
                         className="w-full h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
                         style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                        onClick={() => setLightboxIndex(-1)}
+                        onClick={() => {
+                          setLightboxSource('reference');
+                          setLightboxIndex(0);
+                        }}
                       />
                       <Button
                         variant="ghost"
@@ -858,7 +877,10 @@ export function ThumbnailGeneratorModal({
                                     : 'border hover:opacity-90'
                                 }`}
                                 style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                                onClick={() => setLightboxIndex(index)}
+                                onClick={() => {
+                                  setLightboxSource('generated');
+                                  setLightboxIndex(index);
+                                }}
                               />
                               {isSelected && (
                                 <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
@@ -939,13 +961,11 @@ export function ThumbnailGeneratorModal({
                   ) : (
                     <>
                       <p className="text-xs text-muted-foreground">
-                        Click to expand. Hover for actions.
+                        Click to expand. Use ← → keys to navigate. Hover for actions.
                       </p>
                       <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
                         {favoriteThumbnails.map((url, index) => {
                           const isSelected = selectedThumbnail === url;
-                          // Find index in generated thumbnails for lightbox navigation
-                          const generatedIndex = generatedThumbnails.indexOf(url);
                           return (
                             <div key={index} className="relative group">
                               <img
@@ -957,7 +977,10 @@ export function ThumbnailGeneratorModal({
                                     : 'border hover:opacity-90'
                                 }`}
                                 style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                                onClick={() => generatedIndex >= 0 && setLightboxIndex(generatedIndex)}
+                                onClick={() => {
+                                  setLightboxSource('favorites');
+                                  setLightboxIndex(index);
+                                }}
                               />
                               {isSelected && (
                                 <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
@@ -991,6 +1014,18 @@ export function ThumbnailGeneratorModal({
                                     <Heart className="w-3 h-3 fill-white" />
                                   </Button>
                                 )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 bg-background/80 hover:bg-background"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadThumbnail(url, index);
+                                  }}
+                                  title="Download"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </Button>
                               </div>
                             </div>
                           );
@@ -1017,7 +1052,7 @@ export function ThumbnailGeneratorModal({
                   ) : (
                     <>
                       <p className="text-xs text-muted-foreground">
-                        Click to expand. Hover for actions.
+                        Click to expand. Use ← → keys to navigate. Hover for actions.
                       </p>
                       <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
                         {uploadedThumbnails.map((url, index) => {
@@ -1033,6 +1068,10 @@ export function ThumbnailGeneratorModal({
                                     : 'border hover:opacity-90'
                                 }`}
                                 style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                                onClick={() => {
+                                  setLightboxSource('uploaded');
+                                  setLightboxIndex(index);
+                                }}
                               />
                               {isSelected && (
                                 <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
@@ -1134,65 +1173,69 @@ export function ThumbnailGeneratorModal({
         </DialogFooter>
 
         {/* Lightbox with navigation */}
-        {lightboxImage && lightboxIndex !== null && (
-          <div
-            ref={lightboxOverlayRef}
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
-          >
-            {/* Left arrow - only for generated thumbnails (not reference) */}
-            {lightboxIndex > 0 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute left-4 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex(lightboxIndex - 1);
-                }}
-              >
-                <ChevronLeft className="w-8 h-8" />
-              </Button>
-            )}
-
-            <img
-              ref={lightboxImageRef}
-              src={lightboxImage}
-              alt="Full size preview"
-              className="max-w-full max-h-full rounded-lg"
-            />
-
-            {/* Right arrow - only for generated thumbnails */}
-            {lightboxIndex >= 0 && lightboxIndex < generatedThumbnails.length - 1 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-4 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex(lightboxIndex + 1);
-                }}
-              >
-                <ChevronRight className="w-8 h-8" />
-              </Button>
-            )}
-
-            {/* Image counter */}
-            {lightboxIndex >= 0 && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm">
-                {lightboxIndex + 1} / {generatedThumbnails.length}
-              </div>
-            )}
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-4 right-4 text-white hover:bg-white/20"
-              onClick={() => setLightboxIndex(null)}
+        {lightboxImage && lightboxIndex !== null && (() => {
+          const currentArray = getLightboxArray();
+          const showNavigation = lightboxSource !== 'reference' && currentArray.length > 1;
+          return (
+            <div
+              ref={lightboxOverlayRef}
+              className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
             >
-              <X className="w-6 h-6" />
-            </Button>
-          </div>
-        )}
+              {/* Left arrow */}
+              {showNavigation && lightboxIndex > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute left-4 text-white hover:bg-white/20"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxIndex(lightboxIndex - 1);
+                  }}
+                >
+                  <ChevronLeft className="w-8 h-8" />
+                </Button>
+              )}
+
+              <img
+                ref={lightboxImageRef}
+                src={lightboxImage}
+                alt="Full size preview"
+                className="max-w-full max-h-full rounded-lg"
+              />
+
+              {/* Right arrow */}
+              {showNavigation && lightboxIndex < currentArray.length - 1 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-4 text-white hover:bg-white/20"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxIndex(lightboxIndex + 1);
+                  }}
+                >
+                  <ChevronRight className="w-8 h-8" />
+                </Button>
+              )}
+
+              {/* Image counter */}
+              {showNavigation && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm">
+                  {lightboxIndex + 1} / {currentArray.length}
+                </div>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-4 right-4 text-white hover:bg-white/20"
+                onClick={() => setLightboxIndex(null)}
+              >
+                <X className="w-6 h-6" />
+              </Button>
+            </div>
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
