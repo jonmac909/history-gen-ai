@@ -703,7 +703,25 @@ router.post('/quick-edit', async (req: Request, res: Response) => {
     console.log(`🔧 Quick-editing script (${script.length} chars)...`);
     console.log(`📝 Fix prompt: ${fixPrompt}`);
 
-    const systemPrompt = `You are an expert script editor for SLEEP-FRIENDLY long-form history documentaries.
+    // Detect if this is a topic drift fix (needs major rewrite) vs minor edit
+    const isTopicDriftFix = /off-topic|topic drift|only.*about|remove.*content|expand/i.test(fixPrompt);
+
+    const systemPrompt = isTopicDriftFix
+      ? `You are an expert scriptwriter for SLEEP-FRIENDLY long-form history documentaries.
+
+YOUR TASK: COMPLETELY REWRITE the script to focus ONLY on the specified topic. This is a MAJOR rewrite, not a small edit.
+
+CRITICAL RULES:
+1. REMOVE ALL off-topic content entirely - do not try to preserve it
+2. EXPAND the on-topic content to fill the FULL word count (aim for similar length to original)
+3. Add rich historical details, sensory descriptions, and contemplative narrative
+4. Maintain the dreamy, meditative, sleep-friendly tone throughout
+5. Ensure ALL output is pure prose - no headers, markdown, or formatting
+6. The result should be a complete, cohesive script about ONLY the intended topic
+
+OUTPUT FORMAT:
+Return ONLY the rewritten script. No explanations, no comments, just the new script text.`
+      : `You are an expert script editor for SLEEP-FRIENDLY long-form history documentaries.
 
 YOUR TASK: Make TARGETED EDITS to fix specific issues while preserving the original script as much as possible.
 
@@ -717,14 +735,17 @@ CRITICAL RULES:
 OUTPUT FORMAT:
 Return ONLY the edited script. No explanations, no comments, just the improved script text.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 16000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Please make targeted edits to fix these issues:
+    const userMessage = isTopicDriftFix
+      ? `REWRITE THIS SCRIPT to focus ONLY on the specified topic. Remove ALL off-topic content and expand the on-topic content.
+
+INSTRUCTIONS:
+${fixPrompt}
+
+ORIGINAL SCRIPT (contains off-topic content that must be REMOVED):
+${script}
+
+IMPORTANT: The output script should be approximately the same length as the original (${script.split(/\s+/).length} words). Replace off-topic content with MORE content about the correct topic.`
+      : `Please make targeted edits to fix these issues:
 
 FIX REQUIRED:
 ${fixPrompt}
@@ -732,7 +753,16 @@ ${fixPrompt}
 ORIGINAL SCRIPT:
 ${script}
 
-Return the edited script with the issues fixed. Preserve the original as much as possible - only change what's necessary to fix the specific issues mentioned.`
+Return the edited script with the issues fixed. Preserve the original as much as possible - only change what's necessary to fix the specific issues mentioned.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 16000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userMessage
         }
       ]
     });
