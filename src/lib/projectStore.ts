@@ -238,7 +238,8 @@ export async function upsertProject(project: Partial<Project> & { id: string }):
 
   console.log(`[projectStore] ${isNew ? 'Created' : 'Updated'} project: ${project.id}`, {
     status: project.status,
-    step: project.currentStep
+    step: project.currentStep,
+    updated_at: data.updated_at
   });
 
   return rowToProject(data);

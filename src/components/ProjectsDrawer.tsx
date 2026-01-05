@@ -67,8 +67,14 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
+      console.log('[ProjectsDrawer] Loading projects...');
       Promise.all([getRootProjects(), getArchivedProjects()])
         .then(([rootProjects, archived]) => {
+          console.log('[ProjectsDrawer] Loaded', rootProjects.length, 'root projects,', archived.length, 'archived');
+          // Log first 3 projects with their timestamps
+          rootProjects.slice(0, 3).forEach((p, i) => {
+            console.log(`[ProjectsDrawer] #${i + 1}: "${p.videoTitle}" updated_at:`, new Date(p.updatedAt).toISOString());
+          });
           // Combine all projects, mapping 'completed' to 'live' for display
           const allCombined = [
             ...rootProjects.map(p => ({

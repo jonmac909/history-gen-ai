@@ -2075,9 +2075,12 @@ const Index = () => {
     setViewState("results");
 
     // Update project's updated_at to bring it to top of list
-    upsertProject({ id: project.id }).catch(err =>
-      console.error('[handleOpenProject] Failed to update timestamp:', err)
-    );
+    try {
+      await upsertProject({ id: project.id });
+      console.log('[handleOpenProject] Updated timestamp for project:', project.id);
+    } catch (err) {
+      console.error('[handleOpenProject] Failed to update timestamp:', err);
+    }
 
     toast({
       title: "Project Opened",
