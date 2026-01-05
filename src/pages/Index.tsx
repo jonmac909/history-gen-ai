@@ -2326,24 +2326,13 @@ const Index = () => {
 
             {/* Inline settings on main page */}
             <div className="w-full max-w-2xl mx-auto bg-card rounded-xl border border-border p-4 space-y-4">
-              {/* Project Title */}
+              {/* Project Title/Topic - combined field */}
               <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Project Title</label>
+                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Title / Topic</label>
                 <Input
                   value={settings.projectTitle}
-                  onChange={(e) => setSettings(prev => ({ ...prev, projectTitle: e.target.value }))}
-                  placeholder="Enter project title..."
-                  className="flex-1"
-                />
-              </div>
-
-              {/* Topic Focus - prevents topic drift */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-muted-foreground w-28 text-left shrink-0">Topic</label>
-                <Input
-                  value={settings.topic}
-                  onChange={(e) => setSettings(prev => ({ ...prev, topic: e.target.value }))}
-                  placeholder="e.g., Viking Winters, History of Bread, Cleopatra..."
+                  onChange={(e) => setSettings(prev => ({ ...prev, projectTitle: e.target.value, topic: e.target.value }))}
+                  placeholder="e.g., Viking Winters, History of Bread, Medieval Taverns..."
                   className="flex-1"
                 />
               </div>
