@@ -219,7 +219,6 @@ const Index = () => {
   const [embersVideoUrl, setEmbersVideoUrl] = useState<string | undefined>();
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
-  const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | undefined>();
   const [regeneratingImageIndices, setRegeneratingImageIndices] = useState<Set<number>>(new Set());
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
@@ -1081,6 +1080,7 @@ const Index = () => {
   };
 
   // Regenerate a single image (optionally with edited prompt)
+  // Uses Set-based tracking to allow multiple images to regenerate in parallel
   const handleRegenerateImage = async (index: number, editedSceneDescription?: string) => {
     if (!imagePrompts[index]) {
       toast({
@@ -1091,7 +1091,8 @@ const Index = () => {
       return;
     }
 
-    setRegeneratingImageIndex(index);
+    // Add this index to the set of regenerating images (allows parallel regeneration)
+    setRegeneratingImageIndices(prev => new Set([...prev, index]));
 
     try {
       // If edited prompt provided, update the imagePrompts state first
@@ -1144,7 +1145,12 @@ const Index = () => {
         variant: "destructive",
       });
     } finally {
-      setRegeneratingImageIndex(undefined);
+      // Remove this index from the set when done
+      setRegeneratingImageIndices(prev => {
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
     }
   };
 
@@ -2757,7 +2763,6 @@ const Index = () => {
         onForward={() => disableAutoAndGoTo("review-render")}
         onRegenerate={handleRegenerateImage}
         onRegenerateMultiple={handleRegenerateMultipleImages}
-        regeneratingIndex={regeneratingImageIndex}
         regeneratingIndices={regeneratingImageIndices}
       />
 

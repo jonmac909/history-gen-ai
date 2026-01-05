@@ -31,7 +31,6 @@ interface ImagesPreviewModalProps {
   onForward?: () => void;
   onRegenerate?: (index: number, editedPrompt?: string) => void;
   onRegenerateMultiple?: (indices: number[], editedPrompts?: Map<number, string>) => Promise<void>;
-  regeneratingIndex?: number;
   regeneratingIndices?: Set<number>;
 }
 
@@ -91,7 +90,6 @@ export function ImagesPreviewModal({
   onForward,
   onRegenerate,
   onRegenerateMultiple,
-  regeneratingIndex,
   regeneratingIndices = new Set()
 }: ImagesPreviewModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -99,7 +97,6 @@ export function ImagesPreviewModal({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
   const prevImagesRef = useRef<string[]>([]);
-  const prevRegeneratingIndexRef = useRef<number | undefined>(undefined);
 
   // Multi-select state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -123,9 +120,9 @@ export function ImagesPreviewModal({
   };
   const closeLightbox = () => setLightboxIndex(null);
 
-  // Check if an image is regenerating (support both single and multi)
+  // Check if an image is regenerating
   const isRegenerating = (index: number) => {
-    return regeneratingIndex === index || regeneratingIndices.has(index);
+    return regeneratingIndices.has(index);
   };
 
   // Track image URL changes to bust cache - compare with previous URLs
@@ -154,17 +151,31 @@ export function ImagesPreviewModal({
   }, [images]);
 
   // Force refresh image key when regeneration completes (even if URL is the same)
+  // Track which indices were regenerating in previous render
+  const prevRegeneratingIndicesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    // When regeneratingIndex transitions from a number to undefined, regeneration just completed
-    if (prevRegeneratingIndexRef.current !== undefined && regeneratingIndex === undefined) {
-      const completedIndex = prevRegeneratingIndexRef.current;
-      setImageKeys(prev => ({
-        ...prev,
-        [completedIndex]: Date.now()
-      }));
+    // Find indices that were regenerating but now aren't (regeneration completed)
+    const completedIndices: number[] = [];
+    prevRegeneratingIndicesRef.current.forEach(index => {
+      if (!regeneratingIndices.has(index)) {
+        completedIndices.push(index);
+      }
+    });
+
+    // Update image keys for completed indices
+    if (completedIndices.length > 0) {
+      setImageKeys(prev => {
+        const next = { ...prev };
+        completedIndices.forEach(index => {
+          next[index] = Date.now();
+        });
+        return next;
+      });
     }
-    prevRegeneratingIndexRef.current = regeneratingIndex;
-  }, [regeneratingIndex]);
+
+    // Store current set for next comparison
+    prevRegeneratingIndicesRef.current = new Set(regeneratingIndices);
+  }, [regeneratingIndices]);
 
   // Add cache buster to image URL
   const getImageUrl = (url: string, index: number) => {
