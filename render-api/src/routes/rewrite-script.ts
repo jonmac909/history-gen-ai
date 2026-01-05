@@ -660,7 +660,8 @@ ${script.substring(0, 10000)}${script.length > 10000 ? '...[truncated]' : ''}`
         grade: rating.grade,
         summary: rating.summary || '',
         issues: rating.issues || [],
-        fixPrompt: rating.fixPrompt || ''
+        fixPrompt: rating.fixPrompt || '',
+        topicAnalysis: rating.topicAnalysis || null
       });
     } catch (parseError) {
       console.error('Failed to parse rating response:', responseText);
