@@ -158,7 +158,7 @@ export function ScriptReviewModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent
-        className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
+        className="max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
