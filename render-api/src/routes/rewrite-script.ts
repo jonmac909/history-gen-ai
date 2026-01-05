@@ -646,4 +646,79 @@ ${script.substring(0, 10000)}${script.length > 10000 ? '...[truncated]' : ''}`
   }
 });
 
+// Quick edit a script (targeted fixes, not full regeneration)
+router.post('/quick-edit', async (req: Request, res: Response) => {
+  try {
+    const { script, fixPrompt } = req.body;
+
+    if (!script || !fixPrompt) {
+      return res.status(400).json({ error: 'Script and fixPrompt are required' });
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
+    const anthropic = new Anthropic({ apiKey });
+
+    console.log(`🔧 Quick-editing script (${script.length} chars)...`);
+    console.log(`📝 Fix prompt: ${fixPrompt}`);
+
+    const systemPrompt = `You are an expert script editor for SLEEP-FRIENDLY long-form history documentaries.
+
+YOUR TASK: Make TARGETED EDITS to fix specific issues while preserving the original script as much as possible.
+
+CRITICAL RULES:
+1. PRESERVE the vast majority of the original script - only change what's necessary
+2. Keep the same length (don't add or remove significant content)
+3. Maintain the dreamy, meditative, sleep-friendly tone throughout
+4. Ensure ALL output is pure prose - no headers, markdown, or formatting
+5. The edited script should feel like a natural improvement, not a rewrite
+
+OUTPUT FORMAT:
+Return ONLY the edited script. No explanations, no comments, just the improved script text.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 16000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: `Please make targeted edits to fix these issues:
+
+FIX REQUIRED:
+${fixPrompt}
+
+ORIGINAL SCRIPT:
+${script}
+
+Return the edited script with the issues fixed. Preserve the original as much as possible - only change what's necessary to fix the specific issues mentioned.`
+        }
+      ]
+    });
+
+    const editedScript = response.content[0]?.type === 'text' ? response.content[0].text : '';
+
+    if (!editedScript || editedScript.length < script.length * 0.5) {
+      throw new Error('Edit produced invalid or too-short result');
+    }
+
+    console.log(`✅ Quick edit complete: ${editedScript.length} chars (was ${script.length})`);
+
+    res.json({
+      success: true,
+      script: editedScript,
+      wordCount: editedScript.split(/\s+/).filter(w => w.length > 0).length
+    });
+  } catch (error) {
+    console.error('Quick edit error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Quick edit failed'
+    });
+  }
+});
+
 export default router;

@@ -494,6 +494,55 @@ export async function rateScript(
   }
 }
 
+// Quick edit a script (targeted fixes, much faster than full regeneration)
+export async function quickEditScript(
+  script: string,
+  fixPrompt: string
+): Promise<{ success: boolean; script?: string; wordCount?: number; error?: string }> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/rewrite-script/quick-edit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ script, fixPrompt })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Quick edit error:', response.status, errorText);
+      return { success: false, error: `Failed to edit script: ${response.status}` };
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      return { success: false, error: data.error || 'Edit failed' };
+    }
+
+    return {
+      success: true,
+      script: data.script,
+      wordCount: data.wordCount
+    };
+  } catch (error) {
+    console.error('Quick edit error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to edit script'
+    };
+  }
+}
+
 export async function generateAudio(script: string, voiceSampleUrl: string, projectId: string): Promise<AudioResult> {
   console.log('Generating audio with voice cloning...');
   console.log('Voice sample URL:', voiceSampleUrl);

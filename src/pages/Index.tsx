@@ -28,6 +28,7 @@ import { YouTubeUploadModal } from "@/components/YouTubeUploadModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
+  quickEditScript,
   generateAudioStreaming,
   regenerateAudioSegment,
   recombineAudioSegments,
@@ -1432,64 +1433,40 @@ const Index = () => {
     disableAutoAndGoTo("review-script");
   };
 
-  // Regenerate script with AI fix prompt (stays in same modal)
+  // Quick edit script with AI fix prompt (targeted edits, much faster)
   const handleScriptRegenerate = async (fixPrompt: string) => {
-    const currentTemplate = scriptTemplates.find(t => t.id === settings.scriptTemplate);
-    if (!currentTemplate?.template) {
-      toast({
-        title: "Template Missing",
-        description: "No script template found for regeneration.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Append fix instructions to template
-    const modifiedTemplate = `${currentTemplate.template}
-
-CRITICAL FIX REQUIRED:
-${fixPrompt}
-
-Please regenerate the script with these issues fixed.`;
-
     // Stay on review-script, show progress inline
-    setScriptRegenProgress(0);
+    setScriptRegenProgress(10); // Show some initial progress
 
     try {
-      const scriptResult = await rewriteScriptStreaming(
-        pendingScript, // Use current script as basis
-        modifiedTemplate,
-        videoTitle || "History Documentary",
-        settings.aiModel,
-        settings.wordCount,
-        (progress) => {
-          setScriptRegenProgress(progress);
-        }
-      );
+      // Use quick edit for targeted fixes (much faster than full regeneration)
+      const editResult = await quickEditScript(pendingScript, fixPrompt);
 
-      if (!scriptResult.success || !scriptResult.script) {
-        throw new Error(scriptResult.error || "Failed to regenerate script");
+      if (!editResult.success || !editResult.script) {
+        throw new Error(editResult.error || "Failed to edit script");
       }
 
-      setPendingScript(scriptResult.script);
+      setScriptRegenProgress(90);
 
-      // Auto-save the regenerated script
+      setPendingScript(editResult.script);
+
+      // Auto-save the edited script
       if (projectId) {
         autoSave("script", {
           id: projectId,
-          script: scriptResult.script
+          script: editResult.script
         });
       }
 
       toast({
-        title: "Script Regenerated",
-        description: "The script has been updated. Rating...",
+        title: "Script Updated",
+        description: "Targeted edits applied. Re-rating...",
       });
     } catch (error) {
-      console.error("Script regeneration error:", error);
+      console.error("Script edit error:", error);
       toast({
-        title: "Regeneration Failed",
-        description: error instanceof Error ? error.message : "Failed to regenerate script",
+        title: "Edit Failed",
+        description: error instanceof Error ? error.message : "Failed to edit script",
         variant: "destructive",
       });
     } finally {
