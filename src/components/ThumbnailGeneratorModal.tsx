@@ -25,6 +25,7 @@ interface ThumbnailGeneratorModalProps {
   favoriteThumbnails?: string[];
   onFavoriteToggle?: (url: string) => void;
   onConfirm: (thumbnails: string[], selectedIndex: number | undefined) => void;
+  onSelectionChange?: (thumbnails: string[], selectedIndex: number | undefined) => void;  // Real-time updates
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
@@ -39,6 +40,7 @@ export function ThumbnailGeneratorModal({
   favoriteThumbnails = [],
   onFavoriteToggle,
   onConfirm,
+  onSelectionChange,
   onCancel,
   onBack,
   onSkip,
@@ -114,6 +116,17 @@ export function ThumbnailGeneratorModal({
       }
     }
   }, [isOpen, initialThumbnails, initialSelectedIndex]);
+
+  // Notify parent when selection changes (for real-time persistence)
+  useEffect(() => {
+    if (isOpen && onSelectionChange) {
+      const allThumbnails = [...generatedThumbnails, ...uploadedThumbnails];
+      const selectedIndex = selectedThumbnail
+        ? allThumbnails.indexOf(selectedThumbnail)
+        : undefined;
+      onSelectionChange(allThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
+    }
+  }, [selectedThumbnail, generatedThumbnails, uploadedThumbnails, isOpen, onSelectionChange]);
 
   // History stack for navigating back to previous thumbnail batches
   const [thumbnailHistory, setThumbnailHistory] = useState<{

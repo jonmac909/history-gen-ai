@@ -2790,6 +2790,11 @@ const Index = () => {
         favoriteThumbnails={favoriteThumbnails}
         onFavoriteToggle={handleFavoriteThumbnailToggle}
         onConfirm={handleThumbnailsConfirm}
+        onSelectionChange={(thumbnails, selectedIndex) => {
+          setGeneratedThumbnails(thumbnails);
+          setSelectedThumbnailIndex(selectedIndex);
+          autoSave("review-thumbnails", { thumbnails, selectedThumbnailIndex: selectedIndex });
+        }}
         onCancel={handleCancelRequest}
         onBack={handleBackToRender}
         onSkip={handleThumbnailsSkip}
