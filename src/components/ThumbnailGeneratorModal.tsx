@@ -635,7 +635,7 @@ export function ThumbnailGeneratorModal({
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">
-                      {progress.stage === 'analyzing' ? 'Processing...' : 'Generating...'}
+                      {progress.message || (progress.stage === 'analyzing' ? 'Processing...' : 'Generating...')}
                     </span>
                     <span className="font-medium">{progress.percent}%</span>
                   </div>
