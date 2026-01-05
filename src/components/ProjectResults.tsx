@@ -2247,13 +2247,6 @@ export function ProjectResults({
         className="hidden"
         onChange={handleVideoUpload}
       />
-      <input
-        ref={effectsVideoUploadRef}
-        type="file"
-        accept="video/*,.mp4,.mov,.webm"
-        className="hidden"
-        onChange={handleEffectsVideoUpload}
-      />
 
       {/* YouTube Metadata Modal */}
       <YouTubeUploadModal
