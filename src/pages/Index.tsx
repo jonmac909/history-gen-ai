@@ -2074,6 +2074,11 @@ const Index = () => {
     // Go to results page (last step with all downloads)
     setViewState("results");
 
+    // Update project's updated_at to bring it to top of list
+    upsertProject({ id: project.id }).catch(err =>
+      console.error('[handleOpenProject] Failed to update timestamp:', err)
+    );
+
     toast({
       title: "Project Opened",
       description: `Loaded "${project.videoTitle}"`,
