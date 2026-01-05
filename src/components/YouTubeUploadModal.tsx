@@ -355,18 +355,20 @@ export function YouTubeUploadModal({
               </div>
               <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
                 {generatedTitles.map((generatedTitle, index) => (
-                  <button
+                  <Button
                     key={index}
+                    type="button"
+                    variant={title === generatedTitle ? "default" : "outline"}
                     onClick={() => handleSelectTitle(generatedTitle)}
-                    className={`w-full text-left p-2 rounded text-sm transition-colors ${
-                      title === generatedTitle
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background hover:bg-accent border border-border'
+                    className={`w-full justify-start text-left p-2 h-auto text-sm whitespace-normal ${
+                      title === generatedTitle ? '' : 'hover:bg-accent'
                     }`}
                   >
-                    <span className="text-muted-foreground mr-2">{index + 1}.</span>
-                    {generatedTitle}
-                  </button>
+                    <span className={title === generatedTitle ? 'text-primary-foreground/70' : 'text-muted-foreground'}>
+                      {index + 1}.
+                    </span>
+                    <span className="ml-2">{generatedTitle}</span>
+                  </Button>
                 ))}
               </div>
             </div>

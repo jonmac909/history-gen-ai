@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -203,7 +203,6 @@ export function ImagePromptsPreviewModal({
       const template = imageTemplates.find(t => t.id === styleKey);
       if (template) {
         setEditedStyle(template.template);
-        setIsStyleExpanded(false); // Collapse when using preset
       }
     }
   };

@@ -329,14 +329,12 @@ export function ProjectResults({
   const imagesUploadRef = useRef<HTMLInputElement>(null);
   const promptsUploadRef = useRef<HTMLInputElement>(null);
   const videoUploadRef = useRef<HTMLInputElement>(null);
-  const effectsVideoUploadRef = useRef<HTMLInputElement>(null);
   const [isUploadingScript, setIsUploadingScript] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isUploadingCaptions, setIsUploadingCaptions] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [isUploadingPrompts, setIsUploadingPrompts] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
-  const [isUploadingEffectsVideo, setIsUploadingEffectsVideo] = useState(false);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -767,45 +765,6 @@ export function ProjectResults({
       setIsUploadingVideo(false);
       if (videoUploadRef.current) {
         videoUploadRef.current.value = '';
-      }
-    }
-  };
-
-  // Handle effects video file upload (smoke+embers video)
-  const handleEffectsVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !onVideoUpload || !projectId) return;
-
-    setIsUploadingEffectsVideo(true);
-    try {
-      const videoFileName = `${projectId}/video_smoke_embers.mp4`;
-      const { error: uploadError } = await supabase.storage
-        .from("generated-assets")
-        .upload(videoFileName, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from("generated-assets")
-        .getPublicUrl(videoFileName);
-
-      onVideoUpload(publicUrl, 'smoke_embers');
-      setSmokeEmbersVideoUrl(publicUrl);
-      toast({
-        title: "Video Uploaded",
-        description: "Your effects video has been uploaded.",
-      });
-    } catch (error) {
-      console.error('Effects video upload error:', error);
-      toast({
-        title: "Upload Failed",
-        description: error instanceof Error ? error.message : "Failed to upload video.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploadingEffectsVideo(false);
-      if (effectsVideoUploadRef.current) {
-        effectsVideoUploadRef.current.value = '';
       }
     }
   };
@@ -1645,10 +1604,15 @@ export function ProjectResults({
             </div>
           </div>
 
-          {/* Video Render */}
+          {/* Video Render (2-pass: basic + effects) */}
           {(() => {
-            const videoVersions = [basicVideoUrl, embersVideoUrl, smokeEmbersVideoUrl].filter(Boolean).length;
-            const hasVideo = videoVersions > 0;
+            const hasBasic = !!basicVideoUrl;
+            const hasEffects = !!smokeEmbersVideoUrl;
+            const statusText = hasEffects
+              ? 'Basic + Effects ready'
+              : hasBasic
+                ? 'Basic ready'
+                : 'Pending';
 
             return (
               <div
@@ -1657,9 +1621,9 @@ export function ProjectResults({
               >
                 <div className="flex items-center gap-3">
                   <Film className="w-5 h-5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">Video</span>
+                  <span className="font-medium text-foreground">Video Render</span>
                   <span className="text-sm text-muted-foreground">
-                    {hasVideo ? `V${videoVersions} ready` : 'Pending'}
+                    {statusText}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -1686,82 +1650,11 @@ export function ProjectResults({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (smokeEmbersVideoUrl) handleDownloadVideo('smoke_embers');
+                      else if (basicVideoUrl) handleDownloadVideo('basic');
                     }}
-                    disabled={!smokeEmbersVideoUrl}
+                    disabled={!smokeEmbersVideoUrl && !basicVideoUrl}
                     className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
                     title="Download Video"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => toggleApproval('render', e)}
-                    className={`h-8 w-8 ${
-                      approvedSteps.includes('render')
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    title={approvedSteps.includes('render') ? 'Mark as not approved' : 'Mark as approved'}
-                  >
-                    {approvedSteps.includes('render') ? (
-                      <CheckSquare className="w-4 h-4" />
-                    ) : (
-                      <Square className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Visual Effects */}
-          {(() => {
-            const hasEmbers = !!embersVideoUrl;
-            const hasSmokeEmbers = !!smokeEmbersVideoUrl;
-            const effectCount = [hasEmbers, hasSmokeEmbers].filter(Boolean).length;
-            const canRenderEffects = audioUrl && imagePrompts && imagePrompts.length > 0 && srtContent;
-
-            return (
-              <div
-                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
-                onClick={() => setIsVideoRenderModalOpen(true)}
-              >
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">Visual Effects</span>
-                  <span className="text-sm text-muted-foreground">
-                    {effectCount > 0 ? `${effectCount} effect${effectCount > 1 ? 's' : ''} rendered` : 'Pending'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      effectsVideoUploadRef.current?.click();
-                    }}
-                    disabled={isUploadingEffectsVideo || !onVideoUpload}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                    title="Upload effects video"
-                  >
-                    {isUploadingEffectsVideo ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (hasSmokeEmbers) handleDownloadVideo('smoke_embers');
-                    }}
-                    disabled={!hasSmokeEmbers}
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                    title="Download Smoke+Embers"
                   >
                     <Download className="w-4 h-4" />
                   </Button>

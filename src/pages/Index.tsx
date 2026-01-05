@@ -2808,6 +2808,26 @@ const Index = () => {
         onSuccess={handleYouTubeComplete}
         onBack={handleBackToThumbnails}
         onSkip={handleYouTubeSkip}
+        initialTitle={youtubeTitle}
+        initialDescription={youtubeDescription}
+        initialTags={youtubeTags}
+        initialCategoryId={youtubeCategoryId}
+        initialPlaylistId={youtubePlaylistId}
+        onMetadataChange={(title, description, tags, categoryId, playlistId) => {
+          setYoutubeTitle(title);
+          setYoutubeDescription(description);
+          setYoutubeTags(tags);
+          setYoutubeCategoryId(categoryId);
+          setYoutubePlaylistId(playlistId);
+          // Save YouTube metadata to project
+          autoSave("review-youtube", {
+            youtubeTitle: title,
+            youtubeDescription: description,
+            youtubeTags: tags,
+            youtubeCategoryId: categoryId,
+            youtubePlaylistId: playlistId,
+          });
+        }}
       />
     </div>
   );
