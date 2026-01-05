@@ -1724,8 +1724,8 @@ export function ProjectResults({
 
             return (
               <div
-                className={`flex items-center justify-between py-3 ${canRenderEffects || onVideoUpload ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
-                onClick={canRenderEffects ? () => setIsVideoRenderModalOpen(true) : undefined}
+                className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 transition-colors px-2 -mx-2 rounded-lg"
+                onClick={() => setIsVideoRenderModalOpen(true)}
               >
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-muted-foreground" />
