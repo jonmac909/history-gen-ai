@@ -333,7 +333,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
       let completed = 0;
 
       // Process all channels in parallel using Invidious API
-      const promises = savedChannels.map(async (saved) => {
+      const updatedChannels: SavedChannel[] = [...savedChannels];
+      const promises = savedChannels.map(async (saved, index) => {
         try {
           // Use Invidious endpoint - fast, free, no rate limits
           const result = await getChannelOutliersInvidious(saved.input, 20, 'uploaded', false);
@@ -343,6 +344,21 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           setLoadingProgress({ current: completed, total: savedChannels.length });
 
           if (result.success && result.videos && result.channel) {
+            // Update the saved channel with fresh data (thumbnail, subscribers, etc.)
+            if (result.channel.thumbnailUrl && result.channel.thumbnailUrl !== saved.thumbnailUrl) {
+              const updatedChannel: SavedChannel = {
+                ...saved,
+                id: result.channel.id,
+                title: result.channel.title,
+                thumbnailUrl: result.channel.thumbnailUrl,
+                subscriberCountFormatted: result.channel.subscriberCountFormatted,
+                averageViews: result.channel.averageViews,
+                averageViewsFormatted: result.channel.averageViewsFormatted,
+              };
+              updatedChannels[index] = updatedChannel;
+              // Update in database (fire and forget)
+              upsertSavedChannelToDB(updatedChannel, index + 1);
+            }
             return result.videos.map(v => ({
               ...v,
               channelTitle: result.channel!.title,
@@ -360,6 +376,10 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
       });
 
       const results = await Promise.all(promises);
+
+      // Update local state with any channel updates (thumbnails, etc.)
+      setSavedChannels(updatedChannels);
+
       for (const videos of results) {
         allResults.push(...videos);
       }
