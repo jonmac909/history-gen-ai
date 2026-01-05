@@ -2,7 +2,18 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 
+// Lazy load sharp - it has native dependencies that may fail on some platforms
+let sharp: typeof import('sharp') | null = null;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  console.warn('[generate-thumbnails] sharp not available, thumbnail compression disabled:', e);
+}
+
 const router = Router();
+
+// YouTube thumbnail size limit
+const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024; // 2MB
 
 // Kie.ai API configuration for Seedream 4.5
 const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
@@ -170,6 +181,64 @@ async function checkJobStatus(
   }
 }
 
+// Compress image to JPEG under 2MB for YouTube compatibility
+async function compressImageForYouTube(imageBuffer: Buffer): Promise<{ buffer: Buffer; contentType: string }> {
+  if (!sharp) {
+    console.warn('[Thumbnail] sharp not available, skipping compression');
+    return { buffer: imageBuffer, contentType: 'image/png' };
+  }
+
+  // If already under 2MB, just convert to JPEG for consistency
+  if (imageBuffer.length <= MAX_THUMBNAIL_SIZE) {
+    try {
+      const compressed = await sharp(imageBuffer)
+        .resize(1280, 720, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+
+      console.log(`[Thumbnail] Converted to JPEG: ${(imageBuffer.length / 1024).toFixed(0)}KB -> ${(compressed.length / 1024).toFixed(0)}KB`);
+      return { buffer: Buffer.from(compressed), contentType: 'image/jpeg' };
+    } catch (e) {
+      console.warn('[Thumbnail] JPEG conversion failed, using original:', e);
+      return { buffer: imageBuffer, contentType: 'image/png' };
+    }
+  }
+
+  console.log(`[Thumbnail] Original size: ${(imageBuffer.length / 1024 / 1024).toFixed(2)}MB, compressing...`);
+
+  let quality = 90;
+  let width = 1280; // YouTube recommended thumbnail width
+  let compressedBuffer = imageBuffer;
+  const originalBuffer = imageBuffer;
+
+  // Try progressively lower quality until under 2MB
+  while (compressedBuffer.length > MAX_THUMBNAIL_SIZE && quality > 10) {
+    try {
+      const compressed = await sharp(originalBuffer)
+        .resize(width, null, { withoutEnlargement: true })
+        .jpeg({ quality })
+        .toBuffer();
+      compressedBuffer = Buffer.from(compressed);
+
+      console.log(`[Thumbnail] Compressed to ${(compressedBuffer.length / 1024).toFixed(0)}KB at quality=${quality}, width=${width}`);
+
+      if (compressedBuffer.length > MAX_THUMBNAIL_SIZE) {
+        quality -= 10;
+        if (quality <= 20 && width > 640) {
+          width = Math.round(width * 0.8);
+          quality = 80; // Reset quality and try smaller dimensions
+        }
+      }
+    } catch (e) {
+      console.error('[Thumbnail] Compression failed:', e);
+      break;
+    }
+  }
+
+  console.log(`[Thumbnail] Final size: ${(compressedBuffer.length / 1024).toFixed(0)}KB`);
+  return { buffer: compressedBuffer, contentType: 'image/jpeg' };
+}
+
 // Download image from URL and upload to Supabase
 async function downloadAndUploadImage(
   imageUrl: string,
@@ -185,17 +254,25 @@ async function downloadAndUploadImage(
   }
 
   const arrayBuffer = await imageResponse.arrayBuffer();
-  const imageBuffer = Buffer.from(arrayBuffer);
+  const originalBuffer = Buffer.from(arrayBuffer);
+
+  // Compress to JPEG under 2MB for YouTube compatibility
+  const { buffer: imageBuffer, contentType } = await compressImageForYouTube(originalBuffer);
+
+  // Update filename extension if converted to JPEG
+  const finalFilename = contentType === 'image/jpeg'
+    ? filename.replace(/\.png$/i, '.jpg')
+    : filename;
 
   // Upload to Supabase
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const filePath = `${projectId}/thumbnails/${filename}`;
+  const filePath = `${projectId}/thumbnails/${finalFilename}`;
   console.log(`Uploading thumbnail to storage: ${filePath} (${imageBuffer.length} bytes)`);
 
   const { error } = await supabase.storage
     .from('generated-assets')
     .upload(filePath, imageBuffer, {
-      contentType: 'image/png',
+      contentType,
       upsert: true,
     });
 
