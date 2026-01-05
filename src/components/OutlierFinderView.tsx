@@ -698,13 +698,23 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
                   }}
                   className="group flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
                 >
-                  <img
-                    src={saved.thumbnailUrl}
-                    alt={saved.title}
-                    className="w-6 h-6 rounded-full"
-                  />
+                  {saved.thumbnailUrl ? (
+                    <img
+                      src={saved.thumbnailUrl}
+                      alt={saved.title}
+                      className="w-6 h-6 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center">
+                      <span className="text-xs text-gray-600 font-medium">
+                        {saved.title.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
                   <span className="text-sm text-gray-700">{saved.title}</span>
-                  <span className="text-xs text-gray-400">{saved.subscriberCountFormatted}</span>
+                  {saved.subscriberCountFormatted && (
+                    <span className="text-xs text-gray-400">{saved.subscriberCountFormatted}</span>
+                  )}
                   <button
                     onClick={(e) => handleRemoveSavedChannel(saved.id, e)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-gray-300 transition-opacity"
