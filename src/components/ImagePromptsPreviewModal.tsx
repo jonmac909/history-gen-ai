@@ -295,7 +295,9 @@ export function ImagePromptsPreviewModal({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Palette className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Image Style</span>
+              <span className="text-sm font-medium">
+                {selectedStyleKey === 'custom' ? 'Custom Style' : 'Image Style'}
+              </span>
             </div>
             <Select value={selectedStyleKey} onValueChange={handleStyleSelect}>
               <SelectTrigger className="w-[200px]">

@@ -233,7 +233,7 @@ const Index = () => {
   const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [captionsProjectTitle, setCaptionsProjectTitle] = useState("");
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
-  const [customStylePrompt, setCustomStylePrompt] = useState("");
+  // customStylePrompt is now part of settings for persistence
   // Pipeline approval tracking
   type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
   const [approvedSteps, setApprovedSteps] = useState<PipelineStep[]>([]);
@@ -1028,7 +1028,8 @@ const Index = () => {
   // Step 5: After prompts reviewed/edited, generate images
   const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[], editedStylePrompt: string) => {
     setImagePrompts(editedPrompts);
-    // editedStylePrompt is used directly for this generation (not saved back to template)
+    // Save the edited style prompt to settings so it persists across refreshes
+    setSettings(prev => ({ ...prev, customStylePrompt: editedStylePrompt }));
 
     const steps: GenerationStep[] = [
       { id: "images", label: "Generating Images", status: "pending" },
@@ -2728,7 +2729,7 @@ const Index = () => {
       <ImagePromptsPreviewModal
         isOpen={viewState === "review-prompts"}
         prompts={imagePrompts}
-        stylePrompt={customStylePrompt.trim() || getSelectedImageStyle()}
+        stylePrompt={settings.customStylePrompt?.trim() || getSelectedImageStyle()}
         onConfirm={handlePromptsConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToCaptions}

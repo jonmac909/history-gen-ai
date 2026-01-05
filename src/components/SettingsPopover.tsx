@@ -27,6 +27,7 @@ export interface GenerationSettings {
   fullAutomation: boolean;
   scriptTemplate: string;
   imageTemplate: string;
+  customStylePrompt?: string;  // Custom image style prompt (overrides template)
   aiModel: string;
   voiceSampleUrl: string | null;
   speed: number;
