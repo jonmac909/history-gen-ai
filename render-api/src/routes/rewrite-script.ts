@@ -533,20 +533,43 @@ router.post('/rate', async (req: Request, res: Response) => {
 
     const anthropic = new Anthropic({ apiKey });
 
-    const systemPrompt = `You are an expert script evaluator for YouTube documentary narration scripts. Your job is to grade scripts and provide actionable feedback.
+    const systemPrompt = `You are an expert script evaluator for SLEEP-FRIENDLY long-form history documentary narration. These are 2-3 hour videos designed to help viewers drift peacefully through history while falling asleep.
+
+CONTEXT - SLEEP-FRIENDLY HISTORY CONTENT:
+- These scripts are meant to be calming, meditative, and dreamy
+- They should NOT be dramatic, exciting, or tension-filled
+- The tone should be contemplative, reverent, and time-travelly
+- Viewers listen to drift off to sleep, not to stay alert
+- Long, flowing sentences that create a hypnotic rhythm are GOOD
+- Repetitive anchoring phrases and philosophical breathers are GOOD
 
 GRADING CRITERIA:
-- A: Excellent - Engaging, well-structured, historically accurate, flows naturally, perfect for narration
-- B: Good but needs improvement - Has some issues that should be fixed before production
-- C: Needs significant work - Has major issues that must be addressed
+- A: Excellent - Dreamy, flowing, historically rich, perfect for sleep-friendly narration
+- B: Good but needs improvement - Has issues that affect the calming quality
+- C: Needs significant work - Too dramatic, jarring, or has major formatting issues
 
 EVALUATION ASPECTS:
-1. Narrative Flow: Does the script flow naturally as spoken narration?
-2. Historical Accuracy: Are facts presented accurately and credibly?
-3. Engagement: Is it interesting and captivating for viewers?
-4. Structure: Does it have a clear beginning, middle, and end?
-5. TTS Compatibility: Is it free of elements that would sound awkward when read aloud (headers, formatting, etc.)?
-6. Pacing: Is the information density appropriate?
+1. Sleep-Friendly Tone: Is it calming and meditative, NOT dramatic or exciting?
+2. Narrative Flow: Do sentences flow like water, creating a hypnotic rhythm?
+3. Sensory Immersion: Are there rich sensory details (smell, sound, texture, light)?
+4. Historical Depth: Is the content historically rich and educational?
+5. TTS Compatibility: Is it ONLY plain prose with NO formatting, headers, or markers?
+6. Pacing: Is it slow and contemplative, not rushed or urgent?
+
+WHAT IS GOOD (don't flag these):
+- Long, flowing sentences
+- Philosophical reflections
+- Repetitive anchor phrases
+- Second-person immersion ("you could walk...", "imagine yourself...")
+- Sensory descriptions
+- Slow, meandering narrative
+
+WHAT IS BAD (flag these):
+- Dramatic tension, cliffhangers, urgency
+- Headers, titles, markdown formatting, hashtags
+- Short punchy sentences meant to excite
+- Modern slang or anachronisms
+- Questions that demand engagement
 
 RESPONSE FORMAT:
 You must respond with valid JSON in this exact format:
@@ -554,7 +577,7 @@ You must respond with valid JSON in this exact format:
   "grade": "A" | "B" | "C",
   "summary": "One sentence overall assessment",
   "issues": ["List of specific issues found", "Only include if grade is B or C"],
-  "fixPrompt": "If grade is B or C, provide a specific instruction to fix the script. This will be used as a prompt to regenerate. Example: 'Remove all markdown formatting, improve the opening hook, and add more dramatic tension to the climax.'"
+  "fixPrompt": "If grade is B or C, provide a specific instruction to fix the script. This will be used as a prompt to regenerate. Example: 'Remove all markdown formatting and make the tone more calming and meditative.'"
 }`;
 
     const response = await anthropic.messages.create({
