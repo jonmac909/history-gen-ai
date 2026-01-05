@@ -395,7 +395,7 @@ function ProjectCard({
             onValueChange={(value) => onStatusChange(value as ProjectStatus)}
           >
             <SelectTrigger
-              className="h-7 w-[120px] text-xs"
+              className="h-7 w-auto text-xs"
               onClick={(e) => e.stopPropagation()}
             >
               <SelectValue />
@@ -403,10 +403,10 @@ function ProjectCard({
             <SelectContent>
               {STATUS_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <option.icon className="w-3 h-3" />
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <option.icon className="w-3 h-3 shrink-0" />
                     {option.label}
-                  </div>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
