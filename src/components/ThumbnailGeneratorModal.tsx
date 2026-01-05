@@ -87,6 +87,13 @@ export function ThumbnailGeneratorModal({
   const [progress, setProgress] = useState<ThumbnailGenerationProgress | null>(null);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>(initialThumbnails || []);
 
+  // Tab state for right column: generated | favorites | uploaded
+  const [activeTab, setActiveTab] = useState<'generated' | 'favorites' | 'uploaded'>('generated');
+
+  // Uploaded thumbnails (user can upload their own)
+  const [uploadedThumbnails, setUploadedThumbnails] = useState<string[]>([]);
+  const uploadThumbnailInputRef = useRef<HTMLInputElement>(null);
+
   // Selection state - which thumbnail is selected for YouTube upload
   const [selectedThumbnail, setSelectedThumbnail] = useState<string | null>(
     initialThumbnails && initialSelectedIndex !== undefined
@@ -115,30 +122,49 @@ export function ThumbnailGeneratorModal({
     prompt: string;
   }[]>([]);
 
-  // Lightbox state
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  // Lightbox state - track index for arrow key navigation
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const lightboxOverlayRef = useRef<HTMLDivElement>(null);
   const lightboxImageRef = useRef<HTMLImageElement>(null);
 
-  // Keyboard: ESC to close lightbox (capture phase to intercept before Dialog)
+  // Get current lightbox image URL (-1 = reference image, 0+ = generated thumbnails)
+  const lightboxImage = lightboxIndex !== null
+    ? lightboxIndex === -1
+      ? examplePreview
+      : generatedThumbnails[lightboxIndex]
+    : null;
+
+  // Keyboard: ESC to close lightbox, Arrow keys to navigate (capture phase to intercept before Dialog)
   useEffect(() => {
-    if (!lightboxImage) return;
+    if (lightboxIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        setLightboxImage(null);
+        setLightboxIndex(null);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxIndex(prev =>
+          prev !== null && prev < generatedThumbnails.length - 1 ? prev + 1 : prev
+        );
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxIndex(prev =>
+          prev !== null && prev > 0 ? prev - 1 : prev
+        );
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [lightboxImage]);
+  }, [lightboxIndex, generatedThumbnails.length]);
 
   // Click handling: background click closes lightbox
   useEffect(() => {
-    if (!lightboxImage) return;
+    if (lightboxIndex === null) return;
 
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -154,13 +180,13 @@ export function ThumbnailGeneratorModal({
       if (lightboxOverlayRef.current?.contains(target)) {
         e.preventDefault();
         e.stopPropagation();
-        setLightboxImage(null);
+        setLightboxIndex(null);
       }
     };
 
     window.addEventListener('click', handleClick, true);
     return () => window.removeEventListener('click', handleClick, true);
-  }, [lightboxImage]);
+  }, [lightboxIndex]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -477,11 +503,73 @@ export function ThumbnailGeneratorModal({
   };
 
   const handleComplete = () => {
-    // Pass all thumbnails and the selected index
+    // Combine all thumbnails (generated + favorites + uploaded) and find selected index
+    const allThumbnails = [...generatedThumbnails, ...uploadedThumbnails];
     const selectedIndex = selectedThumbnail
-      ? generatedThumbnails.indexOf(selectedThumbnail)
+      ? allThumbnails.indexOf(selectedThumbnail)
       : undefined;
-    onConfirm(generatedThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
+    onConfirm(allThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
+  };
+
+  // Handle uploading custom thumbnails
+  const handleUploadThumbnail = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    const newThumbnails: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!validTypes.includes(file.type)) {
+        toast({
+          title: "Invalid File Type",
+          description: `${file.name} is not a valid image. Please upload PNG, JPG, or WebP.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: `${file.name} is over 20MB.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      // Convert to data URL
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      newThumbnails.push(dataUrl);
+    }
+
+    if (newThumbnails.length > 0) {
+      setUploadedThumbnails(prev => [...prev, ...newThumbnails]);
+      setActiveTab('uploaded');
+      toast({
+        title: "Thumbnails Uploaded",
+        description: `${newThumbnails.length} thumbnail(s) added.`,
+      });
+    }
+
+    // Clear input
+    if (uploadThumbnailInputRef.current) {
+      uploadThumbnailInputRef.current.value = '';
+    }
+  };
+
+  // Remove an uploaded thumbnail
+  const handleRemoveUploadedThumbnail = (index: number) => {
+    const url = uploadedThumbnails[index];
+    setUploadedThumbnails(prev => prev.filter((_, i) => i !== index));
+    if (selectedThumbnail === url) {
+      setSelectedThumbnail(null);
+    }
   };
 
   // Handle escape key - allow closing when not actively generating
@@ -531,7 +619,7 @@ export function ThumbnailGeneratorModal({
                         alt="Example thumbnail"
                         className="w-full h-auto rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
                         style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                        onClick={() => setLightboxImage(examplePreview)}
+                        onClick={() => setLightboxIndex(-1)}
                       />
                       <Button
                         variant="ghost"
@@ -644,12 +732,45 @@ export function ThumbnailGeneratorModal({
               )}
             </div>
 
-            {/* Right Column - Generated Thumbnails (wider) */}
+            {/* Right Column - Tabbed Thumbnails (wider) */}
             <div className="flex-1 space-y-3">
+              {/* Tabs */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">Generated:</label>
-                  {thumbnailHistory.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setActiveTab('generated')}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      activeTab === 'generated'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Generated ({generatedThumbnails.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('favorites')}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      activeTab === 'favorites'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Heart className={`w-3 h-3 inline mr-1 ${favoriteThumbnails.length > 0 ? 'fill-red-500 text-red-500' : ''}`} />
+                    ({favoriteThumbnails.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('uploaded')}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      activeTab === 'uploaded'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Uploaded ({uploadedThumbnails.length})
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  {activeTab === 'generated' && thumbnailHistory.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -660,110 +781,283 @@ export function ThumbnailGeneratorModal({
                       Previous
                     </Button>
                   )}
+                  {activeTab === 'uploaded' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => uploadThumbnailInputRef.current?.click()}
+                      className="gap-1 h-6 px-2"
+                    >
+                      <Upload className="w-3 h-3" />
+                      Upload
+                    </Button>
+                  )}
+                  {activeTab === 'generated' && generatedThumbnails.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDownloadAllAsZip}
+                      className="gap-1 h-6 px-2"
+                    >
+                      <Download className="w-3 h-3" />
+                    </Button>
+                  )}
                 </div>
-                {generatedThumbnails.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleDownloadAllAsZip}
-                    className="gap-1 h-6 px-2"
-                  >
-                    <Download className="w-3 h-3" />
-                  </Button>
-                )}
               </div>
 
-              {generatedThumbnails.length === 0 ? (
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    {thumbnailHistory.length > 0
-                      ? 'No thumbnails. Click "Previous" to restore last batch.'
-                      : 'Generated thumbnails will appear here'}
-                  </p>
-                </div>
-              ) : (
+              {/* Hidden input for uploading thumbnails */}
+              <input
+                ref={uploadThumbnailInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                multiple
+                className="hidden"
+                onChange={handleUploadThumbnail}
+              />
+
+              {/* Generated Tab */}
+              {activeTab === 'generated' && (
                 <>
-                  <p className="text-xs text-muted-foreground">
-                    Click to select. Hover for actions.
-                  </p>
-                  <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
-                    {generatedThumbnails.map((url, index) => {
-                      const isSelected = selectedThumbnail === url;
-                      return (
-                        <div key={index} className="relative group">
-                          <img
-                            src={url}
-                            alt={`Thumbnail ${index + 1}`}
-                            className={`w-full rounded-lg cursor-pointer transition-all ${
-                              isSelected
-                                ? 'ring-2 ring-primary ring-offset-1 opacity-100'
-                                : 'border hover:opacity-90'
-                            }`}
-                            style={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                            onClick={() => setSelectedThumbnail(url)}
-                            onDoubleClick={() => setLightboxImage(url)}
-                          />
-                          {isSelected && (
-                            <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
-                              <Check className="w-3 h-3" />
+                  {generatedThumbnails.length === 0 ? (
+                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        {thumbnailHistory.length > 0
+                          ? 'No thumbnails. Click "Previous" to restore last batch.'
+                          : 'Generated thumbnails will appear here'}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Click to expand. Use ← → keys to navigate. Hover for actions.
+                      </p>
+                      <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                        {generatedThumbnails.map((url, index) => {
+                          const isSelected = selectedThumbnail === url;
+                          return (
+                            <div key={index} className="relative group">
+                              <img
+                                src={url}
+                                alt={`Thumbnail ${index + 1}`}
+                                className={`w-full rounded-lg cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'ring-2 ring-primary ring-offset-1 opacity-100'
+                                    : 'border hover:opacity-90'
+                                }`}
+                                style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                                onClick={() => setLightboxIndex(index)}
+                              />
+                              {isSelected && (
+                                <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                                  <Check className="w-3 h-3" />
+                                </div>
+                              )}
+                              <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className={`h-6 w-6 ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-background/80 hover:bg-background'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedThumbnail(isSelected ? null : url);
+                                  }}
+                                  title={isSelected ? "Deselect" : "Select for YouTube"}
+                                >
+                                  <Check className="w-3 h-3" />
+                                </Button>
+                                {onFavoriteToggle && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 bg-background/80 hover:bg-background"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onFavoriteToggle(url);
+                                    }}
+                                    title={favoriteThumbnails.includes(url) ? "Remove from favorites" : "Add to favorites"}
+                                  >
+                                    <Heart className={`w-3 h-3 ${favoriteThumbnails.includes(url) ? 'fill-red-500 text-red-500' : ''}`} />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 bg-background/80 hover:bg-background"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUseAsReference(url);
+                                  }}
+                                  title="Use as reference"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 bg-background/80 hover:bg-background"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadThumbnail(url, index);
+                                  }}
+                                  title="Download"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </Button>
+                              </div>
                             </div>
-                          )}
-                          <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {onFavoriteToggle && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 bg-background/80 hover:bg-background"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onFavoriteToggle(url);
-                                }}
-                                title={favoriteThumbnails.includes(url) ? "Remove from favorites" : "Add to favorites"}
-                              >
-                                <Heart className={`w-3 h-3 ${favoriteThumbnails.includes(url) ? 'fill-red-500 text-red-500' : ''}`} />
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 bg-background/80 hover:bg-background"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setLightboxImage(url);
-                              }}
-                              title="Preview"
-                            >
-                              <Expand className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 bg-background/80 hover:bg-background"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUseAsReference(url);
-                              }}
-                              title="Use as reference"
-                            >
-                              <ArrowUp className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 bg-background/80 hover:bg-background"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadThumbnail(url, index);
-                              }}
-                              title="Download"
-                            >
-                              <Download className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Favorites Tab */}
+              {activeTab === 'favorites' && (
+                <>
+                  {favoriteThumbnails.length === 0 ? (
+                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                      <Heart className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        No favorites yet. Click the heart icon on thumbnails to add them here.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Click to expand. Hover for actions.
+                      </p>
+                      <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                        {favoriteThumbnails.map((url, index) => {
+                          const isSelected = selectedThumbnail === url;
+                          // Find index in generated thumbnails for lightbox navigation
+                          const generatedIndex = generatedThumbnails.indexOf(url);
+                          return (
+                            <div key={index} className="relative group">
+                              <img
+                                src={url}
+                                alt={`Favorite ${index + 1}`}
+                                className={`w-full rounded-lg cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'ring-2 ring-primary ring-offset-1 opacity-100'
+                                    : 'border hover:opacity-90'
+                                }`}
+                                style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                                onClick={() => generatedIndex >= 0 && setLightboxIndex(generatedIndex)}
+                              />
+                              {isSelected && (
+                                <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                                  <Check className="w-3 h-3" />
+                                </div>
+                              )}
+                              <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className={`h-6 w-6 ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-background/80 hover:bg-background'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedThumbnail(isSelected ? null : url);
+                                  }}
+                                  title={isSelected ? "Deselect" : "Select for YouTube"}
+                                >
+                                  <Check className="w-3 h-3" />
+                                </Button>
+                                {onFavoriteToggle && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 bg-red-500/80 hover:bg-red-500 text-white"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onFavoriteToggle(url);
+                                    }}
+                                    title="Remove from favorites"
+                                  >
+                                    <Heart className="w-3 h-3 fill-white" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Uploaded Tab */}
+              {activeTab === 'uploaded' && (
+                <>
+                  {uploadedThumbnails.length === 0 ? (
+                    <div
+                      className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors"
+                      onClick={() => uploadThumbnailInputRef.current?.click()}
+                    >
+                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Click to upload your own thumbnails
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Click to expand. Hover for actions.
+                      </p>
+                      <div className="grid grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                        {uploadedThumbnails.map((url, index) => {
+                          const isSelected = selectedThumbnail === url;
+                          return (
+                            <div key={index} className="relative group">
+                              <img
+                                src={url}
+                                alt={`Uploaded ${index + 1}`}
+                                className={`w-full rounded-lg cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'ring-2 ring-primary ring-offset-1 opacity-100'
+                                    : 'border hover:opacity-90'
+                                }`}
+                                style={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                              />
+                              {isSelected && (
+                                <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                                  <Check className="w-3 h-3" />
+                                </div>
+                              )}
+                              <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className={`h-6 w-6 ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-background/80 hover:bg-background'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedThumbnail(isSelected ? null : url);
+                                  }}
+                                  title={isSelected ? "Deselect" : "Select for YouTube"}
+                                >
+                                  <Check className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 bg-background/80 hover:bg-background"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveUploadedThumbnail(index);
+                                  }}
+                                  title="Remove"
+                                >
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -783,8 +1077,19 @@ export function ThumbnailGeneratorModal({
                 <ChevronRight className="w-5 h-5" />
               </Button>
             )}
-            {generatedThumbnails.length > 0 && (
-              <Button variant="outline" onClick={handleDownloadAllAsZip}>
+            {selectedThumbnail && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const index = generatedThumbnails.indexOf(selectedThumbnail);
+                  if (index >= 0) {
+                    handleDownloadThumbnail(selectedThumbnail, index);
+                  } else {
+                    // For uploaded thumbnails, use a generic name
+                    handleDownloadThumbnail(selectedThumbnail, 0);
+                  }
+                }}
+              >
                 <Download className="w-4 h-4 mr-2" />
                 Download
               </Button>
@@ -815,23 +1120,61 @@ export function ThumbnailGeneratorModal({
           )}
         </DialogFooter>
 
-        {/* Lightbox */}
-        {lightboxImage && (
+        {/* Lightbox with navigation */}
+        {lightboxImage && lightboxIndex !== null && (
           <div
             ref={lightboxOverlayRef}
             className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           >
+            {/* Left arrow - only for generated thumbnails (not reference) */}
+            {lightboxIndex > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute left-4 text-white hover:bg-white/20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex(lightboxIndex - 1);
+                }}
+              >
+                <ChevronLeft className="w-8 h-8" />
+              </Button>
+            )}
+
             <img
               ref={lightboxImageRef}
               src={lightboxImage}
               alt="Full size preview"
               className="max-w-full max-h-full rounded-lg"
             />
+
+            {/* Right arrow - only for generated thumbnails */}
+            {lightboxIndex >= 0 && lightboxIndex < generatedThumbnails.length - 1 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-4 text-white hover:bg-white/20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex(lightboxIndex + 1);
+                }}
+              >
+                <ChevronRight className="w-8 h-8" />
+              </Button>
+            )}
+
+            {/* Image counter */}
+            {lightboxIndex >= 0 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm">
+                {lightboxIndex + 1} / {generatedThumbnails.length}
+              </div>
+            )}
+
             <Button
               variant="ghost"
               size="icon"
               className="absolute top-4 right-4 text-white hover:bg-white/20"
-              onClick={() => setLightboxImage(null)}
+              onClick={() => setLightboxIndex(null)}
             >
               <X className="w-6 h-6" />
             </Button>
