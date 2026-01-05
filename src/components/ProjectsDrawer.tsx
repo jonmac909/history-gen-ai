@@ -137,10 +137,15 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
       const dbStatus = newStatus === 'live' ? 'completed' : newStatus;
       await upsertProject({ id: project.id, status: dbStatus });
 
-      // Update local state
-      setAllProjects(prev => prev.map(p =>
-        p.id === project.id ? { ...p, status: newStatus } : p
-      ));
+      // Update local state with new status and updated timestamp, then re-sort
+      const now = Date.now();
+      setAllProjects(prev => {
+        const updated = prev.map(p =>
+          p.id === project.id ? { ...p, status: newStatus, updatedAt: now } : p
+        );
+        // Re-sort by updatedAt descending (newest first)
+        return updated.sort((a, b) => b.updatedAt - a.updatedAt);
+      });
 
       const statusLabel = STATUS_OPTIONS.find(s => s.value === newStatus)?.label || newStatus;
       toast({
@@ -161,10 +166,14 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
     e.stopPropagation();
     try {
       const newValue = await toggleFavorite(project.id);
-      // Update project in the list
-      setAllProjects(prev => prev.map(p =>
-        p.id === project.id ? { ...p, isFavorite: newValue } : p
-      ));
+      // Update project in the list with new timestamp and re-sort
+      const now = Date.now();
+      setAllProjects(prev => {
+        const updated = prev.map(p =>
+          p.id === project.id ? { ...p, isFavorite: newValue, updatedAt: now } : p
+        );
+        return updated.sort((a, b) => b.updatedAt - a.updatedAt);
+      });
       toast({
         title: newValue ? "Added to Favorites" : "Removed from Favorites",
         description: `"${project.videoTitle}" ${newValue ? 'added to' : 'removed from'} favorites.`,
