@@ -46,6 +46,7 @@ export function ScriptReviewModal({
   const [rating, setRating] = useState<ScriptRatingResult | null>(null);
   const [hasRatedAfterRegen, setHasRatedAfterRegen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
 
   // Regeneration is now controlled by parent via regenerationProgress prop
   const isRegenerating = regenerationProgress !== null && regenerationProgress !== undefined;
@@ -94,16 +95,18 @@ export function ScriptReviewModal({
     }
   };
 
-  const handleRegenerate = async () => {
-    if (!onRegenerate || !rating?.fixPrompt) return;
+  const handleRegenerate = async (prompt?: string) => {
+    const fixPrompt = prompt || rating?.fixPrompt;
+    if (!onRegenerate || !fixPrompt) return;
 
     setHasRatedAfterRegen(false);
 
     try {
-      await onRegenerate(rating.fixPrompt);
+      await onRegenerate(fixPrompt);
       // The parent component will update the script prop and regenerationProgress
       // Rating will happen automatically when the new script loads
       setHasRatedAfterRegen(true);
+      setCustomPrompt(""); // Clear custom prompt after use
     } catch (error) {
       console.error('Regeneration error:', error);
       toast({
@@ -111,6 +114,12 @@ export function ScriptReviewModal({
         description: "Could not regenerate the script.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleCustomEdit = () => {
+    if (customPrompt.trim()) {
+      handleRegenerate(customPrompt.trim());
     }
   };
 
@@ -225,33 +234,61 @@ export function ScriptReviewModal({
                       ))}
                     </ul>
                   )}
-                  {/* Regenerate button with auto-fix */}
+                  {/* Auto-fix button */}
                   {onRegenerate && rating.fixPrompt && (
                     <div className="flex items-center gap-2 mt-2 pt-2 border-t">
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={handleRegenerate}
+                        onClick={() => handleRegenerate()}
                         disabled={isRegenerating}
                         className="gap-1"
                       >
                         {isRegenerating ? (
                           <>
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            Regenerating...
+                            Editing...
                           </>
                         ) : (
                           <>
                             <RefreshCw className="w-3 h-3" />
-                            Auto-Fix & Regenerate
+                            Auto-Fix
                           </>
                         )}
                       </Button>
                       <span className="text-xs text-muted-foreground">
-                        AI will fix: {rating.fixPrompt.substring(0, 60)}...
+                        {rating.fixPrompt.substring(0, 80)}...
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+              {/* Custom edit prompt - always visible when feedback panel is open */}
+              {onRegenerate && (
+                <div className="mt-3 pt-3 border-t space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground">Custom Edit Prompt:</label>
+                  <div className="flex gap-2">
+                    <Textarea
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      placeholder="e.g., Remove all content about Confederate America - this script should only be about Vikings winter"
+                      className="text-sm min-h-[60px] flex-1"
+                      disabled={isRegenerating}
+                    />
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleCustomEdit}
+                      disabled={isRegenerating || !customPrompt.trim()}
+                      className="shrink-0 self-end"
+                    >
+                      {isRegenerating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        "Apply"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -289,11 +326,16 @@ export function ScriptReviewModal({
         </div>
 
         <DialogFooter className="shrink-0 gap-2 sm:gap-2 pt-2 border-t">
-          {/* Left side: Navigation + Edit/Download/Re-rate */}
+          {/* Left side: Back, Forward, Edit, Download, Re-rate */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
+              <Button variant="outline" size="icon" onClick={onBack} title="Back">
                 <ChevronLeft className="w-5 h-5" />
+              </Button>
+            )}
+            {onForward && (
+              <Button variant="outline" size="icon" onClick={onForward} title="Forward">
+                <ChevronRight className="w-5 h-5" />
               </Button>
             )}
             <Button
@@ -301,46 +343,36 @@ export function ScriptReviewModal({
               onClick={() => setIsEditing(!isEditing)}
             >
               <Edit3 className="w-4 h-4 mr-2" />
-              {isEditing ? "Preview" : "Edit"}
+              Edit
             </Button>
             <Button variant="outline" onClick={handleDownload}>
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
-            {/* Manual re-rate button if script was edited */}
-            {isEditing && (
-              <Button
-                variant="outline"
-                onClick={handleRate}
-                disabled={isRating}
-              >
-                {isRating ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Star className="w-4 h-4 mr-2" />
-                )}
-                Re-rate
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              onClick={handleRate}
+              disabled={isRating}
+            >
+              {isRating ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Star className="w-4 h-4 mr-2" />
+              )}
+              Re-rate
+            </Button>
           </div>
 
-          {/* Right side: Exit + Forward/Continue */}
+          {/* Right side: Exit + Generate Audio */}
           <Button variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
 
-          {onForward ? (
-            <Button onClick={onForward}>
-              Audio
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
-          ) : (
-            <Button onClick={handleConfirm}>
-              <Check className="w-4 h-4 mr-2" />
-              Generate Audio
-            </Button>
-          )}
+          <Button onClick={handleConfirm}>
+            <Check className="w-4 h-4 mr-2" />
+            Generate Audio
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
