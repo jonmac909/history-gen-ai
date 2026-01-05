@@ -422,15 +422,21 @@ export function formatDuration(seconds: number | null | undefined): string {
 
 export function formatDate(timestamp: number, dateOnly: boolean = false): string {
   const date = new Date(timestamp);
+  const now = new Date();
+  const isThisYear = date.getFullYear() === now.getFullYear();
+
   if (dateOnly) {
+    // Show year if not current year
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
+      ...(isThisYear ? {} : { year: 'numeric' }),
     });
   }
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
+    ...(isThisYear ? {} : { year: 'numeric' }),
     hour: 'numeric',
     minute: '2-digit'
   });
