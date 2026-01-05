@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight, RefreshCw, Star, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, X, Edit3, Loader2, Download, ChevronLeft, ChevronRight, RefreshCw, Star, AlertCircle, ChevronDown, ChevronUp, CircleAlert, HelpCircle, AlertTriangle, Expand } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
-import { rateScript, type ScriptRatingResult } from "@/lib/api";
+import { rateScript, type ScriptRatingResult, type ScriptIssue } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 interface ScriptReviewModalProps {
@@ -47,6 +46,8 @@ export function ScriptReviewModal({
   const [hasRatedAfterRegen, setHasRatedAfterRegen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  // Track previous issues to show which ones weren't fixed
+  const [previousIssues, setPreviousIssues] = useState<ScriptIssue[]>([]);
 
   // Regeneration is now controlled by parent via regenerationProgress prop
   const isRegenerating = regenerationProgress !== null && regenerationProgress !== undefined;
@@ -72,10 +73,20 @@ export function ScriptReviewModal({
 
   const handleRate = async () => {
     setIsRating(true);
+    // Save current issues before re-rating (normalized)
+    if (rating?.issues && rating.issues.length > 0) {
+      setPreviousIssues(normalizeIssues(rating.issues as (string | ScriptIssue)[]));
+    }
     try {
       const result = await rateScript(editedScript, template, title);
       if (result.success) {
         setRating(result);
+        // If new rating has no issues but we had previous issues, check which weren't fixed
+        // by comparing text similarity
+        if (previousIssues.length > 0 && (!result.issues || result.issues.length === 0)) {
+          // All issues were fixed - clear previous issues
+          setPreviousIssues([]);
+        }
       } else {
         toast({
           title: "Rating Failed",
@@ -148,6 +159,19 @@ export function ScriptReviewModal({
     }
   };
 
+  // Normalize issues - handle both old string format and new object format
+  const normalizeIssues = (issues: (string | ScriptIssue)[] | undefined): ScriptIssue[] => {
+    if (!issues) return [];
+    return issues.map(issue => {
+      if (typeof issue === 'string') {
+        // Legacy format - assume major if it mentions formatting/headers, otherwise minor
+        const isMajor = /header|title|markdown|format|hashtag|#/i.test(issue);
+        return { text: issue, severity: isMajor ? 'major' : 'minor' } as ScriptIssue;
+      }
+      return issue;
+    });
+  };
+
   // Show loading if script is empty
   if (isOpen && !script) {
     return (
@@ -214,53 +238,122 @@ export function ScriptReviewModal({
                 ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
                 : 'bg-muted/50'
             }`}>
-              {rating.grade === 'A' ? (
-                <div className="flex items-center gap-2">
-                  <Star className="w-4 h-4 text-green-600 dark:text-green-400" />
-                  <p className="text-sm text-green-700 dark:text-green-300">
-                    {rating.summary}
-                  </p>
+              {/* Summary */}
+              <div className="flex items-start gap-2">
+                {rating.grade === 'A' ? (
+                  <Star className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
+                )}
+                <p className={`text-sm ${rating.grade === 'A' ? 'text-green-700 dark:text-green-300' : 'text-muted-foreground'}`}>
+                  {rating.summary}
+                </p>
+              </div>
+
+              {/* Current issues */}
+              {rating.issues && rating.issues.length > 0 && (
+                <ul className="text-sm text-muted-foreground space-y-1 ml-6 mt-2">
+                  {normalizeIssues(rating.issues as (string | ScriptIssue)[]).map((issue, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      {issue.severity === 'major' ? (
+                        <CircleAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <HelpCircle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                      )}
+                      <span>{issue.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Show previously fixed issues (strikethrough) if we went from issues to A */}
+              {rating.grade === 'A' && previousIssues.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                  <p className="text-xs text-green-600 dark:text-green-400 mb-1">Fixed issues:</p>
+                  <ul className="text-sm text-muted-foreground/50 space-y-0.5 ml-6">
+                    {previousIssues.map((issue, i) => (
+                      <li key={i} className="flex items-start gap-2 line-through">
+                        <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                        <span>{issue.text}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ) : (
-                <div className="space-y-2">
+              )}
+
+              {/* Topic Drift Alert - show when topics found don't match expected */}
+              {rating.topicAnalysis?.hasDrift && (
+                <div className="mt-2 pt-2 border-t border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 rounded p-2 -mx-1">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-                    <p className="text-sm text-muted-foreground">{rating.summary}</p>
-                  </div>
-                  {rating.issues && rating.issues.length > 0 && (
-                    <ul className="text-sm text-muted-foreground list-disc list-inside space-y-0.5 ml-6">
-                      {rating.issues.map((issue, i) => (
-                        <li key={i}>{issue}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {/* Auto-fix button */}
-                  {onRegenerate && rating.fixPrompt && (
-                    <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleRegenerate()}
-                        disabled={isRegenerating}
-                        className="gap-1"
-                      >
-                        {isRegenerating ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Editing...
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="w-3 h-3" />
-                            Auto-Fix
-                          </>
-                        )}
-                      </Button>
-                      <span className="text-xs text-muted-foreground">
-                        {rating.fixPrompt.substring(0, 80)}...
-                      </span>
+                    <AlertTriangle className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                        Topic Drift Detected
+                      </p>
+                      <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                        Expected: <strong>{rating.topicAnalysis.expectedTopic}</strong>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Topics found: {rating.topicAnalysis.topicsFound.join(', ')}
+                      </p>
+                      {rating.topicAnalysis.offTopicSections.length > 0 && (
+                        <ul className="text-xs text-muted-foreground mt-1 list-disc list-inside">
+                          {rating.topicAnalysis.offTopicSections.map((section, i) => (
+                            <li key={i}>{section}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {onRegenerate && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleRegenerate(`Remove all off-topic content. This script should ONLY be about "${rating.topicAnalysis?.expectedTopic}". Expand the on-topic content to fill the full word count with rich details, sensory descriptions, and historical depth about ${rating.topicAnalysis?.expectedTopic}.`)}
+                          disabled={isRegenerating}
+                          className="mt-2 gap-1 bg-orange-600 hover:bg-orange-700"
+                        >
+                          {isRegenerating ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Fixing...
+                            </>
+                          ) : (
+                            <>
+                              <Expand className="w-3 h-3" />
+                              Fix Topic & Expand
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
-                  )}
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-fix button - only show when there are issues but no topic drift (topic drift has its own button) */}
+              {rating.grade !== 'A' && onRegenerate && rating.fixPrompt && !rating.topicAnalysis?.hasDrift && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleRegenerate()}
+                    disabled={isRegenerating}
+                    className="gap-1"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Editing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3 h-3" />
+                        Auto-Fix
+                      </>
+                    )}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {rating.fixPrompt.substring(0, 80)}...
+                  </span>
                 </div>
               )}
               {/* Custom edit prompt - always visible when feedback panel is open */}
@@ -300,11 +393,8 @@ export function ScriptReviewModal({
             {isRegenerating && (
               <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-lg">
                 <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
-                <p className="text-sm font-medium mb-2">Regenerating Script...</p>
-                <div className="w-48">
-                  <Progress value={regenerationProgress || 0} className="h-2" />
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">{regenerationProgress || 0}%</p>
+                <p className="text-sm font-medium mb-2">Applying edits...</p>
+                <p className="text-xs text-muted-foreground">This may take 10-30 seconds</p>
               </div>
             )}
             {isEditing ? (

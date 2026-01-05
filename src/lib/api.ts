@@ -432,13 +432,28 @@ async function generateSingleChunk(
   }
 }
 
+// Script issue with severity
+export interface ScriptIssue {
+  text: string;
+  severity: 'major' | 'minor';
+}
+
+// Topic analysis for detecting topic drift
+export interface TopicAnalysis {
+  expectedTopic: string;
+  topicsFound: string[];
+  offTopicSections: string[];
+  hasDrift: boolean;
+}
+
 // Script rating result interface
 export interface ScriptRatingResult {
   success: boolean;
   grade?: 'A' | 'B' | 'C';
   summary?: string;
-  issues?: string[];
+  issues?: ScriptIssue[];
   fixPrompt?: string;
+  topicAnalysis?: TopicAnalysis;
   error?: string;
 }
 

@@ -573,13 +573,50 @@ WHAT IS BAD (flag these):
 - Modern slang or anachronisms
 - Questions that demand engagement
 
+TOPIC DRIFT DETECTION (CRITICAL):
+You MUST analyze the script for topic consistency. The title tells you the intended topic.
+- Identify ALL distinct topics/subjects covered in the script
+- Flag ANY topic that doesn't belong to the main subject indicated by the title
+- Topic drift is a MAJOR issue - it confuses viewers and breaks the narrative
+
+Example: If title is "Viking Winters" but script discusses Roman sanitation, Confederate America, or Medieval plagues - these are OFF-TOPIC sections that must be flagged.
+
 RESPONSE FORMAT:
 You must respond with valid JSON in this exact format:
 {
   "grade": "A" | "B" | "C",
   "summary": "One sentence overall assessment",
-  "issues": ["List of specific issues found", "Only include if grade is B or C"],
-  "fixPrompt": "If grade is B or C, provide a specific instruction to fix the script. This will be used as a prompt to regenerate. Example: 'Remove all markdown formatting and make the tone more calming and meditative.'"
+  "issues": [
+    { "text": "Description of issue", "severity": "major" | "minor" }
+  ],
+  "fixPrompt": "If grade is B or C, provide a specific instruction to fix the script",
+  "topicAnalysis": {
+    "expectedTopic": "The main topic from the title",
+    "topicsFound": ["Topic 1", "Topic 2", "Topic 3"],
+    "offTopicSections": ["Description of off-topic section 1", "Description of off-topic section 2"],
+    "hasDrift": true | false
+  }
+}
+
+SEVERITY RULES:
+- "major" (shown with !) = TTS-breaking issues: headers, markdown, titles, hashtags, TOPIC DRIFT, off-topic content
+- "minor" (shown with ?) = Quality suggestions: pacing, tone tweaks, missing sensory details, style improvements
+
+Example response with topic drift:
+{
+  "grade": "C",
+  "summary": "Script drifts significantly off-topic from Viking Winters to unrelated subjects",
+  "issues": [
+    { "text": "Script shifts to discussing Roman sanitation (unrelated to Viking Winters)", "severity": "major" },
+    { "text": "Section about Confederate America is completely off-topic", "severity": "major" }
+  ],
+  "fixPrompt": "Remove all content about Roman sanitation and Confederate America. Expand the Viking Winters content to fill the full word count with more details about Norse winter survival, food preservation, shelter, clothing, and cultural practices.",
+  "topicAnalysis": {
+    "expectedTopic": "Viking Winters",
+    "topicsFound": ["Viking Winters", "Roman sanitation", "Confederate America"],
+    "offTopicSections": ["Paragraphs 5-8 discuss Roman sanitation systems", "Final third covers Confederate America"],
+    "hasDrift": true
+  }
 }`;
 
     const response = await anthropic.messages.create({
