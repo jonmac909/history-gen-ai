@@ -23,7 +23,7 @@ import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal"
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
 import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
 import { VideoRenderModal } from "@/components/VideoRenderModal";
-import { VisualEffectsModal } from "@/components/VisualEffectsModal";
+// VisualEffectsModal removed - now integrated into VideoRenderModal with 2-pass rendering
 import { YouTubeUploadModal } from "@/components/YouTubeUploadModal";
 import {
   getYouTubeTranscript,
@@ -57,7 +57,7 @@ import { OutlierFinderView } from "@/components/OutlierFinderView";
 import { FavoritesView } from "@/components/FavoritesView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-render" | "review-effects" | "review-thumbnails" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-render" | "review-thumbnails" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
@@ -1344,18 +1344,20 @@ const Index = () => {
     });
   };
 
-  // Video render handlers (basic video without effects)
-  const handleRenderConfirm = (videoUrlBasic: string) => {
-    // Save the basic video URL
-    setVideoUrl(videoUrlBasic);
-    autoSave("complete", { videoUrl: videoUrlBasic });
-    // Go to visual effects step
-    setViewState("review-effects");
+  // Video render handler (2-pass: basic + effects)
+  const handleRenderConfirm = (basicVideoUrl: string, effectsVideoUrl: string) => {
+    // Save both video URLs
+    setVideoUrl(basicVideoUrl);
+    setRenderedVideoUrl(effectsVideoUrl);
+    setSmokeEmbersVideoUrl(effectsVideoUrl);
+    autoSave("complete", { videoUrl: basicVideoUrl, smokeEmbersVideoUrl: effectsVideoUrl });
+    // Go to thumbnails step
+    setViewState("review-thumbnails");
   };
 
   const handleRenderSkip = () => {
-    // Skip to visual effects (can render effects without basic)
-    setViewState("review-effects");
+    // Skip to thumbnails without rendering
+    setViewState("review-thumbnails");
   };
 
   const handleBackToImages = () => {
@@ -1363,29 +1365,9 @@ const Index = () => {
     setViewState("review-images");
   };
 
-  // Visual effects handlers (smoke + embers)
-  const handleEffectsConfirm = (videoUrlWithEffects: string) => {
-    // Save the rendered video with effects
-    setRenderedVideoUrl(videoUrlWithEffects);
-    setSmokeEmbersVideoUrl(videoUrlWithEffects);
-    autoSave("complete", { smokeEmbersVideoUrl: videoUrlWithEffects });
-    // Go to thumbnails step
-    setViewState("review-thumbnails");
-  };
-
-  const handleEffectsSkip = () => {
-    // Skip to thumbnails without effects video
-    setViewState("review-thumbnails");
-  };
-
   const handleBackToRender = () => {
     setSettings(prev => ({ ...prev, fullAutomation: false }));
     setViewState("review-render");
-  };
-
-  const handleBackToEffects = () => {
-    setSettings(prev => ({ ...prev, fullAutomation: false }));
-    setViewState("review-effects");
   };
 
   const handleBackToThumbnails = () => {
@@ -2778,7 +2760,7 @@ const Index = () => {
         regeneratingIndices={regeneratingImageIndices}
       />
 
-      {/* Video Render Modal (basic video, no effects) */}
+      {/* Video Render Modal (2-pass: basic + effects) */}
       <VideoRenderModal
         isOpen={viewState === "review-render"}
         projectId={projectId}
@@ -2787,29 +2769,13 @@ const Index = () => {
         imageUrls={pendingImages}
         imageTimings={imagePrompts.map(p => ({ startSeconds: p.startSeconds, endSeconds: p.endSeconds }))}
         srtContent={pendingSrtContent}
-        existingVideoUrl={videoUrl}
+        existingBasicVideoUrl={videoUrl}
+        existingEffectsVideoUrl={smokeEmbersVideoUrl}
         autoRender={settings.fullAutomation}
         onConfirm={handleRenderConfirm}
         onCancel={handleCancelRequest}
         onBack={handleBackToImages}
         onSkip={handleRenderSkip}
-        onForward={() => disableAutoAndGoTo("review-effects")}
-      />
-
-      {/* Visual Effects Modal (smoke + embers, auto-renders) */}
-      <VisualEffectsModal
-        isOpen={viewState === "review-effects"}
-        projectId={projectId}
-        projectTitle={videoTitle}
-        audioUrl={pendingAudioUrl}
-        imageUrls={pendingImages}
-        imageTimings={imagePrompts.map(p => ({ startSeconds: p.startSeconds, endSeconds: p.endSeconds }))}
-        srtContent={pendingSrtContent}
-        existingVideoUrl={smokeEmbersVideoUrl}
-        onConfirm={handleEffectsConfirm}
-        onCancel={handleCancelRequest}
-        onBack={handleBackToRender}
-        onSkip={handleEffectsSkip}
         onForward={() => disableAutoAndGoTo("review-thumbnails")}
       />
 
@@ -2825,7 +2791,7 @@ const Index = () => {
         onFavoriteToggle={handleFavoriteThumbnailToggle}
         onConfirm={handleThumbnailsConfirm}
         onCancel={handleCancelRequest}
-        onBack={handleBackToEffects}
+        onBack={handleBackToRender}
         onSkip={handleThumbnailsSkip}
         onForward={() => disableAutoAndGoTo("review-youtube")}
       />

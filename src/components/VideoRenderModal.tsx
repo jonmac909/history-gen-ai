@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Video, Download, Loader2, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
+import { Video, Download, Loader2, ChevronLeft, ChevronRight, X, Check, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,14 +21,17 @@ interface VideoRenderModalProps {
   imageUrls: string[];
   imageTimings: { startSeconds: number; endSeconds: number }[];
   srtContent: string;
-  existingVideoUrl?: string;  // Pre-rendered video URL (skip rendering if provided)
+  existingBasicVideoUrl?: string;  // Pre-rendered basic video URL
+  existingEffectsVideoUrl?: string;  // Pre-rendered effects video URL
   autoRender?: boolean;  // Auto-start rendering when modal opens (for full automation mode)
-  onConfirm: (videoUrl: string) => void;
+  onConfirm: (basicVideoUrl: string, effectsVideoUrl: string) => void;
   onCancel: () => void;
   onBack?: () => void;
   onSkip?: () => void;
-  onForward?: () => void;  // Navigate to next step (YouTube upload)
+  onForward?: () => void;  // Navigate to next step (Thumbnails)
 }
+
+type RenderPass = 'idle' | 'pass1' | 'pass2' | 'complete';
 
 // Download file from URL
 const downloadFromUrl = async (url: string, filename: string) => {
@@ -56,7 +59,8 @@ export function VideoRenderModal({
   imageUrls,
   imageTimings,
   srtContent,
-  existingVideoUrl,
+  existingBasicVideoUrl,
+  existingEffectsVideoUrl,
   autoRender = false,
   onConfirm,
   onCancel,
@@ -64,63 +68,70 @@ export function VideoRenderModal({
   onSkip,
   onForward,
 }: VideoRenderModalProps) {
-  const [isRendering, setIsRendering] = useState(false);
+  const [currentPass, setCurrentPass] = useState<RenderPass>('idle');
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(existingVideoUrl || null);
-  const autoRenderTriggered = useRef(!!existingVideoUrl);
+  const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(existingBasicVideoUrl || null);
+  const [effectsVideoUrl, setEffectsVideoUrl] = useState<string | null>(existingEffectsVideoUrl || null);
+  const [activeTab, setActiveTab] = useState<'basic' | 'effects'>('effects'); // Default to effects tab
+  const autoRenderTriggered = useRef(!!existingBasicVideoUrl || !!existingEffectsVideoUrl);
 
-  // Sync with existingVideoUrl prop when it changes or modal opens
+  // Sync with existing video URLs when props change
   useEffect(() => {
-    if (existingVideoUrl) {
-      console.log('[VideoRenderModal] Setting video URL from prop:', existingVideoUrl);
-      setVideoUrl(existingVideoUrl);
+    if (existingBasicVideoUrl) {
+      setBasicVideoUrl(existingBasicVideoUrl);
+    }
+    if (existingEffectsVideoUrl) {
+      setEffectsVideoUrl(existingEffectsVideoUrl);
       autoRenderTriggered.current = true;
     }
-  }, [existingVideoUrl]);
+  }, [existingBasicVideoUrl, existingEffectsVideoUrl]);
 
   // Also sync when modal opens (in case state was reset)
   useEffect(() => {
-    if (isOpen && existingVideoUrl && !videoUrl) {
-      console.log('[VideoRenderModal] Modal opened with existing video, syncing:', existingVideoUrl);
-      setVideoUrl(existingVideoUrl);
-      autoRenderTriggered.current = true;
+    if (isOpen) {
+      if (existingBasicVideoUrl && !basicVideoUrl) {
+        setBasicVideoUrl(existingBasicVideoUrl);
+      }
+      if (existingEffectsVideoUrl && !effectsVideoUrl) {
+        setEffectsVideoUrl(existingEffectsVideoUrl);
+        autoRenderTriggered.current = true;
+      }
     }
-  }, [isOpen, existingVideoUrl]);
+  }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
-  // Auto-start rendering when modal opens (ONLY if autoRender=true AND no existing video)
+  // Auto-start rendering when modal opens (if autoRender=true AND no existing videos)
   useEffect(() => {
-    if (isOpen && autoRender && !autoRenderTriggered.current && !videoUrl && !isRendering && !existingVideoUrl) {
+    if (isOpen && autoRender && !autoRenderTriggered.current && !effectsVideoUrl && currentPass === 'idle') {
       autoRenderTriggered.current = true;
-      handleRender();
+      handleRenderBothPasses();
     }
-  }, [isOpen, autoRender, existingVideoUrl]);
+  }, [isOpen, autoRender, existingEffectsVideoUrl]);
 
   // Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
-      // Only reset if there's no existing video - otherwise keep ref true
-      if (!existingVideoUrl) {
+      if (!existingBasicVideoUrl && !existingEffectsVideoUrl) {
         autoRenderTriggered.current = false;
       }
-      setVideoUrl(existingVideoUrl || null);
+      setBasicVideoUrl(existingBasicVideoUrl || null);
+      setEffectsVideoUrl(existingEffectsVideoUrl || null);
       setRenderProgress(null);
-      setIsRendering(false);
+      setCurrentPass('idle');
     }
-  }, [isOpen, existingVideoUrl]);
+  }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
   // Auto-confirm when rendering completes in full automation mode
   const autoConfirmTriggered = useRef(false);
   useEffect(() => {
-    if (autoRender && videoUrl && !isRendering && !autoConfirmTriggered.current) {
+    if (autoRender && effectsVideoUrl && currentPass === 'complete' && !autoConfirmTriggered.current) {
       autoConfirmTriggered.current = true;
-      console.log('[VideoRenderModal] Auto-confirming after render complete');
-      // Small delay to ensure state is settled
+      console.log('[VideoRenderModal] Auto-confirming after both passes complete');
       const timer = setTimeout(() => {
-        onConfirm(videoUrl);
+        onConfirm(basicVideoUrl || '', effectsVideoUrl);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [autoRender, videoUrl, isRendering, onConfirm]);
+  }, [autoRender, basicVideoUrl, effectsVideoUrl, currentPass, onConfirm]);
 
   // Reset auto-confirm flag when modal closes
   useEffect(() => {
@@ -129,13 +140,14 @@ export function VideoRenderModal({
     }
   }, [isOpen]);
 
-  const handleRender = async () => {
-    setIsRendering(true);
-    setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting...' });
+  // Render both passes sequentially
+  const handleRenderBothPasses = async () => {
+    // Pass 1: Basic video (no effects)
+    setCurrentPass('pass1');
+    setRenderProgress({ stage: 'downloading', percent: 0, message: 'Pass 1: Starting basic video render...' });
 
     try {
-      // Render without any effects (basic video)
-      const result = await renderVideoStreaming(
+      const pass1Result = await renderVideoStreaming(
         projectId,
         audioUrl,
         imageUrls,
@@ -143,70 +155,110 @@ export function VideoRenderModal({
         srtContent,
         projectTitle || 'HistoryGenAI Export',
         {
-          onProgress: (progress) => setRenderProgress(progress),
+          onProgress: (progress) => setRenderProgress({
+            ...progress,
+            message: `Pass 1: ${progress.message}`,
+            percent: Math.round(progress.percent * 0.5) // Pass 1 is 0-50%
+          }),
           onVideoReady: (url) => {
-            setVideoUrl(url);
+            setBasicVideoUrl(url);
             toast({
-              title: "Video Ready",
-              description: "Your video has been rendered!",
+              title: "Pass 1 Complete",
+              description: "Basic video rendered. Starting effects pass...",
             });
           },
           onCaptionError: (error) => {
             console.warn('Caption error (ignored):', error);
           }
         },
-        { embers: false, smoke_embers: false },  // No effects
-        true  // Use GPU rendering (faster)
+        { embers: false, smoke_embers: false },  // No effects for pass 1
+        true  // Use CPU rendering
       );
 
-      if (result.success && result.videoUrl) {
-        setVideoUrl(result.videoUrl);
-      } else {
-        toast({
-          title: "Render Failed",
-          description: result.error || "Failed to render video. Please try again.",
-          variant: "destructive",
-        });
+      if (!pass1Result.success || !pass1Result.videoUrl) {
+        throw new Error(pass1Result.error || 'Pass 1 failed');
       }
+
+      setBasicVideoUrl(pass1Result.videoUrl);
+
+      // Pass 2: Video with smoke + embers effects
+      setCurrentPass('pass2');
+      setRenderProgress({ stage: 'downloading', percent: 50, message: 'Pass 2: Starting effects render...' });
+
+      const pass2Result = await renderVideoStreaming(
+        projectId,
+        audioUrl,
+        imageUrls,
+        imageTimings,
+        srtContent,
+        projectTitle || 'HistoryGenAI Export',
+        {
+          onProgress: (progress) => setRenderProgress({
+            ...progress,
+            message: `Pass 2: ${progress.message}`,
+            percent: 50 + Math.round(progress.percent * 0.5) // Pass 2 is 50-100%
+          }),
+          onVideoReady: (url) => {
+            setEffectsVideoUrl(url);
+            toast({
+              title: "Render Complete",
+              description: "Both video versions are ready!",
+            });
+          },
+          onCaptionError: (error) => {
+            console.warn('Caption error (ignored):', error);
+          }
+        },
+        { embers: false, smoke_embers: true },  // Smoke + embers for pass 2
+        true  // Use CPU rendering
+      );
+
+      if (pass2Result.success && pass2Result.videoUrl) {
+        setEffectsVideoUrl(pass2Result.videoUrl);
+        setCurrentPass('complete');
+      } else {
+        throw new Error(pass2Result.error || 'Pass 2 failed');
+      }
+
     } catch (error) {
-      console.error('Render video error:', error);
+      console.error('Render error:', error);
       toast({
         title: "Render Failed",
         description: error instanceof Error ? error.message : "Failed to render video. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsRendering(false);
+      setCurrentPass('idle');
+      setRenderProgress(null);
     }
   };
 
-  const handleDownload = async () => {
-    if (!videoUrl) return;
-
+  const handleDownloadBasic = async () => {
+    if (!basicVideoUrl) return;
     const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '.mp4';
-    toast({
-      title: "Downloading...",
-      description: "Downloading video...",
-    });
-
+    toast({ title: "Downloading...", description: "Downloading basic video..." });
     try {
-      await downloadFromUrl(videoUrl, filename);
-      toast({
-        title: "Download Complete",
-        description: `${filename} downloaded successfully.`,
-      });
+      await downloadFromUrl(basicVideoUrl, filename);
+      toast({ title: "Download Complete", description: `${filename} downloaded successfully.` });
     } catch (error) {
-      toast({
-        title: "Download Failed",
-        description: "Failed to download video. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Download Failed", description: "Failed to download video.", variant: "destructive" });
+    }
+  };
+
+  const handleDownloadEffects = async () => {
+    if (!effectsVideoUrl) return;
+    const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '_effects.mp4';
+    toast({ title: "Downloading...", description: "Downloading video with effects..." });
+    try {
+      await downloadFromUrl(effectsVideoUrl, filename);
+      toast({ title: "Download Complete", description: `${filename} downloaded successfully.` });
+    } catch (error) {
+      toast({ title: "Download Failed", description: "Failed to download video.", variant: "destructive" });
     }
   };
 
   const handleConfirm = () => {
-    if (videoUrl) {
-      onConfirm(videoUrl);
+    if (effectsVideoUrl) {
+      onConfirm(basicVideoUrl || '', effectsVideoUrl);
     }
   };
 
@@ -219,6 +271,9 @@ export function VideoRenderModal({
       default: return stage;
     }
   };
+
+  const isRendering = currentPass === 'pass1' || currentPass === 'pass2';
+  const hasAnyVideo = basicVideoUrl || effectsVideoUrl;
 
   // Handle escape key - allow closing when not actively rendering
   const handleEscapeKey = (e: KeyboardEvent) => {
@@ -241,105 +296,165 @@ export function VideoRenderModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="w-5 h-5 text-primary" />
-            {videoUrl ? 'Video Ready' : (isRendering || renderProgress) ? 'Rendering Video' : 'Render Video'}
+            {currentPass === 'complete' ? 'Videos Ready' : isRendering ? 'Rendering Video' : 'Render Video'}
           </DialogTitle>
           <DialogDescription>
-            {videoUrl
-              ? 'Your video is ready! Continue to add visual effects.'
-              : (isRendering || renderProgress)
-                ? 'Rendering your video...'
-                : 'Render your video from images and audio.'}
+            {currentPass === 'complete'
+              ? 'Both video versions are ready! Download or continue to thumbnails.'
+              : isRendering
+                ? `Rendering your video (${currentPass === 'pass1' ? 'Pass 1: Basic' : 'Pass 2: Effects'})...`
+                : 'Render your video in two passes: basic video and with smoke + embers effects.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Video Preview Player */}
-          {videoUrl && (
+          {/* Video Tabs - Only show when we have videos */}
+          {hasAnyVideo && currentPass === 'complete' && (
             <div className="space-y-3">
-              <video
-                src={videoUrl}
-                controls
-                preload="auto"
-                crossOrigin="anonymous"
-                className="w-full rounded-lg border"
-                style={{ maxHeight: '300px' }}
-              />
+              {/* Tab Buttons */}
+              <div className="flex gap-2 border-b">
+                <button
+                  onClick={() => setActiveTab('effects')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'effects'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 inline mr-1" />
+                  With Effects
+                </button>
+                <button
+                  onClick={() => setActiveTab('basic')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'basic'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Video className="w-4 h-4 inline mr-1" />
+                  Basic
+                </button>
+              </div>
 
-              <Button onClick={handleDownload} variant="outline" className="w-full gap-2">
-                <Download className="w-4 h-4" />
-                Download Video
-              </Button>
+              {/* Video Player */}
+              {activeTab === 'effects' && effectsVideoUrl && (
+                <div className="space-y-3">
+                  <video
+                    key={effectsVideoUrl}
+                    src={effectsVideoUrl}
+                    controls
+                    preload="auto"
+                    crossOrigin="anonymous"
+                    className="w-full rounded-lg border"
+                    style={{ maxHeight: '300px' }}
+                  />
+                  <Button onClick={handleDownloadEffects} variant="outline" className="w-full gap-2">
+                    <Download className="w-4 h-4" />
+                    Download Video with Effects
+                  </Button>
+                </div>
+              )}
+
+              {activeTab === 'basic' && basicVideoUrl && (
+                <div className="space-y-3">
+                  <video
+                    key={basicVideoUrl}
+                    src={basicVideoUrl}
+                    controls
+                    preload="auto"
+                    crossOrigin="anonymous"
+                    className="w-full rounded-lg border"
+                    style={{ maxHeight: '300px' }}
+                  />
+                  <Button onClick={handleDownloadBasic} variant="outline" className="w-full gap-2">
+                    <Download className="w-4 h-4" />
+                    Download Basic Video
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
           {/* Rendering Progress */}
-          {!videoUrl && renderProgress && (
+          {isRendering && renderProgress && (
             <>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">
-                    {getStageLabel(renderProgress.stage)}
+                    {currentPass === 'pass1' ? 'Pass 1: Basic Video' : 'Pass 2: Adding Effects'}
                   </span>
                   <span className="font-medium">{renderProgress.percent}%</span>
                 </div>
                 <Progress value={renderProgress.percent} className="h-2" />
               </div>
               <p className="text-sm text-muted-foreground">
-                {renderProgress.message}
+                {getStageLabel(renderProgress.stage)}: {renderProgress.message}
               </p>
-              {renderProgress.stage === 'rendering' && (
-                <p className="text-xs text-muted-foreground">
-                  This may take a few minutes depending on video length...
-                </p>
-              )}
+              <div className="flex gap-2 text-xs text-muted-foreground">
+                <span className={currentPass === 'pass1' ? 'text-primary font-medium' : ''}>
+                  Pass 1 {currentPass === 'pass2' || currentPass === 'complete' ? '✓' : ''}
+                </span>
+                <span>→</span>
+                <span className={currentPass === 'pass2' ? 'text-primary font-medium' : ''}>
+                  Pass 2 {currentPass === 'complete' ? '✓' : ''}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This may take several minutes for large videos (200 images ~30-45 min)...
+              </p>
             </>
           )}
 
           {/* Loading state before progress starts */}
-          {!videoUrl && !renderProgress && isRendering && (
+          {isRendering && !renderProgress && (
             <div className="flex flex-col items-center gap-3 py-8">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">Starting render...</p>
             </div>
           )}
 
-          {/* Render button when not auto-rendering */}
-          {!videoUrl && !renderProgress && !isRendering && (
+          {/* Render button when not rendering and no videos */}
+          {!hasAnyVideo && !isRendering && currentPass === 'idle' && (
             <div className="space-y-4 py-4">
-              <p className="text-sm text-muted-foreground text-center">
-                This will render your video without effects. You can add visual effects (smoke + embers) in the next step.
-              </p>
-              <Button onClick={handleRender} className="w-full gap-2">
+              <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                <h4 className="font-medium text-sm">Two-Pass Rendering</h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li className="flex items-center gap-2">
+                    <Video className="w-4 h-4" />
+                    <span><strong>Pass 1:</strong> Basic video (no effects)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    <span><strong>Pass 2:</strong> Video with smoke + embers overlay</span>
+                  </li>
+                </ul>
+              </div>
+              <Button onClick={handleRenderBothPasses} className="w-full gap-2">
                 <Video className="w-4 h-4" />
-                Render Video
+                Render Video (2 Passes)
               </Button>
             </div>
           )}
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {/* Left side: Navigation + Download */}
+          {/* Left side: Navigation */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
-              <Button variant="outline" size="icon" onClick={onBack} disabled={isRendering && !videoUrl} title="Back to previous step">
+              <Button variant="outline" size="icon" onClick={onBack} disabled={isRendering} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
             {onSkip && (
-              <Button variant="outline" size="icon" onClick={onSkip} disabled={isRendering && !videoUrl} title="Skip to next step">
+              <Button variant="outline" size="icon" onClick={onSkip} disabled={isRendering} title="Skip to next step">
                 <ChevronRight className="w-5 h-5" />
-              </Button>
-            )}
-            {videoUrl && (
-              <Button variant="outline" onClick={handleDownload}>
-                <Download className="w-4 h-4 mr-2" />
-                Download
               </Button>
             )}
           </div>
 
-          {/* Right side: Exit + Forward/Continue */}
-          <Button variant="outline" onClick={onCancel} disabled={isRendering && !videoUrl}>
+          {/* Right side: Exit + Continue */}
+          <Button variant="outline" onClick={onCancel} disabled={isRendering}>
             <X className="w-4 h-4 mr-2" />
             Exit
           </Button>
@@ -347,15 +462,15 @@ export function VideoRenderModal({
           {onForward ? (
             <Button
               onClick={onForward}
-              disabled={isRendering && !videoUrl}
+              disabled={isRendering || !effectsVideoUrl}
             >
-              Visual Effects
+              Thumbnails
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (
             <Button
               onClick={handleConfirm}
-              disabled={!videoUrl}
+              disabled={!effectsVideoUrl}
             >
               <Check className="w-4 h-4 mr-2" />
               Continue
