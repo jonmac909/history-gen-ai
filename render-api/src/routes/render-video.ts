@@ -39,7 +39,7 @@ const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';  //
 const RUNPOD_CPU_ENDPOINT_ID = process.env.RUNPOD_CPU_ENDPOINT_ID || 'bw3dx1k956cee9';  // CPU endpoint (32 vCPU)
 const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
 const RUNPOD_VIDEO_POLL_INTERVAL = 2000;  // 2 seconds
-const RUNPOD_VIDEO_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max
+const RUNPOD_VIDEO_MAX_WAIT = 60 * 60 * 1000;  // 60 minutes max (200 images can take 30-45 min)
 
 type EffectType = 'none' | 'embers' | 'smoke_embers';
 
