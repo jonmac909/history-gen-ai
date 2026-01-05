@@ -400,8 +400,17 @@ export function ScriptReviewModal({
             {isRegenerating && (
               <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-lg">
                 <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
-                <p className="text-sm font-medium mb-2">Applying edits...</p>
-                <p className="text-xs text-muted-foreground">This may take 10-30 seconds</p>
+                <p className="text-sm font-medium mb-2">
+                  {rating?.topicAnalysis?.hasDrift ? "Rewriting on topic..." : "Applying edits..."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {rating?.topicAnalysis?.hasDrift
+                    ? `Removing off-topic content and expanding ${rating.topicAnalysis.expectedTopic}`
+                    : "This may take 10-30 seconds"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {wordCount.toLocaleString()} words
+                </p>
               </div>
             )}
             {isEditing ? (
