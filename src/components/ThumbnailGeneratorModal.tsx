@@ -344,17 +344,92 @@ export function ThumbnailGeneratorModal({
     }
   };
 
+  // Compress image blob to JPEG under 2MB using canvas
+  const compressImageBlob = async (blob: Blob): Promise<{ blob: Blob; wasCompressed: boolean }> => {
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+
+    if (blob.size <= MAX_SIZE) {
+      return { blob, wasCompressed: false };
+    }
+
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Start with original dimensions, max 1280 width
+        if (width > 1280) {
+          height = Math.round(height * (1280 / width));
+          width = 1280;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve({ blob, wasCompressed: false });
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Try progressively lower quality until under 2MB
+        const tryCompress = (quality: number) => {
+          canvas.toBlob(
+            (compressedBlob) => {
+              if (!compressedBlob) {
+                resolve({ blob, wasCompressed: false });
+                return;
+              }
+
+              if (compressedBlob.size <= MAX_SIZE || quality <= 0.1) {
+                console.log(`[Thumbnail] Compressed: ${(blob.size / 1024 / 1024).toFixed(2)}MB -> ${(compressedBlob.size / 1024 / 1024).toFixed(2)}MB at quality=${quality.toFixed(1)}`);
+                resolve({ blob: compressedBlob, wasCompressed: true });
+              } else {
+                // Try lower quality
+                tryCompress(quality - 0.1);
+              }
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+
+        tryCompress(0.9);
+      };
+
+      img.onerror = () => {
+        resolve({ blob, wasCompressed: false });
+      };
+
+      img.src = URL.createObjectURL(blob);
+    });
+  };
+
   const handleDownloadThumbnail = async (url: string, index: number) => {
-    const filename = `thumbnail_${index + 1}.png`;
     toast({
-      title: "Downloading...",
-      description: `Downloading ${filename}...`,
+      title: "Preparing download...",
+      description: "Checking file size...",
     });
 
     try {
       // Fetch the image as blob to bypass cross-origin download restrictions
       const response = await fetch(url);
-      const blob = await response.blob();
+      let blob = await response.blob();
+
+      // Check if compression is needed (over 2MB)
+      const { blob: finalBlob, wasCompressed } = await compressImageBlob(blob);
+      blob = finalBlob;
+
+      // Use appropriate extension based on whether we compressed
+      const extension = wasCompressed ? 'jpg' : (blob.type.includes('jpeg') ? 'jpg' : 'png');
+      const filename = `thumbnail_${index + 1}.${extension}`;
+
       const blobUrl = URL.createObjectURL(blob);
 
       const link = document.createElement('a');
@@ -366,6 +441,13 @@ export function ThumbnailGeneratorModal({
 
       // Clean up the blob URL
       URL.revokeObjectURL(blobUrl);
+
+      toast({
+        title: "Downloaded",
+        description: wasCompressed
+          ? `${filename} (compressed to ${(blob.size / 1024 / 1024).toFixed(1)}MB)`
+          : filename,
+      });
     } catch (error) {
       toast({
         title: "Download Failed",
