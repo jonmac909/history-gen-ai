@@ -543,10 +543,12 @@ CONTEXT - SLEEP-FRIENDLY HISTORY CONTENT:
 - Long, flowing sentences that create a hypnotic rhythm are GOOD
 - Repetitive anchoring phrases and philosophical breathers are GOOD
 
-GRADING CRITERIA:
-- A: Excellent - Dreamy, flowing, historically rich, perfect for sleep-friendly narration
-- B: Good but needs improvement - Has issues that affect the calming quality
-- C: Needs significant work - Too dramatic, jarring, or has major formatting issues
+GRADING CRITERIA (be generous - most scripts should be A or B):
+- A: Excellent - Good sleep-friendly content, flows well, historically rich
+- B: Good but has minor issues - Mostly good but could use some tweaks
+- C: Reserved for SERIOUS problems only - Major formatting issues (headers, markdown) or completely wrong tone
+
+IMPORTANT: Only give C for egregious issues like markdown headers or extremely jarring content. Most scripts should be A or B.
 
 EVALUATION ASPECTS:
 1. Sleep-Friendly Tone: Is it calming and meditative, NOT dramatic or exciting?

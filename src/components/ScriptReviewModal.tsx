@@ -288,7 +288,7 @@ export function ScriptReviewModal({
           </div>
         </div>
 
-        <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+        <DialogFooter className="shrink-0 gap-2 sm:gap-2 pt-2 border-t">
           {/* Left side: Navigation + Edit/Download/Re-rate */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
