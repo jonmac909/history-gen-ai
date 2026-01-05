@@ -83,11 +83,13 @@ interface ProjectResultsProps {
   onTitleChange?: (newTitle: string) => void;
   // Thumbnail upload
   onThumbnailUpload?: (thumbnailUrl: string) => void;
-  // Asset uploads (script, audio, captions, images)
+  // Asset uploads (script, audio, captions, images, prompts)
   onScriptUpload?: (script: string) => void;
   onAudioUpload?: (audioUrl: string) => void;
   onCaptionsUpload?: (srtContent: string) => void;
   onImagesUpload?: (imageUrls: string[]) => void;
+  onPromptsUpload?: (prompts: ImagePromptWithTiming[]) => void;
+  onVideoUpload?: (videoUrl: string, type: 'basic' | 'smoke_embers') => void;
   // Tags
   tags?: string[];
   onTagsChange?: (tags: string[]) => void;
@@ -216,6 +218,8 @@ export function ProjectResults({
   onAudioUpload,
   onCaptionsUpload,
   onImagesUpload,
+  onPromptsUpload,
+  onVideoUpload,
   tags = [],
   onTagsChange,
 }: ProjectResultsProps) {
@@ -323,10 +327,16 @@ export function ProjectResults({
   const audioUploadRef = useRef<HTMLInputElement>(null);
   const captionsUploadRef = useRef<HTMLInputElement>(null);
   const imagesUploadRef = useRef<HTMLInputElement>(null);
+  const promptsUploadRef = useRef<HTMLInputElement>(null);
+  const videoUploadRef = useRef<HTMLInputElement>(null);
+  const effectsVideoUploadRef = useRef<HTMLInputElement>(null);
   const [isUploadingScript, setIsUploadingScript] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isUploadingCaptions, setIsUploadingCaptions] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [isUploadingPrompts, setIsUploadingPrompts] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [isUploadingEffectsVideo, setIsUploadingEffectsVideo] = useState(false);
 
   // Check YouTube connection status on mount
   useEffect(() => {
@@ -585,6 +595,217 @@ export function ProjectResults({
       setIsUploadingImages(false);
       if (imagesUploadRef.current) {
         imagesUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle prompts file upload (JSON)
+  const handlePromptsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onPromptsUpload) return;
+
+    setIsUploadingPrompts(true);
+    try {
+      const text = await file.text();
+      const prompts = JSON.parse(text) as ImagePromptWithTiming[];
+
+      // Validate the structure
+      if (!Array.isArray(prompts) || prompts.length === 0) {
+        throw new Error("Invalid prompts file: expected an array of prompts");
+      }
+
+      onPromptsUpload(prompts);
+      toast({
+        title: "Prompts Uploaded",
+        description: `${prompts.length} scene prompts have been loaded.`,
+      });
+    } catch (error) {
+      console.error('Prompts upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to parse prompts file. Make sure it's valid JSON.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingPrompts(false);
+      if (promptsUploadRef.current) {
+        promptsUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Download prompts as JSON
+  const handleDownloadPrompts = () => {
+    if (!imagePrompts || imagePrompts.length === 0) return;
+
+    const json = JSON.stringify(imagePrompts, null, 2);
+    downloadTextContent(json, 'image-prompts.json', 'application/json');
+    toast({
+      title: "Download Complete",
+      description: "image-prompts.json downloaded successfully.",
+    });
+  };
+
+  // Download all thumbnails as ZIP
+  const handleDownloadThumbnailsZip = async () => {
+    if (!thumbnails || thumbnails.length === 0) {
+      toast({
+        title: "No Thumbnails",
+        description: "No thumbnails available to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Preparing Download",
+      description: `Creating zip file with ${thumbnails.length} thumbnails...`,
+    });
+
+    try {
+      const zip = new JSZip();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      for (let i = 0; i < thumbnails.length; i++) {
+        const url = thumbnails[i];
+        const filename = `thumbnail_${i + 1}.png`;
+
+        try {
+          // Use edge function as proxy to bypass CORS restrictions
+          const response = await fetch(`${supabaseUrl}/functions/v1/download-images-zip`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseKey}`,
+              'apikey': supabaseKey,
+            },
+            body: JSON.stringify({ imageUrl: url })
+          });
+
+          if (!response.ok) {
+            console.error(`Failed to fetch thumbnail ${i + 1}:`, response.status);
+            continue;
+          }
+
+          const blob = await response.blob();
+          if (blob.size > 0) {
+            zip.file(filename, blob);
+          }
+        } catch (error) {
+          console.error(`Error fetching thumbnail ${i + 1}:`, error);
+          continue;
+        }
+      }
+
+      const fileCount = Object.keys(zip.files).length;
+      if (fileCount === 0) {
+        toast({
+          title: "No Thumbnails Downloaded",
+          description: "Failed to fetch thumbnails. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'thumbnails.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download Complete",
+        description: `thumbnails.zip downloaded with ${fileCount} thumbnails.`,
+      });
+    } catch (error) {
+      console.error('Zip creation failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to create zip file. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle video file upload (basic video)
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onVideoUpload || !projectId) return;
+
+    setIsUploadingVideo(true);
+    try {
+      const videoFileName = `${projectId}/video.mp4`;
+      const { error: uploadError } = await supabase.storage
+        .from("generated-assets")
+        .upload(videoFileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("generated-assets")
+        .getPublicUrl(videoFileName);
+
+      onVideoUpload(publicUrl, 'basic');
+      setBasicVideoUrl(publicUrl);
+      toast({
+        title: "Video Uploaded",
+        description: "Your video has been uploaded.",
+      });
+    } catch (error) {
+      console.error('Video upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload video.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingVideo(false);
+      if (videoUploadRef.current) {
+        videoUploadRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle effects video file upload (smoke+embers video)
+  const handleEffectsVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onVideoUpload || !projectId) return;
+
+    setIsUploadingEffectsVideo(true);
+    try {
+      const videoFileName = `${projectId}/video_smoke_embers.mp4`;
+      const { error: uploadError } = await supabase.storage
+        .from("generated-assets")
+        .upload(videoFileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("generated-assets")
+        .getPublicUrl(videoFileName);
+
+      onVideoUpload(publicUrl, 'smoke_embers');
+      setSmokeEmbersVideoUrl(publicUrl);
+      toast({
+        title: "Video Uploaded",
+        description: "Your effects video has been uploaded.",
+      });
+    } catch (error) {
+      console.error('Effects video upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload video.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingEffectsVideo(false);
+      if (effectsVideoUploadRef.current) {
+        effectsVideoUploadRef.current.value = '';
       }
     }
   };
@@ -1313,23 +1534,58 @@ export function ProjectResults({
                   : 'Pending'}
               </span>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => toggleApproval('prompts', e)}
-              className={`h-8 w-8 ${
-                approvedSteps.includes('prompts')
-                  ? 'text-green-600 dark:text-green-400'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
-            >
-              {approvedSteps.includes('prompts') ? (
-                <CheckSquare className="w-4 h-4" />
-              ) : (
-                <Square className="w-4 h-4" />
+            <div className="flex items-center gap-1">
+              {onPromptsUpload && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    promptsUploadRef.current?.click();
+                  }}
+                  disabled={isUploadingPrompts}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Upload prompts (JSON)"
+                >
+                  {isUploadingPrompts ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                </Button>
               )}
-            </Button>
+              {imagePrompts && imagePrompts.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadPrompts();
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download prompts (JSON)"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApproval('prompts', e)}
+                className={`h-8 w-8 ${
+                  approvedSteps.includes('prompts')
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={approvedSteps.includes('prompts') ? 'Mark as not approved' : 'Mark as approved'}
+              >
+                {approvedSteps.includes('prompts') ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Images */}
@@ -1418,6 +1674,25 @@ export function ProjectResults({
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {onVideoUpload && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        videoUploadRef.current?.click();
+                      }}
+                      disabled={isUploadingVideo}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      title="Upload video"
+                    >
+                      {isUploadingVideo ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                    </Button>
+                  )}
                   {smokeEmbersVideoUrl && (
                     <Button
                       variant="ghost"
@@ -1463,7 +1738,7 @@ export function ProjectResults({
 
             return (
               <div
-                className={`flex items-center justify-between py-3 ${canRenderEffects ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+                className={`flex items-center justify-between py-3 ${canRenderEffects || onVideoUpload ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
                 onClick={canRenderEffects ? () => setIsVideoRenderModalOpen(true) : undefined}
               >
                 <div className="flex items-center gap-3">
@@ -1474,6 +1749,25 @@ export function ProjectResults({
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {onVideoUpload && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        effectsVideoUploadRef.current?.click();
+                      }}
+                      disabled={isUploadingEffectsVideo}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      title="Upload effects video"
+                    >
+                      {isUploadingEffectsVideo ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                    </Button>
+                  )}
                   {hasSmokeEmbers && (
                     <Button
                       variant="ghost"
@@ -1545,6 +1839,21 @@ export function ProjectResults({
                   ) : (
                     <Upload className="w-4 h-4" />
                   )}
+                </Button>
+              )}
+              {/* Download button */}
+              {thumbnails && thumbnails.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadThumbnailsZip();
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Download thumbnails (ZIP)"
+                >
+                  <Download className="w-4 h-4" />
                 </Button>
               )}
               <Button
@@ -2052,6 +2361,27 @@ export function ProjectResults({
         multiple
         className="hidden"
         onChange={handleImagesUpload}
+      />
+      <input
+        ref={promptsUploadRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handlePromptsUpload}
+      />
+      <input
+        ref={videoUploadRef}
+        type="file"
+        accept="video/*,.mp4,.mov,.webm"
+        className="hidden"
+        onChange={handleVideoUpload}
+      />
+      <input
+        ref={effectsVideoUploadRef}
+        type="file"
+        accept="video/*,.mp4,.mov,.webm"
+        className="hidden"
+        onChange={handleEffectsVideoUpload}
       />
 
       {/* YouTube Metadata Modal */}
