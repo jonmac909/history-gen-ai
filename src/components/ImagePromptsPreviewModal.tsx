@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -137,7 +137,6 @@ export function ImagePromptsPreviewModal({
   onForward
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
-  const [isStyleExpanded, setIsStyleExpanded] = useState(false);
 
   // Pagination for large prompt lists (prevents stack overflow with 500+ items)
   const PROMPTS_PER_PAGE = 20;
@@ -195,13 +194,11 @@ export function ImagePromptsPreviewModal({
     onConfirm(finalPrompts, editedStyle);
   };
 
-  const styleHasChanges = editedStyle !== stylePrompt;
-
   // Handle style preset selection
   const handleStyleSelect = (styleKey: string) => {
     setSelectedStyleKey(styleKey);
     if (styleKey === 'custom') {
-      setIsStyleExpanded(true); // Expand for custom editing
+      // Keep current editedStyle for custom editing
     } else {
       const template = imageTemplates.find(t => t.id === styleKey);
       if (template) {
@@ -278,48 +275,24 @@ export function ImagePromptsPreviewModal({
           </div>
         </div>
 
-        {/* Master Style Prompt Editor (collapsible for custom editing) */}
-        <div className="border rounded-lg bg-muted/30">
-          <button
-            onClick={() => setIsStyleExpanded(!isStyleExpanded)}
-            className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
-          >
+        {/* Custom Style Prompt Editor - only shown when custom is selected */}
+        {selectedStyleKey === 'custom' && (
+          <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
             <div className="flex items-center gap-2">
               <Edit2 className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">
-                {selectedStyleKey === 'custom' ? 'Custom Style Prompt' : 'View/Edit Style Prompt'}
-              </span>
-              {styleHasChanges && <span className="text-xs text-yellow-500">(edited)</span>}
+              <span className="text-sm font-medium">Custom Style Prompt</span>
             </div>
-            {isStyleExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-
-          {isStyleExpanded && (
-            <div className="px-3 pb-3 space-y-2">
-              <p className="text-xs text-muted-foreground">
-                This style is applied to all images. Edit to customize the look and feel.
-              </p>
-              <textarea
-                value={editedStyle}
-                onChange={(e) => {
-                  setEditedStyle(e.target.value);
-                  setSelectedStyleKey('custom'); // Switch to custom when manually editing
-                }}
-                className="w-full min-h-[120px] p-3 text-sm bg-background border rounded resize-y"
-                placeholder="Describe the visual style..."
-              />
-              {styleHasChanges && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEditedStyle(stylePrompt)}
-                >
-                  Reset to Original
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+            <p className="text-xs text-muted-foreground">
+              This style is applied to all images. Describe the visual style you want.
+            </p>
+            <textarea
+              value={editedStyle}
+              onChange={(e) => setEditedStyle(e.target.value)}
+              className="w-full min-h-[120px] p-3 text-sm bg-background border rounded resize-y"
+              placeholder="Describe the visual style..."
+            />
+          </div>
+        )}
 
         <div className="overflow-y-auto max-h-[50vh] py-4 pr-2">
           {/* Pagination controls for large lists */}
