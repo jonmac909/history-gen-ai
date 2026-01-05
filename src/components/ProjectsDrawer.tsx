@@ -228,7 +228,7 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
             <div className="flex items-center gap-2 mt-3">
               <span className="text-xs text-muted-foreground">Filter:</span>
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as FilterOption)}>
-                <SelectTrigger className="h-7 w-[150px] text-xs">
+                <SelectTrigger className="h-7 w-[170px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
