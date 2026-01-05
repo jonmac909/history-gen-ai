@@ -193,33 +193,47 @@ When continuing a script, seamlessly continue from where you left off.`;
           if (iteration === 1) {
             // First iteration: start fresh
             const wordLimit = Math.min(WORDS_PER_ITERATION, targetWords);
+            const topicTitle = title || 'Historical Documentary';
             messages = [{
               role: 'user',
-              content: `CRITICAL: You MUST rewrite the following transcript into a documentary script. Do NOT make up content or use your training data. ONLY use information from this transcript:
+              content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicTitle}".
+
+=== TOPIC ENFORCEMENT ===
+Your script MUST focus ONLY on: ${topicTitle}
+
+If the transcript contains off-topic content (content NOT related to ${topicTitle}):
+- SKIP that content entirely
+- Do NOT include it in your script
+- Expand the ON-TOPIC content to reach the word count instead
+- If the transcript mostly discusses unrelated topics, extract ONLY the parts about ${topicTitle}
 
 === TRANSCRIPT START ===
 ${transcript}
 === TRANSCRIPT END ===
 
-Title: ${title || 'Historical Documentary'}
-
-Transform this transcript into ${wordLimit} words of polished documentary narration. Stay faithful to the transcript's content - do not add topics, facts, or stories not present in the transcript above.`
+Transform this transcript into ${wordLimit} words of polished documentary narration about "${topicTitle}".
+- ONLY include content directly related to ${topicTitle}
+- If the transcript drifts to other topics, IGNORE those sections
+- Expand and elaborate on the on-topic content to reach the word count`
             }];
           } else {
             // Continuation iterations
             const wordLimit = Math.min(WORDS_PER_ITERATION, wordsRemaining);
+            const topicTitle = title || 'Historical Documentary';
             messages = [
               {
                 role: 'user',
-                content: `CRITICAL: You MUST rewrite the following transcript into a documentary script. Do NOT make up content. ONLY use information from this transcript:
+                content: `CRITICAL: You MUST rewrite the following transcript into a documentary script about "${topicTitle}".
+
+=== TOPIC ENFORCEMENT ===
+Your script MUST focus ONLY on: ${topicTitle}
+IGNORE any off-topic content in the transcript.
 
 === TRANSCRIPT START ===
 ${transcript}
 === TRANSCRIPT END ===
 
-Title: ${title || 'Historical Documentary'}
-
-Write ${wordLimit} words of pure narration based ONLY on the transcript above.`
+Write ${wordLimit} words of pure narration about "${topicTitle}" based ONLY on the relevant parts of the transcript.`
               },
               {
                 role: 'assistant',
@@ -227,13 +241,14 @@ Write ${wordLimit} words of pure narration based ONLY on the transcript above.`
               },
               {
                 role: 'user',
-                content: `Continue the script from where you left off.
+                content: `Continue the script from where you left off. Stay focused on ${topicTitle}.
 
 CRITICAL - DO NOT REPEAT ANY CONTENT:
 - Your previous response ended with the last few sentences shown above
 - Start your continuation with NEW content only
 - Do NOT rewrite or paraphrase sentences you already wrote
 - If you're unsure, skip ahead to genuinely new material
+- Keep ALL content focused on ${topicTitle}
 
 Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
               }
