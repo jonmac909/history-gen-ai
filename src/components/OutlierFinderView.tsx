@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
 import { getChannelOutliers, getChannelOutliersInvidious, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface OutlierFinderViewProps {
   onBack: () => void;
@@ -40,8 +41,6 @@ interface Filters {
   onlyPositiveOutliers: boolean;
 }
 
-const SAVED_CHANNELS_KEY = 'outlier-finder-saved-channels';
-
 // Format large numbers (e.g., 1234567 -> "1.2M")
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -68,17 +67,78 @@ const DURATION_LABELS: Record<DurationOption, string> = {
   'long': 'Long (>20 min)',
 };
 
-function loadSavedChannels(): SavedChannel[] {
+// Supabase functions for persistent saved channels
+async function loadSavedChannelsFromDB(): Promise<SavedChannel[]> {
   try {
-    const saved = localStorage.getItem(SAVED_CHANNELS_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
+    const { data, error } = await supabase
+      .from('saved_channels')
+      .select('*')
+      .order('sort_order', { ascending: true });
+
+    if (error) {
+      console.error('Error loading saved channels:', error);
+      return [];
+    }
+
+    return (data || []).map(row => ({
+      id: row.id,
+      title: row.title,
+      thumbnailUrl: row.thumbnail_url || '',
+      subscriberCountFormatted: row.subscriber_count_formatted || '',
+      averageViews: row.average_views || 0,
+      averageViewsFormatted: row.average_views_formatted || '',
+      input: row.input,
+      savedAt: row.saved_at ? new Date(row.saved_at).getTime() : Date.now(),
+    }));
+  } catch (err) {
+    console.error('Error loading saved channels:', err);
     return [];
   }
 }
 
-function saveSavedChannels(channels: SavedChannel[]) {
-  localStorage.setItem(SAVED_CHANNELS_KEY, JSON.stringify(channels));
+async function upsertSavedChannelToDB(channel: SavedChannel, sortOrder?: number): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('saved_channels')
+      .upsert({
+        id: channel.id,
+        title: channel.title,
+        thumbnail_url: channel.thumbnailUrl,
+        subscriber_count_formatted: channel.subscriberCountFormatted,
+        average_views: channel.averageViews,
+        average_views_formatted: channel.averageViewsFormatted,
+        input: channel.input,
+        saved_at: new Date(channel.savedAt).toISOString(),
+        sort_order: sortOrder ?? 0,
+      }, { onConflict: 'id' });
+
+    if (error) {
+      console.error('Error saving channel:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error saving channel:', err);
+    return false;
+  }
+}
+
+async function deleteSavedChannelFromDB(channelId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('saved_channels')
+      .delete()
+      .eq('id', channelId);
+
+    if (error) {
+      console.error('Error deleting channel:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error deleting channel:', err);
+    return false;
+  }
 }
 
 // Filter helper functions
@@ -130,9 +190,11 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
   const [nicheChannels, setNicheChannels] = useState<NicheChannel[]>([]);
   const [nicheTopic, setNicheTopic] = useState('');
 
-  // Load saved channels on mount
+  // Load saved channels from Supabase on mount
   useEffect(() => {
-    setSavedChannels(loadSavedChannels());
+    loadSavedChannelsFromDB().then(channels => {
+      setSavedChannels(channels);
+    });
   }, []);
 
   // Apply filters to videos
@@ -209,7 +271,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
       if (result.channel) {
         setChannel(result.channel);
-        // Save to recent channels
+        // Save to saved channels (Supabase)
         const newSaved: SavedChannel = {
           id: result.channel.id,
           title: result.channel.title,
@@ -220,10 +282,12 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
           input: channelToAnalyze,
           savedAt: Date.now(),
         };
+        // Update local state
         const existing = savedChannels.filter(c => c.id !== result.channel!.id);
-        const updated = [newSaved, ...existing]; // No limit on saved channels
+        const updated = [newSaved, ...existing];
         setSavedChannels(updated);
-        saveSavedChannels(updated);
+        // Save to Supabase (fire and forget - non-blocking)
+        upsertSavedChannelToDB(newSaved, 0);
       }
       if (result.videos) {
         setVideos(result.videos);
@@ -410,7 +474,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     };
     const updated = [newSaved, ...savedChannels];
     setSavedChannels(updated);
-    saveSavedChannels(updated);
+    // Save to Supabase (fire and forget - non-blocking)
+    upsertSavedChannelToDB(newSaved, 0);
     toast({
       title: "Channel saved",
       description: `${nicheChannel.title} added to your channels`,
@@ -454,7 +519,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     e.stopPropagation();
     const updated = savedChannels.filter(c => c.id !== channelId);
     setSavedChannels(updated);
-    saveSavedChannels(updated);
+    // Delete from Supabase (fire and forget - non-blocking)
+    deleteSavedChannelFromDB(channelId);
   };
 
   const handleClear = () => {
@@ -621,7 +687,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
         {/* Saved channels list */}
         {!channel && !viewingAll && !nicheMode && !isLoading && savedChannels.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-sm font-medium text-gray-500 mb-3">Recent Channels</h2>
+            <h2 className="text-sm font-medium text-gray-500 mb-3">Saved Channels</h2>
             <div className="flex flex-wrap gap-2">
               {savedChannels.map((saved) => (
                 <button
