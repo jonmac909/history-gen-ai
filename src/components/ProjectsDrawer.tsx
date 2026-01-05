@@ -67,7 +67,7 @@ export function ProjectsDrawer({ onOpenProject, onViewFavorites }: ProjectsDrawe
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
-      console.log('[ProjectsDrawer] Loading projects...');
+      console.log('[ProjectsDrawer] Loading projects at', new Date().toISOString());
       Promise.all([getRootProjects(), getArchivedProjects()])
         .then(([rootProjects, archived]) => {
           console.log('[ProjectsDrawer] Loaded', rootProjects.length, 'root projects,', archived.length, 'archived');
