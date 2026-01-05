@@ -330,14 +330,16 @@ const Index = () => {
   const autoSave = (step: Project["currentStep"], overrides?: Partial<Project>) => {
     const finalId = overrides?.id || projectId;
     const finalVideoTitle = overrides?.videoTitle || videoTitle;
-    console.log(`[autoSave] Saving project id=${finalId}, title=${finalVideoTitle}, step=${step}`);
+    // Set status based on step - 'complete' step means project is completed
+    const status = step === 'complete' ? 'completed' : 'in_progress';
+    console.log(`[autoSave] Saving project id=${finalId}, title=${finalVideoTitle}, step=${step}, status=${status}`);
 
     upsertProject({
       id: finalId,
       sourceUrl: overrides?.sourceUrl || sourceUrl,
       videoTitle: finalVideoTitle,
       settings: overrides?.settings || settings,
-      status: 'in_progress',
+      status: status,
       currentStep: step,
       script: overrides?.script || confirmedScript || pendingScript,
       audioUrl: overrides?.audioUrl || pendingAudioUrl,
@@ -2247,6 +2249,44 @@ Please regenerate the script with these issues fixed.`;
               thumbnails: updatedThumbnails,
               selectedThumbnailIndex: updatedThumbnails.length - 1
             });
+          }}
+          onScriptUpload={(script) => {
+            setConfirmedScript(script);
+            setPendingScript(script);
+            autoSave("complete", { script });
+          }}
+          onAudioUpload={(url) => {
+            setPendingAudioUrl(url);
+            setAudioUrl(url);
+            autoSave("complete", { audioUrl: url });
+          }}
+          onCaptionsUpload={(content) => {
+            setPendingSrtContent(content);
+            setSrtContent(content);
+            autoSave("complete", { srtContent: content });
+          }}
+          onImagesUpload={(urls) => {
+            setPendingImages(urls);
+            // Update imagePrompts with new URLs
+            const updatedPrompts = imagePrompts.map((prompt, i) => ({
+              ...prompt,
+              imageUrl: urls[i] || prompt.imageUrl
+            }));
+            setImagePrompts(updatedPrompts);
+            autoSave("complete", { imageUrls: urls, imagePrompts: updatedPrompts });
+          }}
+          onPromptsUpload={(prompts) => {
+            setImagePrompts(prompts);
+            autoSave("complete", { imagePrompts: prompts });
+          }}
+          onVideoUpload={(url, type) => {
+            if (type === 'basic') {
+              setVideoUrl(url);
+              autoSave("complete", { videoUrl: url });
+            } else {
+              setSmokeEmbersVideoUrl(url);
+              autoSave("complete", { smokeEmbersVideoUrl: url });
+            }
           }}
           tags={projectTags}
           onTagsChange={(newTags) => {
