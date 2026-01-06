@@ -205,18 +205,22 @@ export function ImagePromptsPreviewModal({
     return results;
   }, [editedPrompts]);
 
+  // Remove sentences containing modern terms from a prompt
+  const cleanModernTermsFromText = (text: string): string => {
+    // Split into sentences, filter out those with modern terms
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    const cleanedSentences = sentences.filter(sentence => {
+      const lowerSentence = sentence.toLowerCase();
+      return !MODERN_TERMS.some(term => lowerSentence.includes(term.toLowerCase()));
+    });
+    return cleanedSentences.join(' ').trim();
+  };
+
   // Remove modern terms from a specific prompt
   const handleRemoveModernTerms = (promptIndex: number) => {
     setEditedPrompts(prev => prev.map(p => {
       if (p.index === promptIndex) {
-        let newDesc = p.sceneDescription;
-        // Remove sentences containing modern terms
-        for (const term of MODERN_TERMS) {
-          const regex = new RegExp(`[^.]*\\b${term}\\b[^.]*\\.?`, 'gi');
-          newDesc = newDesc.replace(regex, '');
-        }
-        // Clean up extra spaces and periods
-        newDesc = newDesc.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').trim();
+        const newDesc = cleanModernTermsFromText(p.sceneDescription);
         return {
           ...p,
           sceneDescription: newDesc,
@@ -229,16 +233,13 @@ export function ImagePromptsPreviewModal({
 
   // Remove modern terms from all flagged prompts
   const handleRemoveAllModernTerms = () => {
+    console.log('[ImagePromptsPreviewModal] Removing modern terms from', promptsWithModernTerms.length, 'prompts');
     setEditedPrompts(prev => prev.map(p => {
       const text = p.sceneDescription.toLowerCase();
-      const hasModernTerms = MODERN_TERMS.some(term => text.includes(term.toLowerCase()));
+      const hasModernTerms = MODERN_TERMS.some(term => text.includes(term));
       if (hasModernTerms) {
-        let newDesc = p.sceneDescription;
-        for (const term of MODERN_TERMS) {
-          const regex = new RegExp(`[^.]*\\b${term}\\b[^.]*\\.?`, 'gi');
-          newDesc = newDesc.replace(regex, '');
-        }
-        newDesc = newDesc.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').trim();
+        const newDesc = cleanModernTermsFromText(p.sceneDescription);
+        console.log(`[ImagePromptsPreviewModal] Cleaned prompt ${p.index}:`, p.sceneDescription.substring(0, 50), '->', newDesc.substring(0, 50));
         return {
           ...p,
           sceneDescription: newDesc,
