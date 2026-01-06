@@ -184,8 +184,8 @@ RULES:
    - Script about Ancient Egypt → Pyramids, pharaohs, Nile river, hieroglyphics
    - NEVER show scenes from the wrong era (no medieval castles in Roman scripts, no Victorian clothing in Egyptian scripts)
 6. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept using settings, objects, and people from that SPECIFIC era
-7. NEVER depict violence, blood, surgery, medical procedures, torture, death, corpses, executions, or anything scary/disturbing. Keep all scenes peaceful, serene, and suitable for relaxing/sleep content
-8. For topics like medicine or trials: show the setting, tools, or aftermath (healed patient) - NOT the procedure itself
+7. You may depict dramatic historical scenes including warfare, battles, destruction, and conflict - but avoid explicit gore, graphic wounds, torture closeups, or gratuitous violence. Show the drama and scale of historical events appropriately.
+8. For medical/surgical topics: show the setting, tools, or aftermath - NOT graphic procedures
 9. Include specific details: setting, lighting, objects, people, actions, atmosphere - all accurate to the historical period
 10. 50-100 words per description
 11. Do NOT include any text, titles, or words in the image

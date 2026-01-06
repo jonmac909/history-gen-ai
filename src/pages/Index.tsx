@@ -220,6 +220,7 @@ const Index = () => {
   const [smokeEmbersVideoUrl, setSmokeEmbersVideoUrl] = useState<string | undefined>();
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndices, setRegeneratingImageIndices] = useState<Set<number>>(new Set());
+  const [isRegeneratingPrompts, setIsRegeneratingPrompts] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [uploadedScript, setUploadedScript] = useState("");
@@ -1076,6 +1077,74 @@ const Index = () => {
         variant: "destructive",
       });
       setViewState("create");
+    }
+  };
+
+  // Regenerate all image prompts (re-call Claude to generate new scene descriptions)
+  const handleRegenerateImagePrompts = async () => {
+    if (!pendingSrtContent && !srtContent) {
+      toast({
+        title: "Error",
+        description: "No captions available to regenerate prompts",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRegeneratingPrompts(true);
+
+    try {
+      // Use confirmedScript or pendingScript as the script context
+      let scriptForPrompts = confirmedScript || pendingScript;
+      const srt = pendingSrtContent || srtContent || "";
+
+      // If no script, extract from captions
+      if (!scriptForPrompts && srt) {
+        const lines = srt.split('\n');
+        const textLines: string[] = [];
+        for (const line of lines) {
+          if (line.trim() && !/^\d+$/.test(line.trim()) && !line.includes('-->')) {
+            textLines.push(line.trim());
+          }
+        }
+        scriptForPrompts = textLines.join(' ');
+      }
+
+      const promptResult = await generateImagePrompts(
+        scriptForPrompts,
+        srt,
+        settings.imageCount,
+        getSelectedImageStyle(),
+        pendingAudioDuration,
+        (progress, message) => {
+          console.log(`[RegeneratePrompts] ${progress}%: ${message}`);
+        }
+      );
+
+      if (!promptResult.success || !promptResult.prompts) {
+        throw new Error(promptResult.error || "Failed to regenerate image prompts");
+      }
+
+      console.log(`Regenerated ${promptResult.prompts.length} image prompts`);
+      setImagePrompts(promptResult.prompts);
+
+      // Auto-save after regeneration
+      autoSave("prompts", { imagePrompts: promptResult.prompts });
+
+      toast({
+        title: "Prompts Regenerated",
+        description: `Generated ${promptResult.prompts.length} new scene descriptions`,
+      });
+
+    } catch (error) {
+      console.error("Image prompt regeneration error:", error);
+      toast({
+        title: "Regeneration Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRegeneratingPrompts(false);
     }
   };
 
@@ -2743,6 +2812,8 @@ const Index = () => {
         onCancel={handleCancelRequest}
         onBack={handleBackToCaptions}
         onForward={canGoForwardFromPrompts() ? handleForwardToImages : undefined}
+        onRegenerate={handleRegenerateImagePrompts}
+        isRegenerating={isRegeneratingPrompts}
       />
 
       {/* Images Preview Modal */}

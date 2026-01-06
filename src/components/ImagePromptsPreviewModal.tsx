@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette } from "lucide-react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,8 @@ interface ImagePromptsPreviewModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
 function formatTimecode(time: string): string {
@@ -134,7 +136,9 @@ export function ImagePromptsPreviewModal({
   onConfirm,
   onCancel,
   onBack,
-  onForward
+  onForward,
+  onRegenerate,
+  isRegenerating = false
 }: ImagePromptsPreviewModalProps) {
   const [editedPrompts, setEditedPrompts] = useState<ImagePrompt[]>(prompts);
 
@@ -335,7 +339,7 @@ export function ImagePromptsPreviewModal({
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-          {/* Left side: Navigation + Download */}
+          {/* Left side: Navigation + Download + Regenerate */}
           <div className="flex gap-2 mr-auto">
             {onBack && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
@@ -346,6 +350,12 @@ export function ImagePromptsPreviewModal({
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
+            {onRegenerate && (
+              <Button variant="outline" onClick={onRegenerate} disabled={isRegenerating}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRegenerating ? 'animate-spin' : ''}`} />
+                {isRegenerating ? 'Regenerating...' : 'Redo Prompts'}
+              </Button>
+            )}
           </div>
 
           {/* Right side: Exit + Forward/Continue */}
