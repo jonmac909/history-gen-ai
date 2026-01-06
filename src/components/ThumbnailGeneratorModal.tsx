@@ -118,6 +118,7 @@ export function ThumbnailGeneratorModal({
   }, [isOpen, initialThumbnails, initialSelectedIndex]);
 
   // Notify parent when selection changes (for real-time persistence)
+  // Note: onSelectionChange excluded from deps to prevent infinite loops with inline callbacks
   useEffect(() => {
     if (isOpen && onSelectionChange) {
       const allThumbnails = [...generatedThumbnails, ...uploadedThumbnails];
@@ -126,7 +127,8 @@ export function ThumbnailGeneratorModal({
         : undefined;
       onSelectionChange(allThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
     }
-  }, [selectedThumbnail, generatedThumbnails, uploadedThumbnails, isOpen, onSelectionChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThumbnail, generatedThumbnails, uploadedThumbnails, isOpen]);
 
   // History stack for navigating back to previous thumbnail batches
   const [thumbnailHistory, setThumbnailHistory] = useState<{
