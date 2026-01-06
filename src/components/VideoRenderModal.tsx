@@ -402,8 +402,8 @@ export function VideoRenderModal({
             </div>
           )}
 
-          {/* Render button when not rendering and no videos */}
-          {!hasAnyVideo && !isRendering && currentPass === 'idle' && (
+          {/* Render button when not rendering */}
+          {!isRendering && currentPass !== 'complete' && (
             <div className="space-y-4 py-4">
               <div className="bg-muted/50 rounded-lg p-4 space-y-2">
                 <h4 className="font-medium text-sm">Two-Pass Rendering</h4>
@@ -420,7 +420,7 @@ export function VideoRenderModal({
               </div>
               <Button onClick={handleRenderBothPasses} className="w-full gap-2">
                 <Video className="w-4 h-4" />
-                Render Video (2 Passes)
+                {hasAnyVideo ? 'Re-render Video (2 Passes)' : 'Render Video (2 Passes)'}
               </Button>
             </div>
           )}
