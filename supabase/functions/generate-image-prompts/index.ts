@@ -186,9 +186,10 @@ RULES:
 6. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept using settings, objects, and people from that SPECIFIC era
 7. You may depict dramatic historical scenes including warfare, battles, destruction, and conflict - but avoid explicit gore, graphic wounds, torture closeups, or gratuitous violence. Show the drama and scale of historical events appropriately.
 8. For medical/surgical topics: show the setting, tools, or aftermath - NOT graphic procedures
-9. Include specific details: setting, lighting, objects, people, actions, atmosphere - all accurate to the historical period
-10. 50-100 words per description
-11. Do NOT include any text, titles, or words in the image
+9. NEVER show modern settings like museums, laboratories, research facilities, display cases, scientists in lab coats, or any contemporary/academic environments. ALL scenes must be set IN the historical period being discussed, showing events AS THEY HAPPENED, not modern people studying history.
+10. Include specific details: setting, lighting, objects, people, actions, atmosphere - all accurate to the historical period
+11. 50-100 words per description
+12. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 

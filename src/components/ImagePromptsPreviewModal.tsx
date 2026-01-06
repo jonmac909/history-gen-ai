@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette, RefreshCw } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Check, X, Image as ImageIcon, Edit2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, Palette, RefreshCw, AlertTriangle, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -183,6 +183,72 @@ export function ImagePromptsPreviewModal({
     }
   }, [stylePrompt]);
 
+  // Scan for modern/anachronistic terms in prompts
+  const MODERN_TERMS = [
+    'museum', 'laboratory', 'lab coat', 'scientist', 'researcher', 'display case',
+    'microscope', 'magnifying glass', 'academic', 'university', 'professor',
+    'modern', 'contemporary', 'facility', 'institution', 'exhibit', 'gallery',
+    'archaeological', 'excavation', 'artifact', 'specimen', 'analysis',
+    'sterile', 'clinical', 'research', 'study', 'documentation', 'tablet',
+    'computer', 'screen', 'digital', 'photograph', 'camera'
+  ];
+
+  const promptsWithModernTerms = useMemo(() => {
+    const results: { index: number; terms: string[] }[] = [];
+    for (const prompt of editedPrompts) {
+      const text = prompt.sceneDescription.toLowerCase();
+      const foundTerms = MODERN_TERMS.filter(term => text.includes(term.toLowerCase()));
+      if (foundTerms.length > 0) {
+        results.push({ index: prompt.index, terms: foundTerms });
+      }
+    }
+    return results;
+  }, [editedPrompts]);
+
+  // Remove modern terms from a specific prompt
+  const handleRemoveModernTerms = (promptIndex: number) => {
+    setEditedPrompts(prev => prev.map(p => {
+      if (p.index === promptIndex) {
+        let newDesc = p.sceneDescription;
+        // Remove sentences containing modern terms
+        for (const term of MODERN_TERMS) {
+          const regex = new RegExp(`[^.]*\\b${term}\\b[^.]*\\.?`, 'gi');
+          newDesc = newDesc.replace(regex, '');
+        }
+        // Clean up extra spaces and periods
+        newDesc = newDesc.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').trim();
+        return {
+          ...p,
+          sceneDescription: newDesc,
+          prompt: `${editedStyle}. ${newDesc}`
+        };
+      }
+      return p;
+    }));
+  };
+
+  // Remove modern terms from all flagged prompts
+  const handleRemoveAllModernTerms = () => {
+    setEditedPrompts(prev => prev.map(p => {
+      const text = p.sceneDescription.toLowerCase();
+      const hasModernTerms = MODERN_TERMS.some(term => text.includes(term.toLowerCase()));
+      if (hasModernTerms) {
+        let newDesc = p.sceneDescription;
+        for (const term of MODERN_TERMS) {
+          const regex = new RegExp(`[^.]*\\b${term}\\b[^.]*\\.?`, 'gi');
+          newDesc = newDesc.replace(regex, '');
+        }
+        newDesc = newDesc.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').trim();
+        return {
+          ...p,
+          sceneDescription: newDesc,
+          prompt: `${editedStyle}. ${newDesc}`
+        };
+      }
+      return p;
+    }));
+  };
+
   const handleUpdatePrompt = (updatedPrompt: ImagePrompt) => {
     setEditedPrompts(prev =>
       prev.map(p => p.index === updatedPrompt.index ? updatedPrompt : p)
@@ -254,6 +320,38 @@ export function ImagePromptsPreviewModal({
             )}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Modern Terms Warning Banner */}
+        {promptsWithModernTerms.length > 0 && (
+          <div className="border border-yellow-500/50 rounded-lg p-3 bg-yellow-500/10">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
+                    {promptsWithModernTerms.length} prompt{promptsWithModernTerms.length > 1 ? 's' : ''} contain modern/anachronistic terms
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Found: {[...new Set(promptsWithModernTerms.flatMap(p => p.terms))].slice(0, 5).join(', ')}
+                    {[...new Set(promptsWithModernTerms.flatMap(p => p.terms))].length > 5 && '...'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Images: {promptsWithModernTerms.map(p => `#${p.index}`).join(', ')}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRemoveAllModernTerms}
+                className="flex-shrink-0 border-yellow-500/50 hover:bg-yellow-500/20"
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Remove All
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Image Style Selector */}
         <div className="border rounded-lg p-3 bg-muted/30">
