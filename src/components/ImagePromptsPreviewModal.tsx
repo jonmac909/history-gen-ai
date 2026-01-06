@@ -364,17 +364,16 @@ export function ImagePromptsPreviewModal({
             Exit
           </Button>
 
-          {onForward ? (
-            <Button onClick={onForward}>
+          {onForward && (
+            <Button variant="outline" onClick={onForward}>
               Images
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
-          ) : (
-            <Button onClick={handleConfirm}>
-              <Check className="w-4 h-4 mr-2" />
-              Generate Images
-            </Button>
           )}
+          <Button onClick={handleConfirm}>
+            <Check className="w-4 h-4 mr-2" />
+            {onForward ? 'Regenerate All Images' : 'Generate Images'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
