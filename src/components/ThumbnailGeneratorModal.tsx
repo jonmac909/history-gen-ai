@@ -117,6 +117,9 @@ export function ThumbnailGeneratorModal({
     }
   }, [isOpen, initialThumbnails, initialSelectedIndex]);
 
+  // Track last notified state to prevent redundant callbacks
+  const lastNotifiedRef = useRef<{ thumbnails: string; selectedIndex: number | undefined } | null>(null);
+
   // Notify parent when selection changes (for real-time persistence)
   // Note: onSelectionChange excluded from deps to prevent infinite loops with inline callbacks
   useEffect(() => {
@@ -125,7 +128,17 @@ export function ThumbnailGeneratorModal({
       const selectedIndex = selectedThumbnail
         ? allThumbnails.indexOf(selectedThumbnail)
         : undefined;
-      onSelectionChange(allThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
+
+      // Create a fingerprint to check if state actually changed
+      const fingerprint = allThumbnails.join('|');
+      const lastFingerprint = lastNotifiedRef.current?.thumbnails;
+      const lastSelectedIndex = lastNotifiedRef.current?.selectedIndex;
+
+      // Only notify if something actually changed
+      if (fingerprint !== lastFingerprint || selectedIndex !== lastSelectedIndex) {
+        lastNotifiedRef.current = { thumbnails: fingerprint, selectedIndex };
+        onSelectionChange(allThumbnails, selectedIndex !== -1 ? selectedIndex : undefined);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedThumbnail, generatedThumbnails, uploadedThumbnails, isOpen]);
