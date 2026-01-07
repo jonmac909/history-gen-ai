@@ -756,25 +756,39 @@ router.post('/quick-edit', async (req: Request, res: Response) => {
 
     // Detect if this is a topic drift fix (needs major rewrite) vs minor edit
     const isTopicDriftFix = /off-topic|topic drift|only.*about|remove.*content|expand/i.test(fixPrompt);
+    const originalWordCount = script.split(/\s+/).filter((w: string) => w.length > 0).length;
+    const minWordCount = Math.floor(originalWordCount * 0.85); // Must be at least 85% of original
+
+    console.log(`[Quick Edit] Mode: ${isTopicDriftFix ? 'TOPIC DRIFT FIX' : 'TARGETED EDIT'}`);
+    console.log(`[Quick Edit] Original word count: ${originalWordCount}, minimum required: ${minWordCount}`);
 
     const systemPrompt = isTopicDriftFix
       ? `You are an expert scriptwriter for SLEEP-FRIENDLY long-form history documentaries.
 
 YOUR TASK: COMPLETELY REWRITE the script to focus ONLY on the specified topic. This is a MAJOR rewrite, not a small edit.
 
+⚠️ CRITICAL LENGTH REQUIREMENT ⚠️
+The original script is ${originalWordCount} words. Your output MUST be at least ${minWordCount} words (85% of original).
+DO NOT return a shorter script. If you remove off-topic content, you MUST add new on-topic content to replace it.
+
 CRITICAL RULES:
 1. REMOVE ALL off-topic content entirely - do not try to preserve it
-2. EXPAND the on-topic content to fill the FULL word count (aim for similar length to original)
+2. REPLACE removed content with NEW, EXPANDED on-topic content - DO NOT just delete
 3. Add rich historical details, sensory descriptions, and contemplative narrative
 4. Maintain the dreamy, meditative, sleep-friendly tone throughout
 5. Ensure ALL output is pure prose - no headers, markdown, or formatting
 6. The result should be a complete, cohesive script about ONLY the intended topic
 
 OUTPUT FORMAT:
-Return ONLY the rewritten script. No explanations, no comments, just the new script text.`
+Return ONLY the rewritten script. No explanations, no comments, just the new script text.
+The script MUST be at least ${minWordCount} words long.`
       : `You are an expert script editor for SLEEP-FRIENDLY long-form history documentaries.
 
 YOUR TASK: Make TARGETED EDITS to fix specific issues while preserving the original script as much as possible.
+
+⚠️ CRITICAL LENGTH REQUIREMENT ⚠️
+The original script is ${originalWordCount} words. Your output MUST be at least ${minWordCount} words (85% of original).
+DO NOT significantly shorten the script.
 
 CRITICAL RULES:
 1. PRESERVE the vast majority of the original script - only change what's necessary
@@ -784,18 +798,21 @@ CRITICAL RULES:
 5. The edited script should feel like a natural improvement, not a rewrite
 
 OUTPUT FORMAT:
-Return ONLY the edited script. No explanations, no comments, just the improved script text.`;
+Return ONLY the edited script. No explanations, no comments, just the improved script text.
+The script MUST be at least ${minWordCount} words long.`;
 
     const userMessage = isTopicDriftFix
-      ? `REWRITE THIS SCRIPT to focus ONLY on the specified topic. Remove ALL off-topic content and expand the on-topic content.
+      ? `REWRITE THIS SCRIPT to focus ONLY on the specified topic. Remove ALL off-topic content and REPLACE it with expanded on-topic content.
+
+⚠️ LENGTH REQUIREMENT: Output MUST be at least ${minWordCount} words. Original is ${originalWordCount} words.
 
 INSTRUCTIONS:
 ${fixPrompt}
 
-ORIGINAL SCRIPT (contains off-topic content that must be REMOVED):
+ORIGINAL SCRIPT (contains off-topic content that must be REMOVED and REPLACED):
 ${script}
 
-IMPORTANT: The output script should be approximately the same length as the original (${script.split(/\s+/).length} words). Replace off-topic content with MORE content about the correct topic.`
+REMEMBER: Do NOT just delete content. Replace off-topic sections with NEW content about the correct topic. Final word count must be at least ${minWordCount} words.`
       : `Please make targeted edits to fix these issues:
 
 FIX REQUIRED:
@@ -819,8 +836,9 @@ Return the edited script with the issues fixed. Preserve the original as much as
     });
 
     const editedScript = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const editedWordCount = editedScript?.split(/\s+/).filter(w => w.length > 0).length || 0;
 
-    console.log(`[Quick Edit] Response received: ${editedScript?.length || 0} chars (original: ${script.length} chars)`);
+    console.log(`[Quick Edit] Response received: ${editedWordCount} words (original: ${originalWordCount} words, min required: ${minWordCount})`);
     console.log(`[Quick Edit] First 200 chars of response:`, editedScript?.substring(0, 200) || 'EMPTY');
 
     if (!editedScript) {
@@ -828,12 +846,12 @@ Return the edited script with the issues fixed. Preserve the original as much as
       throw new Error('Edit produced empty result');
     }
 
-    if (editedScript.length < script.length * 0.3) {
-      console.error(`[Quick Edit] Response too short: ${editedScript.length} < ${script.length * 0.3} (30% threshold)`);
-      throw new Error(`Edit produced too-short result: ${editedScript.length} chars vs original ${script.length} chars`);
+    if (editedWordCount < minWordCount) {
+      console.error(`[Quick Edit] Response too short: ${editedWordCount} words < ${minWordCount} words (85% threshold)`);
+      throw new Error(`Edit produced too-short result: ${editedWordCount} words vs required minimum ${minWordCount} words (original was ${originalWordCount})`);
     }
 
-    console.log(`✅ Quick edit complete: ${editedScript.length} chars (was ${script.length})`);
+    console.log(`✅ Quick edit complete: ${editedWordCount} words (was ${originalWordCount} words)`);
 
     res.json({
       success: true,
