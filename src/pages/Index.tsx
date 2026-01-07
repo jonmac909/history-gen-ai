@@ -2940,7 +2940,7 @@ const Index = () => {
       {/* YouTube Upload Modal */}
       <YouTubeUploadModal
         isOpen={viewState === "review-youtube"}
-        videoUrl={renderedVideoUrl || ""}
+        videoUrl={smokeEmbersVideoUrl || videoUrl || ""}
         projectTitle={videoTitle}
         script={confirmedScript}
         thumbnails={generatedThumbnails}

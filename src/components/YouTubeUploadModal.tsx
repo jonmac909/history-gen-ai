@@ -36,21 +36,23 @@ import {
   fetchYouTubePlaylists,
   disconnectYouTube,
   authenticateYouTube,
+  getValidAccessToken,
   type YouTubeChannel,
   type YouTubePlaylist,
 } from "@/lib/youtubeAuth";
-import { generateYouTubeMetadata } from "@/lib/api";
+import { generateYouTubeMetadata, uploadToYouTube } from "@/lib/api";
+import { Progress } from "@/components/ui/progress";
 
 interface YouTubeUploadModalProps {
   isOpen: boolean;
-  videoUrl?: string; // Not used in metadata-only mode but accepted for compatibility
+  videoUrl?: string; // URL of video to upload
   projectTitle?: string;
   script?: string;
-  thumbnails?: string[]; // Not used in metadata-only mode but accepted for compatibility
-  selectedThumbnailIndex?: number; // Not used in metadata-only mode but accepted for compatibility
+  thumbnails?: string[]; // Generated thumbnails
+  selectedThumbnailIndex?: number; // Index of selected thumbnail
   onClose: () => void;
-  onSuccess?: () => void; // Alias for onConfirm for compatibility
-  onConfirm?: () => void;
+  onSuccess?: () => void; // Called after successful upload
+  onConfirm?: () => void; // Called when metadata is confirmed (without upload)
   onBack?: () => void;
   onSkip?: () => void;
   onMetadataChange?: (title: string, description: string, tags: string, categoryId: string, playlistId: string | null) => void;
@@ -75,11 +77,11 @@ const CATEGORIES = [
 
 export function YouTubeUploadModal({
   isOpen,
-  videoUrl: _videoUrl, // Accepted but not used
+  videoUrl,
   projectTitle,
   script,
-  thumbnails: _thumbnails, // Accepted but not used
-  selectedThumbnailIndex: _selectedThumbnailIndex, // Accepted but not used
+  thumbnails,
+  selectedThumbnailIndex,
   onClose,
   onSuccess,
   onConfirm,
@@ -114,6 +116,13 @@ export function YouTubeUploadModal({
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
   const [generatedTitles, setGeneratedTitles] = useState<string[]>([]);
   const [showTitleSelector, setShowTitleSelector] = useState(false);
+
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState<string | null>(null);
 
   // Track last notified metadata to prevent redundant callbacks
   const lastNotifiedMetadataRef = useRef<string | null>(null);
@@ -318,6 +327,110 @@ export function YouTubeUploadModal({
     onClose();
   };
 
+  // Handle upload to YouTube
+  const handleUpload = async () => {
+    if (!videoUrl) {
+      toast({
+        title: "No Video",
+        description: "No video URL available for upload. Please render a video first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get access token
+    const accessToken = await getValidAccessToken();
+    if (!accessToken) {
+      toast({
+        title: "Not Authenticated",
+        description: "Please connect your YouTube account first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const finalTitle = ensureTitleSuffix(title);
+    const tagsArray = tags.split(",").map(t => t.trim()).filter(t => t.length > 0);
+
+    // Get thumbnail URL if selected
+    const thumbnailUrl = thumbnails && selectedThumbnailIndex !== undefined
+      ? thumbnails[selectedThumbnailIndex]
+      : undefined;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadMessage("Starting upload...");
+
+    try {
+      const result = await uploadToYouTube(
+        {
+          videoUrl,
+          accessToken,
+          title: finalTitle,
+          description,
+          tags: tagsArray,
+          categoryId,
+          privacyStatus: "private", // Always upload as private draft
+          thumbnailUrl,
+        },
+        (progress) => {
+          setUploadProgress(progress.percent);
+          setUploadMessage(progress.message);
+        }
+      );
+
+      if (result.success && result.videoId) {
+        setUploadedVideoId(result.videoId);
+        setYoutubeUrl(result.youtubeUrl || null);
+
+        // Add to playlist if selected
+        if (selectedPlaylist) {
+          try {
+            const { addVideoToPlaylist } = await import("@/lib/youtubeAuth");
+            await addVideoToPlaylist(selectedPlaylist, result.videoId);
+            toast({
+              title: "Added to Playlist",
+              description: "Video has been added to the selected playlist.",
+            });
+          } catch (playlistError) {
+            console.error("Failed to add to playlist:", playlistError);
+            toast({
+              title: "Playlist Warning",
+              description: "Video uploaded but failed to add to playlist.",
+              variant: "destructive",
+            });
+          }
+        }
+
+        // Notify parent with final metadata
+        if (onMetadataChange) {
+          onMetadataChange(finalTitle, description, tags, categoryId, selectedPlaylist);
+        }
+
+        toast({
+          title: "Upload Complete!",
+          description: "Your video has been uploaded to YouTube as a private draft.",
+        });
+
+        // Call success callback
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Upload failed");
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload video.",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    }
+  };
+
+  // Check if we can upload
+  const canUpload = isConnected && videoUrl && title.trim().length > 0;
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -512,33 +625,101 @@ export function YouTubeUploadModal({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Thumbnail Preview */}
+          {thumbnails && thumbnails.length > 0 && selectedThumbnailIndex !== undefined && (
+            <div className="space-y-2">
+              <Label>Selected Thumbnail</Label>
+              <div className="border rounded-lg overflow-hidden">
+                <img
+                  src={thumbnails[selectedThumbnailIndex]}
+                  alt="Selected thumbnail"
+                  className="w-full h-auto"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+              <div className="flex justify-between text-sm">
+                <span>{uploadMessage}</span>
+                <span className="font-medium">{uploadProgress}%</span>
+              </div>
+              <Progress value={uploadProgress} className="h-2" />
+            </div>
+          )}
+
+          {/* Upload Complete */}
+          {uploadedVideoId && youtubeUrl && (
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <Check className="w-5 h-5" />
+                <span className="font-medium">Upload Complete!</span>
+              </div>
+              <a
+                href={youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline"
+              >
+                View on YouTube Studio →
+              </a>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
           {/* Left side: Navigation */}
           <div className="flex gap-2 mr-auto">
-            {onBack && (
+            {onBack && !isUploading && (
               <Button variant="outline" size="icon" onClick={onBack} title="Back to previous step">
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
-            {onSkip && (
+            {onSkip && !isUploading && (
               <Button variant="outline" size="icon" onClick={onSkip} title="Skip to next step">
                 <ChevronRight className="w-5 h-5" />
               </Button>
             )}
           </div>
 
-          {/* Right side: Exit + Confirm */}
-          <Button variant="outline" onClick={onClose}>
-            <X className="w-4 h-4 mr-2" />
-            Exit
-          </Button>
+          {/* Right side: Exit + Upload/Confirm */}
+          {!uploadedVideoId ? (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={isUploading}>
+                <X className="w-4 h-4 mr-2" />
+                Exit
+              </Button>
 
-          <Button onClick={handleConfirm}>
-            <Check className="w-4 h-4 mr-2" />
-            Confirm
-          </Button>
+              {videoUrl ? (
+                <Button onClick={handleUpload} disabled={!canUpload || isUploading}>
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Youtube className="w-4 h-4 mr-2" />
+                      Upload to YouTube
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button onClick={handleConfirm}>
+                  <Check className="w-4 h-4 mr-2" />
+                  Confirm
+                </Button>
+              )}
+            </>
+          ) : (
+            <Button onClick={onClose}>
+              <Check className="w-4 h-4 mr-2" />
+              Done
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
