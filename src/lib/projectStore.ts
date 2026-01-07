@@ -2,6 +2,25 @@ import type { GenerationSettings } from "@/components/SettingsPopover";
 import type { ImagePromptWithTiming, AudioSegment } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 
+// Helper to merge imageUrls array into imagePrompts
+// This fixes the issue where imageUrls are stored separately from imagePrompts
+function mergeImageUrlsIntoPrompts(
+  prompts: ImagePromptWithTiming[] | undefined,
+  urls: string[] | undefined
+): ImagePromptWithTiming[] | undefined {
+  if (!prompts || prompts.length === 0) return prompts;
+  if (!urls || urls.length === 0) return prompts;
+
+  // Only merge if prompts don't already have imageUrls
+  const needsMerge = prompts.some(p => !p.imageUrl);
+  if (!needsMerge) return prompts;
+
+  return prompts.map((prompt, index) => ({
+    ...prompt,
+    imageUrl: prompt.imageUrl || urls[index] || undefined
+  }));
+}
+
 export interface Project {
   id: string;
   createdAt: number;
@@ -112,7 +131,10 @@ function rowToProject(row: {
     audioSegments: (row.audio_segments as AudioSegment[]) || undefined,
     srtContent: row.srt_content || undefined,
     srtUrl: row.srt_url || undefined,
-    imagePrompts: (row.image_prompts as ImagePromptWithTiming[]) || undefined,
+    imagePrompts: mergeImageUrlsIntoPrompts(
+      (row.image_prompts as ImagePromptWithTiming[]) || undefined,
+      (row.image_urls as string[]) || undefined
+    ),
     imageUrls: (row.image_urls as string[]) || undefined,
     videoUrl: row.video_url || undefined,
     videoUrlCaptioned: row.video_url_captioned || undefined,
