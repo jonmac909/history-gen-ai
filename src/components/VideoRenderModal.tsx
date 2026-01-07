@@ -73,39 +73,36 @@ export function VideoRenderModal({
     existingEffectsVideoUrl,
     isOpen
   });
-  // Initialize to 'complete' if we have an existing effects video
-  const [currentPass, setCurrentPass] = useState<RenderPass>(existingEffectsVideoUrl ? 'complete' : 'idle');
+  // State for render progress
+  const [currentPass, setCurrentPass] = useState<RenderPass>('idle');
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
-  const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(existingBasicVideoUrl || null);
-  const [effectsVideoUrl, setEffectsVideoUrl] = useState<string | null>(existingEffectsVideoUrl || null);
+  const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(null);
+  const [effectsVideoUrl, setEffectsVideoUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'effects'>('effects'); // Default to effects tab
-  const autoRenderTriggered = useRef(!!existingBasicVideoUrl || !!existingEffectsVideoUrl);
+  const autoRenderTriggered = useRef(false);
 
-  // Sync with existing video URLs when props change
+  // Sync existing video URLs from props whenever they change or modal opens
+  // This is the PRIMARY sync mechanism - always trust the props
   useEffect(() => {
+    console.log('[VideoRenderModal] Syncing from props:', { existingBasicVideoUrl, existingEffectsVideoUrl, isOpen });
     if (existingBasicVideoUrl) {
       setBasicVideoUrl(existingBasicVideoUrl);
     }
     if (existingEffectsVideoUrl) {
       setEffectsVideoUrl(existingEffectsVideoUrl);
       autoRenderTriggered.current = true;
-      // Mark as complete so the video player shows
       setCurrentPass('complete');
     }
   }, [existingBasicVideoUrl, existingEffectsVideoUrl]);
 
-  // Also sync when modal opens (in case state was reset)
+  // When modal opens with existing videos, ensure state is set correctly
   useEffect(() => {
-    if (isOpen) {
-      if (existingBasicVideoUrl && !basicVideoUrl) {
-        setBasicVideoUrl(existingBasicVideoUrl);
-      }
-      if (existingEffectsVideoUrl && !effectsVideoUrl) {
-        setEffectsVideoUrl(existingEffectsVideoUrl);
-        autoRenderTriggered.current = true;
-        // Mark as complete so the video player shows
-        setCurrentPass('complete');
-      }
+    if (isOpen && existingEffectsVideoUrl) {
+      console.log('[VideoRenderModal] Modal opened with existing video, setting complete');
+      setEffectsVideoUrl(existingEffectsVideoUrl);
+      setBasicVideoUrl(existingBasicVideoUrl || null);
+      setCurrentPass('complete');
+      autoRenderTriggered.current = true;
     }
   }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
@@ -126,7 +123,8 @@ export function VideoRenderModal({
       setBasicVideoUrl(existingBasicVideoUrl || null);
       setEffectsVideoUrl(existingEffectsVideoUrl || null);
       setRenderProgress(null);
-      setCurrentPass('idle');
+      // Keep 'complete' if we have existing videos, otherwise reset to 'idle'
+      setCurrentPass(existingEffectsVideoUrl ? 'complete' : 'idle');
     }
   }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
