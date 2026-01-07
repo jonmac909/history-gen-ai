@@ -756,6 +756,14 @@ New projects initialize with:
 - Ends with embers video render (not basic)
 - Triggered via Settings popover toggle
 
+## Known Gotchas
+
+### React State Batching in autoSave
+When creating a new project, `resetPendingState()` schedules state resets but React batches them asynchronously. If `autoSave()` is called immediately after, it reads OLD state values (from previous project) and saves them to the NEW project. **Fix**: Always pass explicit empty/undefined values for all asset fields in `autoSave()` calls that follow `resetPendingState()`.
+
+### ACP Directory Structure
+The `process/` and `memory/` directories mentioned in ACP section are symlinks to `/Users/jonmac/Documents/SUPER/` (shared across projects). The `directives/` and `execution/` directories are created as needed for DEO automation patterns.
+
 ## Security
 
 **SSRF Protection** (`render-api/src/routes/generate-audio.ts`):
