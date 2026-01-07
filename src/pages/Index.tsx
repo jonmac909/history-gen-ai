@@ -2908,19 +2908,28 @@ const Index = () => {
         initialPlaylistId={youtubePlaylistId}
         onMetadataChange={(title, description, tags, categoryId, playlistId) => {
           // Only update state if values actually changed to prevent re-render loops
-          if (title !== youtubeTitle) setYoutubeTitle(title);
-          if (description !== youtubeDescription) setYoutubeDescription(description);
-          if (tags !== youtubeTags) setYoutubeTags(tags);
-          if (categoryId !== youtubeCategoryId) setYoutubeCategoryId(categoryId);
-          if (playlistId !== youtubePlaylistId) setYoutubePlaylistId(playlistId);
-          // Save YouTube metadata to project
-          autoSave("review-youtube", {
-            youtubeTitle: title,
-            youtubeDescription: description,
-            youtubeTags: tags,
-            youtubeCategoryId: categoryId,
-            youtubePlaylistId: playlistId,
-          });
+          const titleChanged = title !== youtubeTitle;
+          const descChanged = description !== youtubeDescription;
+          const tagsChanged = tags !== youtubeTags;
+          const catChanged = categoryId !== youtubeCategoryId;
+          const playlistChanged = playlistId !== youtubePlaylistId;
+
+          if (titleChanged) setYoutubeTitle(title);
+          if (descChanged) setYoutubeDescription(description);
+          if (tagsChanged) setYoutubeTags(tags);
+          if (catChanged) setYoutubeCategoryId(categoryId);
+          if (playlistChanged) setYoutubePlaylistId(playlistId);
+
+          // Only save if something actually changed
+          if (titleChanged || descChanged || tagsChanged || catChanged || playlistChanged) {
+            autoSave("review-youtube", {
+              youtubeTitle: title,
+              youtubeDescription: description,
+              youtubeTags: tags,
+              youtubeCategoryId: categoryId,
+              youtubePlaylistId: playlistId,
+            });
+          }
         }}
       />
     </div>

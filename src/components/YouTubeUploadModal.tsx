@@ -121,11 +121,34 @@ export function YouTubeUploadModal({
   // Track if we've already initialized for this modal session
   const hasInitializedRef = useRef(false);
 
+  // Track if API calls are in progress to prevent duplicate calls
+  const isLoadingRef = useRef(false);
+
+  // Track last open timestamp to debounce rapid open/close cycles
+  const lastOpenTimeRef = useRef(0);
+
   // Check connection status on open - only run ONCE per modal open
   useEffect(() => {
+    const now = Date.now();
+
     if (isOpen && !hasInitializedRef.current) {
+      // Debounce: ignore if opened within 500ms of last open
+      if (now - lastOpenTimeRef.current < 500) {
+        console.log('[YouTubeModal] Debounced - opened too quickly after last open');
+        return;
+      }
+
+      lastOpenTimeRef.current = now;
       hasInitializedRef.current = true;
-      checkConnection();
+
+      // Only call checkConnection if not already loading
+      if (!isLoadingRef.current) {
+        isLoadingRef.current = true;
+        checkConnection().finally(() => {
+          isLoadingRef.current = false;
+        });
+      }
+
       // Reset the notification ref so initial values trigger a save
       lastNotifiedMetadataRef.current = null;
       // Use saved values if available, otherwise fall back to project title
