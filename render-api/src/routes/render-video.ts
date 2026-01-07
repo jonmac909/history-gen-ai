@@ -22,6 +22,11 @@ const PARALLEL_CHUNK_RENDERS_WITH_EFFECTS = 1;  // Effects pass is memory-intens
 const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
+// Parallel rendering configuration
+const PARALLEL_WORKERS = 10;  // Max 10 RunPod workers for video rendering
+const CHUNK_POLL_INTERVAL = 3000;  // 3 seconds between status checks
+const CHUNK_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max per chunk
+
 // Progress tracking state (shared across chunks for accurate progress)
 interface RenderProgress {
   totalChunks: number;
@@ -272,6 +277,347 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
     await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message });
+  }
+}
+
+// Parallel rendering using 10 RunPod workers for ~10x speedup
+async function processRenderJobParallel(jobId: string, params: RenderVideoRequest): Promise<void> {
+  const supabase = getSupabase();
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  let tempDir: string | null = null;
+
+  try {
+    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+    const applyEffects = effects?.smoke_embers || effects?.embers || false;
+
+    console.log(`Job ${jobId}: Starting PARALLEL render for project ${projectId}`);
+    console.log(`Images: ${imageUrls.length}, Workers: ${PARALLEL_WORKERS}, Effects: ${applyEffects}`);
+
+    await updateJobStatus(supabase, jobId, 'queued', 2, 'Preparing parallel render...');
+
+    // Calculate chunk distribution
+    const numChunks = Math.min(PARALLEL_WORKERS, imageUrls.length);
+    const imagesPerChunk = Math.ceil(imageUrls.length / numChunks);
+
+    interface ChunkInfo {
+      index: number;
+      imageUrls: string[];
+      timings: ImageTiming[];
+      runpodJobId?: string;
+      status: 'pending' | 'submitted' | 'completed' | 'failed';
+      chunkUrl?: string;
+      error?: string;
+    }
+
+    // Split images into chunks
+    const chunks: ChunkInfo[] = [];
+    for (let i = 0; i < numChunks; i++) {
+      const start = i * imagesPerChunk;
+      const end = Math.min(start + imagesPerChunk, imageUrls.length);
+      if (start < imageUrls.length) {
+        chunks.push({
+          index: i,
+          imageUrls: imageUrls.slice(start, end),
+          timings: imageTimings.slice(start, end),
+          status: 'pending'
+        });
+      }
+    }
+
+    console.log(`Split into ${chunks.length} chunks: ${chunks.map(c => c.imageUrls.length).join(', ')} images each`);
+    await updateJobStatus(supabase, jobId, 'rendering', 5, `Submitting ${chunks.length} parallel jobs...`);
+
+    // Submit all chunks to RunPod in parallel
+    const runpodUrl = `https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/run`;
+
+    await Promise.all(chunks.map(async (chunk) => {
+      try {
+        const response = await fetch(runpodUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${RUNPOD_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            input: {
+              image_urls: chunk.imageUrls,
+              timings: chunk.timings,
+              project_id: projectId,
+              apply_effects: applyEffects,
+              supabase_url: supabaseUrl,
+              supabase_key: supabaseKey,
+              render_job_id: jobId,
+              // Chunk mode parameters
+              chunk_mode: true,
+              chunk_index: chunk.index,
+              total_chunks: chunks.length
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`RunPod submission failed: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json() as { id: string };
+        chunk.runpodJobId = data.id;
+        chunk.status = 'submitted';
+        console.log(`Chunk ${chunk.index}: Submitted (RunPod job ${data.id})`);
+      } catch (err: any) {
+        chunk.status = 'failed';
+        chunk.error = err.message;
+        console.error(`Chunk ${chunk.index}: Submit failed - ${err.message}`);
+      }
+    }));
+
+    // Check if any submissions failed
+    const failedSubmissions = chunks.filter(c => c.status === 'failed');
+    if (failedSubmissions.length > 0) {
+      throw new Error(`Failed to submit ${failedSubmissions.length} chunk(s): ${failedSubmissions[0].error}`);
+    }
+
+    await updateJobStatus(supabase, jobId, 'rendering', 10, `All ${chunks.length} chunks submitted, rendering...`);
+
+    // Poll all jobs until complete
+    const startTime = Date.now();
+    let lastProgressUpdate = Date.now();
+
+    while (Date.now() - startTime < CHUNK_MAX_WAIT) {
+      await new Promise(resolve => setTimeout(resolve, CHUNK_POLL_INTERVAL));
+
+      // Poll each chunk's status
+      await Promise.all(chunks.map(async (chunk) => {
+        if (chunk.status !== 'submitted' || !chunk.runpodJobId) return;
+
+        try {
+          const statusUrl = `https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/status/${chunk.runpodJobId}`;
+          const response = await fetch(statusUrl, {
+            headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+          });
+
+          if (!response.ok) return;
+
+          const data = await response.json() as {
+            status: string;
+            output?: { chunk_url?: string; error?: string };
+          };
+
+          if (data.status === 'COMPLETED') {
+            if (data.output?.chunk_url) {
+              chunk.status = 'completed';
+              chunk.chunkUrl = data.output.chunk_url;
+              console.log(`Chunk ${chunk.index}: Completed - ${chunk.chunkUrl}`);
+            } else if (data.output?.error) {
+              chunk.status = 'failed';
+              chunk.error = data.output.error;
+              console.error(`Chunk ${chunk.index}: Failed - ${chunk.error}`);
+            }
+          } else if (data.status === 'FAILED') {
+            chunk.status = 'failed';
+            chunk.error = data.output?.error || 'Worker failed';
+            console.error(`Chunk ${chunk.index}: Failed - ${chunk.error}`);
+          }
+        } catch (err) {
+          // Poll error, will retry
+        }
+      }));
+
+      // Calculate progress
+      const completedChunks = chunks.filter(c => c.status === 'completed').length;
+      const failedChunks = chunks.filter(c => c.status === 'failed').length;
+
+      // Update progress (10-70% range for rendering)
+      if (Date.now() - lastProgressUpdate > 3000) {
+        lastProgressUpdate = Date.now();
+        const renderProgress = 10 + Math.round((completedChunks / chunks.length) * 60);
+        await updateJobStatus(supabase, jobId, 'rendering', renderProgress,
+          `Rendered ${completedChunks}/${chunks.length} chunks...`);
+      }
+
+      // Check if all done
+      if (completedChunks + failedChunks === chunks.length) {
+        if (failedChunks > 0) {
+          const failedChunk = chunks.find(c => c.status === 'failed');
+          throw new Error(`${failedChunks} chunk(s) failed: ${failedChunk?.error}`);
+        }
+        console.log(`All ${chunks.length} chunks completed!`);
+        break;
+      }
+    }
+
+    // Verify all chunks completed
+    const completedChunks = chunks.filter(c => c.status === 'completed');
+    if (completedChunks.length !== chunks.length) {
+      throw new Error(`Timeout: Only ${completedChunks.length}/${chunks.length} chunks completed`);
+    }
+
+    // Stage 2: Download chunks and concatenate
+    await updateJobStatus(supabase, jobId, 'muxing', 72, 'Downloading chunks...');
+
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-render-'));
+    console.log(`Temp directory: ${tempDir}`);
+
+    // Download all chunks
+    const chunkPaths: string[] = [];
+    for (const chunk of chunks.sort((a, b) => a.index - b.index)) {
+      const chunkPath = path.join(tempDir, `chunk_${chunk.index.toString().padStart(2, '0')}.mp4`);
+      await downloadFile(chunk.chunkUrl!, chunkPath);
+      chunkPaths.push(chunkPath);
+      console.log(`Downloaded chunk ${chunk.index}: ${chunkPath}`);
+    }
+
+    // Download audio
+    const audioPath = path.join(tempDir, 'audio.wav');
+    await downloadFile(audioUrl, audioPath);
+    console.log('Downloaded audio');
+
+    await updateJobStatus(supabase, jobId, 'muxing', 78, 'Concatenating chunks...');
+
+    // Create concat file
+    const concatListPath = path.join(tempDir, 'chunks.txt');
+    fs.writeFileSync(concatListPath, chunkPaths.map(p => `file '${p}'`).join('\n'), 'utf8');
+
+    // Concatenate chunks (no re-encode, just copy)
+    const concatenatedPath = path.join(tempDir, 'concatenated.mp4');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions(['-c', 'copy', '-y'])
+        .output(concatenatedPath)
+        .on('start', (cmd) => console.log('Concat:', cmd.substring(0, 100) + '...'))
+        .on('error', reject)
+        .on('end', () => {
+          console.log('Chunks concatenated');
+          resolve();
+        })
+        .run();
+    });
+
+    await updateJobStatus(supabase, jobId, 'muxing', 82, 'Adding audio...');
+
+    // Add audio to concatenated video
+    const withAudioPath = path.join(tempDir, 'with_audio.mp4');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatenatedPath)
+        .input(audioPath)
+        .outputOptions([
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-ar', '48000',
+          '-b:a', '192k',
+          '-shortest',
+          '-y'
+        ])
+        .output(withAudioPath)
+        .on('start', (cmd) => console.log('Audio mux:', cmd.substring(0, 100) + '...'))
+        .on('error', reject)
+        .on('end', () => {
+          console.log('Audio muxed');
+          resolve();
+        })
+        .run();
+    });
+
+    await updateJobStatus(supabase, jobId, 'muxing', 86, 'Scrubbing metadata...');
+
+    // Scrub FFmpeg metadata to prevent YouTube bot flagging
+    const finalPath = path.join(tempDir, 'final.mp4');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(withAudioPath)
+        .outputOptions([
+          '-map_metadata', '-1',
+          '-fflags', '+bitexact',
+          '-flags:v', '+bitexact',
+          '-flags:a', '+bitexact',
+          '-c:v', 'copy',
+          '-c:a', 'copy',
+          '-movflags', '+faststart',
+          '-y'
+        ])
+        .output(finalPath)
+        .on('start', (cmd) => console.log('Metadata scrub:', cmd.substring(0, 100) + '...'))
+        .on('error', (err) => {
+          // If scrub fails, use the with-audio version
+          console.warn('Metadata scrub failed, using original:', err.message);
+          fs.copyFileSync(withAudioPath, finalPath);
+          resolve();
+        })
+        .on('end', () => {
+          console.log('Metadata scrubbed');
+          resolve();
+        })
+        .run();
+    });
+
+    // Upload final video
+    await updateJobStatus(supabase, jobId, 'uploading', 90, 'Uploading final video...');
+
+    const videoUploadPath = `${projectId}/video.mp4`;
+    const fileStats = fs.statSync(finalPath);
+    const fileSizeBytes = fileStats.size;
+    console.log(`Uploading ${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB video...`);
+
+    // Delete any existing file first
+    await supabase.storage.from('generated-assets').remove([videoUploadPath]);
+
+    // Stream upload
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${videoUploadPath}`;
+    const fileStream = fs.createReadStream(finalPath);
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'video/mp4',
+        'Content-Length': fileSizeBytes.toString(),
+        'x-upsert': 'true',
+      },
+      body: fileStream as any,
+      // @ts-ignore
+      duplex: 'half',
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to upload video: ${uploadResponse.status} - ${errorText}`);
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(videoUploadPath);
+
+    const videoUrl = urlData.publicUrl;
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`Video uploaded: ${videoUrl}`);
+    console.log(`Total parallel render time: ${totalTime}s`);
+
+    // Clean up chunk files from Supabase storage
+    const chunkStoragePaths = chunks.map(c => `${projectId}/chunks/chunk_${c.index.toString().padStart(2, '0')}.mp4`);
+    await supabase.storage.from('generated-assets').remove(chunkStoragePaths);
+    console.log(`Cleaned up ${chunkStoragePaths.length} chunk files from storage`);
+
+    await updateJobStatus(supabase, jobId, 'complete', 100,
+      `Video rendered successfully (Parallel: ${totalTime}s)`,
+      { video_url: videoUrl });
+
+  } catch (error: any) {
+    console.error(`Job ${jobId} failed:`, error);
+    await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message });
+  } finally {
+    // Clean up temp directory
+    if (tempDir && fs.existsSync(tempDir)) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log('Temp directory cleaned up');
+      } catch (e) {
+        console.error('Failed to clean up temp:', e);
+      }
+    }
   }
 }
 
@@ -906,10 +1252,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Always use RunPod CPU (32 vCPU) for reliable rendering
-    console.log(`Job ${jobId}: Using CPU rendering (RunPod 32 vCPU)`);
-    processRenderJobCpuRunpod(jobId, params).catch(err => {
-      console.error(`CPU RunPod job ${jobId} crashed:`, err);
+    // Use parallel rendering with 10 workers for ~10x speedup
+    console.log(`Job ${jobId}: Using PARALLEL rendering (10 RunPod workers)`);
+    processRenderJobParallel(jobId, params).catch(err => {
+      console.error(`Parallel render job ${jobId} crashed:`, err);
     });
 
     // Return immediately with job ID
@@ -917,7 +1263,7 @@ router.post('/', async (req: Request, res: Response) => {
       success: true,
       jobId,
       status: 'queued',
-      message: 'Render job started (CPU-32). Poll /render-video/status/:jobId for progress.'
+      message: 'Render job started (Parallel x10). Poll /render-video/status/:jobId for progress.'
     });
 
   } catch (error: any) {
