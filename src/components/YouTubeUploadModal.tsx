@@ -428,8 +428,11 @@ export function YouTubeUploadModal({
     }
   };
 
+  // Check if we have a valid video URL (not empty string)
+  const hasVideo = videoUrl && videoUrl.trim().length > 0;
+
   // Check if we can upload
-  const canUpload = isConnected && videoUrl && title.trim().length > 0;
+  const canUpload = isConnected && hasVideo && title.trim().length > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -693,7 +696,7 @@ export function YouTubeUploadModal({
                 Exit
               </Button>
 
-              {videoUrl ? (
+              {hasVideo ? (
                 <Button onClick={handleUpload} disabled={!canUpload || isUploading}>
                   {isUploading ? (
                     <>
