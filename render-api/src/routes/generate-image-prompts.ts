@@ -44,6 +44,13 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'documentation', 'documented', 'records show', 'evidence suggests',
   'research', 'microscope', 'microscopes', 'magnifying glass', 'magnifying glasses',
 
+  // Maps and documents (cause anachronistic imagery)
+  'map', 'maps', 'parchment map', 'antique map', 'historical map',
+  'scroll', 'scrolls', 'document', 'documents', 'manuscript', 'manuscripts',
+  'chart', 'charts', 'diagram', 'diagrams', 'blueprint', 'blueprints',
+  'studying', 'examining', 'inspecting', 'analyzing', 'reviewing',
+  'close-up of', 'detailed view of', 'closeup of',
+
   // Modern technology/settings
   'modern', 'contemporary', 'present-day', 'present day', 'today', "today's",
   'photograph', 'photography', 'camera', 'cameras', 'digital', 'computer', 'computers',
@@ -52,7 +59,7 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'tablet', 'screen', 'monitor', 'display',
 
   // Documentary/educational framing
-  'documentary', 'educational', 'illustration', 'diagram', 'infographic',
+  'documentary', 'educational', 'illustration', 'infographic',
   'recreation', 'reenactment', 're-enactment', 'dramatization',
   'depicting', 'representation', 'interpretation', 'imagined', 'imagining',
 
@@ -61,6 +68,18 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'historical record', 'historical records', 'ancient text', 'ancient texts',
   'surviving', 'survives', 'remains of', 'ruins of', 'remnants of',
 ];
+
+// Check if description contains any modern keywords
+function containsModernKeywords(description: string): string[] {
+  const found: string[] = [];
+  for (const keyword of MODERN_KEYWORDS_TO_REMOVE) {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+    if (regex.test(description)) {
+      found.push(keyword);
+    }
+  }
+  return found;
+}
 
 // Filter modern keywords from a scene description
 function filterModernKeywords(description: string): string {
@@ -83,6 +102,52 @@ function filterModernKeywords(description: string): string {
     .replace(/,\s*$/, '');
 
   return filtered;
+}
+
+// Regenerate a single prompt that contains modern keywords
+async function regeneratePrompt(
+  anthropic: Anthropic,
+  originalDescription: string,
+  foundKeywords: string[],
+  narrationText: string
+): Promise<string> {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `The following scene description contains forbidden modern/anachronistic terms that must be removed: ${foundKeywords.join(', ')}
+
+ORIGINAL DESCRIPTION:
+"${originalDescription}"
+
+NARRATION CONTEXT:
+"${narrationText}"
+
+REWRITE this scene description to show the same historical moment but WITHOUT any modern framing. Show events as if you are THERE witnessing them firsthand, not studying them later.
+
+FORBIDDEN TERMS (do not use any of these):
+- Maps, documents, scrolls, manuscripts, charts
+- Scientists, researchers, historians, scholars
+- Museums, exhibits, artifacts, displays
+- Studying, examining, inspecting, analyzing
+- Any "looking back at history" perspective
+
+Return ONLY the new scene description text (50-100 words), no JSON, quotes, or explanation.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (content.type === 'text') {
+      // Clean up any quotes that might wrap the response
+      return content.text.trim().replace(/^["']|["']$/g, '');
+    }
+    return originalDescription;
+  } catch (error) {
+    console.error('Failed to regenerate prompt:', error);
+    return originalDescription;
+  }
 }
 
 // Parse SRT timestamp to seconds
@@ -256,27 +321,38 @@ router.post('/', async (req: Request, res: Response) => {
     // OPTIMIZATION: Define system prompt once for prompt caching
     const systemPrompt = `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
-YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
+CRITICAL RULE - IMMERSIVE HISTORICAL SCENES ONLY:
+You are generating prompts for an AI image generator. The resulting images must look like PAINTINGS from the historical period itself, as if an artist was present at the time witnessing events firsthand.
 
-CONTENT SAFETY - STRICTLY PROHIBITED:
+ABSOLUTELY FORBIDDEN (these will cause the prompt to be rejected and regenerated):
+- Museums, exhibits, galleries, display cases, artifacts on display
+- Scientists, researchers, historians, archaeologists, scholars studying anything
+- Magnifying glasses, microscopes, laboratory equipment, scientific instruments
+- Maps, documents, scrolls, books being studied or displayed
+- Modern photography, documentary framing, "looking back at history" perspective
+- Any contemporary/academic environments or research settings
+- Anyone examining, studying, analyzing, or inspecting historical items
+
+REQUIRED: Every scene must show events AS THEY HAPPENED in the historical moment - people LIVING history, not studying it.
+
+YOUR TASK: Create visual scene descriptions based on the script and narration segments provided.
+
+CONTENT SAFETY:
 - NO nudity, partial nudity, or sexually suggestive content
 - NO gore, blood, graphic violence, or injury depictions
-- NO weapons being used against people
 - NO disturbing, shocking, or traumatic imagery
-- NO dead bodies or death scenes
-- For war/conflict topics: show maps, documents, leaders in meetings, monuments, museums, artifacts - NOT battle scenes
-- For medical topics: show doctors, hospitals, equipment - NOT injuries or procedures
-- For crime topics: show courtrooms, documents, buildings - NOT crime scenes
+- You may depict dramatic historical scenes including warfare and conflict - avoid explicit gore
 
 RULES:
-1. READ the script context to understand the overall topic
-2. For each image segment, create a SAFE, family-friendly visual scene
-3. If narration mentions violence/war/death, depict the AFTERMATH (memorials, documents, peaceful scenes) not the event itself
-4. For technical/abstract topics: visualize people using technology, historical contexts, symbolic representations, or documentary-style scenes
-5. Include specific details: setting, lighting, objects, people, actions, atmosphere
-6. 50-100 words per description
-7. Do NOT include any text, titles, or words in the image
-8. When in doubt, choose the most peaceful, dignified representation
+1. READ the script context to identify the EXACT historical time period and location
+2. For each image segment, create a scene that illustrates the narration content
+3. ALL scenes MUST be set IN the historical period - show events as they happened
+4. For war/conflict topics: show battlefields, armies, fortifications, commanders leading troops, military camps - NOT maps, museums, or artifacts
+5. For medical topics: show period-appropriate healers, apothecaries, patients - NOT modern research
+6. For abstract concepts: show period-appropriate scenes with settings and people from that era
+7. Include specific details: setting, lighting, objects, people, actions, atmosphere
+8. 50-100 words per description
+9. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
@@ -368,19 +444,35 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
     const sceneDescriptions = batchResults.flat();
 
     // Build final prompts with style and timing info
-    // Apply modern keyword filter to remove anachronistic terms
-    let filteredCount = 0;
-    const imagePrompts: ImagePrompt[] = windows.map((window, i) => {
-      const scene = sceneDescriptions.find(s => s.index === i + 1);
-      const rawSceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+    // Check for modern keywords and regenerate if found
+    let regeneratedCount = 0;
+    const imagePrompts: ImagePrompt[] = [];
 
-      // Filter out modern keywords
-      const sceneDesc = filterModernKeywords(rawSceneDesc);
-      if (sceneDesc !== rawSceneDesc) {
-        filteredCount++;
+    for (let i = 0; i < windows.length; i++) {
+      const window = windows[i];
+      const scene = sceneDescriptions.find(s => s.index === i + 1);
+      let sceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+
+      // Check for modern keywords
+      const foundKeywords = containsModernKeywords(sceneDesc);
+
+      if (foundKeywords.length > 0) {
+        console.log(`Image ${i + 1}: Found modern keywords [${foundKeywords.join(', ')}], regenerating...`);
+        regeneratedCount++;
+
+        // Regenerate this specific prompt
+        sceneDesc = await regeneratePrompt(
+          anthropic,
+          sceneDesc,
+          foundKeywords,
+          window.text
+        );
+
+        // Apply filter as final safety net
+        sceneDesc = filterModernKeywords(sceneDesc);
       }
 
-      return {
+      imagePrompts.push({
         index: i + 1,
         startTime: formatTimecodeForFilename(window.startSeconds),
         endTime: formatTimecodeForFilename(window.endSeconds),
@@ -388,10 +480,10 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
         endSeconds: window.endSeconds,
         sceneDescription: sceneDesc,
         prompt: `${stylePrompt}. ${sceneDesc}`,
-      };
-    });
+      });
+    }
 
-    console.log(`Generated ${imagePrompts.length} image prompts successfully (filtered modern keywords from ${filteredCount} prompts)`);
+    console.log(`Generated ${imagePrompts.length} image prompts successfully (regenerated ${regeneratedCount} prompts with modern keywords)`);
 
     const result = {
       success: true,

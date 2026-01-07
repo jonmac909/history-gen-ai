@@ -41,7 +41,7 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'artifact', 'artifacts', 'archaeological', 'archaeology', 'excavation', 'excavated',
   'preserved', 'restoration', 'restored', 'replica', 'replicas', 'reconstruction',
   'curator', 'curators', 'visitor', 'visitors', 'tourist', 'tourists',
-  'specimen', 'specimens',
+  'specimen', 'specimens', 'diorama',
 
   // Academic/research context
   'researcher', 'researchers', 'scientist', 'scientists', 'historian', 'historians',
@@ -50,17 +50,24 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'university', 'institution', 'facility', 'clinical', 'sterile',
   'study', 'studies', 'analysis', 'analyzed', 'examination', 'examined',
   'documentation', 'documented', 'records show', 'evidence suggests',
-  'research', 'microscope', 'magnifying glass',
+  'research', 'microscope', 'microscopes', 'magnifying glass', 'magnifying glasses',
+
+  // Maps and documents (cause anachronistic imagery)
+  'map', 'maps', 'parchment map', 'antique map', 'historical map',
+  'scroll', 'scrolls', 'document', 'documents', 'manuscript', 'manuscripts',
+  'chart', 'charts', 'diagram', 'diagrams', 'blueprint', 'blueprints',
+  'studying', 'examining', 'inspecting', 'analyzing', 'reviewing',
+  'close-up of', 'detailed view of', 'closeup of',
 
   // Modern technology/settings
   'modern', 'contemporary', 'present-day', 'present day', 'today', "today's",
   'photograph', 'photography', 'camera', 'cameras', 'digital', 'computer', 'computers',
   'electric', 'electricity', 'neon', 'fluorescent', 'led', 'spotlight', 'spotlights',
   'glass case', 'glass cases', 'plexiglass', 'acrylic',
-  'tablet', 'screen', 'monitor',
+  'tablet', 'screen', 'monitor', 'display',
 
   // Documentary/educational framing
-  'documentary', 'educational', 'illustration', 'diagram', 'infographic',
+  'documentary', 'educational', 'illustration', 'infographic',
   'recreation', 'reenactment', 're-enactment', 'dramatization',
   'depicting', 'representation', 'interpretation', 'imagined', 'imagining',
 
@@ -69,6 +76,18 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'historical record', 'historical records', 'ancient text', 'ancient texts',
   'surviving', 'survives', 'remains of', 'ruins of', 'remnants of',
 ];
+
+// Check if description contains any modern keywords
+function containsModernKeywords(description: string): string[] {
+  const found: string[] = [];
+  for (const keyword of MODERN_KEYWORDS_TO_REMOVE) {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+    if (regex.test(description)) {
+      found.push(keyword);
+    }
+  }
+  return found;
+}
 
 // Filter modern keywords from a scene description
 function filterModernKeywords(description: string): string {
@@ -92,6 +111,66 @@ function filterModernKeywords(description: string): string {
     .replace(/,\s*$/, '');          // Trailing comma
 
   return filtered;
+}
+
+// Regenerate a single prompt that contains modern keywords
+async function regeneratePrompt(
+  apiKey: string,
+  originalDescription: string,
+  foundKeywords: string[],
+  narrationText: string
+): Promise<string> {
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: `The following scene description contains forbidden modern/anachronistic terms that must be removed: ${foundKeywords.join(', ')}
+
+ORIGINAL DESCRIPTION:
+"${originalDescription}"
+
+NARRATION CONTEXT:
+"${narrationText}"
+
+REWRITE this scene description to show the same historical moment but WITHOUT any modern framing. Show events as if you are THERE witnessing them firsthand, not studying them later.
+
+FORBIDDEN TERMS (do not use any of these):
+- Maps, documents, scrolls, manuscripts, charts
+- Scientists, researchers, historians, scholars
+- Museums, exhibits, artifacts, displays
+- Studying, examining, inspecting, analyzing
+- Any "looking back at history" perspective
+
+Return ONLY the new scene description text (50-100 words), no JSON, quotes, or explanation.`
+        }]
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Regeneration API error:', response.status);
+      return originalDescription;
+    }
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text;
+    if (text) {
+      // Clean up any quotes that might wrap the response
+      return text.trim().replace(/^["']|["']$/g, '');
+    }
+    return originalDescription;
+  } catch (error) {
+    console.error('Failed to regenerate prompt:', error);
+    return originalDescription;
+  }
 }
 
 // Parse SRT timestamp to seconds
@@ -231,26 +310,38 @@ serve(async (req) => {
         max_tokens: 8192,
         system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
-YOUR TASK: Create visual scene descriptions based on the script and narration segments provided. Even if the narration is sparse or technical, you MUST generate appropriate visual scenes.
+CRITICAL RULE - IMMERSIVE HISTORICAL SCENES ONLY:
+You are generating prompts for an AI image generator. The resulting images must look like PAINTINGS from the historical period itself, as if an artist was present at the time witnessing events firsthand.
+
+ABSOLUTELY FORBIDDEN (these will cause the prompt to be rejected and regenerated):
+- Museums, exhibits, galleries, display cases, artifacts on display
+- Scientists, researchers, historians, archaeologists, scholars studying anything
+- Magnifying glasses, microscopes, laboratory equipment, scientific instruments
+- Maps, documents, scrolls, books being studied or displayed
+- Modern photography, documentary framing, "looking back at history" perspective
+- Any contemporary/academic environments or research settings
+- Anyone examining, studying, analyzing, or inspecting historical items
+
+REQUIRED: Every scene must show events AS THEY HAPPENED in the historical moment - people LIVING history, not studying it.
+
+YOUR TASK: Create visual scene descriptions based on the script and narration segments provided.
+
+CONTENT SAFETY:
+- NO nudity, partial nudity, or sexually suggestive content
+- NO gore, blood, graphic violence, or injury depictions
+- NO disturbing, shocking, or traumatic imagery
+- You may depict dramatic historical scenes including warfare and conflict - avoid explicit gore
 
 RULES:
-1. FIRST, analyze the MASTER STYLE PROMPT to understand the visual art style being requested
-2. SECOND, READ the script context carefully to identify the EXACT historical time period and geographic location (e.g., "Ancient Rome 100 AD", "Victorian England 1880s", "Tang Dynasty China", "Renaissance Florence", "Ancient Egypt", "Colonial America 1700s")
-3. For each image segment, create a visual scene that illustrates the narration content
-4. If narration is sparse, use the script context to infer appropriate visuals
-5. CRITICAL: ALL scenes MUST match the EXACT historical era from the script. Examples:
-   - Script about Ancient Rome → Roman architecture, togas, forums, temples
-   - Script about Victorian era → Gas lamps, corsets, horse carriages, industrial cities
-   - Script about Renaissance → Merchant guilds, cathedrals, early printing, artistic workshops
-   - Script about Ancient Egypt → Pyramids, pharaohs, Nile river, hieroglyphics
-   - NEVER show scenes from the wrong era (no medieval castles in Roman scripts, no Victorian clothing in Egyptian scripts)
-6. For abstract concepts (like sleep patterns, economics, beliefs): show period-appropriate scenes that illustrate the concept using settings, objects, and people from that SPECIFIC era
-7. You may depict dramatic historical scenes including warfare, battles, destruction, and conflict - but avoid explicit gore, graphic wounds, torture closeups, or gratuitous violence. Show the drama and scale of historical events appropriately.
-8. For medical/surgical topics: show the setting, tools, or aftermath - NOT graphic procedures
-9. NEVER show modern settings like museums, laboratories, research facilities, display cases, scientists in lab coats, or any contemporary/academic environments. ALL scenes must be set IN the historical period being discussed, showing events AS THEY HAPPENED, not modern people studying history.
-10. Include specific details: setting, lighting, objects, people, actions, atmosphere - all accurate to the historical period
-11. 50-100 words per description
-12. Do NOT include any text, titles, or words in the image
+1. READ the script context to identify the EXACT historical time period and location
+2. For each image segment, create a scene that illustrates the narration content
+3. ALL scenes MUST be set IN the historical period - show events as they happened
+4. For war/conflict topics: show battlefields, armies, fortifications, commanders leading troops, military camps - NOT maps, museums, or artifacts
+5. For medical topics: show period-appropriate healers, apothecaries, patients - NOT modern research
+6. For abstract concepts: show period-appropriate scenes with settings and people from that era
+7. Include specific details: setting, lighting, objects, people, actions, atmosphere
+8. 50-100 words per description
+9. Do NOT include any text, titles, or words in the image
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
@@ -306,20 +397,35 @@ Remember:
     }
 
     // Build final prompts with style and timing info
-    // Apply modern keyword filter to remove anachronistic terms
-    let filteredCount = 0;
-    const imagePrompts: ImagePrompt[] = windows.map((window, i) => {
-      const scene = sceneDescriptions.find(s => s.index === i + 1);
-      const rawSceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+    // Check for modern keywords and regenerate if found
+    let regeneratedCount = 0;
+    const imagePrompts: ImagePrompt[] = [];
 
-      // Filter out modern keywords from the scene description
-      const sceneDesc = filterModernKeywords(rawSceneDesc);
-      if (sceneDesc !== rawSceneDesc) {
-        filteredCount++;
-        console.log(`Image ${i + 1}: Filtered modern keywords. Before: "${rawSceneDesc.substring(0, 100)}..." After: "${sceneDesc.substring(0, 100)}..."`);
+    for (let i = 0; i < windows.length; i++) {
+      const window = windows[i];
+      const scene = sceneDescriptions.find(s => s.index === i + 1);
+      let sceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+
+      // Check for modern keywords
+      const foundKeywords = containsModernKeywords(sceneDesc);
+
+      if (foundKeywords.length > 0) {
+        console.log(`Image ${i + 1}: Found modern keywords [${foundKeywords.join(', ')}], regenerating...`);
+        regeneratedCount++;
+
+        // Regenerate this specific prompt
+        sceneDesc = await regeneratePrompt(
+          ANTHROPIC_API_KEY,
+          sceneDesc,
+          foundKeywords,
+          window.text
+        );
+
+        // Apply filter as final safety net
+        sceneDesc = filterModernKeywords(sceneDesc);
       }
 
-      return {
+      imagePrompts.push({
         index: i + 1,
         startTime: formatTimecodeForFilename(window.startSeconds),
         endTime: formatTimecodeForFilename(window.endSeconds),
@@ -327,10 +433,10 @@ Remember:
         endSeconds: window.endSeconds,
         sceneDescription: sceneDesc,
         prompt: `${stylePrompt}. ${sceneDesc}`,
-      };
-    });
+      });
+    }
 
-    console.log(`Generated ${imagePrompts.length} image prompts successfully (filtered modern keywords from ${filteredCount} prompts)`);
+    console.log(`Generated ${imagePrompts.length} image prompts successfully (regenerated ${regeneratedCount} prompts with modern keywords)`);
 
     return new Response(
       JSON.stringify({
