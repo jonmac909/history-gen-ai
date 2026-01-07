@@ -2938,6 +2938,7 @@ const Index = () => {
       />
 
       {/* YouTube Upload Modal */}
+      {viewState === "review-youtube" && console.log('[Index] YouTube Modal props:', { smokeEmbersVideoUrl, videoUrl, viewState })}
       <YouTubeUploadModal
         isOpen={viewState === "review-youtube"}
         videoUrl={smokeEmbersVideoUrl || videoUrl || ""}
