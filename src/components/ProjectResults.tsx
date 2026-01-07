@@ -2280,7 +2280,8 @@ export function ProjectResults({
           imageUrls={imagePrompts.map(p => p.imageUrl).filter((url): url is string => !!url)}
           imageTimings={imagePrompts.map(p => ({ startSeconds: p.startTime, endSeconds: p.endTime }))}
           srtContent={srtContent}
-          existingVideoUrl={smokeEmbersVideoUrl || embersVideoUrl || basicVideoUrl || undefined}
+          existingBasicVideoUrl={basicVideoUrl || undefined}
+          existingEffectsVideoUrl={smokeEmbersVideoUrl || embersVideoUrl || undefined}
           onConfirm={(videoUrl) => {
             // Determine which effect was rendered based on URL pattern or just save to smoke_embers
             setSmokeEmbersVideoUrl(videoUrl);
