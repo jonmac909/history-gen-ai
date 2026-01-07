@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Youtube,
   Loader2,
@@ -130,12 +130,21 @@ export function YouTubeUploadModal({
     }
   }, [isOpen, projectTitle, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
 
+  // Track last notified metadata to prevent redundant callbacks
+  const lastNotifiedMetadataRef = useRef<string | null>(null);
+
   // Notify parent when any metadata changes
+  // Note: onMetadataChange excluded from deps to prevent infinite loops with inline callbacks
   useEffect(() => {
     if (isOpen && onMetadataChange) {
-      onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
+      const fingerprint = `${title}|${description}|${tags}|${categoryId}|${selectedPlaylist}`;
+      if (fingerprint !== lastNotifiedMetadataRef.current) {
+        lastNotifiedMetadataRef.current = fingerprint;
+        onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
+      }
     }
-  }, [title, description, tags, categoryId, selectedPlaylist, isOpen, onMetadataChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, description, tags, categoryId, selectedPlaylist, isOpen]);
 
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();
