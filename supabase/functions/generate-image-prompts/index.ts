@@ -41,19 +41,23 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'artifact', 'artifacts', 'archaeological', 'archaeology', 'excavation', 'excavated',
   'preserved', 'restoration', 'restored', 'replica', 'replicas', 'reconstruction',
   'curator', 'curators', 'visitor', 'visitors', 'tourist', 'tourists',
+  'specimen', 'specimens',
 
   // Academic/research context
   'researcher', 'researchers', 'scientist', 'scientists', 'historian', 'historians',
   'scholar', 'scholars', 'academic', 'academics', 'professor', 'professors',
   'laboratory', 'lab coat', 'lab coats', 'research facility', 'research facilities',
+  'university', 'institution', 'facility', 'clinical', 'sterile',
   'study', 'studies', 'analysis', 'analyzed', 'examination', 'examined',
   'documentation', 'documented', 'records show', 'evidence suggests',
+  'research', 'microscope', 'magnifying glass',
 
   // Modern technology/settings
   'modern', 'contemporary', 'present-day', 'present day', 'today', "today's",
   'photograph', 'photography', 'camera', 'cameras', 'digital', 'computer', 'computers',
   'electric', 'electricity', 'neon', 'fluorescent', 'led', 'spotlight', 'spotlights',
   'glass case', 'glass cases', 'plexiglass', 'acrylic',
+  'tablet', 'screen', 'monitor',
 
   // Documentary/educational framing
   'documentary', 'educational', 'illustration', 'diagram', 'infographic',
