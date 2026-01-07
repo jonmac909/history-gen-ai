@@ -259,6 +259,11 @@ export function ProjectResults({
 
   // Reset all video URLs when project changes
   useEffect(() => {
+    console.log('[ProjectResults] Syncing video URLs:', {
+      videoUrl,
+      initialSmokeEmbersVideoUrl,
+      initialEmbersVideoUrl
+    });
     setBasicVideoUrl(videoUrl || null);
     setEmbersVideoUrl(initialEmbersVideoUrl || null);
     setSmokeEmbersVideoUrl(initialSmokeEmbersVideoUrl || null);
