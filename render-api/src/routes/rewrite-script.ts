@@ -820,8 +820,17 @@ Return the edited script with the issues fixed. Preserve the original as much as
 
     const editedScript = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
-    if (!editedScript || editedScript.length < script.length * 0.5) {
-      throw new Error('Edit produced invalid or too-short result');
+    console.log(`[Quick Edit] Response received: ${editedScript?.length || 0} chars (original: ${script.length} chars)`);
+    console.log(`[Quick Edit] First 200 chars of response:`, editedScript?.substring(0, 200) || 'EMPTY');
+
+    if (!editedScript) {
+      console.error('[Quick Edit] Empty response from Claude');
+      throw new Error('Edit produced empty result');
+    }
+
+    if (editedScript.length < script.length * 0.3) {
+      console.error(`[Quick Edit] Response too short: ${editedScript.length} < ${script.length * 0.3} (30% threshold)`);
+      throw new Error(`Edit produced too-short result: ${editedScript.length} chars vs original ${script.length} chars`);
     }
 
     console.log(`✅ Quick edit complete: ${editedScript.length} chars (was ${script.length})`);
