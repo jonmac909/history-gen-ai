@@ -1164,10 +1164,13 @@ const Index = () => {
         scriptForPrompts = textLines.join(' ');
       }
 
+      // Use existing prompt count if available (for loaded projects), otherwise use settings
+      const promptCount = imagePrompts.length > 0 ? imagePrompts.length : settings.imageCount;
+
       const promptResult = await generateImagePrompts(
         scriptForPrompts,
         srt,
-        settings.imageCount,
+        promptCount,
         getSelectedImageStyle(),
         pendingAudioDuration,
         (progress, message) => {
