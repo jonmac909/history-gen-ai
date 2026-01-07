@@ -100,11 +100,11 @@ export function CaptionsPreviewModal({
                 <Input
                   type="number"
                   min={1}
-                  max={200}
+                  max={500}
                   value={imageCount}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
-                    if (!isNaN(val) && val >= 1 && val <= 200) {
+                    if (!isNaN(val) && val >= 1 && val <= 500) {
                       onImageCountChange(val);
                     }
                   }}
@@ -114,8 +114,8 @@ export function CaptionsPreviewModal({
                   variant="outline"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => onImageCountChange(Math.min(200, imageCount + 1))}
-                  disabled={imageCount >= 200}
+                  onClick={() => onImageCountChange(Math.min(500, imageCount + 1))}
+                  disabled={imageCount >= 500}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>

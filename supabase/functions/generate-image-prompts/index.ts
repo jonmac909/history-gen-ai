@@ -33,6 +33,63 @@ interface ImagePrompt {
   sceneDescription: string;
 }
 
+// Modern/anachronistic keywords to filter from scene descriptions
+// These words suggest modern settings (museums, research, etc.) rather than historical scenes
+const MODERN_KEYWORDS_TO_REMOVE = [
+  // Museum/exhibition context
+  'museum', 'exhibit', 'exhibition', 'display case', 'display cases', 'gallery', 'galleries',
+  'artifact', 'artifacts', 'archaeological', 'archaeology', 'excavation', 'excavated',
+  'preserved', 'restoration', 'restored', 'replica', 'replicas', 'reconstruction',
+  'curator', 'curators', 'visitor', 'visitors', 'tourist', 'tourists',
+
+  // Academic/research context
+  'researcher', 'researchers', 'scientist', 'scientists', 'historian', 'historians',
+  'scholar', 'scholars', 'academic', 'academics', 'professor', 'professors',
+  'laboratory', 'lab coat', 'lab coats', 'research facility', 'research facilities',
+  'study', 'studies', 'analysis', 'analyzed', 'examination', 'examined',
+  'documentation', 'documented', 'records show', 'evidence suggests',
+
+  // Modern technology/settings
+  'modern', 'contemporary', 'present-day', 'present day', 'today', "today's",
+  'photograph', 'photography', 'camera', 'cameras', 'digital', 'computer', 'computers',
+  'electric', 'electricity', 'neon', 'fluorescent', 'led', 'spotlight', 'spotlights',
+  'glass case', 'glass cases', 'plexiglass', 'acrylic',
+
+  // Documentary/educational framing
+  'documentary', 'educational', 'illustration', 'diagram', 'infographic',
+  'recreation', 'reenactment', 're-enactment', 'dramatization',
+  'depicting', 'representation', 'interpretation', 'imagined', 'imagining',
+
+  // Time-reference phrases that break immersion
+  'centuries later', 'years later', 'in hindsight', 'looking back',
+  'historical record', 'historical records', 'ancient text', 'ancient texts',
+  'surviving', 'survives', 'remains of', 'ruins of', 'remnants of',
+];
+
+// Filter modern keywords from a scene description
+function filterModernKeywords(description: string): string {
+  let filtered = description;
+
+  for (const keyword of MODERN_KEYWORDS_TO_REMOVE) {
+    // Case-insensitive replacement, preserve surrounding text
+    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+    filtered = filtered.replace(regex, '');
+  }
+
+  // Clean up any double spaces or awkward punctuation left behind
+  filtered = filtered
+    .replace(/\s+/g, ' ')           // Multiple spaces to single
+    .replace(/\s+,/g, ',')          // Space before comma
+    .replace(/,\s*,/g, ',')         // Double commas
+    .replace(/\.\s*\./g, '.')       // Double periods
+    .replace(/\s+\./g, '.')         // Space before period
+    .replace(/^\s+|\s+$/g, '')      // Trim
+    .replace(/^,\s*/, '')           // Leading comma
+    .replace(/,\s*$/, '');          // Trailing comma
+
+  return filtered;
+}
+
 // Parse SRT timestamp to seconds
 function parseSrtTime(timeStr: string): number {
   // Format: HH:MM:SS,mmm
@@ -245,9 +302,18 @@ Remember:
     }
 
     // Build final prompts with style and timing info
+    // Apply modern keyword filter to remove anachronistic terms
+    let filteredCount = 0;
     const imagePrompts: ImagePrompt[] = windows.map((window, i) => {
       const scene = sceneDescriptions.find(s => s.index === i + 1);
-      const sceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+      const rawSceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
+
+      // Filter out modern keywords from the scene description
+      const sceneDesc = filterModernKeywords(rawSceneDesc);
+      if (sceneDesc !== rawSceneDesc) {
+        filteredCount++;
+        console.log(`Image ${i + 1}: Filtered modern keywords. Before: "${rawSceneDesc.substring(0, 100)}..." After: "${sceneDesc.substring(0, 100)}..."`);
+      }
 
       return {
         index: i + 1,
@@ -260,7 +326,7 @@ Remember:
       };
     });
 
-    console.log(`Generated ${imagePrompts.length} image prompts successfully`);
+    console.log(`Generated ${imagePrompts.length} image prompts successfully (filtered modern keywords from ${filteredCount} prompts)`);
 
     return new Response(
       JSON.stringify({
