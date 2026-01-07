@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Video, Download, Loader2, ChevronLeft, ChevronRight, X, Check, Sparkles } from "lucide-react";
+import { Video, Download, Loader2, ChevronLeft, ChevronRight, X, Check, Sparkles, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -304,7 +304,7 @@ export function VideoRenderModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="w-5 h-5 text-primary" />
-            {currentPass === 'complete' ? 'Videos Ready' : isRendering ? 'Rendering Video' : 'Render Video'}
+            {currentPass === 'complete' ? 'Video Ready' : isRendering ? 'Rendering Video' : 'Render Video'}
           </DialogTitle>
           <DialogDescription>
             {currentPass === 'complete'
@@ -431,6 +431,20 @@ export function VideoRenderModal({
                 {hasAnyVideo ? 'Re-render Video (2 Passes)' : 'Render Video (2 Passes)'}
               </Button>
             </div>
+          )}
+
+          {/* Re-render button when videos are complete */}
+          {!isRendering && currentPass === 'complete' && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCurrentPass('idle');
+              }}
+              className="w-full gap-2 mt-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Re-render Video
+            </Button>
           )}
         </div>
 
