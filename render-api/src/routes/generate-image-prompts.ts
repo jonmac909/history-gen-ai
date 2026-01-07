@@ -31,11 +31,11 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   // Museum/exhibition context
   'museum', 'exhibit', 'exhibition', 'display case', 'display cases', 'gallery', 'galleries',
   'artifact', 'artifacts', 'archaeological', 'archaeology', 'excavation', 'excavated',
-  'preserved', 'restoration', 'restored', 'replica', 'replicas', 'reconstruction',
+  'preserved', 'preservation', 'restoration', 'restored', 'replica', 'replicas', 'reconstruction',
   'curator', 'curators', 'visitor', 'visitors', 'tourist', 'tourists',
-  'specimen', 'specimens', 'diorama',
+  'specimen', 'specimens', 'diorama', 'collection', 'collections',
 
-  // Academic/research context
+  // Academic/research context - expanded
   'researcher', 'researchers', 'scientist', 'scientists', 'historian', 'historians',
   'scholar', 'scholars', 'academic', 'academics', 'professor', 'professors',
   'laboratory', 'lab coat', 'lab coats', 'research facility', 'research facilities',
@@ -43,13 +43,23 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'study', 'studies', 'analysis', 'analyzed', 'examination', 'examined',
   'documentation', 'documented', 'records show', 'evidence suggests',
   'research', 'microscope', 'microscopes', 'magnifying glass', 'magnifying glasses',
+  // Additional scientific/modern roles
+  'geologist', 'geologists', 'geological', 'geology',
+  'archaeologist', 'archaeologists',
+  'anthropologist', 'anthropologists',
+  'expert', 'experts', 'specialist', 'specialists',
+  'team of', 'survey team', 'field team', 'research team',
+  'taking notes', 'field notes', 'notebook', 'notebooks',
+  'equipment', 'instruments', 'tools', 'measuring',
+  'scientific', 'science',
 
   // Maps and documents (cause anachronistic imagery)
-  'map', 'maps', 'parchment map', 'antique map', 'historical map',
+  'map', 'maps', 'parchment map', 'antique map', 'historical map', 'topographical',
   'scroll', 'scrolls', 'document', 'documents', 'manuscript', 'manuscripts',
   'chart', 'charts', 'diagram', 'diagrams', 'blueprint', 'blueprints',
   'studying', 'examining', 'inspecting', 'analyzing', 'reviewing',
   'close-up of', 'detailed view of', 'closeup of',
+  'placard', 'placards', 'label', 'labels', 'caption', 'captions',
 
   // Modern technology/settings
   'modern', 'contemporary', 'present-day', 'present day', 'today', "today's",
@@ -57,16 +67,21 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'electric', 'electricity', 'neon', 'fluorescent', 'led', 'spotlight', 'spotlights',
   'glass case', 'glass cases', 'plexiglass', 'acrylic',
   'tablet', 'screen', 'monitor', 'display',
+  'field clothes', 'field gear', 'protective gear', 'sun hats',
+  'vehicles', 'field vehicles',
 
   // Documentary/educational framing
   'documentary', 'educational', 'illustration', 'infographic',
   'recreation', 'reenactment', 're-enactment', 'dramatization',
   'depicting', 'representation', 'interpretation', 'imagined', 'imagining',
+  "artist's", 'artistic rendering',
+  'interactive', 'interactive displays',
 
   // Time-reference phrases that break immersion
   'centuries later', 'years later', 'in hindsight', 'looking back',
   'historical record', 'historical records', 'ancient text', 'ancient texts',
   'surviving', 'survives', 'remains of', 'ruins of', 'remnants of',
+  'investigation', 'investigating',
 ];
 
 // Check if description contains any modern keywords
@@ -117,24 +132,30 @@ async function regeneratePrompt(
       max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `The following scene description contains forbidden modern/anachronistic terms that must be removed: ${foundKeywords.join(', ')}
+        content: `TASK: Completely rewrite this scene description to show the ACTUAL HISTORICAL EVENT, not a modern interpretation of it.
 
-ORIGINAL DESCRIPTION:
+PROBLEMATIC ORIGINAL (contains modern framing):
 "${originalDescription}"
 
-NARRATION CONTEXT:
+DETECTED MODERN TERMS: ${foundKeywords.join(', ')}
+
+WHAT THE NARRATION SAYS:
 "${narrationText}"
 
-REWRITE this scene description to show the same historical moment but WITHOUT any modern framing. Show events as if you are THERE witnessing them firsthand, not studying them later.
+REQUIREMENTS FOR YOUR REWRITE:
+1. Show the scene AS IF YOU WERE THERE in ancient/historical times
+2. NO modern people (no scientists, researchers, geologists, historians, students, professors)
+3. NO modern settings (no museums, labs, classrooms, lecture halls, excavation sites)
+4. NO modern activities (no studying, analyzing, examining, surveying, taking notes)
+5. NO maps, charts, documents, scrolls, manuscripts, diagrams
+6. Show PEOPLE FROM THAT ERA doing things they would actually do
+7. If the narration discusses a location, show ancient people LIVING there, not modern people VISITING
 
-FORBIDDEN TERMS (do not use any of these):
-- Maps, documents, scrolls, manuscripts, charts
-- Scientists, researchers, historians, scholars
-- Museums, exhibits, artifacts, displays
-- Studying, examining, inspecting, analyzing
-- Any "looking back at history" perspective
+EXAMPLE TRANSFORMATION:
+- BAD: "A geologist examines rock formations while taking notes"
+- GOOD: "Ancient travelers rest beside towering cliffs as the sun sets over the rugged landscape"
 
-Return ONLY the new scene description text (50-100 words), no JSON, quotes, or explanation.`
+Write 50-100 words describing the scene from an immersive historical perspective. Return ONLY the description, no quotes or explanation.`
       }]
     });
 
@@ -461,15 +482,38 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
         regeneratedCount++;
 
         // Regenerate this specific prompt
-        sceneDesc = await regeneratePrompt(
+        const regeneratedDesc = await regeneratePrompt(
           anthropic,
           sceneDesc,
           foundKeywords,
           window.text
         );
 
-        // Apply filter as final safety net
-        sceneDesc = filterModernKeywords(sceneDesc);
+        // Check if regeneration still has keywords
+        const remainingKeywords = containsModernKeywords(regeneratedDesc);
+        if (remainingKeywords.length === 0) {
+          // Regeneration succeeded - use it
+          sceneDesc = regeneratedDesc;
+        } else {
+          // Regeneration still has keywords - try one more time with stronger prompt
+          console.log(`Image ${i + 1}: Regeneration still has keywords [${remainingKeywords.join(', ')}], trying again...`);
+          const secondAttempt = await regeneratePrompt(
+            anthropic,
+            regeneratedDesc,
+            remainingKeywords,
+            window.text
+          );
+
+          const finalKeywords = containsModernKeywords(secondAttempt);
+          if (finalKeywords.length === 0) {
+            sceneDesc = secondAttempt;
+          } else {
+            // Still has keywords after 2 attempts - use regenerated version anyway
+            // (better than original, don't apply filter which breaks grammar)
+            console.log(`Image ${i + 1}: Warning - still has keywords after 2 regeneration attempts, using best attempt`);
+            sceneDesc = secondAttempt;
+          }
+        }
       }
 
       imagePrompts.push({
