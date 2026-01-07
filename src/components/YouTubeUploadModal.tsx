@@ -118,9 +118,13 @@ export function YouTubeUploadModal({
   // Track last notified metadata to prevent redundant callbacks
   const lastNotifiedMetadataRef = useRef<string | null>(null);
 
-  // Check connection status on open
+  // Track if we've already initialized for this modal session
+  const hasInitializedRef = useRef(false);
+
+  // Check connection status on open - only run ONCE per modal open
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       checkConnection();
       // Reset the notification ref so initial values trigger a save
       lastNotifiedMetadataRef.current = null;
@@ -133,7 +137,11 @@ export function YouTubeUploadModal({
       setGeneratedTitles([]);
       setShowTitleSelector(false);
     }
-  }, [isOpen, projectTitle, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
+    // Reset initialized flag when modal closes
+    if (!isOpen) {
+      hasInitializedRef.current = false;
+    }
+  }, [isOpen]); // Only depend on isOpen - initial values are captured on first run
 
   // Notify parent when any metadata changes
   // Note: onMetadataChange excluded from deps to prevent infinite loops with inline callbacks
