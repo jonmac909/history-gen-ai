@@ -2249,6 +2249,7 @@ const Index = () => {
             autoSave("complete", { embersVideoUrl: url });
           }}
           onSmokeEmbersVideoRendered={(url) => {
+            console.log('[Index] onSmokeEmbersVideoRendered called with:', url);
             setSmokeEmbersVideoUrl(url);
             autoSave("complete", { smokeEmbersVideoUrl: url });
           }}
