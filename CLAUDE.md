@@ -219,6 +219,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/generate-audio` | Voice cloning TTS, splits into 10 segments, returns combined + individual URLs |
 | `/generate-audio/segment` | Regenerate a single audio segment |
 | `/generate-audio/recombine` | Re-concatenate segments after regeneration |
+| `/generate-image-prompts` | Claude AI scene descriptions with modern keyword filter (SSE streaming) |
 | `/generate-images` | RunPod Z-Image with rolling concurrency (4 workers max) |
 | `/generate-captions` | Whisper transcription with WAV chunking |
 | `/get-youtube-transcript` | YouTube transcript via Supadata API |
@@ -436,6 +437,15 @@ Multi-step generation with user review at each stage:
 - Parallel batches of 10 images each for faster generation
 - Model: `claude-sonnet-4-20250514`
 - Content safety rules for documentary-appropriate imagery
+- **Modern Keyword Auto-Filter**: Automatically removes anachronistic terms from generated prompts
+
+**Modern Keyword Filter** (`render-api/src/routes/generate-image-prompts.ts`):
+- Post-processes Claude's scene descriptions to remove modern/museum context
+- Filter runs on Railway API (primary) and Supabase function (fallback)
+- Removes terms like: `museum`, `exhibit`, `archaeological`, `researcher`, `laboratory`, `modern`, `contemporary`, `tablet`, `display`, `magnifying glass`, `diorama`, etc.
+- Cleans up punctuation artifacts after removal (double spaces, orphan commas)
+- Logs count of filtered prompts for debugging
+- **Important**: Both `render-api/src/routes/generate-image-prompts.ts` AND `supabase/functions/generate-image-prompts/index.ts` must be kept in sync
 
 ### Video Rendering Architecture
 
