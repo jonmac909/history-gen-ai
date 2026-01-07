@@ -240,6 +240,59 @@ export function VideoRenderModal({
     }
   };
 
+  // Re-render effects only (Pass 2) - useful when basic video is fine but effects failed
+  const handleRenderEffectsOnly = async () => {
+    setCurrentPass('pass2');
+    setRenderProgress({ stage: 'downloading', percent: 0, message: 'Starting effects render...' });
+
+    try {
+      const pass2Result = await renderVideoStreaming(
+        projectId,
+        audioUrl,
+        imageUrls,
+        imageTimings,
+        srtContent,
+        projectTitle || 'HistoryGenAI Export',
+        {
+          onProgress: (progress) => setRenderProgress({
+            ...progress,
+            message: `Effects: ${progress.message}`,
+            percent: progress.percent
+          }),
+          onVideoReady: (url) => {
+            setEffectsVideoUrl(url);
+            toast({
+              title: "Effects Render Complete",
+              description: "Video with effects is ready!",
+            });
+          },
+          onCaptionError: (error) => {
+            console.warn('Caption error (ignored):', error);
+          }
+        },
+        { embers: false, smoke_embers: true },  // Smoke + embers
+        true  // Use CPU rendering
+      );
+
+      if (pass2Result.success && pass2Result.videoUrl) {
+        setEffectsVideoUrl(pass2Result.videoUrl);
+        setCurrentPass('complete');
+      } else {
+        throw new Error(pass2Result.error || 'Effects render failed');
+      }
+
+    } catch (error) {
+      console.error('Effects render error:', error);
+      toast({
+        title: "Effects Render Failed",
+        description: error instanceof Error ? error.message : "Failed to render effects. Please try again.",
+        variant: "destructive",
+      });
+      setCurrentPass('idle');
+      setRenderProgress(null);
+    }
+  };
+
   const handleDownloadBasic = async () => {
     if (!basicVideoUrl) return;
     const filename = (projectTitle || 'video').replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_').substring(0, 50) + '.mp4';
@@ -433,18 +486,28 @@ export function VideoRenderModal({
             </div>
           )}
 
-          {/* Re-render button when videos are complete */}
+          {/* Re-render buttons when videos are complete */}
           {!isRendering && currentPass === 'complete' && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setCurrentPass('idle');
-              }}
-              className="w-full gap-2 mt-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Re-render Video
-            </Button>
+            <div className="flex gap-2 mt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCurrentPass('idle');
+                }}
+                className="flex-1 gap-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Re-render All
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleRenderEffectsOnly}
+                className="flex-1 gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Re-render Effects
+              </Button>
+            </div>
           )}
         </div>
 

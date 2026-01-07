@@ -330,6 +330,7 @@ const Index = () => {
 
   // Auto-save helper - uses unified project store (upsert by id)
   // Fire-and-forget async to avoid blocking UI
+  // IMPORTANT: Only include fields that have actual content to avoid overwriting existing data with empty values
   const autoSave = (step: Project["currentStep"], overrides?: Partial<Project>) => {
     const finalId = overrides?.id || projectId;
     const finalVideoTitle = overrides?.videoTitle || videoTitle;
@@ -337,34 +338,81 @@ const Index = () => {
     const status = step === 'complete' ? 'completed' : 'in_progress';
     console.log(`[autoSave] Saving project id=${finalId}, title=${finalVideoTitle}, step=${step}, status=${status}`);
 
-    upsertProject({
+    // Build project object, only including fields that have actual content
+    // This prevents overwriting database values with empty state
+    const projectData: Partial<Project> & { id: string } = {
       id: finalId,
       sourceUrl: overrides?.sourceUrl || sourceUrl,
       videoTitle: finalVideoTitle,
       settings: overrides?.settings || settings,
       status: status,
       currentStep: step,
-      script: overrides?.script || confirmedScript || pendingScript,
-      audioUrl: overrides?.audioUrl || pendingAudioUrl,
-      audioDuration: overrides?.audioDuration || pendingAudioDuration,
-      audioSegments: overrides?.audioSegments || pendingAudioSegments,
-      srtContent: overrides?.srtContent || pendingSrtContent,
-      srtUrl: overrides?.srtUrl || pendingSrtUrl,
-      imagePrompts: overrides?.imagePrompts || imagePrompts,
-      imageUrls: overrides?.imageUrls || pendingImages,
-      videoUrl: overrides?.videoUrl || videoUrl,
-      videoUrlCaptioned: overrides?.videoUrlCaptioned || videoUrlCaptioned,
-      embersVideoUrl: overrides?.embersVideoUrl || embersVideoUrl,
-      smokeEmbersVideoUrl: overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl,
-      thumbnails: overrides?.thumbnails || generatedThumbnails,
-      selectedThumbnailIndex: overrides?.selectedThumbnailIndex ?? selectedThumbnailIndex,
-      youtubeTitle: overrides?.youtubeTitle || youtubeTitle || undefined,
-      youtubeDescription: overrides?.youtubeDescription || youtubeDescription || undefined,
-      youtubeTags: overrides?.youtubeTags || youtubeTags || undefined,
-      youtubeCategoryId: overrides?.youtubeCategoryId || youtubeCategoryId || undefined,
-      youtubePlaylistId: overrides?.youtubePlaylistId !== undefined ? overrides.youtubePlaylistId : youtubePlaylistId,
-      tags: overrides?.tags || projectTags || undefined,
-    }).catch(err => console.error('[autoSave] Failed to save project:', err));
+    };
+
+    // Script - only if has content
+    const scriptValue = overrides?.script || confirmedScript || pendingScript;
+    if (scriptValue) projectData.script = scriptValue;
+
+    // Audio - only if has content
+    const audioUrlValue = overrides?.audioUrl || pendingAudioUrl;
+    if (audioUrlValue) projectData.audioUrl = audioUrlValue;
+    const audioDurationValue = overrides?.audioDuration || pendingAudioDuration;
+    if (audioDurationValue) projectData.audioDuration = audioDurationValue;
+    const audioSegmentsValue = overrides?.audioSegments || pendingAudioSegments;
+    if (audioSegmentsValue && audioSegmentsValue.length > 0) projectData.audioSegments = audioSegmentsValue;
+
+    // Captions - only if has content
+    const srtContentValue = overrides?.srtContent || pendingSrtContent;
+    if (srtContentValue) projectData.srtContent = srtContentValue;
+    const srtUrlValue = overrides?.srtUrl || pendingSrtUrl;
+    if (srtUrlValue) projectData.srtUrl = srtUrlValue;
+
+    // Images - only if has content
+    const imagePromptsValue = overrides?.imagePrompts || imagePrompts;
+    if (imagePromptsValue && imagePromptsValue.length > 0) projectData.imagePrompts = imagePromptsValue;
+    const imageUrlsValue = overrides?.imageUrls || pendingImages;
+    if (imageUrlsValue && imageUrlsValue.length > 0) projectData.imageUrls = imageUrlsValue;
+
+    // Videos - only if has content
+    const videoUrlValue = overrides?.videoUrl || videoUrl;
+    if (videoUrlValue) projectData.videoUrl = videoUrlValue;
+    const videoUrlCaptionedValue = overrides?.videoUrlCaptioned || videoUrlCaptioned;
+    if (videoUrlCaptionedValue) projectData.videoUrlCaptioned = videoUrlCaptionedValue;
+    const embersVideoUrlValue = overrides?.embersVideoUrl || embersVideoUrl;
+    if (embersVideoUrlValue) projectData.embersVideoUrl = embersVideoUrlValue;
+    const smokeEmbersVideoUrlValue = overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl;
+    if (smokeEmbersVideoUrlValue) projectData.smokeEmbersVideoUrl = smokeEmbersVideoUrlValue;
+
+    // Thumbnails - CRITICAL: only save if explicitly provided in overrides or has actual content
+    // This prevents state initialization (empty array) from overwriting saved thumbnails
+    if (overrides?.thumbnails !== undefined) {
+      projectData.thumbnails = overrides.thumbnails;
+      projectData.selectedThumbnailIndex = overrides.selectedThumbnailIndex ?? selectedThumbnailIndex;
+    } else if (generatedThumbnails && generatedThumbnails.length > 0) {
+      projectData.thumbnails = generatedThumbnails;
+      projectData.selectedThumbnailIndex = selectedThumbnailIndex;
+    }
+
+    // YouTube metadata - only if has content
+    const youtubeTitleValue = overrides?.youtubeTitle || youtubeTitle;
+    if (youtubeTitleValue) projectData.youtubeTitle = youtubeTitleValue;
+    const youtubeDescriptionValue = overrides?.youtubeDescription || youtubeDescription;
+    if (youtubeDescriptionValue) projectData.youtubeDescription = youtubeDescriptionValue;
+    const youtubeTagsValue = overrides?.youtubeTags || youtubeTags;
+    if (youtubeTagsValue) projectData.youtubeTags = youtubeTagsValue;
+    const youtubeCategoryIdValue = overrides?.youtubeCategoryId || youtubeCategoryId;
+    if (youtubeCategoryIdValue) projectData.youtubeCategoryId = youtubeCategoryIdValue;
+    if (overrides?.youtubePlaylistId !== undefined) {
+      projectData.youtubePlaylistId = overrides.youtubePlaylistId;
+    } else if (youtubePlaylistId) {
+      projectData.youtubePlaylistId = youtubePlaylistId;
+    }
+
+    // Tags - only if has content
+    const tagsValue = overrides?.tags || projectTags;
+    if (tagsValue && tagsValue.length > 0) projectData.tags = tagsValue;
+
+    upsertProject(projectData).catch(err => console.error('[autoSave] Failed to save project:', err));
   };
 
   // Resume saved project
