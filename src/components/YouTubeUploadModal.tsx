@@ -154,7 +154,9 @@ export function YouTubeUploadModal({
       // Use saved values if available, otherwise fall back to project title
       setTitle(initialTitle || projectTitle || "");
       setDescription(initialDescription || "");
-      setTags(initialTags || "");
+      // Default tags for sleep history channel
+      const defaultTags = "history for sleep, sleepy history, sleepy history";
+      setTags(initialTags || defaultTags);
       setCategoryId(initialCategoryId || "27");
       setSelectedPlaylist(initialPlaylistId || null);
       setGeneratedTitles([]);
