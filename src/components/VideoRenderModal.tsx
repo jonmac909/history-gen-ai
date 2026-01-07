@@ -68,6 +68,11 @@ export function VideoRenderModal({
   onSkip,
   onForward,
 }: VideoRenderModalProps) {
+  console.log('[VideoRenderModal] Props received:', {
+    existingBasicVideoUrl,
+    existingEffectsVideoUrl,
+    isOpen
+  });
   // Initialize to 'complete' if we have an existing effects video
   const [currentPass, setCurrentPass] = useState<RenderPass>(existingEffectsVideoUrl ? 'complete' : 'idle');
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);

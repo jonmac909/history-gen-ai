@@ -371,6 +371,12 @@ const Index = () => {
   const handleResumeProject = () => {
     if (!savedProject) return;
 
+    console.log('[handleResumeProject] Resuming project with video URLs:', {
+      videoUrl: savedProject.videoUrl,
+      smokeEmbersVideoUrl: savedProject.smokeEmbersVideoUrl,
+      embersVideoUrl: savedProject.embersVideoUrl
+    });
+
     // CRITICAL: Disable fullAutomation when manually resuming a project
     // User is reviewing/editing, not running full automation
     setSettings(prev => ({ ...prev, fullAutomation: false }));
