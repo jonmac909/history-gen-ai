@@ -68,11 +68,6 @@ export function VideoRenderModal({
   onSkip,
   onForward,
 }: VideoRenderModalProps) {
-  console.log('[VideoRenderModal] Props received:', {
-    existingBasicVideoUrl,
-    existingEffectsVideoUrl,
-    isOpen
-  });
   // State for render progress
   const [currentPass, setCurrentPass] = useState<RenderPass>('idle');
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
@@ -80,29 +75,36 @@ export function VideoRenderModal({
   const [effectsVideoUrl, setEffectsVideoUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'effects'>('effects'); // Default to effects tab
   const autoRenderTriggered = useRef(false);
+  const hasInitializedRef = useRef(false);
+  const lastPropsRef = useRef({ basic: '', effects: '' });
 
-  // Sync existing video URLs from props whenever they change or modal opens
-  // This is the PRIMARY sync mechanism - always trust the props
+  // Single consolidated effect for syncing props to state - runs only when modal opens or props change
   useEffect(() => {
-    console.log('[VideoRenderModal] Syncing from props:', { existingBasicVideoUrl, existingEffectsVideoUrl, isOpen });
-    if (existingBasicVideoUrl) {
-      setBasicVideoUrl(existingBasicVideoUrl);
+    // Only sync when modal opens AND props actually changed
+    if (!isOpen) {
+      hasInitializedRef.current = false;
+      return;
     }
-    if (existingEffectsVideoUrl) {
-      setEffectsVideoUrl(existingEffectsVideoUrl);
-      autoRenderTriggered.current = true;
-      setCurrentPass('complete');
-    }
-  }, [existingBasicVideoUrl, existingEffectsVideoUrl]);
 
-  // When modal opens with existing videos, ensure state is set correctly
-  useEffect(() => {
-    if (isOpen && existingEffectsVideoUrl) {
-      console.log('[VideoRenderModal] Modal opened with existing video, setting complete');
-      setEffectsVideoUrl(existingEffectsVideoUrl);
-      setBasicVideoUrl(existingBasicVideoUrl || null);
-      setCurrentPass('complete');
-      autoRenderTriggered.current = true;
+    const propsChanged =
+      lastPropsRef.current.basic !== (existingBasicVideoUrl || '') ||
+      lastPropsRef.current.effects !== (existingEffectsVideoUrl || '');
+
+    if (!hasInitializedRef.current || propsChanged) {
+      hasInitializedRef.current = true;
+      lastPropsRef.current = {
+        basic: existingBasicVideoUrl || '',
+        effects: existingEffectsVideoUrl || ''
+      };
+
+      if (existingBasicVideoUrl) {
+        setBasicVideoUrl(existingBasicVideoUrl);
+      }
+      if (existingEffectsVideoUrl) {
+        setEffectsVideoUrl(existingEffectsVideoUrl);
+        autoRenderTriggered.current = true;
+        setCurrentPass('complete');
+      }
     }
   }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
@@ -112,7 +114,8 @@ export function VideoRenderModal({
       autoRenderTriggered.current = true;
       handleRenderBothPasses();
     }
-  }, [isOpen, autoRender, existingEffectsVideoUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, autoRender]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -120,11 +123,8 @@ export function VideoRenderModal({
       if (!existingBasicVideoUrl && !existingEffectsVideoUrl) {
         autoRenderTriggered.current = false;
       }
-      setBasicVideoUrl(existingBasicVideoUrl || null);
-      setEffectsVideoUrl(existingEffectsVideoUrl || null);
       setRenderProgress(null);
-      // Keep 'complete' if we have existing videos, otherwise reset to 'idle'
-      setCurrentPass(existingEffectsVideoUrl ? 'complete' : 'idle');
+      // Keep current video URLs and pass state - don't reset them
     }
   }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
 
