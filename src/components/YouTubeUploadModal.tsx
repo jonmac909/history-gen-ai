@@ -124,6 +124,14 @@ export function YouTubeUploadModal({
   const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState<string | null>(null);
 
+  // Privacy and scheduling state
+  const [privacyStatus, setPrivacyStatus] = useState<'private' | 'unlisted' | 'scheduled'>('private');
+  const [scheduleDate, setScheduleDate] = useState<string>("");
+  const [scheduleTime, setScheduleTime] = useState<string>("12:00");
+
+  // Altered content declaration (AI-generated content)
+  const [isAlteredContent, setIsAlteredContent] = useState(true); // Default to Yes for AI-generated videos
+
   // Track last notified metadata to prevent redundant callbacks
   const lastNotifiedMetadataRef = useRef<string | null>(null);
 
@@ -362,6 +370,17 @@ export function YouTubeUploadModal({
     setUploadMessage("Starting upload...");
 
     try {
+      // Determine actual privacy status and publishAt date
+      let actualPrivacyStatus: 'private' | 'unlisted' | 'public' =
+        privacyStatus === 'scheduled' ? 'private' : privacyStatus;
+
+      // For scheduled uploads, create ISO 8601 date
+      let publishAt: string | undefined;
+      if (privacyStatus === 'scheduled' && scheduleDate) {
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime || '12:00'}:00`);
+        publishAt = scheduledDateTime.toISOString();
+      }
+
       const result = await uploadToYouTube(
         {
           videoUrl,
@@ -370,8 +389,10 @@ export function YouTubeUploadModal({
           description,
           tags: tagsArray,
           categoryId,
-          privacyStatus: "private", // Always upload as private draft
+          privacyStatus: actualPrivacyStatus,
+          publishAt,
           thumbnailUrl,
+          isAlteredContent,
         },
         (progress) => {
           setUploadProgress(progress.percent);
@@ -384,22 +405,35 @@ export function YouTubeUploadModal({
         setYoutubeUrl(result.youtubeUrl || null);
 
         // Add to playlist if selected
-        if (selectedPlaylist) {
+        if (selectedPlaylist && selectedPlaylist !== "none") {
+          console.log(`[YouTubeUpload] Adding video ${result.videoId} to playlist ${selectedPlaylist}`);
           try {
             const { addVideoToPlaylist } = await import("@/lib/youtubeAuth");
-            await addVideoToPlaylist(selectedPlaylist, result.videoId);
-            toast({
-              title: "Added to Playlist",
-              description: "Video has been added to the selected playlist.",
-            });
+            const playlistResult = await addVideoToPlaylist(selectedPlaylist, result.videoId);
+            if (playlistResult.success) {
+              console.log(`[YouTubeUpload] Successfully added to playlist`);
+              toast({
+                title: "Added to Playlist",
+                description: "Video has been added to the selected playlist.",
+              });
+            } else {
+              console.error(`[YouTubeUpload] Playlist add failed:`, playlistResult.error);
+              toast({
+                title: "Playlist Warning",
+                description: playlistResult.error || "Failed to add to playlist.",
+                variant: "destructive",
+              });
+            }
           } catch (playlistError) {
-            console.error("Failed to add to playlist:", playlistError);
+            console.error("[YouTubeUpload] Failed to add to playlist:", playlistError);
             toast({
               title: "Playlist Warning",
               description: "Video uploaded but failed to add to playlist.",
               variant: "destructive",
             });
           }
+        } else {
+          console.log(`[YouTubeUpload] No playlist selected (selectedPlaylist: ${selectedPlaylist})`);
         }
 
         // Notify parent with final metadata
@@ -407,10 +441,22 @@ export function YouTubeUploadModal({
           onMetadataChange(finalTitle, description, tags, categoryId, selectedPlaylist);
         }
 
+        // Determine status message based on privacy/scheduling
+        let statusMessage = "Your video has been uploaded to YouTube as a private draft.";
+        if (privacyStatus === 'scheduled' && publishAt) {
+          const scheduleDateTime = new Date(publishAt);
+          statusMessage = `Your video has been scheduled to publish on ${scheduleDateTime.toLocaleDateString()} at ${scheduleDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+        } else if (privacyStatus === 'unlisted') {
+          statusMessage = "Your video has been uploaded as unlisted.";
+        }
+
         toast({
           title: "Upload Complete!",
-          description: "Your video has been uploaded to YouTube as a private draft.",
+          description: statusMessage,
         });
+
+        // Mark upload as complete (stop showing progress)
+        setIsUploading(false);
 
         // Call success callback
         onSuccess?.();
@@ -608,6 +654,63 @@ export function YouTubeUploadModal({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Privacy Status */}
+          <div className="space-y-2">
+            <Label>Visibility</Label>
+            <Select value={privacyStatus} onValueChange={(value) => setPrivacyStatus(value as 'private' | 'unlisted' | 'scheduled')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select visibility" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private">Private (Draft)</SelectItem>
+                <SelectItem value="unlisted">Unlisted</SelectItem>
+                <SelectItem value="scheduled">Schedule for Later</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Schedule Date/Time - only shown when scheduled is selected */}
+          {privacyStatus === 'scheduled' && (
+            <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
+              <Label>Schedule Publish Date & Time</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="flex-1"
+                />
+                <Input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="w-28"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Video will be private until the scheduled time, then published automatically.
+              </p>
+            </div>
+          )}
+
+          {/* Altered Content Declaration */}
+          <div className="space-y-2">
+            <Label>Altered/Synthetic Content</Label>
+            <Select value={isAlteredContent ? "yes" : "no"} onValueChange={(value) => setIsAlteredContent(value === "yes")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes - Contains AI-generated content</SelectItem>
+                <SelectItem value="no">No - No AI-generated content</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              YouTube requires disclosure if your video contains AI-generated or altered content.
+            </p>
           </div>
 
           {/* Playlist Selection */}

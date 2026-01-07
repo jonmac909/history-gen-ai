@@ -1662,6 +1662,7 @@ export interface YouTubeUploadParams {
   privacyStatus: 'private' | 'unlisted' | 'public';
   publishAt?: string; // ISO 8601 date for scheduled publish
   thumbnailUrl?: string; // URL of custom thumbnail to set
+  isAlteredContent?: boolean; // AI-generated/altered content declaration
 }
 
 export interface YouTubeUploadResult {

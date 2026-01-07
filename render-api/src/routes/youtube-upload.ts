@@ -45,6 +45,7 @@ interface UploadRequest {
   privacyStatus: 'private' | 'unlisted' | 'public';
   publishAt?: string; // ISO 8601 date for scheduled publish
   thumbnailUrl?: string; // URL of custom thumbnail to set
+  isAlteredContent?: boolean; // AI-generated/altered content declaration
 }
 
 interface AuthCodeExchangeRequest {
@@ -441,7 +442,8 @@ router.post('/', async (req: Request, res: Response) => {
     categoryId,
     privacyStatus,
     publishAt,
-    thumbnailUrl
+    thumbnailUrl,
+    isAlteredContent
   }: UploadRequest = req.body;
 
   // Validate required fields
@@ -593,6 +595,8 @@ router.post('/', async (req: Request, res: Response) => {
         privacyStatus: privacyStatus || 'private',
         selfDeclaredMadeForKids: false,
         notifySubscribers: true,  // Notify subscribers to avoid bot flagging
+        // AI-generated/altered content disclosure (required by YouTube since 2024)
+        containsSyntheticMedia: isAlteredContent !== false, // Default to true for AI-generated videos
       }
     };
 
