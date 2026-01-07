@@ -68,7 +68,8 @@ export function VideoRenderModal({
   onSkip,
   onForward,
 }: VideoRenderModalProps) {
-  const [currentPass, setCurrentPass] = useState<RenderPass>('idle');
+  // Initialize to 'complete' if we have an existing effects video
+  const [currentPass, setCurrentPass] = useState<RenderPass>(existingEffectsVideoUrl ? 'complete' : 'idle');
   const [renderProgress, setRenderProgress] = useState<RenderVideoProgress | null>(null);
   const [basicVideoUrl, setBasicVideoUrl] = useState<string | null>(existingBasicVideoUrl || null);
   const [effectsVideoUrl, setEffectsVideoUrl] = useState<string | null>(existingEffectsVideoUrl || null);
@@ -83,6 +84,8 @@ export function VideoRenderModal({
     if (existingEffectsVideoUrl) {
       setEffectsVideoUrl(existingEffectsVideoUrl);
       autoRenderTriggered.current = true;
+      // Mark as complete so the video player shows
+      setCurrentPass('complete');
     }
   }, [existingBasicVideoUrl, existingEffectsVideoUrl]);
 
@@ -95,6 +98,8 @@ export function VideoRenderModal({
       if (existingEffectsVideoUrl && !effectsVideoUrl) {
         setEffectsVideoUrl(existingEffectsVideoUrl);
         autoRenderTriggered.current = true;
+        // Mark as complete so the video player shows
+        setCurrentPass('complete');
       }
     }
   }, [isOpen, existingBasicVideoUrl, existingEffectsVideoUrl]);
