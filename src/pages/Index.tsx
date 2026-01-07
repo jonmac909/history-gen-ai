@@ -601,11 +601,27 @@ const Index = () => {
       setPendingScript(settings.customScript!);
 
       // Auto-save the custom script project
+      // CRITICAL: Explicitly reset ALL asset fields to prevent old project data from bleeding in
+      // React state updates are batched, so resetPendingState() hasn't applied yet when autoSave runs
       autoSave("script", {
         id: useProjectId,
         sourceUrl: "Custom Script",
         videoTitle: projectTitle,
-        script: settings.customScript!
+        script: settings.customScript!,
+        // Explicitly clear all other fields for new project
+        audioUrl: undefined,
+        audioDuration: undefined,
+        audioSegments: [],
+        srtContent: undefined,
+        srtUrl: undefined,
+        imagePrompts: [],
+        imageUrls: [],
+        videoUrl: undefined,
+        videoUrlCaptioned: undefined,
+        embersVideoUrl: undefined,
+        smokeEmbersVideoUrl: undefined,
+        thumbnails: [],
+        selectedThumbnailIndex: undefined,
       });
 
       setViewState("review-script");
@@ -719,11 +735,27 @@ const Index = () => {
       setPendingScript(scriptResult.script);
 
       // Auto-save after script generation (pass useProjectId since state hasn't updated yet)
+      // CRITICAL: Explicitly reset ALL asset fields to prevent old project data from bleeding in
+      // React state updates are batched, so resetPendingState() hasn't applied yet when autoSave runs
       autoSave("script", {
         id: useProjectId,
         sourceUrl: inputValue,
         videoTitle: settings.projectTitle || transcriptResult.title || "History Documentary",
-        script: scriptResult.script
+        script: scriptResult.script,
+        // Explicitly clear all other fields for new project
+        audioUrl: undefined,
+        audioDuration: undefined,
+        audioSegments: [],
+        srtContent: undefined,
+        srtUrl: undefined,
+        imagePrompts: [],
+        imageUrls: [],
+        videoUrl: undefined,
+        videoUrlCaptioned: undefined,
+        embersVideoUrl: undefined,
+        smokeEmbersVideoUrl: undefined,
+        thumbnails: [],
+        selectedThumbnailIndex: undefined,
       });
 
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -1530,12 +1562,19 @@ const Index = () => {
     setPendingSrtUrl("");
     setPendingImages([]);
     setGeneratedThumbnails([]);
+    setSelectedThumbnailIndex(undefined);
     setRenderedVideoUrl(undefined);
     setVideoUrl(undefined);
     setVideoUrlCaptioned(undefined);
     setEmbersVideoUrl(undefined);
     setSmokeEmbersVideoUrl(undefined);
     setImagePrompts([]);
+    // Reset YouTube metadata
+    setYoutubeTitle("");
+    setYoutubeDescription("");
+    setYoutubeTags("");
+    setYoutubeCategoryId("27");
+    setYoutubePlaylistId(null);
   };
 
   const handleCancelRequest = () => {
@@ -1845,6 +1884,7 @@ const Index = () => {
       if (captionsResult.audioDuration) setPendingAudioDuration(captionsResult.audioDuration);
 
       // Auto-save after captions generation
+      // CRITICAL: Explicitly reset asset fields not yet generated to prevent old data bleeding in
       autoSave("captions", {
         id: useProjectId,
         videoTitle: title,
@@ -1852,6 +1892,17 @@ const Index = () => {
         audioDuration: captionsResult.audioDuration,
         srtContent: captionsResult.srtContent,
         srtUrl: captionsResult.captionsUrl || "",
+        // Explicitly clear fields not yet generated for new project
+        script: undefined,
+        audioSegments: [],
+        imagePrompts: [],
+        imageUrls: [],
+        videoUrl: undefined,
+        videoUrlCaptioned: undefined,
+        embersVideoUrl: undefined,
+        smokeEmbersVideoUrl: undefined,
+        thumbnails: [],
+        selectedThumbnailIndex: undefined,
       });
 
       setProcessingSteps([
@@ -1966,6 +2017,7 @@ const Index = () => {
       setImagePrompts(promptsResult.prompts);
 
       // Auto-save after image prompts generation (projectId was set at start of this handler)
+      // CRITICAL: Explicitly reset fields not yet generated to prevent old data bleeding in
       autoSave("prompts", {
         id: useProjectId,
         videoTitle: title,
@@ -1974,6 +2026,15 @@ const Index = () => {
         audioUrl: pendingAudioUrl,
         audioDuration: audioDuration || pendingAudioDuration,
         imagePrompts: promptsResult.prompts,
+        // Explicitly clear fields not yet generated for new project
+        audioSegments: [],
+        imageUrls: [],
+        videoUrl: undefined,
+        videoUrlCaptioned: undefined,
+        embersVideoUrl: undefined,
+        smokeEmbersVideoUrl: undefined,
+        thumbnails: [],
+        selectedThumbnailIndex: undefined,
       });
 
       setProcessingSteps([{ id: "prompts", label: "Image prompts generated", status: "complete", progress: 100 }]);
