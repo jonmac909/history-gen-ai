@@ -103,9 +103,15 @@ export function ThumbnailGeneratorModal({
       : null
   );
 
+  // Track last notified state to prevent redundant callbacks
+  const lastNotifiedRef = useRef<{ thumbnails: string; selectedIndex: number | undefined } | null>(null);
+
   // Reset state when modal opens with new initial values
   useEffect(() => {
     if (isOpen) {
+      // Reset the notification ref so initial values trigger a save
+      lastNotifiedRef.current = null;
+
       if (initialThumbnails && initialThumbnails.length > 0) {
         setGeneratedThumbnails(initialThumbnails);
         setSelectedThumbnail(
@@ -116,9 +122,6 @@ export function ThumbnailGeneratorModal({
       }
     }
   }, [isOpen, initialThumbnails, initialSelectedIndex]);
-
-  // Track last notified state to prevent redundant callbacks
-  const lastNotifiedRef = useRef<{ thumbnails: string; selectedIndex: number | undefined } | null>(null);
 
   // Notify parent when selection changes (for real-time persistence)
   // Note: onSelectionChange excluded from deps to prevent infinite loops with inline callbacks

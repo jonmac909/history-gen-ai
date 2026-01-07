@@ -115,10 +115,15 @@ export function YouTubeUploadModal({
   const [generatedTitles, setGeneratedTitles] = useState<string[]>([]);
   const [showTitleSelector, setShowTitleSelector] = useState(false);
 
+  // Track last notified metadata to prevent redundant callbacks
+  const lastNotifiedMetadataRef = useRef<string | null>(null);
+
   // Check connection status on open
   useEffect(() => {
     if (isOpen) {
       checkConnection();
+      // Reset the notification ref so initial values trigger a save
+      lastNotifiedMetadataRef.current = null;
       // Use saved values if available, otherwise fall back to project title
       setTitle(initialTitle || projectTitle || "");
       setDescription(initialDescription || "");
@@ -129,9 +134,6 @@ export function YouTubeUploadModal({
       setShowTitleSelector(false);
     }
   }, [isOpen, projectTitle, initialTitle, initialDescription, initialTags, initialCategoryId, initialPlaylistId]);
-
-  // Track last notified metadata to prevent redundant callbacks
-  const lastNotifiedMetadataRef = useRef<string | null>(null);
 
   // Notify parent when any metadata changes
   // Note: onMetadataChange excluded from deps to prevent infinite loops with inline callbacks
