@@ -267,8 +267,17 @@ export function YouTubeUploadModal({
     }
   };
 
+  // Ensure title ends with "| History for Sleep"
+  const ensureTitleSuffix = (t: string): string => {
+    const suffix = "| History for Sleep";
+    if (t.endsWith(suffix)) return t;
+    // Remove any existing suffix variations before adding the correct one
+    const cleaned = t.replace(/\s*\|\s*History for Sleep\s*$/i, "").trim();
+    return `${cleaned} ${suffix}`;
+  };
+
   const handleSelectTitle = (selectedTitle: string) => {
-    setTitle(selectedTitle);
+    setTitle(ensureTitleSuffix(selectedTitle));
     setShowTitleSelector(false);
   };
 
@@ -297,9 +306,11 @@ export function YouTubeUploadModal({
 
   // Handle confirm - save metadata and close
   const handleConfirm = () => {
+    // Ensure title has the suffix before saving
+    const finalTitle = ensureTitleSuffix(title);
     // Notify parent with final metadata
     if (onMetadataChange) {
-      onMetadataChange(title, description, tags, categoryId, selectedPlaylist);
+      onMetadataChange(finalTitle, description, tags, categoryId, selectedPlaylist);
     }
     // Support both onConfirm and onSuccess for compatibility
     onConfirm?.();
