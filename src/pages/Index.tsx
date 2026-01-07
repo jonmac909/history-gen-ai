@@ -2862,9 +2862,14 @@ const Index = () => {
         onFavoriteToggle={handleFavoriteThumbnailToggle}
         onConfirm={handleThumbnailsConfirm}
         onSelectionChange={(thumbnails, selectedIndex) => {
-          setGeneratedThumbnails(thumbnails);
-          setSelectedThumbnailIndex(selectedIndex);
-          autoSave("review-thumbnails", { thumbnails, selectedThumbnailIndex: selectedIndex });
+          // Only update state if values actually changed to prevent re-render loops
+          const thumbnailsChanged = JSON.stringify(thumbnails) !== JSON.stringify(generatedThumbnails);
+          if (thumbnailsChanged) setGeneratedThumbnails(thumbnails);
+          if (selectedIndex !== selectedThumbnailIndex) setSelectedThumbnailIndex(selectedIndex);
+          // Only save if something changed
+          if (thumbnailsChanged || selectedIndex !== selectedThumbnailIndex) {
+            autoSave("review-thumbnails", { thumbnails, selectedThumbnailIndex: selectedIndex });
+          }
         }}
         onCancel={handleCancelRequest}
         onBack={handleBackToRender}
@@ -2890,11 +2895,12 @@ const Index = () => {
         initialCategoryId={youtubeCategoryId}
         initialPlaylistId={youtubePlaylistId}
         onMetadataChange={(title, description, tags, categoryId, playlistId) => {
-          setYoutubeTitle(title);
-          setYoutubeDescription(description);
-          setYoutubeTags(tags);
-          setYoutubeCategoryId(categoryId);
-          setYoutubePlaylistId(playlistId);
+          // Only update state if values actually changed to prevent re-render loops
+          if (title !== youtubeTitle) setYoutubeTitle(title);
+          if (description !== youtubeDescription) setYoutubeDescription(description);
+          if (tags !== youtubeTags) setYoutubeTags(tags);
+          if (categoryId !== youtubeCategoryId) setYoutubeCategoryId(categoryId);
+          if (playlistId !== youtubePlaylistId) setYoutubePlaylistId(playlistId);
           // Save YouTube metadata to project
           autoSave("review-youtube", {
             youtubeTitle: title,
