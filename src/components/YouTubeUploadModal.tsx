@@ -480,15 +480,6 @@ export function YouTubeUploadModal({
   // Check if we can upload
   const canUpload = isConnected && hasVideo && title.trim().length > 0;
 
-  // Debug logging
-  console.log('[YouTubeUploadModal] State:', {
-    isOpen,
-    videoUrl: videoUrl ? `${videoUrl.substring(0, 50)}...` : 'undefined/empty',
-    hasVideo,
-    isConnected,
-    canUpload,
-    title: title.substring(0, 30)
-  });
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
