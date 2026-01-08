@@ -665,7 +665,7 @@ Example response with topic drift:
 }`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1000,
       system: systemPrompt,
       messages: [
@@ -824,7 +824,7 @@ ${script}
 Return the edited script with the issues fixed. Preserve the original as much as possible - only change what's necessary to fix the specific issues mentioned.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 16000,
       system: systemPrompt,
       messages: [

@@ -128,7 +128,7 @@ async function regeneratePrompt(
 ): Promise<string> {
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 500,
       messages: [{
         role: 'user',
@@ -257,7 +257,7 @@ router.post('/', async (req: Request, res: Response) => {
   const { script, srtContent, imageCount, stylePrompt, audioDuration, stream } = req.body;
 
   // Always use Sonnet for best quality scene descriptions
-  const selectedModel = 'claude-sonnet-4-5-20250514';
+  const selectedModel = 'claude-sonnet-4-5-20250929';
 
   // Keepalive interval for SSE
   let heartbeatInterval: NodeJS.Timeout | null = null;

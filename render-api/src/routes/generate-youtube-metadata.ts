@@ -90,7 +90,7 @@ Return ONLY this JSON structure (no markdown, no code blocks):
     console.log('[generate-youtube-metadata] Calling Claude API...');
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 4096,
       messages: [
         {

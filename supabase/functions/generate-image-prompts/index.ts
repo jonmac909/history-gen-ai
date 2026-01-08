@@ -144,7 +144,7 @@ async function regeneratePrompt(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-5-20250929',
         max_tokens: 500,
         messages: [{
           role: 'user',
@@ -327,7 +327,7 @@ serve(async (req) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-5-20250929',
         max_tokens: 8192,
         system: `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
