@@ -309,6 +309,11 @@ Multi-step generation with user review at each stage:
   - **Secondary: Proactive text cleaning** - `removeTextRepetitions()` removes duplicate sentences BEFORE TTS (70% Jaccard similarity OR 80% containment)
 - Response includes both `audioUrl` (combined) and `segments[]` (for regeneration)
 - Frontend `AudioSegmentsPreviewModal` shows "Play All" (combined) + individual segment players with regeneration
+- **Audio Integrity Checking**: Verifies audio for glitches/skips after generation
+  - Detects sudden amplitude drops (potential skips)
+  - Detects large amplitude discontinuities at segment boundaries
+  - Logs warnings with timestamps for debugging
+  - Response includes `audioIntegrity` field with issues array
 
 **Key constants** in `render-api/src/routes/generate-audio.ts`:
 - `MAX_TTS_CHUNK_LENGTH = 250` chars per TTS chunk

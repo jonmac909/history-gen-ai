@@ -128,7 +128,7 @@ async function regeneratePrompt(
 ): Promise<string> {
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5-20250514',
       max_tokens: 500,
       messages: [{
         role: 'user',
@@ -257,7 +257,7 @@ router.post('/', async (req: Request, res: Response) => {
   const { script, srtContent, imageCount, stylePrompt, audioDuration, stream } = req.body;
 
   // Always use Sonnet for best quality scene descriptions
-  const selectedModel = 'claude-sonnet-4-20250514';
+  const selectedModel = 'claude-sonnet-4-5-20250514';
 
   // Keepalive interval for SSE
   let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -332,11 +332,12 @@ router.post('/', async (req: Request, res: Response) => {
     console.log(`📊 Processing ${imageCount} prompts in ${numBatches} parallel batch(es) of ${BATCH_SIZE_PARALLEL}`);
 
     // Track progress across all parallel batches
+    // Initial generation is 5-85%, regeneration phase is 85-98%, final 98-100%
     const batchProgress: number[] = new Array(numBatches).fill(0);
     const updateTotalProgress = () => {
       const totalCompleted = batchProgress.reduce((a, b) => a + b, 0);
-      const progress = Math.min(95, 5 + Math.round((totalCompleted / imageCount) * 90));
-      sendEvent({ type: 'progress', progress, message: `${progress}%` });
+      const progress = Math.min(85, 5 + Math.round((totalCompleted / imageCount) * 80));
+      sendEvent({ type: 'progress', progress, message: `Generating prompts... ${Math.round((totalCompleted / imageCount) * 100)}%` });
     };
 
     // OPTIMIZATION: Define system prompt once for prompt caching
@@ -464,57 +465,105 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
     const batchResults = await Promise.all(batchPromises);
     const sceneDescriptions = batchResults.flat();
 
+    // Phase 2: Check and regenerate prompts with modern keywords IN PARALLEL
+    // This happens after initial generation and can take significant time
+    sendEvent({ type: 'progress', progress: 85, message: 'Checking for modern keywords...' });
+
+    // First pass: identify which prompts need regeneration
+    interface RegenTask {
+      index: number;
+      sceneDesc: string;
+      foundKeywords: string[];
+      narrationText: string;
+    }
+    const regenTasks: RegenTask[] = [];
+
+    for (let i = 0; i < windows.length; i++) {
+      const scene = sceneDescriptions.find(s => s.index === i + 1);
+      const sceneDesc = scene?.sceneDescription || `Historical scene depicting: ${windows[i].text.substring(0, 200)}`;
+      const foundKeywords = containsModernKeywords(sceneDesc);
+
+      if (foundKeywords.length > 0) {
+        regenTasks.push({
+          index: i,
+          sceneDesc,
+          foundKeywords,
+          narrationText: windows[i].text,
+        });
+      }
+    }
+
+    // Map to store regenerated descriptions by index
+    const regeneratedDescriptions = new Map<number, string>();
+
+    if (regenTasks.length > 0) {
+      console.log(`Found ${regenTasks.length} prompts with modern keywords, regenerating in parallel...`);
+      sendEvent({ type: 'progress', progress: 86, message: `Regenerating ${regenTasks.length} prompts with modern keywords...` });
+
+      // Process regeneration tasks in parallel batches of 5
+      const REGEN_BATCH_SIZE = 5;
+      let completedRegen = 0;
+
+      for (let batchStart = 0; batchStart < regenTasks.length; batchStart += REGEN_BATCH_SIZE) {
+        const batch = regenTasks.slice(batchStart, batchStart + REGEN_BATCH_SIZE);
+
+        // Process batch in parallel
+        const batchResults = await Promise.all(
+          batch.map(async (task) => {
+            console.log(`Image ${task.index + 1}: Found modern keywords [${task.foundKeywords.join(', ')}], regenerating...`);
+
+            // First attempt
+            let finalDesc = await regeneratePrompt(
+              anthropic,
+              task.sceneDesc,
+              task.foundKeywords,
+              task.narrationText
+            );
+
+            // Check if regeneration still has keywords
+            const remainingKeywords = containsModernKeywords(finalDesc);
+            if (remainingKeywords.length > 0) {
+              console.log(`Image ${task.index + 1}: Regeneration still has keywords [${remainingKeywords.join(', ')}], trying again...`);
+              const secondAttempt = await regeneratePrompt(
+                anthropic,
+                finalDesc,
+                remainingKeywords,
+                task.narrationText
+              );
+
+              const finalKeywords = containsModernKeywords(secondAttempt);
+              if (finalKeywords.length > 0) {
+                console.log(`Image ${task.index + 1}: Warning - still has keywords after 2 regeneration attempts, using best attempt`);
+              }
+              finalDesc = secondAttempt;
+            }
+
+            return { index: task.index, description: finalDesc };
+          })
+        );
+
+        // Store results
+        for (const result of batchResults) {
+          regeneratedDescriptions.set(result.index, result.description);
+        }
+
+        completedRegen += batch.length;
+        const regenProgress = 86 + Math.round((completedRegen / regenTasks.length) * 12);
+        sendEvent({ type: 'progress', progress: Math.min(regenProgress, 98), message: `Regenerated ${completedRegen}/${regenTasks.length} prompts...` });
+      }
+    }
+
     // Build final prompts with style and timing info
-    // Check for modern keywords and regenerate if found
-    let regeneratedCount = 0;
     const imagePrompts: ImagePrompt[] = [];
 
     for (let i = 0; i < windows.length; i++) {
       const window = windows[i];
       const scene = sceneDescriptions.find(s => s.index === i + 1);
-      let sceneDesc = scene?.sceneDescription || `Historical scene depicting: ${window.text.substring(0, 200)}`;
 
-      // Check for modern keywords
-      const foundKeywords = containsModernKeywords(sceneDesc);
-
-      if (foundKeywords.length > 0) {
-        console.log(`Image ${i + 1}: Found modern keywords [${foundKeywords.join(', ')}], regenerating...`);
-        regeneratedCount++;
-
-        // Regenerate this specific prompt
-        const regeneratedDesc = await regeneratePrompt(
-          anthropic,
-          sceneDesc,
-          foundKeywords,
-          window.text
-        );
-
-        // Check if regeneration still has keywords
-        const remainingKeywords = containsModernKeywords(regeneratedDesc);
-        if (remainingKeywords.length === 0) {
-          // Regeneration succeeded - use it
-          sceneDesc = regeneratedDesc;
-        } else {
-          // Regeneration still has keywords - try one more time with stronger prompt
-          console.log(`Image ${i + 1}: Regeneration still has keywords [${remainingKeywords.join(', ')}], trying again...`);
-          const secondAttempt = await regeneratePrompt(
-            anthropic,
-            regeneratedDesc,
-            remainingKeywords,
-            window.text
-          );
-
-          const finalKeywords = containsModernKeywords(secondAttempt);
-          if (finalKeywords.length === 0) {
-            sceneDesc = secondAttempt;
-          } else {
-            // Still has keywords after 2 attempts - use regenerated version anyway
-            // (better than original, don't apply filter which breaks grammar)
-            console.log(`Image ${i + 1}: Warning - still has keywords after 2 regeneration attempts, using best attempt`);
-            sceneDesc = secondAttempt;
-          }
-        }
-      }
+      // Use regenerated description if available, otherwise use original
+      let sceneDesc = regeneratedDescriptions.get(i)
+        || scene?.sceneDescription
+        || `Historical scene depicting: ${window.text.substring(0, 200)}`;
 
       imagePrompts.push({
         index: i + 1,
@@ -527,7 +576,7 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
       });
     }
 
-    console.log(`Generated ${imagePrompts.length} image prompts successfully (regenerated ${regeneratedCount} prompts with modern keywords)`);
+    console.log(`Generated ${imagePrompts.length} image prompts successfully (regenerated ${regenTasks.length} prompts with modern keywords)`);
 
     const result = {
       success: true,

@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
+import { checkAudioIntegrity, logAudioIntegrity } from '../utils/audio-integrity';
 
 const router = Router();
 
@@ -473,6 +474,19 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
     await downloadFile(audioUrl, audioPath);
     console.log('Downloaded audio');
 
+    // Check audio integrity before muxing
+    const audioBuffer = fs.readFileSync(audioPath);
+    const integrityResult = checkAudioIntegrity(audioBuffer, {
+      silenceThresholdMs: 1500,
+      glitchThresholdDb: 25,
+      sampleWindowMs: 50,
+    });
+    logAudioIntegrity(integrityResult, `GPU render ${jobId}`);
+
+    if (integrityResult.issues.filter(i => i.type === 'skip' || i.type === 'discontinuity').length > 0) {
+      console.warn(`[WARN] Audio has potential issues - video may have audio glitches`);
+    }
+
     await updateJobStatus(supabase, jobId, 'muxing', 78, 'Concatenating chunks...');
 
     // Create concat file
@@ -789,6 +803,24 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     const audioPath = path.join(tempDir, 'voiceover.wav');
     await downloadFile(audioUrl, audioPath);
     console.log('Audio downloaded');
+
+    // Check audio integrity before rendering
+    const audioBuffer = fs.readFileSync(audioPath);
+    const integrityResult = checkAudioIntegrity(audioBuffer, {
+      silenceThresholdMs: 1500,
+      glitchThresholdDb: 25,
+      sampleWindowMs: 50,
+    });
+    logAudioIntegrity(integrityResult, `video render ${jobId}`);
+
+    // Log warning if issues detected but continue rendering
+    const audioIssues = integrityResult.issues.filter(i => i.type === 'skip' || i.type === 'discontinuity');
+    if (audioIssues.length > 0) {
+      console.warn(`[WARN] Audio has ${audioIssues.length} potential issues - video may have audio glitches`);
+      audioIssues.slice(0, 3).forEach(issue => {
+        console.warn(`[WARN]   ${issue.type} at ${issue.timestamp.toFixed(2)}s`);
+      });
+    }
 
     // Download overlay(s) based on effect type
     const embersOverlayPath = path.join(tempDir, 'embers_overlay.mp4');
