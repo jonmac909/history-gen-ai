@@ -1284,10 +1284,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Use parallel rendering with 10 workers for ~10x speedup
-    console.log(`Job ${jobId}: Using PARALLEL rendering (10 RunPod workers)`);
-    processRenderJobParallel(jobId, params).catch(err => {
-      console.error(`Parallel render job ${jobId} crashed:`, err);
+    // Use single-job CPU rendering (parallel chunk mode has issues with worker)
+    console.log(`Job ${jobId}: Using CPU RunPod rendering`);
+    processRenderJobCpuRunpod(jobId, params).catch(err => {
+      console.error(`CPU render job ${jobId} crashed:`, err);
     });
 
     // Return immediately with job ID
@@ -1295,7 +1295,7 @@ router.post('/', async (req: Request, res: Response) => {
       success: true,
       jobId,
       status: 'queued',
-      message: 'Render job started (Parallel x10). Poll /render-video/status/:jobId for progress.'
+      message: 'Render job started. Poll /render-video/status/:jobId for progress.'
     });
 
   } catch (error: any) {
