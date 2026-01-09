@@ -472,7 +472,12 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
     // Download audio
     const audioPath = path.join(tempDir, 'audio.wav');
     await downloadFile(audioUrl, audioPath);
-    console.log('Downloaded audio');
+    const audioStats = fs.statSync(audioPath);
+    console.log(`Downloaded audio: ${audioStats.size} bytes`);
+
+    if (audioStats.size < 1000) {
+      throw new Error(`Audio file too small (${audioStats.size} bytes) - likely corrupted or empty`);
+    }
 
     // Check audio integrity before muxing
     const audioBuffer = fs.readFileSync(audioPath);
@@ -512,29 +517,40 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
 
     await updateJobStatus(supabase, jobId, 'muxing', 82, 'Adding audio...');
 
-    // Add audio to concatenated video
+    // Add audio to concatenated video (with 5 minute timeout)
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(concatenatedPath)
-        .input(audioPath)
-        .outputOptions([
-          '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-ar', '48000',
-          '-b:a', '192k',
-          '-shortest',
-          '-y'
-        ])
-        .output(withAudioPath)
-        .on('start', (cmd) => console.log('Audio mux:', cmd.substring(0, 100) + '...'))
-        .on('error', reject)
-        .on('end', () => {
-          console.log('Audio muxed');
-          resolve();
-        })
-        .run();
-    });
+    const muxTimeout = 5 * 60 * 1000; // 5 minutes
+    let ffmpegProcess: any = null;
+
+    await Promise.race([
+      new Promise<void>((resolve, reject) => {
+        ffmpegProcess = ffmpeg()
+          .input(concatenatedPath)
+          .input(audioPath)
+          .outputOptions([
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-ar', '48000',
+            '-b:a', '192k',
+            '-shortest',
+            '-y'
+          ])
+          .output(withAudioPath)
+          .on('start', (cmd) => console.log('Audio mux:', cmd.substring(0, 100) + '...'))
+          .on('error', reject)
+          .on('end', () => {
+            console.log('Audio muxed');
+            resolve();
+          })
+          .run();
+      }),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => {
+          if (ffmpegProcess) ffmpegProcess.kill('SIGKILL');
+          reject(new Error('Audio mux timed out after 5 minutes'));
+        }, muxTimeout)
+      )
+    ]);
 
     await updateJobStatus(supabase, jobId, 'muxing', 86, 'Scrubbing metadata...');
 
