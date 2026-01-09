@@ -24,7 +24,7 @@ const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
 // Parallel rendering configuration
-const PARALLEL_WORKERS = 1;  // Testing with 1 worker first (was 10)
+const PARALLEL_WORKERS = 10;  // 10 RunPod workers for parallel video rendering
 const CHUNK_POLL_INTERVAL = 3000;  // 3 seconds between status checks
 const CHUNK_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max per chunk
 
