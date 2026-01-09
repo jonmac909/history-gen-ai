@@ -132,22 +132,20 @@ export async function resolveChannelId(input: string): Promise<string> {
   // Acquire semaphore slot to limit concurrent calls
   await acquireYtdlpSlot();
   try {
-    // Use yt-dlp to get channel metadata (just the first video to get channel info)
+    // Use --dump-single-json to get channel metadata even if default tab has no videos
     const result = await ytDlp.execPromise([
       url,
-      '--dump-json',
-      '--playlist-items', '1',
-      '--flat-playlist',
+      '--dump-single-json',
+      '--skip-download',
       '--no-warnings',
       '--ignore-errors',
     ]);
 
-    const lines = result.trim().split('\n').filter(Boolean);
-    if (lines.length === 0) {
+    if (!result.trim()) {
       throw new Error('No data returned from yt-dlp');
     }
 
-    const info = JSON.parse(lines[0]) as YtDlpChannelInfo;
+    const info = JSON.parse(result.trim()) as YtDlpChannelInfo;
     // Check multiple possible locations for channel ID
     const channelId = info.channel_id || info.playlist_channel_id || info.uploader_id;
 
@@ -175,8 +173,8 @@ export async function getChannelVideos(
   maxResults: number = 50
 ): Promise<YtDlpVideoInfo[]> {
   const ytDlp = await getYtDlp();
-  // Use channel URL without /videos - yt-dlp auto-selects videos tab
-  const url = `https://www.youtube.com/channel/${channelId}`;
+  // Explicitly use /videos tab to get video list
+  const url = `https://www.youtube.com/channel/${channelId}/videos`;
 
   console.log(`[ytdlp] Fetching videos from: ${url}`);
 
@@ -237,7 +235,6 @@ export async function getChannelInfo(channelId: string): Promise<{
   thumbnailUrl: string;
 }> {
   const ytDlp = await getYtDlp();
-  // Use channel URL without /videos - some channels don't have videos tab
   const url = `https://www.youtube.com/channel/${channelId}`;
 
   console.log(`[ytdlp] Fetching channel info: ${url}`);
@@ -245,26 +242,25 @@ export async function getChannelInfo(channelId: string): Promise<{
   // Acquire semaphore slot to limit concurrent calls
   await acquireYtdlpSlot();
   try {
+    // Use --dump-single-json to get channel metadata reliably
     const result = await ytDlp.execPromise([
       url,
-      '--dump-json',
-      '--flat-playlist',
-      '--playlist-items', '1',
+      '--dump-single-json',
+      '--skip-download',
       '--no-warnings',
       '--ignore-errors',
     ]);
 
-    const lines = result.trim().split('\n').filter(Boolean);
-    if (lines.length === 0) {
+    if (!result.trim()) {
       throw new Error('No data returned');
     }
 
-    const info = JSON.parse(lines[0]);
+    const info = JSON.parse(result.trim());
 
     return {
       id: channelId,
       // Check multiple sources for channel name
-      title: info.channel || info.playlist_channel || info.uploader || info.playlist_uploader || 'Unknown Channel',
+      title: info.channel || info.title || info.uploader || 'Unknown Channel',
       subscriberCount: info.channel_follower_count || 0,
       thumbnailUrl: info.thumbnails?.[0]?.url || '',
     };
