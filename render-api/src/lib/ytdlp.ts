@@ -15,6 +15,31 @@ const YTDLP_PATH = path.join(YTDLP_DIR, process.platform === 'win32' ? 'yt-dlp.e
 let ytDlpInstance: YTDlpWrap | null = null;
 let downloadPromise: Promise<void> | null = null;
 
+// Semaphore to limit concurrent yt-dlp executions (prevents rate limiting)
+const MAX_CONCURRENT_YTDLP = 3;
+let activeYtdlpCalls = 0;
+const ytdlpQueue: Array<{ resolve: () => void }> = [];
+
+async function acquireYtdlpSlot(): Promise<void> {
+  if (activeYtdlpCalls < MAX_CONCURRENT_YTDLP) {
+    activeYtdlpCalls++;
+    return;
+  }
+  // Wait in queue
+  return new Promise((resolve) => {
+    ytdlpQueue.push({ resolve });
+  });
+}
+
+function releaseYtdlpSlot(): void {
+  activeYtdlpCalls--;
+  const next = ytdlpQueue.shift();
+  if (next) {
+    activeYtdlpCalls++;
+    next.resolve();
+  }
+}
+
 /**
  * Get or initialize yt-dlp instance (downloads binary if needed)
  */
@@ -99,6 +124,8 @@ export async function resolveChannelId(input: string): Promise<string> {
 
   const ytDlp = await getYtDlp();
 
+  // Acquire semaphore slot to limit concurrent calls
+  await acquireYtdlpSlot();
   try {
     // Use yt-dlp to get channel metadata (just the first video to get channel info)
     const result = await ytDlp.execPromise([
@@ -128,6 +155,8 @@ export async function resolveChannelId(input: string): Promise<string> {
   } catch (error: any) {
     console.error('[ytdlp] Error resolving channel:', error.message);
     throw new Error(`Could not find channel: ${input}`);
+  } finally {
+    releaseYtdlpSlot();
   }
 }
 
@@ -143,6 +172,8 @@ export async function getChannelVideos(
 
   console.log(`[ytdlp] Fetching videos from: ${url}`);
 
+  // Acquire semaphore slot to limit concurrent calls
+  await acquireYtdlpSlot();
   try {
     const result = await ytDlp.execPromise([
       url,
@@ -183,6 +214,8 @@ export async function getChannelVideos(
   } catch (error: any) {
     console.error('[ytdlp] Error fetching videos:', error.message);
     throw new Error('Failed to fetch channel videos');
+  } finally {
+    releaseYtdlpSlot();
   }
 }
 
@@ -200,6 +233,8 @@ export async function getChannelInfo(channelId: string): Promise<{
 
   console.log(`[ytdlp] Fetching channel info: ${url}`);
 
+  // Acquire semaphore slot to limit concurrent calls
+  await acquireYtdlpSlot();
   try {
     const result = await ytDlp.execPromise([
       url,
@@ -233,5 +268,7 @@ export async function getChannelInfo(channelId: string): Promise<{
       subscriberCount: 0,
       thumbnailUrl: '',
     };
+  } finally {
+    releaseYtdlpSlot();
   }
 }
