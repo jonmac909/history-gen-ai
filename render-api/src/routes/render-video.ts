@@ -492,6 +492,28 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
       console.warn(`[WARN] Audio has potential issues - video may have audio glitches`);
     }
 
+    // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
+    await updateJobStatus(supabase, jobId, 'muxing', 76, 'Encoding audio...');
+    const audioAacPath = path.join(tempDir, 'audio.m4a');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(audioPath)
+        .outputOptions([
+          '-c:a', 'aac',
+          '-ar', '48000',
+          '-b:a', '192k',
+          '-y'
+        ])
+        .output(audioAacPath)
+        .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
+        .on('error', reject)
+        .on('end', () => {
+          console.log('Audio pre-encoded to AAC');
+          resolve();
+        })
+        .run();
+    });
+
     await updateJobStatus(supabase, jobId, 'muxing', 78, 'Concatenating chunks...');
 
     // Create concat file
@@ -517,57 +539,32 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
 
     await updateJobStatus(supabase, jobId, 'muxing', 82, 'Adding audio...');
 
-    // Add audio to concatenated video (with 5 minute timeout)
+    // Add audio to concatenated video (instant with -c:a copy)
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
-    const muxTimeout = 5 * 60 * 1000; // 5 minutes
-    let ffmpegProcess: any = null;
 
-    let lastMuxProgress = 0;
-    await Promise.race([
-      new Promise<void>((resolve, reject) => {
-        ffmpegProcess = ffmpeg()
-          .input(concatenatedPath)
-          .input(audioPath)
-          .outputOptions([
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-ar', '48000',
-            '-b:a', '192k',
-            '-shortest',
-            '-y'
-          ])
-          .output(withAudioPath)
-          .on('start', (cmd) => console.log('Audio mux started:', cmd.substring(0, 120) + '...'))
-          .on('progress', (progress) => {
-            const pct = Math.round(progress.percent || 0);
-            if (pct > lastMuxProgress + 5) {  // Log every 5%
-              lastMuxProgress = pct;
-              console.log(`Audio mux progress: ${pct}% (${progress.timemark || 'unknown'})`);
-            }
-          })
-          .on('stderr', (line) => {
-            // Only log important stderr lines (not every frame)
-            if (line.includes('Error') || line.includes('error') || line.includes('failed')) {
-              console.error('FFmpeg stderr:', line);
-            }
-          })
-          .on('error', (err) => {
-            console.error('Audio mux error:', err.message);
-            reject(err);
-          })
-          .on('end', () => {
-            console.log('Audio muxed successfully');
-            resolve();
-          })
-          .run();
-      }),
-      new Promise<void>((_, reject) =>
-        setTimeout(() => {
-          if (ffmpegProcess) ffmpegProcess.kill('SIGKILL');
-          reject(new Error('Audio mux timed out after 5 minutes'));
-        }, muxTimeout)
-      )
-    ]);
+    // Mux is now instant since audio is pre-encoded (-c:a copy)
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatenatedPath)
+        .input(audioAacPath)
+        .outputOptions([
+          '-c:v', 'copy',
+          '-c:a', 'copy',
+          '-shortest',
+          '-y'
+        ])
+        .output(withAudioPath)
+        .on('start', (cmd) => console.log('Audio mux (copy):', cmd.substring(0, 120) + '...'))
+        .on('error', (err) => {
+          console.error('Audio mux error:', err.message);
+          reject(err);
+        })
+        .on('end', () => {
+          console.log('Audio muxed successfully');
+          resolve();
+        })
+        .run();
+    });
 
     await updateJobStatus(supabase, jobId, 'muxing', 86, 'Scrubbing metadata...');
 
@@ -854,6 +851,27 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
         console.warn(`[WARN]   ${issue.type} at ${issue.timestamp.toFixed(2)}s`);
       });
     }
+
+    // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
+    const audioAacPath = path.join(tempDir, 'voiceover.m4a');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(audioPath)
+        .outputOptions([
+          '-c:a', 'aac',
+          '-ar', '48000',
+          '-b:a', '192k',
+          '-y'
+        ])
+        .output(audioAacPath)
+        .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
+        .on('error', reject)
+        .on('end', () => {
+          console.log('Audio pre-encoded to AAC');
+          resolve();
+        })
+        .run();
+    });
 
     // Download overlay(s) based on effect type
     const embersOverlayPath = path.join(tempDir, 'embers_overlay.mp4');
@@ -1164,25 +1182,24 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
     const withAudioPath = path.join(tempDir, 'with_audio.mp4');
 
+    // Mux is instant since audio is pre-encoded (-c:a copy)
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(concatenatedPath)
-        .input(audioPath)
+        .input(audioAacPath)
         .outputOptions([
           '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-ar', '48000',
-          '-b:a', '192k',
+          '-c:a', 'copy',
           '-shortest',
           '-y'
         ])
         .output(withAudioPath)
         .on('start', (cmd) => {
-          console.log('Audio mux:', cmd.substring(0, 100) + '...');
+          console.log('Audio mux (copy):', cmd.substring(0, 100) + '...');
         })
         .on('error', reject)
         .on('end', () => {
-          console.log('Audio muxing complete');
+          console.log('Audio muxed successfully');
           resolve();
         })
         .run();
