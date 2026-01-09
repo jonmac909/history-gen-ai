@@ -83,6 +83,11 @@ export interface YtDlpChannelInfo {
   uploader_url: string;
   channel_follower_count?: number;
   thumbnails?: { url: string; width?: number; height?: number }[];
+  // Playlist metadata (channel ID often here when channel_id is null)
+  playlist_channel_id?: string;
+  playlist_channel?: string;
+  playlist_uploader?: string;
+  playlist_uploader_id?: string;
 }
 
 export interface YtDlpVideoInfo {
@@ -143,9 +148,11 @@ export async function resolveChannelId(input: string): Promise<string> {
     }
 
     const info = JSON.parse(lines[0]) as YtDlpChannelInfo;
-    const channelId = info.channel_id || info.uploader_id;
+    // Check multiple possible locations for channel ID
+    const channelId = info.channel_id || info.playlist_channel_id || info.uploader_id;
 
     if (!channelId || !channelId.startsWith('UC')) {
+      console.log('[ytdlp] Raw info keys:', Object.keys(info).filter(k => k.includes('channel') || k.includes('uploader')));
       throw new Error('Could not extract channel ID');
     }
 
@@ -229,7 +236,8 @@ export async function getChannelInfo(channelId: string): Promise<{
   thumbnailUrl: string;
 }> {
   const ytDlp = await getYtDlp();
-  const url = `https://www.youtube.com/channel/${channelId}/videos`;
+  // Use channel URL without /videos - some channels don't have videos tab
+  const url = `https://www.youtube.com/channel/${channelId}`;
 
   console.log(`[ytdlp] Fetching channel info: ${url}`);
 
@@ -254,7 +262,8 @@ export async function getChannelInfo(channelId: string): Promise<{
 
     return {
       id: channelId,
-      title: info.channel || info.uploader || 'Unknown Channel',
+      // Check multiple sources for channel name
+      title: info.channel || info.playlist_channel || info.uploader || info.playlist_uploader || 'Unknown Channel',
       subscriberCount: info.channel_follower_count || 0,
       thumbnailUrl: info.thumbnails?.[0]?.url || '',
     };
