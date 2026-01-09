@@ -522,6 +522,7 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
     const muxTimeout = 5 * 60 * 1000; // 5 minutes
     let ffmpegProcess: any = null;
 
+    let lastMuxProgress = 0;
     await Promise.race([
       new Promise<void>((resolve, reject) => {
         ffmpegProcess = ffmpeg()
@@ -536,10 +537,26 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
             '-y'
           ])
           .output(withAudioPath)
-          .on('start', (cmd) => console.log('Audio mux:', cmd.substring(0, 100) + '...'))
-          .on('error', reject)
+          .on('start', (cmd) => console.log('Audio mux started:', cmd.substring(0, 120) + '...'))
+          .on('progress', (progress) => {
+            const pct = Math.round(progress.percent || 0);
+            if (pct > lastMuxProgress + 5) {  // Log every 5%
+              lastMuxProgress = pct;
+              console.log(`Audio mux progress: ${pct}% (${progress.timemark || 'unknown'})`);
+            }
+          })
+          .on('stderr', (line) => {
+            // Only log important stderr lines (not every frame)
+            if (line.includes('Error') || line.includes('error') || line.includes('failed')) {
+              console.error('FFmpeg stderr:', line);
+            }
+          })
+          .on('error', (err) => {
+            console.error('Audio mux error:', err.message);
+            reject(err);
+          })
           .on('end', () => {
-            console.log('Audio muxed');
+            console.log('Audio muxed successfully');
             resolve();
           })
           .run();
