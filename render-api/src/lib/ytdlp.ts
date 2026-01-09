@@ -175,7 +175,8 @@ export async function getChannelVideos(
   maxResults: number = 50
 ): Promise<YtDlpVideoInfo[]> {
   const ytDlp = await getYtDlp();
-  const url = `https://www.youtube.com/channel/${channelId}/videos`;
+  // Use channel URL without /videos - yt-dlp auto-selects videos tab
+  const url = `https://www.youtube.com/channel/${channelId}`;
 
   console.log(`[ytdlp] Fetching videos from: ${url}`);
 
@@ -206,8 +207,8 @@ export async function getChannelVideos(
             view_count: info.view_count,
             like_count: info.like_count,
             upload_date: info.upload_date,
-            channel_id: info.channel_id || channelId,
-            channel: info.channel || info.uploader,
+            channel_id: info.channel_id || info.playlist_channel_id || channelId,
+            channel: info.channel || info.playlist_channel || info.uploader || info.playlist_uploader,
           });
         }
       } catch {
