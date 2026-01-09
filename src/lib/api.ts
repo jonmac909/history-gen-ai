@@ -2110,3 +2110,52 @@ export async function getChannelOutliersInvidious(
     };
   }
 }
+
+/**
+ * Scrape channel outliers using yt-dlp (local binary)
+ * Most reliable method - uses yt-dlp to scrape YouTube directly
+ */
+export async function getChannelOutliersYtdlp(
+  channelInput: string,
+  maxResults: number = 50,
+  sortBy: 'outlier' | 'views' | 'uploaded' = 'outlier',
+  forceRefresh: boolean = false
+): Promise<ChannelStatsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/youtube-channel-ytdlp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('yt-dlp channel stats error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to analyze channel: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error('yt-dlp channel stats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to analyze channel'
+    };
+  }
+}

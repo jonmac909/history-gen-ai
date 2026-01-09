@@ -3,7 +3,7 @@ import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
-import { getChannelOutliers, getChannelOutliersInvidious, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
+import { getChannelOutliers, getChannelOutliersYtdlp, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -258,7 +258,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
     try {
       // Use Invidious API for all channel analysis
-      const result = await getChannelOutliersInvidious(channelToAnalyze, 50, sortBy, false);
+      const result = await getChannelOutliersYtdlp(channelToAnalyze, 50, sortBy, false);
 
       if (!result.success) {
         toast({
@@ -337,7 +337,7 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
       const promises = savedChannels.map(async (saved, index) => {
         try {
           // Use Invidious endpoint - fast, free, no rate limits
-          const result = await getChannelOutliersInvidious(saved.input, 20, 'uploaded', false);
+          const result = await getChannelOutliersYtdlp(saved.input, 20, 'uploaded', false);
 
           // Update progress
           completed++;

@@ -15,6 +15,7 @@ import generateYoutubeMetadataRouter from './routes/generate-youtube-metadata';
 import youtubeChannelStatsRouter from './routes/youtube-channel-stats';
 import youtubeChannelApifyRouter from './routes/youtube-channel-apify';
 import youtubeChannelInvidiousRouter from './routes/youtube-channel-invidious';
+import youtubeChannelYtdlpRouter from './routes/youtube-channel-ytdlp';
 import nicheAnalyzeRouter from './routes/niche-analyze';
 
 dotenv.config();
@@ -61,6 +62,7 @@ app.use('/generate-youtube-metadata', generateYoutubeMetadataRouter);
 app.use('/youtube-channel-stats', youtubeChannelStatsRouter);
 app.use('/youtube-channel-apify', youtubeChannelApifyRouter);
 app.use('/youtube-channel-invidious', youtubeChannelInvidiousRouter);
+app.use('/youtube-channel-ytdlp', youtubeChannelYtdlpRouter);
 app.use('/niche-analyze', nicheAnalyzeRouter);
 
 // Error handling
