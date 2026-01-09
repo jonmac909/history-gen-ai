@@ -238,15 +238,21 @@ router.post('/', async (req: Request, res: Response) => {
     // Cache the results
     try {
       await cacheChannel({
-        channel_id: channelId,
+        id: channelId,
         title: channelInfo.title,
         thumbnail_url: channelInfo.thumbnailUrl,
         subscriber_count: subscriberCount,
+        view_count: totalViews,
+        video_count: videos.length,
+        views_to_subs_ratio: subscriberCount > 0 ? averageViews / subscriberCount : 0,
+        avg_views: averageViews,
+        is_breakout: false,
+        source: 'apify', // Using 'apify' for cache compatibility
       });
 
-      const outliersToCache: CachedOutlier[] = videos.map(v => ({
-        channel_id: channelId,
+      await cacheOutliers(videos.map(v => ({
         video_id: v.videoId,
+        channel_id: channelId,
         title: v.title,
         thumbnail_url: v.thumbnailUrl,
         published_at: v.publishedAt,
@@ -259,9 +265,8 @@ router.post('/', async (req: Request, res: Response) => {
         is_positive_outlier: v.isPositiveOutlier,
         is_negative_outlier: v.isNegativeOutlier,
         views_per_subscriber: v.viewsPerSubscriber,
-      }));
-
-      await cacheOutliers(outliersToCache);
+        source: 'apify' as const, // Using 'apify' for cache compatibility
+      })));
       console.log(`[youtube-ytdlp] Cached ${videos.length} videos for channel ${channelId}`);
     } catch (cacheError) {
       console.error('[youtube-ytdlp] Cache error (non-fatal):', cacheError);
