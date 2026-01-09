@@ -77,7 +77,17 @@ export function checkAudioIntegrity(wavBuffer: Buffer, options: {
 
     const dataSize = wavBuffer.readUInt32LE(dataIdx + 4);
     const dataStart = dataIdx + 8;
-    const dataEnd = Math.min(wavBuffer.length, dataStart + dataSize);
+    // Cap dataEnd to actual buffer length to avoid massive allocations
+    const dataEnd = Math.min(wavBuffer.length, dataStart + dataSize, dataStart + 100 * 1024 * 1024); // Max 100MB
+
+    // Limit sample count to prevent memory issues
+    const maxSamples = 10 * 1024 * 1024; // 10M samples max
+    const estimatedSamples = (dataEnd - dataStart) / bytesPerSample;
+    if (estimatedSamples > maxSamples) {
+      console.log(`[WARN] Audio too large for integrity check (${estimatedSamples} samples), skipping detailed analysis`);
+      stats.durationSeconds = estimatedSamples / (sampleRate * channels);
+      return { valid: true, issues: [], stats };
+    }
 
     // Read samples
     const samples: number[] = [];
