@@ -24,7 +24,7 @@ const FFMPEG_PRESET = 'fast';  // Better compression than ultrafast
 const FFMPEG_CRF = '26';  // Good quality (18=best, 23=high, 26=good, 30=acceptable)
 
 // Parallel rendering configuration
-const PARALLEL_WORKERS = 10;  // Max 10 RunPod workers for video rendering
+const PARALLEL_WORKERS = 1;  // Testing with 1 worker first (was 10)
 const CHUNK_POLL_INTERVAL = 3000;  // 3 seconds between status checks
 const CHUNK_MAX_WAIT = 30 * 60 * 1000;  // 30 minutes max per chunk
 
@@ -1284,10 +1284,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Use single-job CPU rendering (parallel chunk mode has issues with worker)
-    console.log(`Job ${jobId}: Using CPU RunPod rendering`);
-    processRenderJobCpuRunpod(jobId, params).catch(err => {
-      console.error(`CPU render job ${jobId} crashed:`, err);
+    // Use parallel rendering with RunPod workers
+    console.log(`Job ${jobId}: Using PARALLEL rendering (${PARALLEL_WORKERS} RunPod workers)`);
+    processRenderJobParallel(jobId, params).catch(err => {
+      console.error(`Parallel render job ${jobId} crashed:`, err);
     });
 
     // Return immediately with job ID
