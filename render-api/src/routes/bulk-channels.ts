@@ -15,6 +15,33 @@ function formatSubs(count: number): string {
   return count.toString();
 }
 
+// GET /bulk-channels - List all saved channels
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data, error } = await supabase
+      .from('saved_channels')
+      .select('id, title, subscriber_count_formatted')
+      .order('sort_order', { ascending: true });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({ count: data?.length || 0, channels: data });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /bulk-channels - Insert multiple channels at once
 router.post('/', async (req: Request, res: Response) => {
   try {
