@@ -13,7 +13,8 @@ const CLIP_DURATION = 10;  // 10 seconds per clip
 const CLIP_WIDTH = 768;    // LTX-2 optimal width
 const CLIP_HEIGHT = 512;   // LTX-2 optimal height
 const CLIP_FPS = 24;       // Frames per second
-const MAX_CONCURRENT_CLIPS = 4;  // Conservative for H100 80GB workers
+// Max concurrent clips - set via env var, default 10 for A40/A6000 workers
+const MAX_CONCURRENT_CLIPS = parseInt(process.env.LTX_MAX_CONCURRENT_CLIPS || '10', 10);
 
 interface ClipPrompt {
   index: number;
