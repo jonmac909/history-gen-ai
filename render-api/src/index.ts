@@ -49,42 +49,24 @@ app.get('/debug-env', (req, res) => {
   });
 });
 
-// Debug endpoint to test yt-dlp binary (version only - fast)
+// Debug endpoint - simple check
 app.get('/debug-ytdlp', async (req, res) => {
-  try {
-    const YTDlpWrap = (await import('yt-dlp-wrap')).default;
-    const path = await import('path');
-    const fs = await import('fs');
-    const os = await import('os');
+  const path = await import('path');
+  const fs = await import('fs');
+  const os = await import('os');
 
-    const YTDLP_DIR = path.default.join(os.default.tmpdir(), 'ytdlp');
-    const YTDLP_PATH = path.default.join(YTDLP_DIR, 'yt-dlp');
+  const YTDLP_DIR = path.default.join(os.default.tmpdir(), 'ytdlp');
+  const YTDLP_PATH = path.default.join(YTDLP_DIR, 'yt-dlp');
 
-    const binaryExists = fs.default.existsSync(YTDLP_PATH);
-
-    if (!binaryExists) {
-      fs.default.mkdirSync(YTDLP_DIR, { recursive: true });
-      await YTDlpWrap.downloadFromGithub(YTDLP_PATH);
-    }
-
-    const ytDlp = new YTDlpWrap(YTDLP_PATH);
-    const version = await ytDlp.execPromise(['--version']);
-
-    res.json({
-      success: true,
-      binaryPath: YTDLP_PATH,
-      binaryExists,
-      version: version.trim(),
-      proxyConfigured: !!process.env.YTDLP_PROXY_URL
-    });
-  } catch (error: any) {
-    res.json({
-      success: false,
-      error: error.message,
-      stderr: error.stderr?.substring(0, 500),
-      stdout: error.stdout?.substring(0, 500)
-    });
-  }
+  res.json({
+    tmpdir: os.default.tmpdir(),
+    ytdlpDir: YTDLP_DIR,
+    ytdlpPath: YTDLP_PATH,
+    dirExists: fs.default.existsSync(YTDLP_DIR),
+    binaryExists: fs.default.existsSync(YTDLP_PATH),
+    proxyConfigured: !!process.env.YTDLP_PROXY_URL,
+    proxyStart: process.env.YTDLP_PROXY_URL?.substring(0, 15) || 'not set'
+  });
 });
 
 // Root endpoint
