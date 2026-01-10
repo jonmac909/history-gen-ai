@@ -542,7 +542,10 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
         finalizeResult = statusData.output;
         break;
       } else if (statusData.status === 'FAILED') {
-        throw new Error(`Finalize job failed: ${JSON.stringify(statusData.output)}`);
+        // Log full status data for debugging
+        console.error('Finalize job FAILED, full status:', JSON.stringify(statusData, null, 2));
+        const errorMsg = statusData.output?.error || (statusData as any).error || 'Unknown error';
+        throw new Error(`Finalize job failed: ${errorMsg}`);
       }
       // PENDING, IN_PROGRESS - continue polling
     }
