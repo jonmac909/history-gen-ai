@@ -7,6 +7,7 @@ import YTDlpWrap from 'yt-dlp-wrap';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { isPotProviderAvailable, getPotProviderUrl } from './pot-provider';
 
 // yt-dlp binary path - will be downloaded on first use
 const YTDLP_DIR = path.join(os.tmpdir(), 'ytdlp');
@@ -96,6 +97,24 @@ async function getYtDlp(): Promise<YTDlpWrap> {
   return ytDlpInstance;
 }
 
+/**
+ * Get PO Token provider args for yt-dlp if available
+ * Returns extractor args that enable YouTube bot detection bypass
+ */
+function getPotArgs(): string[] {
+  if (!isPotProviderAvailable()) {
+    return [];
+  }
+
+  const potUrl = getPotProviderUrl();
+  console.log(`[ytdlp] Using PO Token provider at ${potUrl}`);
+
+  return [
+    '--extractor-args',
+    `youtubepot-bgutilhttp:base_url=${potUrl}`,
+  ];
+}
+
 export interface YtDlpChannelInfo {
   id: string;
   channel: string;
@@ -171,6 +190,7 @@ export async function resolveChannelId(input: string): Promise<string> {
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...getPotArgs(),               // PO Token provider for bot detection bypass
       ]),
       YTDLP_TIMEOUT_MS,
       `resolveChannelId(${input})`
@@ -231,6 +251,7 @@ export async function getChannelVideos(
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...getPotArgs(),               // PO Token provider for bot detection bypass
       ]),
       YTDLP_TIMEOUT_MS * 2, // 60s for video list (more data)
       `getChannelVideos(${channelId})`
@@ -304,6 +325,7 @@ export async function getChannelInfo(channelId: string): Promise<{
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...getPotArgs(),               // PO Token provider for bot detection bypass
       ]),
       YTDLP_TIMEOUT_MS,
       `getChannelInfo(${channelId})`

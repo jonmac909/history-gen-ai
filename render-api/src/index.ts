@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { initPotProvider } from './lib/pot-provider';
 import rewriteScriptRouter from './routes/rewrite-script';
 import generateAudioRouter from './routes/generate-audio';
 import generateImagesRouter from './routes/generate-images';
@@ -92,6 +93,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
   console.log(`✅ Server successfully bound and ready for connections`);
+
+  // Initialize PO Token provider for YouTube bot detection bypass
+  // This runs in background and doesn't block server startup
+  initPotProvider().catch(err => {
+    console.warn('⚠️ PO Token provider init failed (yt-dlp will have reduced reliability):', err.message);
+  });
 });
 
 // Increase timeouts for long-running SSE connections (video rendering)
