@@ -90,4 +90,63 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /bulk-channels/duplicates - Remove duplicate channels (keep UC IDs, remove @ handles)
+router.delete('/duplicates', async (req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Get all channels
+    const { data: channels, error: fetchError } = await supabase
+      .from('saved_channels')
+      .select('id, title, input');
+
+    if (fetchError || !channels) {
+      return res.status(500).json({ error: fetchError?.message || 'Failed to fetch channels' });
+    }
+
+    // Find channels with real YouTube IDs (UC...)
+    const realIdChannels = channels.filter(c => c.id.startsWith('UC'));
+    const handleChannels = channels.filter(c => c.id.startsWith('@'));
+
+    // Find @ handles that have a corresponding UC channel (by matching title)
+    const titlesWithRealIds = new Set(realIdChannels.map(c => c.title.toLowerCase().trim()));
+
+    const duplicateHandles = handleChannels.filter(c =>
+      titlesWithRealIds.has(c.title.toLowerCase().trim())
+    );
+
+    if (duplicateHandles.length === 0) {
+      return res.json({ message: 'No duplicates found', removed: 0 });
+    }
+
+    // Delete the duplicate @ handles
+    const idsToDelete = duplicateHandles.map(c => c.id);
+
+    const { error: deleteError } = await supabase
+      .from('saved_channels')
+      .delete()
+      .in('id', idsToDelete);
+
+    if (deleteError) {
+      return res.status(500).json({ error: deleteError.message });
+    }
+
+    console.log(`[bulk-channels] Removed ${idsToDelete.length} duplicate channels`);
+    res.json({
+      message: `Removed ${idsToDelete.length} duplicate channels`,
+      removed: idsToDelete.length,
+      removedIds: idsToDelete
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
