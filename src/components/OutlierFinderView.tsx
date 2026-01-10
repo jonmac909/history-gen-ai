@@ -3,7 +3,7 @@ import { Search, Loader2, TrendingUp, X, LayoutGrid, Compass, Flame, Plus } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OutlierVideoCard } from "./OutlierVideoCard";
-import { getChannelOutliers, getChannelOutliersYtdlp, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
+import { getChannelOutliers, getChannelOutliersApify, analyzeNiche, OutlierVideo, ChannelStats, NicheChannel, NicheMetrics } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -257,8 +257,8 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
     setViewingAll(false);
 
     try {
-      // Use Invidious API for all channel analysis
-      const result = await getChannelOutliersYtdlp(channelToAnalyze, 50, sortBy, false);
+      // Use Apify for all channel analysis (more reliable than yt-dlp)
+      const result = await getChannelOutliersApify(channelToAnalyze, 50, sortBy, false);
 
       if (!result.success) {
         toast({
@@ -332,12 +332,14 @@ export function OutlierFinderView({ onBack, onSelectVideo }: OutlierFinderViewPr
 
       let completed = 0;
 
-      // Process all channels in parallel using Invidious API
+      // Process all channels in parallel using Apify (more reliable than yt-dlp)
       const updatedChannels: SavedChannel[] = [...savedChannels];
       const promises = savedChannels.map(async (saved, index) => {
         try {
-          // Use Invidious endpoint - fast, free, no rate limits
-          const result = await getChannelOutliersYtdlp(saved.input, 20, 'uploaded', false);
+          // Use channel ID if we have it (starts with UC), otherwise use input
+          // Passing UC ID skips the resolveChannelId step on backend (faster)
+          const channelInput = saved.id?.startsWith('UC') ? saved.id : saved.input;
+          const result = await getChannelOutliersApify(channelInput, 20, 'uploaded', false);
 
           // Update progress
           completed++;
