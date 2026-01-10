@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -11,9 +12,26 @@ import { checkAudioIntegrity, logAudioIntegrity } from '../utils/audio-integrity
 
 const router = Router();
 
-// Set ffmpeg path
+// Set ffmpeg and ffprobe paths
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
+}
+if (ffprobeStatic?.path) {
+  ffmpeg.setFfprobePath(ffprobeStatic.path);
+}
+
+// Helper to get audio duration using ffprobe
+function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        console.warn('Could not probe audio duration:', err.message);
+        resolve(0); // Return 0 if probe fails
+      } else {
+        resolve(metadata.format.duration || 0);
+      }
+    });
+  });
 }
 
 // Configuration - balanced for speed and quality
