@@ -162,7 +162,7 @@ export async function getChannelVideos(
   const url = `https://www.youtube.com/channel/${channelId}/videos`;
   const agent = getAgent();
 
-  console.log(`[youtube-scraper] Fetching videos from: ${url}`);
+  console.log(`[youtube-scraper] Fetching videos from: ${url} (max: ${maxVideos})`);
 
   const res = await fetch(url, { agent, headers: HEADERS, timeout: 30000 });
   const html = await res.text();
@@ -196,49 +196,63 @@ export async function getChannelVideos(
 
   console.log(`[youtube-scraper] Initial fetch: ${videos.length} videos, has more: ${!!continuation}`);
 
-  // Fetch more pages if needed
-  while (continuation && videos.length < maxVideos) {
+  // Fetch more pages if needed (max 5 pagination attempts to avoid infinite loops)
+  let paginationAttempts = 0;
+  const maxPaginationAttempts = 5;
+
+  while (continuation && videos.length < maxVideos && paginationAttempts < maxPaginationAttempts) {
+    paginationAttempts++;
     await sleep(500); // Rate limiting
 
-    const apiRes = await fetch(
-      'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
-      {
-        agent,
-        method: 'POST',
-        headers: {
-          ...HEADERS,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: 'WEB',
-              clientVersion: '2.20240101',
-            },
+    try {
+      const apiRes = await fetch(
+        'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+        {
+          agent,
+          method: 'POST',
+          headers: {
+            ...HEADERS,
+            'Content-Type': 'application/json',
           },
-          continuation,
-        }),
-        timeout: 30000,
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: 'WEB',
+                clientVersion: '2.20240101',
+              },
+            },
+            continuation,
+          }),
+          timeout: 30000,
+        }
+      );
+
+      if (!apiRes.ok) {
+        console.error(`[youtube-scraper] Pagination failed: ${apiRes.status}`);
+        break;
       }
-    );
 
-    const apiData = await apiRes.json() as any;
-    const items = apiData.onResponseReceivedActions?.[0]?.appendContinuationItemsAction?.continuationItems || [];
+      const apiData = await apiRes.json() as any;
+      const items = apiData.onResponseReceivedActions?.[0]?.appendContinuationItemsAction?.continuationItems || [];
 
-    continuation = null;
-    for (const item of items) {
-      if (item.richItemRenderer && videos.length < maxVideos) {
-        const v = item.richItemRenderer.content?.videoRenderer;
-        if (v) {
-          videos.push(parseVideoRenderer(v, channelId));
+      continuation = null;
+      for (const item of items) {
+        if (item.richItemRenderer && videos.length < maxVideos) {
+          const v = item.richItemRenderer.content?.videoRenderer;
+          if (v) {
+            videos.push(parseVideoRenderer(v, channelId));
+          }
+        }
+        if (item.continuationItemRenderer) {
+          continuation = item.continuationItemRenderer.continuationEndpoint?.continuationCommand?.token;
         }
       }
-      if (item.continuationItemRenderer) {
-        continuation = item.continuationItemRenderer.continuationEndpoint?.continuationCommand?.token;
-      }
-    }
 
-    console.log(`[youtube-scraper] Pagination: now have ${videos.length} videos`);
+      console.log(`[youtube-scraper] Pagination ${paginationAttempts}: now have ${videos.length} videos`);
+    } catch (paginationError) {
+      console.error(`[youtube-scraper] Pagination error:`, paginationError);
+      break; // Stop pagination on error, return what we have
+    }
   }
 
   console.log(`[youtube-scraper] Total: ${videos.length} videos`);
@@ -276,4 +290,16 @@ function parseVideoRenderer(v: any, channelId?: string): ScrapedVideo {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Wrap a promise with a timeout
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${operation} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
 }

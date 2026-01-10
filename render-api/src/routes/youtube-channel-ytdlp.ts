@@ -4,6 +4,7 @@ import {
   getChannelVideos,
   getChannelInfo,
   ScrapedVideo,
+  withTimeout,
 } from '../lib/youtube-scraper';
 import {
   getCachedChannel,
@@ -157,12 +158,17 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`[youtube-scraper] Analyzing channel: ${channelInput} (forceRefresh: ${forceRefresh})`);
 
-    // Resolve channel ID from input
+    // Resolve channel ID from input (with 20s timeout)
     let channelId: string;
     try {
-      channelId = await resolveChannelId(channelInput);
+      channelId = await withTimeout(
+        resolveChannelId(channelInput),
+        20000,
+        `resolveChannelId(${channelInput})`
+      );
       console.log(`[youtube-scraper] Resolved channel ID: ${channelId}`);
-    } catch (error) {
+    } catch (error: any) {
+      console.error(`[youtube-scraper] Failed to resolve channel: ${channelInput}`, error?.message);
       return res.status(404).json({
         success: false,
         error: `Could not find channel: ${channelInput}`,
@@ -222,12 +228,20 @@ router.post('/', async (req: Request, res: Response) => {
     // Cache miss or forceRefresh - fetch from scraper
     console.log(`[youtube-scraper] Cache MISS - fetching: ${channelId}`);
 
-    // Get channel info
-    const channelInfo = await getChannelInfo(channelId);
+    // Get channel info (with 30s timeout)
+    const channelInfo = await withTimeout(
+      getChannelInfo(channelId),
+      30000,
+      `getChannelInfo(${channelId})`
+    );
     const subscriberCount = channelInfo.subscriberCount || 0;
 
-    // Get channel videos
-    const scrapedVideos = await getChannelVideos(channelId, maxResults);
+    // Get channel videos (with 45s timeout)
+    const scrapedVideos = await withTimeout(
+      getChannelVideos(channelId, maxResults),
+      45000,
+      `getChannelVideos(${channelId})`
+    );
 
     if (scrapedVideos.length === 0) {
       return res.status(404).json({
