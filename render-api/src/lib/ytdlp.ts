@@ -185,6 +185,7 @@ export async function resolveChannelId(input: string): Promise<string> {
   }
 
   console.log(`[ytdlp] Resolving channel ID from: ${url}`);
+  console.log(`[ytdlp] Proxy configured: ${!!YTDLP_PROXY_URL}, URL length: ${YTDLP_PROXY_URL.length}`);
 
   const ytDlp = await getYtDlp();
 
@@ -232,6 +233,7 @@ export async function resolveChannelId(input: string): Promise<string> {
 
   } catch (error: any) {
     console.error('[ytdlp] Error resolving channel:', error.message);
+    console.error('[ytdlp] Full error:', error.stderr || error.stdout || error);
     throw new Error(`Could not find channel: ${input}`);
   } finally {
     releaseYtdlpSlot();
