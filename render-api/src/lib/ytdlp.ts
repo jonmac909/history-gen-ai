@@ -168,6 +168,9 @@ export async function resolveChannelId(input: string): Promise<string> {
         '--socket-timeout', '30',      // Native network timeout (kills connection)
         '--retries', '3',              // Retry on failure
         '--extractor-retries', '3',    // Retry extractor errors
+        '--geo-bypass',                // Bypass geo-restriction
+        '--no-check-certificates',     // Skip SSL verification issues
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ]),
       YTDLP_TIMEOUT_MS,
       `resolveChannelId(${input})`
@@ -225,6 +228,9 @@ export async function getChannelVideos(
         '--socket-timeout', '60',      // Native network timeout (longer for video list)
         '--retries', '3',              // Retry on failure
         '--extractor-retries', '3',    // Retry extractor errors
+        '--geo-bypass',                // Bypass geo-restriction
+        '--no-check-certificates',     // Skip SSL verification issues
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ]),
       YTDLP_TIMEOUT_MS * 2, // 60s for video list (more data)
       `getChannelVideos(${channelId})`
@@ -295,6 +301,9 @@ export async function getChannelInfo(channelId: string): Promise<{
         '--socket-timeout', '30',      // Native network timeout (kills connection)
         '--retries', '3',              // Retry on failure
         '--extractor-retries', '3',    // Retry extractor errors
+        '--geo-bypass',                // Bypass geo-restriction
+        '--no-check-certificates',     // Skip SSL verification issues
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ]),
       YTDLP_TIMEOUT_MS,
       `getChannelInfo(${channelId})`
