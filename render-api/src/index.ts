@@ -38,6 +38,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Debug endpoint to check env vars (remove after debugging)
+app.get('/debug-env', (req, res) => {
+  res.json({
+    proxyConfigured: !!process.env.YTDLP_PROXY_URL,
+    proxyUrlLength: process.env.YTDLP_PROXY_URL?.length || 0,
+    proxyUrlStart: process.env.YTDLP_PROXY_URL?.substring(0, 10) || 'not set',
+    supabaseConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   console.log('Root endpoint requested');
