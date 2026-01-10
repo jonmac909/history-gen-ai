@@ -77,6 +77,12 @@ interface ImageTiming {
   endSeconds: number;
 }
 
+interface IntroClip {
+  url: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
 interface RenderVideoRequest {
   projectId: string;
   audioUrl: string;
@@ -86,6 +92,7 @@ interface RenderVideoRequest {
   projectTitle: string;
   effects?: VideoEffects;
   useGpu?: boolean;  // Use RunPod GPU rendering (faster but requires endpoint)
+  introClips?: IntroClip[];  // Optional intro video clips from LTX-2
 }
 
 interface RenderJob {
@@ -164,13 +171,13 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
   try {
-    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+    const { projectId, audioUrl, imageUrls, imageTimings, effects, introClips } = params;
 
     // Determine if effects should be applied
     const applyEffects = effects?.smoke_embers || effects?.embers || false;
 
     console.log(`Job ${jobId}: Starting GPU render for project ${projectId}`);
-    console.log(`Images: ${imageUrls.length}, Effects: ${applyEffects}`);
+    console.log(`Images: ${imageUrls.length}, Intro Clips: ${introClips?.length || 0}, Effects: ${applyEffects}`);
 
     await updateJobStatus(supabase, jobId, 'queued', 5, 'Submitting to GPU worker...');
 
@@ -191,7 +198,8 @@ async function processRenderJobGpu(jobId: string, params: RenderVideoRequest): P
           apply_effects: applyEffects,
           supabase_url: supabaseUrl,
           supabase_key: supabaseKey,
-          render_job_id: jobId  // So GPU worker can update job status directly
+          render_job_id: jobId,  // So GPU worker can update job status directly
+          intro_clips: introClips || []  // LTX-2 video clips to prepend
         }
       })
     });
@@ -596,13 +604,13 @@ async function processRenderJobCpuRunpod(jobId: string, params: RenderVideoReque
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
   try {
-    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+    const { projectId, audioUrl, imageUrls, imageTimings, effects, introClips } = params;
 
     // Determine if effects should be applied
     const applyEffects = effects?.smoke_embers || effects?.embers || false;
 
     console.log(`Job ${jobId}: Starting CPU RunPod render for project ${projectId}`);
-    console.log(`Images: ${imageUrls.length}, Effects: ${applyEffects}`);
+    console.log(`Images: ${imageUrls.length}, Intro Clips: ${introClips?.length || 0}, Effects: ${applyEffects}`);
 
     await updateJobStatus(supabase, jobId, 'queued', 5, 'Submitting to CPU worker...');
 
@@ -623,7 +631,8 @@ async function processRenderJobCpuRunpod(jobId: string, params: RenderVideoReque
           apply_effects: applyEffects,
           supabase_url: supabaseUrl,
           supabase_key: supabaseKey,
-          render_job_id: jobId
+          render_job_id: jobId,
+          intro_clips: introClips || []  // LTX-2 video clips to prepend
         }
       })
     });
