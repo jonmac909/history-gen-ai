@@ -20,6 +20,7 @@ import youtubeChannelYtdlpRouter from './routes/youtube-channel-ytdlp';
 import nicheAnalyzeRouter from './routes/niche-analyze';
 import generateClipPromptsRouter from './routes/generate-clip-prompts';
 import generateVideoClipsRouter from './routes/generate-video-clips';
+import bulkChannelsRouter from './routes/bulk-channels';
 
 dotenv.config();
 
@@ -100,6 +101,7 @@ app.use('/youtube-channel-ytdlp', youtubeChannelYtdlpRouter);
 app.use('/niche-analyze', nicheAnalyzeRouter);
 app.use('/generate-clip-prompts', generateClipPromptsRouter);
 app.use('/generate-video-clips', generateVideoClipsRouter);
+app.use('/bulk-channels', bulkChannelsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

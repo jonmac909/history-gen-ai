@@ -1,0 +1,66 @@
+import { Router, Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
+
+const router = Router();
+
+interface ChannelInput {
+  handle: string;
+  name: string;
+  subscribers: number;
+}
+
+function formatSubs(count: number): string {
+  if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+  if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+  return count.toString();
+}
+
+// POST /bulk-channels - Insert multiple channels at once
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const channels: ChannelInput[] = req.body.channels;
+
+    if (!channels || !Array.isArray(channels) || channels.length === 0) {
+      return res.status(400).json({ error: 'channels array is required' });
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const records = channels.map((ch, i) => ({
+      id: ch.handle,
+      title: ch.name,
+      thumbnail_url: null,
+      subscriber_count_formatted: formatSubs(ch.subscribers),
+      average_views: 0,
+      average_views_formatted: 'N/A',
+      input: ch.handle,
+      sort_order: i
+    }));
+
+    console.log(`[bulk-channels] Inserting ${records.length} channels...`);
+
+    const { data, error } = await supabase
+      .from('saved_channels')
+      .upsert(records, { onConflict: 'id' });
+
+    if (error) {
+      console.error('[bulk-channels] Error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    console.log(`[bulk-channels] Success! Inserted ${records.length} channels`);
+    res.json({ success: true, count: records.length });
+  } catch (err: any) {
+    console.error('[bulk-channels] Exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
