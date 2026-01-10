@@ -49,7 +49,7 @@ app.get('/debug-env', (req, res) => {
   });
 });
 
-// Debug endpoint to test yt-dlp binary
+// Debug endpoint to test yt-dlp binary (version only - fast)
 app.get('/debug-ytdlp', async (req, res) => {
   try {
     const YTDlpWrap = (await import('yt-dlp-wrap')).default;
@@ -60,47 +60,29 @@ app.get('/debug-ytdlp', async (req, res) => {
     const YTDLP_DIR = path.default.join(os.default.tmpdir(), 'ytdlp');
     const YTDLP_PATH = path.default.join(YTDLP_DIR, 'yt-dlp');
 
-    // Check if binary exists
     const binaryExists = fs.default.existsSync(YTDLP_PATH);
 
-    // Try to download if not exists
     if (!binaryExists) {
       fs.default.mkdirSync(YTDLP_DIR, { recursive: true });
       await YTDlpWrap.downloadFromGithub(YTDLP_PATH);
     }
 
-    // Try to get version
     const ytDlp = new YTDlpWrap(YTDLP_PATH);
     const version = await ytDlp.execPromise(['--version']);
-
-    // Try a simple fetch with proxy
-    const proxyUrl = process.env.YTDLP_PROXY_URL || '';
-    const proxyArgs = proxyUrl ? ['--proxy', proxyUrl] : [];
-
-    const testResult = await ytDlp.execPromise([
-      'https://www.youtube.com/@MrBeast',
-      '--dump-single-json',
-      '--skip-download',
-      '--no-warnings',
-      '--socket-timeout', '30',
-      ...proxyArgs
-    ]);
-
-    const parsed = JSON.parse(testResult.trim());
 
     res.json({
       success: true,
       binaryPath: YTDLP_PATH,
+      binaryExists,
       version: version.trim(),
-      channelId: parsed.channel_id || parsed.uploader_id,
-      channelName: parsed.channel || parsed.uploader
+      proxyConfigured: !!process.env.YTDLP_PROXY_URL
     });
   } catch (error: any) {
     res.json({
       success: false,
       error: error.message,
-      stderr: error.stderr,
-      stdout: error.stdout
+      stderr: error.stderr?.substring(0, 500),
+      stdout: error.stdout?.substring(0, 500)
     });
   }
 });
