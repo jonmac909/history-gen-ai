@@ -1178,6 +1178,199 @@ const Index = () => {
     }
   };
 
+  // ============================================================================
+  // Video Clips Handlers (LTX-2)
+  // ============================================================================
+
+  // Generate clip prompts (for intro video clips)
+  const handleGenerateClipPrompts = async () => {
+    const srt = pendingSrtContent || srtContent || "";
+    if (!srt) {
+      toast({
+        title: "Error",
+        description: "No captions available for clip generation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const steps: GenerationStep[] = [
+      { id: "clip-prompts", label: "Generating Clip Descriptions", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("clip-prompts", "active", "Analyzing script...");
+
+      let scriptForClips = confirmedScript || pendingScript;
+      if (!scriptForClips.trim()) {
+        const srtLines = srt.split('\n');
+        const textLines: string[] = [];
+        for (const line of srtLines) {
+          if (line.trim() && !line.match(/^\d+$/) && !line.includes('-->')) {
+            textLines.push(line.trim());
+          }
+        }
+        scriptForClips = textLines.join(' ');
+      }
+
+      const clipResult = await generateClipPrompts(
+        scriptForClips,
+        srt,
+        getSelectedImageStyle(),
+        (progress, message) => {
+          updateStep("clip-prompts", "active", message);
+        }
+      );
+
+      if (!clipResult.success || !clipResult.prompts) {
+        throw new Error(clipResult.error || "Failed to generate clip prompts");
+      }
+
+      console.log(`Generated ${clipResult.prompts.length} video clip prompts`);
+      setClipPrompts(clipResult.prompts);
+      updateStep("clip-prompts", "completed", `${clipResult.prompts.length} clips`);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-clip-prompts");
+
+    } catch (error) {
+      console.error("Clip prompt generation error:", error);
+      toast({
+        title: "Clip Prompt Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("review-captions");
+    }
+  };
+
+  // After clip prompts reviewed, generate video clips
+  const handleClipPromptsConfirm = async (editedPrompts: ClipPrompt[], editedStylePrompt: string) => {
+    setClipPrompts(editedPrompts);
+
+    const steps: GenerationStep[] = [
+      { id: "clips", label: "Generating Video Clips", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("clips", "active", `0/${editedPrompts.length}`);
+
+      const clipsResult = await generateVideoClipsStreaming(
+        projectId,
+        editedPrompts,
+        (completed, total, message) => {
+          updateStep("clips", "active", message);
+        }
+      );
+
+      if (!clipsResult.success) {
+        console.error('Video clip generation failed:', clipsResult.error);
+        toast({
+          title: "Clip Generation Issue",
+          description: clipsResult.error || "Some clips may not have generated",
+          variant: "destructive",
+        });
+      }
+
+      updateStep("clips", "completed", "Done");
+      setGeneratedClips(clipsResult.clips || []);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-clips");
+
+    } catch (error) {
+      console.error("Video clip generation error:", error);
+      toast({
+        title: "Clip Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("review-clip-prompts");
+    }
+  };
+
+  // After clips reviewed, continue to image prompts
+  const handleClipsConfirm = async () => {
+    // Continue to image prompt generation
+    const srt = pendingSrtContent || srtContent || "";
+    if (!srt) {
+      setViewState("create");
+      return;
+    }
+
+    const steps: GenerationStep[] = [
+      { id: "prompts", label: "Generating Scene Descriptions", status: "pending" },
+    ];
+
+    setProcessingSteps(steps);
+    setViewState("processing");
+
+    try {
+      updateStep("prompts", "active", "Analyzing script...");
+
+      let scriptForPrompts = confirmedScript || pendingScript;
+      if (!scriptForPrompts.trim()) {
+        const srtLines = srt.split('\n');
+        const textLines: string[] = [];
+        for (const line of srtLines) {
+          if (line.trim() && !line.match(/^\d+$/) && !line.includes('-->')) {
+            textLines.push(line.trim());
+          }
+        }
+        scriptForPrompts = textLines.join(' ');
+      }
+
+      const promptResult = await generateImagePrompts(
+        scriptForPrompts,
+        srt,
+        settings.imageCount,
+        getSelectedImageStyle(),
+        pendingAudioDuration,
+        (progress, message) => {
+          updateStep("prompts", "active", message);
+        }
+      );
+
+      if (!promptResult.success || !promptResult.prompts) {
+        throw new Error(promptResult.error || "Failed to generate image prompts");
+      }
+
+      setImagePrompts(promptResult.prompts);
+      updateStep("prompts", "completed", `${promptResult.prompts.length} scenes`);
+      autoSave("prompts", { imagePrompts: promptResult.prompts });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setViewState("review-prompts");
+
+    } catch (error) {
+      console.error("Image prompt generation error:", error);
+      toast({
+        title: "Prompt Generation Failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+        variant: "destructive",
+      });
+      setViewState("review-clips");
+    }
+  };
+
+  // Regenerate clip prompts
+  const handleRegenerateClipPrompts = async () => {
+    setIsRegeneratingClipPrompts(true);
+    try {
+      await handleGenerateClipPrompts();
+    } finally {
+      setIsRegeneratingClipPrompts(false);
+    }
+  };
+
+  // ============================================================================
+
   // Regenerate all image prompts (re-call Claude to generate new scene descriptions)
   const handleRegenerateImagePrompts = async () => {
     if (!pendingSrtContent && !srtContent) {
@@ -2930,12 +3123,36 @@ const Index = () => {
       <CaptionsPreviewModal
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent || ""}
-        onConfirm={(srt) => handleCaptionsConfirm(srt)}
+        onConfirm={(srt) => enableVideoClips ? (setPendingSrtContent(srt), handleGenerateClipPrompts()) : handleCaptionsConfirm(srt)}
         onCancel={handleCancelRequest}
         onBack={handleBackToAudio}
         onForward={canGoForwardFromCaptions() ? handleForwardToPrompts : undefined}
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
+      />
+
+      {/* Video Clip Prompts Modal (LTX-2) - Review clip descriptions */}
+      <VideoClipPromptsModal
+        isOpen={viewState === "review-clip-prompts"}
+        prompts={clipPrompts}
+        stylePrompt={getSelectedImageStyle()}
+        onConfirm={handleClipPromptsConfirm}
+        onCancel={handleCancelRequest}
+        onBack={() => setViewState("review-captions")}
+        onRegenerate={handleRegenerateClipPrompts}
+        isRegenerating={isRegeneratingClipPrompts}
+      />
+
+      {/* Video Clips Preview Modal (LTX-2) - Preview generated clips */}
+      <VideoClipsPreviewModal
+        isOpen={viewState === "review-clips"}
+        clips={generatedClips}
+        clipPrompts={clipPrompts}
+        onConfirm={handleClipsConfirm}
+        onCancel={handleCancelRequest}
+        onBack={() => setViewState("review-clip-prompts")}
+        isRegenerating={regeneratingClipIndex !== undefined}
+        regeneratingIndex={regeneratingClipIndex}
       />
 
       {/* Image Prompts Preview Modal */}
