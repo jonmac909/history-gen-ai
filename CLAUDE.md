@@ -386,6 +386,14 @@ Multi-step generation with user review at each stage:
   - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
 
+**Triggering RunPod Worker Rebuilds:**
+- RunPod endpoints are linked to GitHub repos - **push to GitHub triggers rebuild**
+- Video render CPU worker: `cd /Users/jonmac/Documents/video-render-cpu-runpod && git add . && git commit -m "message" && git push origin main`
+- Fish Speech worker: `cd /Users/jonmac/Documents/fish-speech-runpod && git add . && git commit -m "message" && git push origin main`
+- After push, RunPod automatically rebuilds the Docker image (takes 2-5 minutes)
+- New workers will use the updated image on next cold start
+- **DO NOT** use Docker Hub push or RunPod API - only GitHub push triggers rebuilds
+
 ### Image Generation Architecture
 
 **Uses rolling concurrency window with 4 workers for parallel image generation.**
