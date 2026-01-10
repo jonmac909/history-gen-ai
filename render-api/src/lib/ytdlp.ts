@@ -24,7 +24,7 @@ let downloadPromise: Promise<void> | null = null;
 // Keep low (2) to prevent Railway OOM - each yt-dlp spawns a Python subprocess
 // Frontend may fire many parallel channel requests, so global limit is critical
 const MAX_CONCURRENT_YTDLP = 2;
-const YTDLP_TIMEOUT_MS = 30000; // 30 second timeout per call
+const YTDLP_TIMEOUT_MS = 60000; // 60 second timeout per call (increased for proxy latency)
 let activeYtdlpCalls = 0;
 const ytdlpQueue: Array<{ resolve: () => void }> = [];
 
@@ -201,7 +201,7 @@ export async function resolveChannelId(input: string): Promise<string> {
         '--no-warnings',
         '--ignore-errors',
         '--age-limit', '99',
-        '--socket-timeout', '30',      // Native network timeout (kills connection)
+        '--socket-timeout', '60',      // Native network timeout (increased for proxy latency)
         '--retries', '3',              // Retry on failure
         '--extractor-retries', '3',    // Retry extractor errors
         '--geo-bypass',                // Bypass geo-restriction
@@ -338,7 +338,7 @@ export async function getChannelInfo(channelId: string): Promise<{
         '--no-warnings',
         '--ignore-errors',
         '--age-limit', '99',
-        '--socket-timeout', '30',      // Native network timeout (kills connection)
+        '--socket-timeout', '60',      // Native network timeout (increased for proxy latency)
         '--retries', '3',              // Retry on failure
         '--extractor-retries', '3',    // Retry extractor errors
         '--geo-bypass',                // Bypass geo-restriction
