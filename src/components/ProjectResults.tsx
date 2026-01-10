@@ -1612,9 +1612,11 @@ export function ProjectResults({
           {/* Video Render (2-pass: basic + effects) */}
           {(() => {
             const hasBasic = !!basicVideoUrl;
-            const hasEffects = !!smokeEmbersVideoUrl;
-            const statusText = hasEffects
-              ? 'Basic + Effects ready'
+            const hasEmbers = !!embersVideoUrl;
+            const hasSmokeEmbers = !!smokeEmbersVideoUrl;
+            const hasAnyEffects = hasEmbers || hasSmokeEmbers;
+            const statusText = hasAnyEffects
+              ? (hasSmokeEmbers ? 'Smoke + Embers ready' : 'Embers ready')
               : hasBasic
                 ? 'Basic ready'
                 : 'Pending';
@@ -1655,9 +1657,10 @@ export function ProjectResults({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (smokeEmbersVideoUrl) handleDownloadVideo('smoke_embers');
+                      else if (embersVideoUrl) handleDownloadVideo('embers');
                       else if (basicVideoUrl) handleDownloadVideo('basic');
                     }}
-                    disabled={!smokeEmbersVideoUrl && !basicVideoUrl}
+                    disabled={!smokeEmbersVideoUrl && !embersVideoUrl && !basicVideoUrl}
                     className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30"
                     title="Download Video"
                   >

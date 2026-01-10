@@ -1,7 +1,8 @@
 // YouTube OAuth 2.0 Authentication Helper
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
+// youtube.upload = upload videos, youtube.readonly = read channels/playlists, youtube = modify playlists
+const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube';
 
 export interface YouTubeChannel {
   id: string;

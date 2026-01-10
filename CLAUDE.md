@@ -462,11 +462,11 @@ Multi-step generation with user review at each stage:
 
 ### Video Rendering Architecture
 
-**Uses RunPod CPU (32 vCPU) for reliable, fast video rendering.**
+**Uses RunPod CPU (32 vCPU) with parallel chunk rendering for fast video generation.**
 
 **Why RunPod CPU instead of GPU:**
 - GPU workers have "lottery" problem - not all RunPod workers have NVENC-capable GPUs
-- CPU with 32 cores is fast enough (~2-3 minutes for 10-minute video)
+- CPU with 32 cores is fast enough (~10 minutes for 2-hour video with parallel chunks)
 - 100% reliable - no hardware compatibility issues
 
 **RunPod CPU Worker** (Endpoint: `bw3dx1k956cee9`):
@@ -475,11 +475,28 @@ Multi-step generation with user review at each stage:
 - libx264 encoder with `-threads 32`
 - Overlay files bundled in Docker image
 
-**Two-Pass Rendering Pipeline:**
+**Parallel Chunk Rendering** (for 5+ images):
+- Video split into chunks (1 image per chunk)
+- **10 RunPod workers** process chunks simultaneously
+- Each chunk does Pass 1 (raw) + Pass 2 (effects) independently
+- **Finalize job** concatenates chunks, encodes audio (32 cores), muxes, scrubs metadata, uploads
+- **Result**: 2-hour video renders in ~10 minutes (vs 30+ minutes sequential)
+
+**Render Mode Selection** (`render-video.ts`):
+```typescript
+const useParallel = imageCount >= 5;  // Parallel for 5+ images
+if (useParallel) {
+  processRenderJobParallel(jobId, params);  // 10 workers + finalize
+} else {
+  processRenderJobCpuRunpod(jobId, params); // Single RunPod job
+}
+```
+
+**Two-Pass Rendering Pipeline** (per chunk or full video):
 1. Download audio + images from Supabase
 2. **Pass 1**: Images → raw video (scale, letterbox, libx264)
 3. **Pass 2**: Apply smoke (multiply blend) + embers (colorkey overlay)
-4. Add audio (fast mux)
+4. (Finalize only) Concatenate chunks, encode audio, mux, scrub metadata
 5. Upload final MP4 to Supabase
 
 **Smoke+Embers Overlay System:**
@@ -496,15 +513,25 @@ Multi-step generation with user review at each stage:
   - **Critical**: `flags=full_chroma_int+accurate_rnd` and correct grayscale coefficients (`.3:.59:.11`) prevent green tint
 - Overlay files bundled with worker at `/app/overlays/`
 
+**Metadata Scrubbing** (finalize job only):
+- Removes FFmpeg fingerprints: `-map_metadata -1`, `-fflags +bitexact`
+- Applied after Pass 2 with effects, never on raw chunks
+- Progress: 95% in finalize mode
+
 **Key constants** in CPU worker (`handler.py`):
 - `FFMPEG_THREADS = 32` (use all cores)
 - `FFMPEG_PRESET = "fast"` (good speed/quality balance)
 - `FFMPEG_CRF = "24"` (constant quality)
 
+**Key constants** in `render-api/src/routes/render-video.ts`:
+- `MAX_PARALLEL_CHUNKS = 10` (concurrent RunPod workers)
+- `PARALLEL_THRESHOLD = 5` (minimum images for parallel mode)
+
 **Progress Updates:**
 - Worker updates Supabase `render_jobs` table directly
 - Railway polls Supabase for progress (2s interval)
 - Frontend polls Railway `/render-video/status/:jobId`
+- Parallel mode: chunk progress (0-80%) + finalize progress (80-100%)
 
 **Key files:**
 - `render-api/src/routes/render-video.ts`: Railway endpoint, dispatches to RunPod CPU
@@ -512,6 +539,44 @@ Multi-step generation with user review at each stage:
 - `public/overlays/smoke_gray.mp4`: Grayscale smoke overlay
 - `public/overlays/embers.mp4`: Embers overlay
 - RunPod worker: GitHub repo `jonmac909/video-render-cpu`
+
+### Outliers / Channel Analysis Architecture
+
+**YouTube channel video scraping for outlier detection using pure Node.js InnerTube API.**
+
+**Routes** (`render-api/src/routes/`):
+| Route | Purpose |
+|-------|---------|
+| `/youtube-channel-ytdlp` | Primary scraper - pure Node.js InnerTube API (no binary) |
+| `/youtube-channel-apify` | Fallback - Apify YouTube scraper ($0.50/1000 videos) |
+| `/youtube-channel-invidious` | Fallback - Invidious API (public instances) |
+| `/youtube-channel-stats` | YouTube Data API v3 (quota-limited) |
+| `/niche-analyze` | TubeLab API for niche/competitor analysis |
+
+**Pure Node.js YouTube Scraper** (`render-api/src/lib/youtube-scraper.ts`):
+- Fetches channel page HTML → extracts `ytInitialData` JSON
+- Parses videos from `richGridRenderer` contents
+- Uses continuation tokens via `/youtubei/v1/browse` for pagination
+- Supports residential proxy via `YTDLP_PROXY_URL` env var (HTTP format: `http://user:pass@host:port`)
+- **Timeouts**: 20s resolve, 30s channel info, 45s video list
+- **Pagination limit**: 5 attempts max to prevent infinite loops
+
+**Why pure Node.js instead of yt-dlp binary:**
+- yt-dlp binary crashes on Railway (GitHub download fails in container)
+- No subprocess management or signal handling issues
+- Direct HTTP is faster and more reliable
+- Same InnerTube API that yt-dlp uses internally
+
+**Outlier Cache** (`render-api/src/lib/outlier-cache.ts`):
+- Supabase tables: `cached_channels`, `cached_outliers`, `cached_niche_searches`
+- Uses `service_role` key for RLS bypass
+- 24-hour cache TTL (configurable via `expires_at`)
+- Sources: `tubelab`, `youtube`, `apify`, `scraper`
+
+**Key files:**
+- `render-api/src/lib/youtube-scraper.ts`: Pure Node.js InnerTube scraper
+- `render-api/src/lib/outlier-cache.ts`: Supabase caching layer
+- `src/pages/Outliers.tsx`: Frontend outliers page
 
 ### YouTube Upload Architecture
 
@@ -597,6 +662,7 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
+RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 TUBELAB_API_KEY=<tubelab-api-key>
@@ -604,6 +670,7 @@ APIFY_API_TOKEN=<apify-api-token>
 GOOGLE_CLIENT_ID=<google-oauth-client-id>
 GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
 GOOGLE_REDIRECT_URI=https://historygenai.netlify.app/oauth/youtube/callback
+YTDLP_PROXY_URL=http://user:pass@host:port  # Residential proxy for YouTube scraping
 PORT=10000
 ```
 
@@ -730,6 +797,13 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Clear cache: `Cmd+Shift+R` or Incognito
 - Check Netlify build status
 
+### Outliers "View All" stuck loading
+- **Symptom**: Progress stuck at "Loading channel X of Y..."
+- **Cause**: One channel timing out or returning error blocks all progress
+- **Solution**: Timeouts added to `youtube-scraper.ts` (20s/30s/45s)
+- **Proxy required**: YouTube blocks datacenter IPs - use residential proxy via `YTDLP_PROXY_URL`
+- **Debug endpoints**: `/debug-env` checks proxy config, `/debug-ytdlp` shows binary status (obsolete)
+
 ### YouTube upload fails or OAuth errors
 - **"redirect_uri_mismatch" error**: Verify `GOOGLE_REDIRECT_URI` matches exactly in:
   - Railway environment variables
@@ -776,6 +850,9 @@ When creating a new project, `resetPendingState()` schedules state resets but Re
 
 ### ACP Directory Structure
 The `process/` and `memory/` directories mentioned in ACP section are symlinks to `/Users/jonmac/Documents/SUPER/` (shared across projects). The `directives/` and `execution/` directories are created as needed for DEO automation patterns.
+
+### Dead Code in render-video.ts
+The `processRenderJob` function (lines ~731-1250 in `render-api/src/routes/render-video.ts`) is **dead code** - never called. Render mode selection only uses `processRenderJobParallel` (5+ images) or `processRenderJobCpuRunpod` (<5 images). This function can be removed during cleanup.
 
 ## Security
 
