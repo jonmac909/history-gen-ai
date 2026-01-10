@@ -21,6 +21,8 @@ import { AudioSegmentsPreviewModal } from "@/components/AudioSegmentsPreviewModa
 import { ImagesPreviewModal } from "@/components/ImagesPreviewModal";
 import { ImagePromptsPreviewModal } from "@/components/ImagePromptsPreviewModal";
 import { CaptionsPreviewModal } from "@/components/CaptionsPreviewModal";
+import { VideoClipPromptsModal } from "@/components/VideoClipPromptsModal";
+import { VideoClipsPreviewModal } from "@/components/VideoClipsPreviewModal";
 import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
 import { VideoRenderModal } from "@/components/VideoRenderModal";
 // VisualEffectsModal removed - now integrated into VideoRenderModal with 2-pass rendering
@@ -35,9 +37,13 @@ import {
   generateCaptions,
   generateImagesStreaming,
   generateImagePrompts,
+  generateClipPrompts,
+  generateVideoClipsStreaming,
   saveScriptToStorage,
   type ImagePromptWithTiming,
   type AudioSegment,
+  type ClipPrompt,
+  type GeneratedClip,
 } from "@/lib/api";
 import { defaultTemplates, defaultImageTemplates } from "@/data/defaultTemplates";
 import { supabase } from "@/integrations/supabase/client";
@@ -57,7 +63,7 @@ import { OutlierFinderView } from "@/components/OutlierFinderView";
 import { FavoritesView } from "@/components/FavoritesView";
 
 type InputMode = "url" | "title";
-type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-prompts" | "review-images" | "review-render" | "review-thumbnails" | "review-youtube" | "results";
+type ViewState = "create" | "outlier-finder" | "favorites" | "processing" | "review-script" | "review-audio" | "review-captions" | "review-clip-prompts" | "review-clips" | "review-prompts" | "review-images" | "review-render" | "review-thumbnails" | "review-youtube" | "results";
 type EntryMode = "script" | "captions" | "images";
 
 const LAST_SETTINGS_KEY = "historygenai-last-settings";
@@ -221,6 +227,12 @@ const Index = () => {
   const [imagePrompts, setImagePrompts] = useState<ImagePromptWithTiming[]>([]);
   const [regeneratingImageIndices, setRegeneratingImageIndices] = useState<Set<number>>(new Set());
   const [isRegeneratingPrompts, setIsRegeneratingPrompts] = useState(false);
+  // Video clips state (LTX-2)
+  const [clipPrompts, setClipPrompts] = useState<ClipPrompt[]>([]);
+  const [generatedClips, setGeneratedClips] = useState<GeneratedClip[]>([]);
+  const [isRegeneratingClipPrompts, setIsRegeneratingClipPrompts] = useState(false);
+  const [regeneratingClipIndex, setRegeneratingClipIndex] = useState<number | undefined>();
+  const [enableVideoClips, setEnableVideoClips] = useState(false); // Toggle for video clips feature
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [uploadedScript, setUploadedScript] = useState("");

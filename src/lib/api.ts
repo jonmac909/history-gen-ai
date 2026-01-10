@@ -89,6 +89,43 @@ export interface ImagePromptsResult {
   error?: string;
 }
 
+// ============================================================================
+// Video Clip Types (LTX-2)
+// ============================================================================
+
+export interface ClipPrompt {
+  index: number;
+  startSeconds: number;
+  endSeconds: number;
+  prompt: string;
+  sceneDescription: string;
+}
+
+export interface ClipPromptsResult {
+  success: boolean;
+  prompts?: ClipPrompt[];
+  totalDuration?: number;
+  clipCount?: number;
+  clipDuration?: number;
+  error?: string;
+}
+
+export interface GeneratedClip {
+  index: number;
+  videoUrl: string;
+  filename?: string;
+}
+
+export interface VideoClipsResult {
+  success: boolean;
+  clips?: GeneratedClip[];
+  total?: number;
+  failed?: number;
+  clipDuration?: number;
+  totalDuration?: number;
+  error?: string;
+}
+
 export interface GeneratedAssets {
   projectId: string;
   script: string;
@@ -965,6 +1002,197 @@ export async function generateImagePrompts(
   }
 
   return data;
+}
+
+// ============================================================================
+// Video Clip Prompts (LTX-2)
+// ============================================================================
+
+export async function generateClipPrompts(
+  script: string,
+  srtContent: string,
+  stylePrompt: string,
+  onProgress?: (progress: number, message: string) => void
+): Promise<ClipPromptsResult> {
+  console.log('Generating AI-powered video clip prompts from script...');
+
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-clip-prompts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script, srtContent, stylePrompt, stream: !!onProgress })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Clip prompts error:', response.status, errorText);
+      return { success: false, error: `Failed to generate clip prompts: ${response.status}` };
+    }
+
+    // Handle streaming response
+    if (onProgress) {
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return { success: false, error: 'No response body' };
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: ClipPromptsResult = { success: false, error: 'No response received' };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'progress') {
+                onProgress(data.progress, data.message || `${data.progress}%`);
+              } else if (data.type === 'complete') {
+                result = {
+                  success: true,
+                  prompts: data.prompts,
+                  totalDuration: data.totalDuration,
+                  clipCount: data.clipCount,
+                  clipDuration: data.clipDuration
+                };
+              } else if (data.type === 'error') {
+                result = { success: false, error: data.error };
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+
+      return result;
+    }
+
+    // Non-streaming response
+    const data = await response.json();
+    return data;
+
+  } catch (error) {
+    console.error('Clip prompts error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate clip prompts' };
+  }
+}
+
+// ============================================================================
+// Video Clip Generation (LTX-2)
+// ============================================================================
+
+export async function generateVideoClipsStreaming(
+  projectId: string,
+  clips: ClipPrompt[],
+  onProgress: (completed: number, total: number, message: string, latestClip?: GeneratedClip) => void
+): Promise<VideoClipsResult> {
+  console.log(`Generating ${clips.length} video clips with LTX-2...`);
+
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/generate-video-clips`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, clips, stream: true })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Video clips error:', response.status, errorText);
+      return { success: false, error: `Failed to generate video clips: ${response.status}` };
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: VideoClipsResult = { success: false, error: 'No response received' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        if (!event.trim()) continue;
+
+        // Skip keepalive comments
+        if (event.startsWith(':')) continue;
+
+        const dataMatch = event.match(/^data: (.+)$/m);
+        if (dataMatch) {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+
+            if (parsed.type === 'progress') {
+              const latestClip = parsed.latestClip ? {
+                index: parsed.latestClip.index,
+                videoUrl: parsed.latestClip.videoUrl,
+                filename: parsed.latestClip.filename
+              } : undefined;
+
+              onProgress(parsed.completed, parsed.total, parsed.message, latestClip);
+            } else if (parsed.type === 'complete') {
+              result = {
+                success: parsed.success,
+                clips: parsed.clips,
+                total: parsed.total,
+                failed: parsed.failed,
+                clipDuration: parsed.clipDuration,
+                totalDuration: parsed.totalDuration
+              };
+              onProgress(parsed.total, parsed.total, `${parsed.total} clips generated`);
+            } else if (parsed.type === 'error' || parsed.error) {
+              result = {
+                success: false,
+                error: parsed.error || 'Video clip generation failed'
+              };
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error('Video clips error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to generate video clips' };
+  }
 }
 
 export async function generateImages(

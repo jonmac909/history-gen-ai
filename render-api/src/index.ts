@@ -18,6 +18,8 @@ import youtubeChannelApifyRouter from './routes/youtube-channel-apify';
 import youtubeChannelInvidiousRouter from './routes/youtube-channel-invidious';
 import youtubeChannelYtdlpRouter from './routes/youtube-channel-ytdlp';
 import nicheAnalyzeRouter from './routes/niche-analyze';
+import generateClipPromptsRouter from './routes/generate-clip-prompts';
+import generateVideoClipsRouter from './routes/generate-video-clips';
 
 dotenv.config();
 
@@ -96,6 +98,8 @@ app.use('/youtube-channel-apify', youtubeChannelApifyRouter);
 app.use('/youtube-channel-invidious', youtubeChannelInvidiousRouter);
 app.use('/youtube-channel-ytdlp', youtubeChannelYtdlpRouter);
 app.use('/niche-analyze', nicheAnalyzeRouter);
+app.use('/generate-clip-prompts', generateClipPromptsRouter);
+app.use('/generate-video-clips', generateVideoClipsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
