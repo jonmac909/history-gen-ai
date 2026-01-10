@@ -150,11 +150,11 @@ HistoryGen AI generates AI-powered historical video content from YouTube URLs. I
 - Storage: Supabase Storage
 - TTS: RunPod serverless with Fish Speech OpenAudio S1-mini voice cloning
 - Image Generation: RunPod serverless with Z-Image-Turbo
-- Deployment: Netlify (frontend), Railway (API), Supabase (storage + quick functions)
+- Deployment: Cloudflare Pages (frontend), Railway (API), Supabase (storage + quick functions)
 
 **Live URLs:**
-- Frontend: https://historygenai.netlify.app
-- Railway API: https://history-gen-ai-production-f1d4.up.railway.app
+- Frontend: https://autoaigen.com (Cloudflare Pages)
+- Railway API: https://marvelous-blessing-staging.up.railway.app
 - Supabase: https://udqfdeoullsxttqguupz.supabase.co
 
 **Note:** The `render-api/` folder and `VITE_RENDER_API_URL` env var retain "render" in their names for historical reasons (originally deployed on Render.com), but the API now runs on Railway.
@@ -228,6 +228,8 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/youtube-upload/auth` | Exchange OAuth code for tokens |
 | `/youtube-upload/token` | Refresh access token |
 | `/pronunciation` | GET/POST pronunciation fixes dictionary for TTS |
+| `/generate-clip-prompts` | Claude AI video scene prompts for LTX-2 (SSE streaming) |
+| `/generate-video-clips` | RunPod LTX-2 video generation with rolling concurrency |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -411,6 +413,38 @@ Multi-step generation with user review at each stage:
 - Early failure detection (stop submitting if first batch fails)
 - Better progress reporting (batch completion is predictable)
 - Less RunPod queue pressure (max 4 jobs in flight)
+
+### Video Clip Generation Architecture (LTX-2)
+
+**Uses LTX-Video model on RunPod for AI video generation (intro clips).**
+
+**RunPod LTX Worker** (Endpoint: `t20g389skpvxdt`):
+- GitHub repo: `jonmac909/ltx-video-runpod`
+- Model: Lightricks/LTX-Video (HuggingFace Diffusers `LTXPipeline`)
+- H100 80GB GPU, 100GB container disk (model ~50GB)
+- Output: 768x512 @ 24fps, 5-10 seconds per clip
+
+**Key constants** in `render-api/src/routes/generate-video-clips.ts`:
+- `CLIP_DURATION = 10` seconds per clip
+- `CLIP_WIDTH = 768`, `CLIP_HEIGHT = 512`
+- `CLIP_FPS = 24`
+- `MAX_CONCURRENT_CLIPS = 5` (env var: `LTX_MAX_CONCURRENT_CLIPS`)
+
+**Worker Configuration** (`ltx-video-runpod/handler.py`):
+- HuggingFace cache set to `/tmp/hf_cache` (uses container disk, not system disk)
+- Memory optimizations: `enable_vae_slicing()`, `enable_vae_tiling()`
+- Disk space logging for debugging storage issues
+
+**Clip Prompt Generation** (`/generate-clip-prompts`):
+- Uses Claude to generate cinematic scene descriptions
+- 10 clips × 10 seconds = 100 seconds of video intro
+- Prompts include camera movement, lighting, historical accuracy
+
+**Triggering Rebuilds:**
+```bash
+cd /Users/jonmac/Documents/ltx-video-runpod && git add . && git commit -m "message" && git push origin main
+```
+Wait 2-5 min for RunPod rebuild, then terminate old workers for new ones to pick up changes.
 
 ### Captions Generation Architecture
 
@@ -635,7 +669,7 @@ if (useParallel) {
 ```
 GOOGLE_CLIENT_ID=<oauth-client-id>
 GOOGLE_CLIENT_SECRET=<oauth-client-secret>
-GOOGLE_REDIRECT_URI=https://historygenai.netlify.app/oauth/youtube/callback
+GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 ```
 
 **Supabase Table:** `youtube_tokens`
@@ -663,13 +697,14 @@ RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
+RUNPOD_LTX_ENDPOINT_ID=t20g389skpvxdt
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 TUBELAB_API_KEY=<tubelab-api-key>
 APIFY_API_TOKEN=<apify-api-token>
 GOOGLE_CLIENT_ID=<google-oauth-client-id>
 GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
-GOOGLE_REDIRECT_URI=https://historygenai.netlify.app/oauth/youtube/callback
+GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 YTDLP_PROXY_URL=http://user:pass@host:port  # Residential proxy for YouTube scraping
 PORT=10000
 ```
@@ -709,14 +744,21 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 
 ### Frontend Deployment
 
-**Netlify:** Auto-deploys to Netlify on push to `main`
-- Update `VITE_RENDER_API_URL` to Railway production URL after first deploy
+**Cloudflare Pages:** Auto-deploys on push to `main`
+- Project: `history-gen-ai` at `history-gen-ai.pages.dev`
+- Custom domain: `autoaigen.com`
+- Update `VITE_RENDER_API_URL` to Railway production URL in Cloudflare Pages settings
 
 ### RunPod Workers
 
 **Fish Speech:** Uses Docker Hub image `jonmac909/fish-speech-runpod:latest`
 - To update: `cd /Users/jonmac/Documents/fish-speech-runpod && docker build --platform linux/amd64 -t jonmac909/fish-speech-runpod:latest . && docker push jonmac909/fish-speech-runpod:latest`
 - RunPod pulls new image on next cold start (may take a few minutes)
+
+**LTX-2 Video:** Uses GitHub-linked endpoint (push triggers rebuild)
+- To update: `cd /Users/jonmac/Documents/ltx-video-runpod && git add . && git commit -m "message" && git push origin main`
+- Requires 100GB container disk for ~50GB model files
+- HF cache must be set to `/tmp/hf_cache` (container disk, not system disk)
 
 ## Common Issues
 
@@ -793,9 +835,16 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Exit code 1: PyTorch/torchvision version mismatch
 - Check worker logs, push fix to GitHub, wait 5-10 min for rebuild
 
+### LTX-2 "No space left on device" error
+- **Symptom**: CAS service error with IO Error: No space left on device (os error 28)
+- **Cause**: HuggingFace downloading model to system disk instead of container disk
+- **Solution**: Set `HF_HOME=/tmp/hf_cache` in handler.py (uses 100GB container disk)
+- **Old workers**: Terminate old workers in RunPod dashboard so new ones pick up config changes
+- Model files are ~50GB; container disk must be ≥100GB
+
 ### Frontend not updating after deploy
 - Clear cache: `Cmd+Shift+R` or Incognito
-- Check Netlify build status
+- Check Cloudflare Pages build status in dashboard
 
 ### Outliers "View All" stuck loading
 - **Symptom**: Progress stuck at "Loading channel X of Y..."
@@ -808,7 +857,7 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - **"redirect_uri_mismatch" error**: Verify `GOOGLE_REDIRECT_URI` matches exactly in:
   - Railway environment variables
   - Google Cloud Console → Credentials → Authorized redirect URIs
-  - Must include full path: `https://historygenai.netlify.app/oauth/youtube/callback`
+  - Must include full path: `https://autoaigen.com/oauth/youtube/callback`
 - **"access_denied" error**: User must be added as test user in Google Cloud Console
   - Go to OAuth consent screen → Test users → Add your Google email
   - Or publish app for public access (requires verification)
@@ -832,7 +881,7 @@ Rendered video: `{projectId}/video.mp4` (with embers overlay)
 ## Default Settings
 
 New projects initialize with:
-- Voice sample: `https://historygenai.netlify.app/voices/clone_voice.mp3` (set in `src/pages/Index.tsx`)
+- Voice sample: `https://autoaigen.com/voices/clone_voice.mp3` (set in `src/pages/Index.tsx`)
 - Script template: `template-a`
 - AI model: `claude-sonnet-4-5`
 - Word count: 1000, Image count: 10, Speed: 1x
@@ -858,5 +907,5 @@ The `processRenderJob` function (lines ~731-1250 in `render-api/src/routes/rende
 
 **SSRF Protection** (`render-api/src/routes/generate-audio.ts`):
 - Voice sample URLs validated against allowlist
-- Allowed domains: `supabase.co`, `supabase.com`, `historygenai.netlify.app`
+- Allowed domains: `supabase.co`, `supabase.com`, `autoaigen.com`, `history-gen-ai.pages.dev`
 - Blocks localhost, private IPs, non-HTTPS
