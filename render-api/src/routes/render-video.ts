@@ -507,6 +507,7 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
     // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
     await updateJobStatus(supabase, jobId, 'muxing', 76, 'Encoding audio...');
     const audioAacPath = path.join(tempDir, 'audio.m4a');
+    let lastAudioProgress = 0;
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(audioPath)
@@ -514,13 +515,21 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
           '-c:a', 'aac',
           '-ar', '48000',
           '-b:a', '192k',
+          '-threads', '0',  // Use all CPU cores
           '-y'
         ])
         .output(audioAacPath)
         .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
+        .on('progress', (p) => {
+          const pct = Math.round(p.percent || 0);
+          if (pct > lastAudioProgress + 10) { // Log every 10%
+            console.log(`Audio encode: ${pct}%`);
+            lastAudioProgress = pct;
+          }
+        })
         .on('error', reject)
         .on('end', () => {
-          console.log('Audio pre-encoded to AAC');
+          console.log('Audio pre-encoded to AAC (100%)');
           resolve();
         })
         .run();
@@ -866,6 +875,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
     // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
     const audioAacPath = path.join(tempDir, 'voiceover.m4a');
+    let lastAudioPct = 0;
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(audioPath)
@@ -873,13 +883,21 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
           '-c:a', 'aac',
           '-ar', '48000',
           '-b:a', '192k',
+          '-threads', '0',  // Use all CPU cores
           '-y'
         ])
         .output(audioAacPath)
         .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
+        .on('progress', (p) => {
+          const pct = Math.round(p.percent || 0);
+          if (pct > lastAudioPct + 10) { // Log every 10%
+            console.log(`Audio encode: ${pct}%`);
+            lastAudioPct = pct;
+          }
+        })
         .on('error', reject)
         .on('end', () => {
-          console.log('Audio pre-encoded to AAC');
+          console.log('Audio pre-encoded to AAC (100%)');
           resolve();
         })
         .run();
