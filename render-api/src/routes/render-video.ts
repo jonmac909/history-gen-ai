@@ -484,208 +484,88 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
       throw new Error(`Timeout: Only ${completedChunks.length}/${chunks.length} chunks completed`);
     }
 
-    // Stage 2: Download chunks and concatenate
-    await updateJobStatus(supabase, jobId, 'muxing', 72, 'Downloading chunks...');
+    // Stage 2: Dispatch finalize job to RunPod (concat + audio encode + mux + upload)
+    // This moves audio encoding to RunPod's 32 cores instead of Railway's slower CPUs
+    await updateJobStatus(supabase, jobId, 'muxing', 72, 'Dispatching finalize job to RunPod...');
 
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-render-'));
-    console.log(`Temp directory: ${tempDir}`);
+    // Get chunk URLs in order
+    const sortedChunks = chunks.sort((a, b) => a.index - b.index);
+    const chunkUrls = sortedChunks.map(c => c.chunkUrl!);
+    console.log(`Dispatching finalize job with ${chunkUrls.length} chunks`);
 
-    // Download all chunks
-    const chunkPaths: string[] = [];
-    for (const chunk of chunks.sort((a, b) => a.index - b.index)) {
-      const chunkPath = path.join(tempDir, `chunk_${chunk.index.toString().padStart(2, '0')}.mp4`);
-      await downloadFile(chunk.chunkUrl!, chunkPath);
-      chunkPaths.push(chunkPath);
-      console.log(`Downloaded chunk ${chunk.index}: ${chunkPath}`);
-    }
-
-    // Download audio
-    const audioPath = path.join(tempDir, 'audio.wav');
-    await downloadFile(audioUrl, audioPath);
-    const audioStats = fs.statSync(audioPath);
-    console.log(`Downloaded audio: ${audioStats.size} bytes`);
-
-    if (audioStats.size < 1000) {
-      throw new Error(`Audio file too small (${audioStats.size} bytes) - likely corrupted or empty`);
-    }
-
-    // Check audio integrity before muxing
-    const audioBuffer = fs.readFileSync(audioPath);
-    const integrityResult = checkAudioIntegrity(audioBuffer, {
-      silenceThresholdMs: 1500,
-      glitchThresholdDb: 25,
-      sampleWindowMs: 50,
-    });
-    logAudioIntegrity(integrityResult, `GPU render ${jobId}`);
-
-    if (integrityResult.issues.filter(i => i.type === 'skip' || i.type === 'discontinuity').length > 0) {
-      console.warn(`[WARN] Audio has potential issues - video may have audio glitches`);
-    }
-
-    // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
-    await updateJobStatus(supabase, jobId, 'muxing', 76, 'Encoding audio...');
-    const audioAacPath = path.join(tempDir, 'audio.m4a');
-    let lastAudioProgress = 0;
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(audioPath)
-        .outputOptions([
-          '-c:a', 'aac',
-          '-ar', '48000',
-          '-b:a', '192k',
-          '-threads', '0',  // Use all CPU cores
-          '-y'
-        ])
-        .output(audioAacPath)
-        .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
-        .on('progress', async (p) => {
-          const pct = Math.round(p.percent || 0);
-          if (pct > lastAudioProgress + 5) { // Update every 5%
-            console.log(`Audio encode: ${pct}%`);
-            lastAudioProgress = pct;
-            // Update job status so frontend sees progress
-            await updateJobStatus(supabase, jobId, 'muxing', 76, `Encoding audio... ${pct}%`);
-          }
-        })
-        .on('error', reject)
-        .on('end', () => {
-          console.log('Audio pre-encoded to AAC (100%)');
-          resolve();
-        })
-        .run();
-    });
-
-    await updateJobStatus(supabase, jobId, 'muxing', 78, 'Concatenating chunks...');
-
-    // Create concat file
-    const concatListPath = path.join(tempDir, 'chunks.txt');
-    fs.writeFileSync(concatListPath, chunkPaths.map(p => `file '${p}'`).join('\n'), 'utf8');
-
-    // Concatenate chunks (no re-encode, just copy)
-    const concatenatedPath = path.join(tempDir, 'concatenated.mp4');
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(concatListPath)
-        .inputOptions(['-f', 'concat', '-safe', '0'])
-        .outputOptions(['-c', 'copy', '-y'])
-        .output(concatenatedPath)
-        .on('start', (cmd) => console.log('Concat:', cmd.substring(0, 100) + '...'))
-        .on('error', reject)
-        .on('end', () => {
-          console.log('Chunks concatenated');
-          resolve();
-        })
-        .run();
-    });
-
-    await updateJobStatus(supabase, jobId, 'muxing', 82, 'Adding audio...');
-
-    // Add audio to concatenated video (instant with -c:a copy)
-    const withAudioPath = path.join(tempDir, 'with_audio.mp4');
-
-    // Mux is now instant since audio is pre-encoded (-c:a copy)
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(concatenatedPath)
-        .input(audioAacPath)
-        .outputOptions([
-          '-c:v', 'copy',
-          '-c:a', 'copy',
-          '-shortest',
-          '-y'
-        ])
-        .output(withAudioPath)
-        .on('start', (cmd) => console.log('Audio mux (copy):', cmd.substring(0, 120) + '...'))
-        .on('error', (err) => {
-          console.error('Audio mux error:', err.message);
-          reject(err);
-        })
-        .on('end', () => {
-          console.log('Audio muxed successfully');
-          resolve();
-        })
-        .run();
-    });
-
-    await updateJobStatus(supabase, jobId, 'muxing', 86, 'Scrubbing metadata...');
-
-    // Scrub FFmpeg metadata to prevent YouTube bot flagging
-    const finalPath = path.join(tempDir, 'final.mp4');
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(withAudioPath)
-        .outputOptions([
-          '-map_metadata', '-1',
-          '-fflags', '+bitexact',
-          '-flags:v', '+bitexact',
-          '-flags:a', '+bitexact',
-          '-c:v', 'copy',
-          '-c:a', 'copy',
-          '-movflags', '+faststart',
-          '-y'
-        ])
-        .output(finalPath)
-        .on('start', (cmd) => console.log('Metadata scrub:', cmd.substring(0, 100) + '...'))
-        .on('error', (err) => {
-          // If scrub fails, use the with-audio version
-          console.warn('Metadata scrub failed, using original:', err.message);
-          fs.copyFileSync(withAudioPath, finalPath);
-          resolve();
-        })
-        .on('end', () => {
-          console.log('Metadata scrubbed');
-          resolve();
-        })
-        .run();
-    });
-
-    // Upload final video
-    await updateJobStatus(supabase, jobId, 'uploading', 90, 'Uploading final video...');
-
-    const videoUploadPath = `${projectId}/video.mp4`;
-    const fileStats = fs.statSync(finalPath);
-    const fileSizeBytes = fileStats.size;
-    console.log(`Uploading ${(fileSizeBytes / 1024 / 1024).toFixed(1)} MB video...`);
-
-    // Delete any existing file first
-    await supabase.storage.from('generated-assets').remove([videoUploadPath]);
-
-    // Stream upload
-    const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${videoUploadPath}`;
-    const fileStream = fs.createReadStream(finalPath);
-
-    const uploadResponse = await fetch(uploadUrl, {
+    // Submit finalize job to RunPod CPU endpoint
+    const finalizeResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'video/mp4',
-        'Content-Length': fileSizeBytes.toString(),
-        'x-upsert': 'true',
+        'Authorization': `Bearer ${RUNPOD_API_KEY}`,
+        'Content-Type': 'application/json',
       },
-      body: fileStream as any,
-      // @ts-ignore
-      duplex: 'half',
+      body: JSON.stringify({
+        input: {
+          finalize_mode: true,
+          chunk_urls: chunkUrls,
+          audio_url: audioUrl,
+          project_id: projectId,
+          supabase_url: supabaseUrl,
+          supabase_key: supabaseKey,
+          render_job_id: jobId,
+        },
+      }),
     });
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to upload video: ${uploadResponse.status} - ${errorText}`);
+    if (!finalizeResponse.ok) {
+      const errorText = await finalizeResponse.text();
+      throw new Error(`Failed to dispatch finalize job: ${finalizeResponse.status} - ${errorText}`);
     }
 
-    const { data: urlData } = supabase.storage
-      .from('generated-assets')
-      .getPublicUrl(videoUploadPath);
+    const finalizeData = await finalizeResponse.json() as { id: string };
+    const finalizeJobId = finalizeData.id;
+    console.log(`Finalize job dispatched: ${finalizeJobId}`);
 
-    const videoUrl = urlData.publicUrl;
+    // Poll for finalize job completion (RunPod updates Supabase directly, but we poll for result)
+    const finalizeStartTime = Date.now();
+    const FINALIZE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes for long audio encoding
+    let finalizeResult: any = null;
+
+    while (Date.now() - finalizeStartTime < FINALIZE_TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, 3000)); // Poll every 3s
+
+      const statusResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_CPU_ENDPOINT_ID}/status/${finalizeJobId}`, {
+        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      });
+
+      if (!statusResponse.ok) continue;
+
+      const statusData = await statusResponse.json() as { status: string; output?: any };
+
+      if (statusData.status === 'COMPLETED') {
+        finalizeResult = statusData.output;
+        break;
+      } else if (statusData.status === 'FAILED') {
+        throw new Error(`Finalize job failed: ${JSON.stringify(statusData.output)}`);
+      }
+      // PENDING, IN_PROGRESS - continue polling
+    }
+
+    if (!finalizeResult) {
+      throw new Error('Finalize job timed out after 30 minutes');
+    }
+
+    if (finalizeResult.error) {
+      throw new Error(`Finalize error: ${finalizeResult.error}`);
+    }
+
+    const videoUrl = finalizeResult.video_url;
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`Video uploaded: ${videoUrl}`);
-    console.log(`Total parallel render time: ${totalTime}s`);
+    console.log(`Video finalized: ${videoUrl}`);
+    console.log(`Total parallel render time: ${totalTime}s (finalize: ${finalizeResult.finalize_time_seconds?.toFixed(1)}s)`);
 
     // Clean up chunk files from Supabase storage
     const chunkStoragePaths = chunks.map(c => `${projectId}/chunks/chunk_${c.index.toString().padStart(2, '0')}.mp4`);
     await supabase.storage.from('generated-assets').remove(chunkStoragePaths);
     console.log(`Cleaned up ${chunkStoragePaths.length} chunk files from storage`);
 
+    // Status is already updated by RunPod finalize job, but ensure it's complete
     await updateJobStatus(supabase, jobId, 'complete', 100,
       `Video rendered successfully (Parallel: ${totalTime}s)`,
       { video_url: videoUrl });
