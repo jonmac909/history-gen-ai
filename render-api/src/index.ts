@@ -94,11 +94,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
   console.log(`✅ Server successfully bound and ready for connections`);
 
-  // Initialize PO Token provider for YouTube bot detection bypass
-  // This runs in background and doesn't block server startup
-  initPotProvider().catch(err => {
-    console.warn('⚠️ PO Token provider init failed (yt-dlp will have reduced reliability):', err.message);
-  });
+  // PO Token provider disabled - requires git clone and npm install at runtime
+  // which doesn't work in Railway's container environment
+  // initPotProvider().catch(err => {
+  //   console.warn('⚠️ PO Token provider init failed:', err.message);
+  // });
 });
 
 // Increase timeouts for long-running SSE connections (video rendering)

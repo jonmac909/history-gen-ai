@@ -398,14 +398,18 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
             headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
           });
 
-          if (!response.ok) return;
+          if (!response.ok) {
+            console.warn(`Chunk ${chunk.index}: Poll failed ${response.status}`);
+            return;
+          }
 
           const data = await response.json() as {
             status: string;
-            output?: { chunk_url?: string; error?: string };
+            output?: { chunk_url?: string; error?: string; chunk_index?: number };
           };
 
           if (data.status === 'COMPLETED') {
+            console.log(`Chunk ${chunk.index}: RunPod COMPLETED, output:`, JSON.stringify(data.output || {}).substring(0, 200));
             if (data.output?.chunk_url) {
               chunk.status = 'completed';
               chunk.chunkUrl = data.output.chunk_url;
@@ -413,15 +417,23 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
             } else if (data.output?.error) {
               chunk.status = 'failed';
               chunk.error = data.output.error;
-              console.error(`Chunk ${chunk.index}: Failed - ${chunk.error}`);
+              console.error(`Chunk ${chunk.index}: Failed with error - ${chunk.error}`);
+            } else {
+              // Unexpected - COMPLETED but no chunk_url or error
+              console.error(`Chunk ${chunk.index}: COMPLETED but no chunk_url! Output:`, data.output);
+              chunk.status = 'failed';
+              chunk.error = 'Worker completed but returned no chunk_url';
             }
           } else if (data.status === 'FAILED') {
             chunk.status = 'failed';
             chunk.error = data.output?.error || 'Worker failed';
-            console.error(`Chunk ${chunk.index}: Failed - ${chunk.error}`);
+            console.error(`Chunk ${chunk.index}: FAILED - ${chunk.error}`);
+          } else if (data.status === 'IN_PROGRESS') {
+            // Log progress periodically
+            console.log(`Chunk ${chunk.index}: IN_PROGRESS`);
           }
-        } catch (err) {
-          // Poll error, will retry
+        } catch (err: any) {
+          console.warn(`Chunk ${chunk.index}: Poll error - ${err.message}`);
         }
       }));
 
@@ -1212,11 +1224,43 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
       throw new Error('FFmpeg produced empty video file');
     }
 
-    // Stage 5: Upload using streaming to avoid memory issues with large files
+    // Stage 5: Scrub metadata (after effects are applied)
+    await updateJobStatus(supabase, jobId, 'muxing', 78, 'Scrubbing metadata...');
+
+    const finalPath = path.join(tempDir, 'final.mp4');
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(withAudioPath)
+        .outputOptions([
+          '-map_metadata', '-1',
+          '-fflags', '+bitexact',
+          '-flags:v', '+bitexact',
+          '-flags:a', '+bitexact',
+          '-c:v', 'copy',
+          '-c:a', 'copy',
+          '-movflags', '+faststart',
+          '-y'
+        ])
+        .output(finalPath)
+        .on('start', (cmd) => console.log('Metadata scrub:', cmd.substring(0, 100) + '...'))
+        .on('error', (err) => {
+          // If scrub fails, use the with-audio version
+          console.warn('Metadata scrub failed, using original:', err.message);
+          fs.copyFileSync(withAudioPath, finalPath);
+          resolve();
+        })
+        .on('end', () => {
+          console.log('Metadata scrubbed');
+          resolve();
+        })
+        .run();
+    });
+
+    // Stage 6: Upload using streaming to avoid memory issues with large files
     await updateJobStatus(supabase, jobId, 'uploading', 80, 'Uploading video...');
 
     const videoUploadPath = `${params.projectId}/video.mp4`;
-    const fileStats = fs.statSync(withAudioPath);
+    const fileStats = fs.statSync(finalPath);
     const fileSizeBytes = fileStats.size;
     const uploadSizeMB = (fileSizeBytes / 1024 / 1024).toFixed(1);
     console.log(`Uploading ${uploadSizeMB} MB video...`);
@@ -1234,7 +1278,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
 
     // Stream upload using fetch with file stream + progress tracking
     const uploadUrl = `${supabaseUrl}/storage/v1/object/generated-assets/${videoUploadPath}`;
-    const fileStream = fs.createReadStream(withAudioPath);
+    const fileStream = fs.createReadStream(finalPath);
 
     // Track upload progress
     let bytesUploaded = 0;
@@ -1334,11 +1378,21 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`Created render job ${jobId} for project ${params.projectId}`);
 
-    // Use parallel rendering with RunPod workers
-    console.log(`Job ${jobId}: Using PARALLEL rendering (${PARALLEL_WORKERS} RunPod workers)`);
-    processRenderJobParallel(jobId, params).catch(err => {
-      console.error(`Parallel render job ${jobId} crashed:`, err);
-    });
+    // Use parallel mode for efficiency (10 workers render chunks simultaneously)
+    const imageCount = params.imageUrls.length;
+    const useParallel = imageCount >= 5;  // Only use parallel for 5+ images
+
+    if (useParallel) {
+      console.log(`Job ${jobId}: Using PARALLEL rendering (${PARALLEL_WORKERS} workers)`);
+      processRenderJobParallel(jobId, params).catch(err => {
+        console.error(`Parallel render job ${jobId} crashed:`, err);
+      });
+    } else {
+      console.log(`Job ${jobId}: Using single CPU job (${imageCount} images)`);
+      processRenderJobCpuRunpod(jobId, params).catch(err => {
+        console.error(`CPU RunPod render job ${jobId} crashed:`, err);
+      });
+    }
 
     // Return immediately with job ID
     res.json({
