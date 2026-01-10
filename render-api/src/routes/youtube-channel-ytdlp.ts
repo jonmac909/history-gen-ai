@@ -3,8 +3,8 @@ import {
   resolveChannelId,
   getChannelVideos,
   getChannelInfo,
-  YtDlpVideoInfo,
-} from '../lib/ytdlp';
+  ScrapedVideo,
+} from '../lib/youtube-scraper';
 import {
   getCachedChannel,
   cacheChannel,
@@ -88,14 +88,14 @@ function cachedOutlierToVideo(cached: CachedOutlier): OutlierVideo {
   };
 }
 
-// Convert yt-dlp video to OutlierVideo format (with calculated metrics)
-function ytdlpVideoToOutlier(
-  video: YtDlpVideoInfo,
+// Convert scraped video to OutlierVideo format (with calculated metrics)
+function scrapedVideoToOutlier(
+  video: ScrapedVideo,
   averageViews: number,
   standardDeviation: number,
   subscriberCount: number
 ): OutlierVideo {
-  const viewCount = video.view_count || 0;
+  const viewCount = video.views || 0;
   const outlierMultiplier = averageViews > 0 ? viewCount / averageViews : 0;
   const zScore = standardDeviation > 0 ? (viewCount - averageViews) / standardDeviation : 0;
   const isPositiveOutlier = zScore > 2;
@@ -103,7 +103,8 @@ function ytdlpVideoToOutlier(
   const viewsPerSubscriber = subscriberCount > 0 ? viewCount / subscriberCount : 0;
 
   const durationSeconds = video.duration || 0;
-  const publishedAt = uploadDateToISO(video.upload_date);
+  // publishedText is like "2 weeks ago" - convert to approximate ISO date
+  const publishedAt = video.publishedText ? estimateDateFromRelative(video.publishedText) : new Date().toISOString();
 
   return {
     videoId: video.id,
@@ -114,14 +115,35 @@ function ytdlpVideoToOutlier(
     durationFormatted: formatDurationFromSeconds(durationSeconds),
     durationSeconds,
     viewCount,
-    likeCount: video.like_count || 0,
-    commentCount: 0, // yt-dlp flat playlist doesn't provide comment count
+    likeCount: 0, // Not available from scraper
+    commentCount: 0,
     outlierMultiplier,
     zScore,
     isPositiveOutlier,
     isNegativeOutlier,
     viewsPerSubscriber,
   };
+}
+
+// Estimate date from relative text like "2 weeks ago"
+function estimateDateFromRelative(text: string): string {
+  const now = new Date();
+  const match = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago/i);
+  if (!match) return now.toISOString();
+
+  const num = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+
+  switch (unit) {
+    case 'second': now.setSeconds(now.getSeconds() - num); break;
+    case 'minute': now.setMinutes(now.getMinutes() - num); break;
+    case 'hour': now.setHours(now.getHours() - num); break;
+    case 'day': now.setDate(now.getDate() - num); break;
+    case 'week': now.setDate(now.getDate() - num * 7); break;
+    case 'month': now.setMonth(now.getMonth() - num); break;
+    case 'year': now.setFullYear(now.getFullYear() - num); break;
+  }
+  return now.toISOString();
 }
 
 // Main endpoint - get channel videos via yt-dlp
@@ -133,13 +155,13 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Channel input is required' });
     }
 
-    console.log(`[youtube-ytdlp] Analyzing channel: ${channelInput} (forceRefresh: ${forceRefresh})`);
+    console.log(`[youtube-scraper] Analyzing channel: ${channelInput} (forceRefresh: ${forceRefresh})`);
 
     // Resolve channel ID from input
     let channelId: string;
     try {
       channelId = await resolveChannelId(channelInput);
-      console.log(`[youtube-ytdlp] Resolved channel ID: ${channelId}`);
+      console.log(`[youtube-scraper] Resolved channel ID: ${channelId}`);
     } catch (error) {
       return res.status(404).json({
         success: false,
@@ -151,7 +173,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (!forceRefresh) {
       const cachedOutliers = await getCachedOutliersForChannel(channelId);
       if (cachedOutliers.length > 0) {
-        console.log(`[youtube-ytdlp] Cache HIT for: ${channelId} (${cachedOutliers.length} videos)`);
+        console.log(`[youtube-scraper] Cache HIT for: ${channelId} (${cachedOutliers.length} videos)`);
 
         let videos = cachedOutliers.map(cachedOutlierToVideo);
 
@@ -192,22 +214,22 @@ router.post('/', async (req: Request, res: Response) => {
           },
           videos: videos.slice(0, maxResults),
           fromCache: true,
-          source: 'ytdlp',
+          source: 'scraper',
         });
       }
     }
 
-    // Cache miss or forceRefresh - fetch from yt-dlp
-    console.log(`[youtube-ytdlp] Cache MISS - fetching from yt-dlp: ${channelId}`);
+    // Cache miss or forceRefresh - fetch from scraper
+    console.log(`[youtube-scraper] Cache MISS - fetching: ${channelId}`);
 
     // Get channel info
     const channelInfo = await getChannelInfo(channelId);
     const subscriberCount = channelInfo.subscriberCount || 0;
 
     // Get channel videos
-    const ytdlpVideos = await getChannelVideos(channelId, maxResults);
+    const scrapedVideos = await getChannelVideos(channelId, maxResults);
 
-    if (ytdlpVideos.length === 0) {
+    if (scrapedVideos.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'No videos found for this channel',
@@ -215,15 +237,15 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Calculate statistics
-    const videosWithViews = ytdlpVideos.filter(v => v.view_count && v.view_count > 0);
-    const totalViews = videosWithViews.reduce((sum, v) => sum + (v.view_count || 0), 0);
+    const videosWithViews = scrapedVideos.filter(v => v.views && v.views > 0);
+    const totalViews = videosWithViews.reduce((sum, v) => sum + (v.views || 0), 0);
     const averageViews = videosWithViews.length > 0 ? Math.round(totalViews / videosWithViews.length) : 0;
-    const variance = videosWithViews.reduce((sum, v) => sum + Math.pow((v.view_count || 0) - averageViews, 2), 0) / (videosWithViews.length || 1);
+    const variance = videosWithViews.reduce((sum, v) => sum + Math.pow((v.views || 0) - averageViews, 2), 0) / (videosWithViews.length || 1);
     const standardDeviation = Math.sqrt(variance);
 
     // Convert to OutlierVideo format
-    let videos: OutlierVideo[] = ytdlpVideos.map(v =>
-      ytdlpVideoToOutlier(v, averageViews, standardDeviation, subscriberCount)
+    let videos: OutlierVideo[] = scrapedVideos.map(v =>
+      scrapedVideoToOutlier(v, averageViews, standardDeviation, subscriberCount)
     );
 
     // Sort according to sortBy
@@ -239,7 +261,7 @@ router.post('/', async (req: Request, res: Response) => {
     try {
       await cacheChannel({
         id: channelId,
-        title: channelInfo.title,
+        title: channelInfo.name,
         thumbnail_url: channelInfo.thumbnailUrl,
         subscriber_count: subscriberCount,
         view_count: totalViews,
@@ -267,16 +289,16 @@ router.post('/', async (req: Request, res: Response) => {
         views_per_subscriber: v.viewsPerSubscriber,
         source: 'apify' as const, // Using 'apify' for cache compatibility
       })));
-      console.log(`[youtube-ytdlp] Cached ${videos.length} videos for channel ${channelId}`);
+      console.log(`[youtube-scraper] Cached ${videos.length} videos for channel ${channelId}`);
     } catch (cacheError) {
-      console.error('[youtube-ytdlp] Cache error (non-fatal):', cacheError);
+      console.error('[youtube-scraper] Cache error (non-fatal):', cacheError);
     }
 
     return res.json({
       success: true,
       channel: {
         id: channelId,
-        title: channelInfo.title,
+        title: channelInfo.name,
         subscriberCount,
         subscriberCountFormatted: formatNumber(subscriberCount),
         thumbnailUrl: channelInfo.thumbnailUrl,
@@ -290,11 +312,11 @@ router.post('/', async (req: Request, res: Response) => {
       },
       videos: videos.slice(0, maxResults),
       fromCache: false,
-      source: 'ytdlp',
+      source: 'scraper',
     });
 
   } catch (error: any) {
-    console.error('[youtube-ytdlp] Error:', error);
+    console.error('[youtube-scraper] Error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',
