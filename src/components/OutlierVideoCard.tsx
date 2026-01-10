@@ -41,6 +41,18 @@ function formatTimeAgo(dateString: string): string {
   return years === 1 ? 'about 1 year' : `about ${years} years`;
 }
 
+function formatPSTTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 function getOutlierBadgeStyle(multiplier: number): string {
   if (multiplier >= 5) return 'bg-red-500 text-white';
   if (multiplier >= 3) return 'bg-orange-400 text-white';
@@ -52,6 +64,7 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
   const [imageError, setImageError] = useState(false);
   const viewsFormatted = formatNumber(video.viewCount);
   const timeAgo = formatTimeAgo(video.publishedAt);
+  const pstTime = formatPSTTime(video.publishedAt);
   const outlierBadgeStyle = getOutlierBadgeStyle(video.outlierMultiplier);
 
   // Don't render if thumbnail failed to load (deleted/private video)
@@ -100,9 +113,9 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
           <span>{subscriberCountFormatted} subs</span>
         </div>
 
-        {/* Time ago */}
+        {/* Time ago + PST time */}
         <div className="text-xs text-gray-500">
-          {timeAgo}
+          {timeAgo} <span className="text-gray-400">({pstTime} PST)</span>
         </div>
 
         {/* Outlier badge + views comparison row */}
