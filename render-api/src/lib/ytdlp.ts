@@ -19,8 +19,29 @@ let downloadPromise: Promise<void> | null = null;
 // Keep low (2) to prevent Railway OOM - each yt-dlp spawns a Python subprocess
 // Frontend may fire many parallel channel requests, so global limit is critical
 const MAX_CONCURRENT_YTDLP = 2;
+const YTDLP_TIMEOUT_MS = 30000; // 30 second timeout per call
 let activeYtdlpCalls = 0;
 const ytdlpQueue: Array<{ resolve: () => void }> = [];
+
+/**
+ * Wrap a promise with a timeout
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, context: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`yt-dlp timeout after ${ms}ms: ${context}`));
+    }, ms);
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 
 async function acquireYtdlpSlot(): Promise<void> {
   if (activeYtdlpCalls < MAX_CONCURRENT_YTDLP) {
@@ -136,14 +157,18 @@ export async function resolveChannelId(input: string): Promise<string> {
   try {
     // Use --dump-single-json to get channel metadata even if default tab has no videos
     // --age-limit 99 skips age-restricted videos that would otherwise fail
-    const result = await ytDlp.execPromise([
-      url,
-      '--dump-single-json',
-      '--skip-download',
-      '--no-warnings',
-      '--ignore-errors',
-      '--age-limit', '99',
-    ]);
+    const result = await withTimeout(
+      ytDlp.execPromise([
+        url,
+        '--dump-single-json',
+        '--skip-download',
+        '--no-warnings',
+        '--ignore-errors',
+        '--age-limit', '99',
+      ]),
+      YTDLP_TIMEOUT_MS,
+      `resolveChannelId(${input})`
+    );
 
     if (!result.trim()) {
       throw new Error('No data returned from yt-dlp');
@@ -185,15 +210,19 @@ export async function getChannelVideos(
   // Acquire semaphore slot to limit concurrent calls
   await acquireYtdlpSlot();
   try {
-    const result = await ytDlp.execPromise([
-      url,
-      '--dump-json',
-      '--flat-playlist',
-      '--playlist-items', `1:${maxResults}`,
-      '--no-warnings',
-      '--ignore-errors',
-      '--age-limit', '99',
-    ]);
+    const result = await withTimeout(
+      ytDlp.execPromise([
+        url,
+        '--dump-json',
+        '--flat-playlist',
+        '--playlist-items', `1:${maxResults}`,
+        '--no-warnings',
+        '--ignore-errors',
+        '--age-limit', '99',
+      ]),
+      YTDLP_TIMEOUT_MS * 2, // 60s for video list (more data)
+      `getChannelVideos(${channelId})`
+    );
 
     const lines = result.trim().split('\n').filter(Boolean);
     const videos: YtDlpVideoInfo[] = [];
@@ -249,14 +278,18 @@ export async function getChannelInfo(channelId: string): Promise<{
   try {
     // Use --dump-single-json to get channel metadata reliably
     // --age-limit 99 skips age-restricted videos that would otherwise fail
-    const result = await ytDlp.execPromise([
-      url,
-      '--dump-single-json',
-      '--skip-download',
-      '--no-warnings',
-      '--ignore-errors',
-      '--age-limit', '99',
-    ]);
+    const result = await withTimeout(
+      ytDlp.execPromise([
+        url,
+        '--dump-single-json',
+        '--skip-download',
+        '--no-warnings',
+        '--ignore-errors',
+        '--age-limit', '99',
+      ]),
+      YTDLP_TIMEOUT_MS,
+      `getChannelInfo(${channelId})`
+    );
 
     if (!result.trim()) {
       throw new Error('No data returned');
