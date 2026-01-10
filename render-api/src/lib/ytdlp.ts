@@ -165,6 +165,9 @@ export async function resolveChannelId(input: string): Promise<string> {
         '--no-warnings',
         '--ignore-errors',
         '--age-limit', '99',
+        '--socket-timeout', '30',      // Native network timeout (kills connection)
+        '--retries', '3',              // Retry on failure
+        '--extractor-retries', '3',    // Retry extractor errors
       ]),
       YTDLP_TIMEOUT_MS,
       `resolveChannelId(${input})`
@@ -219,6 +222,9 @@ export async function getChannelVideos(
         '--no-warnings',
         '--ignore-errors',
         '--age-limit', '99',
+        '--socket-timeout', '60',      // Native network timeout (longer for video list)
+        '--retries', '3',              // Retry on failure
+        '--extractor-retries', '3',    // Retry extractor errors
       ]),
       YTDLP_TIMEOUT_MS * 2, // 60s for video list (more data)
       `getChannelVideos(${channelId})`
@@ -286,6 +292,9 @@ export async function getChannelInfo(channelId: string): Promise<{
         '--no-warnings',
         '--ignore-errors',
         '--age-limit', '99',
+        '--socket-timeout', '30',      // Native network timeout (kills connection)
+        '--retries', '3',              // Retry on failure
+        '--extractor-retries', '3',    // Retry extractor errors
       ]),
       YTDLP_TIMEOUT_MS,
       `getChannelInfo(${channelId})`
