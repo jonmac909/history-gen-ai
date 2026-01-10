@@ -21,9 +21,9 @@ let ytDlpInstance: YTDlpWrap | null = null;
 let downloadPromise: Promise<void> | null = null;
 
 // Semaphore to limit concurrent yt-dlp executions
-// Keep low (2) to prevent Railway OOM - each yt-dlp spawns a Python subprocess
-// Frontend may fire many parallel channel requests, so global limit is critical
-const MAX_CONCURRENT_YTDLP = 2;
+// Increased to 4 for faster loading with residential proxy
+// Railway has 8GB RAM, can handle 4 concurrent Python subprocesses
+const MAX_CONCURRENT_YTDLP = 4;
 const YTDLP_TIMEOUT_MS = 60000; // 60 second timeout per call (increased for proxy latency)
 let activeYtdlpCalls = 0;
 const ytdlpQueue: Array<{ resolve: () => void }> = [];
