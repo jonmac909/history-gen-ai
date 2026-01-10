@@ -9,6 +9,10 @@ import fs from 'fs';
 import os from 'os';
 import { isPotProviderAvailable, getPotProviderUrl } from './pot-provider';
 
+// Residential proxy for bypassing YouTube bot detection
+// Format: http://user:pass@host:port or socks5://user:pass@host:port
+const YTDLP_PROXY_URL = process.env.YTDLP_PROXY_URL || '';
+
 // yt-dlp binary path - will be downloaded on first use
 const YTDLP_DIR = path.join(os.tmpdir(), 'ytdlp');
 const YTDLP_PATH = path.join(YTDLP_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
@@ -115,6 +119,19 @@ function getPotArgs(): string[] {
   ];
 }
 
+/**
+ * Get proxy args for yt-dlp if configured
+ * Residential proxies bypass YouTube's datacenter IP blocking
+ */
+function getProxyArgs(): string[] {
+  if (!YTDLP_PROXY_URL) {
+    return [];
+  }
+
+  console.log(`[ytdlp] Using proxy: ${YTDLP_PROXY_URL.replace(/:[^:@]+@/, ':***@')}`);
+  return ['--proxy', YTDLP_PROXY_URL];
+}
+
 export interface YtDlpChannelInfo {
   id: string;
   channel: string;
@@ -190,7 +207,8 @@ export async function resolveChannelId(input: string): Promise<string> {
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        ...getPotArgs(),               // PO Token provider for bot detection bypass
+        ...getProxyArgs(),             // Residential proxy for bot detection bypass
+        ...getPotArgs(),               // PO Token provider (if available)
       ]),
       YTDLP_TIMEOUT_MS,
       `resolveChannelId(${input})`
@@ -251,7 +269,8 @@ export async function getChannelVideos(
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        ...getPotArgs(),               // PO Token provider for bot detection bypass
+        ...getProxyArgs(),             // Residential proxy for bot detection bypass
+        ...getPotArgs(),               // PO Token provider (if available)
       ]),
       YTDLP_TIMEOUT_MS * 2, // 60s for video list (more data)
       `getChannelVideos(${channelId})`
@@ -325,7 +344,8 @@ export async function getChannelInfo(channelId: string): Promise<{
         '--geo-bypass',                // Bypass geo-restriction
         '--no-check-certificates',     // Skip SSL verification issues
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        ...getPotArgs(),               // PO Token provider for bot detection bypass
+        ...getProxyArgs(),             // Residential proxy for bot detection bypass
+        ...getPotArgs(),               // PO Token provider (if available)
       ]),
       YTDLP_TIMEOUT_MS,
       `getChannelInfo(${channelId})`
