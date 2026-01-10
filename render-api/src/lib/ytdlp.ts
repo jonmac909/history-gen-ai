@@ -15,8 +15,10 @@ const YTDLP_PATH = path.join(YTDLP_DIR, process.platform === 'win32' ? 'yt-dlp.e
 let ytDlpInstance: YTDlpWrap | null = null;
 let downloadPromise: Promise<void> | null = null;
 
-// Semaphore to limit concurrent yt-dlp executions (prevents rate limiting)
-const MAX_CONCURRENT_YTDLP = 3;
+// Semaphore to limit concurrent yt-dlp executions
+// Keep low (2) to prevent Railway OOM - each yt-dlp spawns a Python subprocess
+// Frontend may fire many parallel channel requests, so global limit is critical
+const MAX_CONCURRENT_YTDLP = 2;
 let activeYtdlpCalls = 0;
 const ytdlpQueue: Array<{ resolve: () => void }> = [];
 
@@ -133,12 +135,14 @@ export async function resolveChannelId(input: string): Promise<string> {
   await acquireYtdlpSlot();
   try {
     // Use --dump-single-json to get channel metadata even if default tab has no videos
+    // --age-limit 99 skips age-restricted videos that would otherwise fail
     const result = await ytDlp.execPromise([
       url,
       '--dump-single-json',
       '--skip-download',
       '--no-warnings',
       '--ignore-errors',
+      '--age-limit', '99',
     ]);
 
     if (!result.trim()) {
@@ -188,6 +192,7 @@ export async function getChannelVideos(
       '--playlist-items', `1:${maxResults}`,
       '--no-warnings',
       '--ignore-errors',
+      '--age-limit', '99',
     ]);
 
     const lines = result.trim().split('\n').filter(Boolean);
@@ -243,12 +248,14 @@ export async function getChannelInfo(channelId: string): Promise<{
   await acquireYtdlpSlot();
   try {
     // Use --dump-single-json to get channel metadata reliably
+    // --age-limit 99 skips age-restricted videos that would otherwise fail
     const result = await ytDlp.execPromise([
       url,
       '--dump-single-json',
       '--skip-download',
       '--no-warnings',
       '--ignore-errors',
+      '--age-limit', '99',
     ]);
 
     if (!result.trim()) {
