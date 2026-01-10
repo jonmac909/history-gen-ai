@@ -538,11 +538,13 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
         ])
         .output(audioAacPath)
         .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
-        .on('progress', (p) => {
+        .on('progress', async (p) => {
           const pct = Math.round(p.percent || 0);
-          if (pct > lastAudioProgress + 10) { // Log every 10%
+          if (pct > lastAudioProgress + 5) { // Update every 5%
             console.log(`Audio encode: ${pct}%`);
             lastAudioProgress = pct;
+            // Update job status so frontend sees progress
+            await updateJobStatus(supabase, jobId, 'muxing', 76, `Encoding audio... ${pct}%`);
           }
         })
         .on('error', reject)
@@ -892,6 +894,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
     }
 
     // Pre-encode WAV to AAC (makes muxing instant with -c:a copy)
+    await updateJobStatus(supabase, jobId, 'downloading', 8, 'Encoding audio...');
     const audioAacPath = path.join(tempDir, 'voiceover.m4a');
     let lastAudioPct = 0;
     await new Promise<void>((resolve, reject) => {
@@ -906,11 +909,13 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
         ])
         .output(audioAacPath)
         .on('start', (cmd) => console.log('Audio encode:', cmd.substring(0, 100) + '...'))
-        .on('progress', (p) => {
+        .on('progress', async (p) => {
           const pct = Math.round(p.percent || 0);
-          if (pct > lastAudioPct + 10) { // Log every 10%
+          if (pct > lastAudioPct + 5) { // Update every 5%
             console.log(`Audio encode: ${pct}%`);
             lastAudioPct = pct;
+            // Update job status so frontend sees progress
+            await updateJobStatus(supabase, jobId, 'downloading', 8, `Encoding audio... ${pct}%`);
           }
         })
         .on('error', reject)
