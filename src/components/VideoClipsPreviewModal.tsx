@@ -167,6 +167,11 @@ export function VideoClipsPreviewModal({
   const successCount = clips.filter(c => c.videoUrl).length;
   const failedCount = clips.length - successCount;
 
+  // Get current clip index and navigation helpers (must be declared before useEffect)
+  const currentClipIndex = fullscreenClip ? clips.findIndex(c => c.index === fullscreenClip.index) : -1;
+  const canGoNext = currentClipIndex < clips.length - 1;
+  const canGoPrev = currentClipIndex > 0;
+
   // Keyboard navigation for fullscreen (capture phase to bypass Radix Dialog)
   useEffect(() => {
     if (!fullscreenClip) return;
@@ -207,11 +212,6 @@ export function VideoClipsPreviewModal({
     window.addEventListener('click', handleClick, { capture: true });
     return () => window.removeEventListener('click', handleClick, { capture: true });
   }, [fullscreenClip]);
-
-  // Get current clip index and navigation helpers
-  const currentClipIndex = fullscreenClip ? clips.findIndex(c => c.index === fullscreenClip.index) : -1;
-  const canGoNext = currentClipIndex < clips.length - 1;
-  const canGoPrev = currentClipIndex > 0;
 
   const goToNextClip = () => {
     if (canGoNext) {
