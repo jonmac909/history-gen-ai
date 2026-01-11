@@ -11,8 +11,34 @@ import { Router, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { runPipeline, getNext5pmPST } from '../lib/pipeline-runner';
 import { getChannelVideos, ScrapedVideo } from '../lib/youtube-scraper';
+import fetch from 'node-fetch';
 
 const router = Router();
+
+// WhatsApp notification via CallMeBot
+async function sendWhatsAppNotification(message: string): Promise<void> {
+  const phone = process.env.WHATSAPP_PHONE;
+  const apiKey = process.env.WHATSAPP_API_KEY;
+
+  if (!phone || !apiKey) {
+    console.log('[AutoClone] WhatsApp notifications not configured (missing WHATSAPP_PHONE or WHATSAPP_API_KEY)');
+    return;
+  }
+
+  try {
+    const encodedMessage = encodeURIComponent(message);
+    const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodedMessage}&apikey=${apiKey}`;
+
+    const response = await fetch(url);
+    if (response.ok) {
+      console.log('[AutoClone] WhatsApp notification sent successfully');
+    } else {
+      console.error(`[AutoClone] WhatsApp notification failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('[AutoClone] WhatsApp notification error:', error);
+  }
+}
 
 // Minimum video duration for outlier selection (2 hours)
 const MIN_DURATION_SECONDS = 7200;
@@ -376,6 +402,14 @@ router.post('/', async (req: Request, res: Response) => {
           status: 'completed',
           completed_at: new Date().toISOString(),
         });
+
+        // Send WhatsApp notification
+        await sendWhatsAppNotification(
+          `✅ Auto-Clone Complete!\n\n` +
+          `📺 "${result.clonedTitle}"\n` +
+          `🔗 ${result.youtubeUrl}\n\n` +
+          `Original: "${selectedVideo!.title}" (${selectedVideo!.outlierMultiplier.toFixed(1)}x views)`
+        );
       } else {
         console.error(`[AutoClone] Pipeline failed: ${result.error}`);
         await recordProcessedVideo(supabase, selectedVideo!, 'failed', {
@@ -387,6 +421,13 @@ router.post('/', async (req: Request, res: Response) => {
           error_message: result.error,
           completed_at: new Date().toISOString(),
         });
+
+        // Send WhatsApp notification for failure
+        await sendWhatsAppNotification(
+          `❌ Auto-Clone Failed\n\n` +
+          `Video: "${selectedVideo!.title}"\n` +
+          `Error: ${result.error}`
+        );
       }
     }).catch(async (error) => {
       console.error(`[AutoClone] Pipeline crashed: ${error.message}`);
@@ -398,6 +439,13 @@ router.post('/', async (req: Request, res: Response) => {
         error_message: error.message,
         completed_at: new Date().toISOString(),
       });
+
+      // Send WhatsApp notification for crash
+      await sendWhatsAppNotification(
+        `💥 Auto-Clone Crashed\n\n` +
+        `Video: "${selectedVideo!.title}"\n` +
+        `Error: ${error.message}`
+      );
     });
 
   } catch (error: any) {
