@@ -28,6 +28,7 @@ import { ThumbnailGeneratorModal } from "@/components/ThumbnailGeneratorModal";
 import { VideoRenderModal } from "@/components/VideoRenderModal";
 // VisualEffectsModal removed - now integrated into VideoRenderModal with 2-pass rendering
 import { YouTubeUploadModal } from "@/components/YouTubeUploadModal";
+import { AutoPosterModal } from "@/components/AutoPosterModal";
 import {
   getYouTubeTranscript,
   rewriteScriptStreaming,
@@ -236,6 +237,7 @@ const Index = () => {
   const [isRegeneratingClipPrompts, setIsRegeneratingClipPrompts] = useState(false);
   const [regeneratingClipIndex, setRegeneratingClipIndex] = useState<number | undefined>();
   const [enableVideoClips, setEnableVideoClips] = useState(false); // Toggle for video clips feature
+  const [showAutoPosterModal, setShowAutoPosterModal] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>("script");
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [uploadedScript, setUploadedScript] = useState("");
@@ -3097,7 +3099,7 @@ const Index = () => {
                     Full Auto Generate
                   </Button>
                   <Button
-                    onClick={() => navigate('/auto-poster')}
+                    onClick={() => setShowAutoPosterModal(true)}
                     variant="outline"
                     className="w-full rounded-xl py-6 text-base border-orange-500/30 hover:bg-orange-500/10 text-orange-400"
                   >
@@ -3460,6 +3462,12 @@ const Index = () => {
             });
           }
         }}
+      />
+
+      {/* Auto Poster Modal */}
+      <AutoPosterModal
+        open={showAutoPosterModal}
+        onClose={() => setShowAutoPosterModal(false)}
       />
     </div>
   );

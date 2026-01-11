@@ -307,6 +307,74 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<{ outliers: Ou
   return { outliers: allOutliers, scannedCount: whitelistedChannels.length };
 }
 
+// Get best outlier (for modal auto-selection)
+router.get('/best-outlier', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+
+    // Fetch saved channels
+    const channels = await fetchSavedChannels(supabase);
+    if (channels.length === 0) {
+      return res.json({
+        success: true,
+        outlier: null,
+        channelsScanned: 0,
+        reason: 'No saved channels found',
+      });
+    }
+
+    // Scan for outliers (already filters for 2hr+, last 7 days, and sorts by score)
+    console.log(`[AutoClone] Scanning for best outlier...`);
+    const { outliers, scannedCount } = await scanForOutliers(channels);
+
+    if (outliers.length === 0) {
+      return res.json({
+        success: true,
+        outlier: null,
+        channelsScanned: scannedCount,
+        reason: 'No qualifying outliers found (need 2+ hours, 1.5x+ views, last 7 days)',
+      });
+    }
+
+    // Find first unprocessed outlier (they're already sorted by score desc)
+    let bestOutlier: OutlierVideo | null = null;
+    for (const outlier of outliers) {
+      if (!await isVideoProcessed(supabase, outlier.videoId)) {
+        bestOutlier = outlier;
+        break;
+      }
+    }
+
+    if (!bestOutlier) {
+      return res.json({
+        success: true,
+        outlier: null,
+        channelsScanned: scannedCount,
+        outliersFound: outliers.length,
+        reason: 'All recent outliers already processed',
+      });
+    }
+
+    // Calculate scheduled publish time
+    const publishAt = getNext5pmPST();
+
+    return res.json({
+      success: true,
+      outlier: bestOutlier,
+      channelsScanned: scannedCount,
+      outliersFound: outliers.length,
+      publishAt,
+    });
+
+  } catch (error: any) {
+    console.error(`[AutoClone] Error getting best outlier: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // Main auto-clone trigger
 router.post('/', async (req: Request, res: Response) => {
   const supabase = getSupabaseClient();
