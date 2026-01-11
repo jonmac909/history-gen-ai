@@ -442,7 +442,7 @@ Remember:
         startSeconds: window.startSeconds,
         endSeconds: window.endSeconds,
         sceneDescription: sceneDesc,
-        prompt: stylePrompt ? `${stylePrompt}. ${sceneDesc}` : sceneDesc,
+        prompt: sceneDesc,  // Video prompts use only scene description (stylePrompt is for images)
       });
     }
 
