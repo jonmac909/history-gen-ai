@@ -379,21 +379,21 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
           {state === "generating" && (
             <div className="space-y-4">
               {outlier && (
-                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg overflow-hidden">
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg w-full max-w-full overflow-hidden">
                   <img
                     src={outlier.thumbnailUrl}
                     alt=""
                     className="w-16 h-10 rounded object-cover shrink-0"
                   />
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <p className="font-medium text-sm truncate">{outlier.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{outlier.channelName}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate max-w-full">{outlier.title}</p>
+                    <p className="text-xs text-muted-foreground truncate max-w-full">{outlier.channelName}</p>
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-3 py-4">
+              <div className="flex items-center gap-3 py-4 w-full max-w-full overflow-hidden">
                 <Loader2 className="w-6 h-6 text-primary animate-spin shrink-0" />
-                <p className="text-sm truncate">{currentStep}</p>
+                <p className="text-sm truncate min-w-0 flex-1">{currentStep}</p>
               </div>
             </div>
           )}
