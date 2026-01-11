@@ -334,7 +334,7 @@ export default function AutoPoster() {
                     <div className="flex items-center gap-4">
                       {getStatusBadge(run.status)}
                       <div>
-                        <p className="font-medium">{new Date(run.run_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                        <p className="font-medium">{new Date(run.run_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
                         <p className="text-xs text-muted-foreground">
                           {run.channels_scanned} channels scanned, {run.outliers_found} outliers found
                         </p>

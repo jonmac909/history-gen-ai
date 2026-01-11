@@ -101,7 +101,7 @@ async function callInternalAPI(
   }
 }
 
-// Helper for SSE streaming endpoints
+// Helper for SSE streaming endpoints with real-time progress
 async function callStreamingAPI(
   endpoint: string,
   body: any,
@@ -122,36 +122,88 @@ async function callStreamingAPI(
       signal: controller.signal,
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
+      clearTimeout(timeout);
       const errorText = await response.text();
       throw new Error(`API error ${response.status}: ${errorText}`);
     }
 
-    // Parse SSE stream
-    const text = await response.text();
-    const lines = text.split('\n');
+    // Stream SSE events in real-time for progress updates
     let result: any = null;
+    let buffer = '';
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (onProgress) onProgress(data);
-          if (data.type === 'complete') {
-            result = data;
-          } else if (data.type === 'error') {
-            throw new Error(data.error || 'Stream error');
+    // Use Node.js stream API for node-fetch
+    const nodeStream = response.body as unknown as NodeJS.ReadableStream;
+    if (nodeStream && typeof nodeStream.on === 'function') {
+      await new Promise<void>((resolve, reject) => {
+        nodeStream.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (onProgress) onProgress(data);
+                if (data.type === 'complete') {
+                  result = data;
+                } else if (data.type === 'error') {
+                  reject(new Error(data.error || 'Stream error'));
+                }
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
           }
-        } catch (e) {
-          // Ignore parse errors for non-JSON lines
+        });
+
+        nodeStream.on('end', () => {
+          // Process remaining buffer
+          if (buffer.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(buffer.slice(6));
+              if (onProgress) onProgress(data);
+              if (data.type === 'complete') {
+                result = data;
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          resolve();
+        });
+
+        nodeStream.on('error', reject);
+      });
+    } else {
+      // Fallback for environments without streaming
+      const text = await response.text();
+      const lines = text.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (onProgress) onProgress(data);
+            if (data.type === 'complete') {
+              result = data;
+            } else if (data.type === 'error') {
+              throw new Error(data.error || 'Stream error');
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
         }
       }
     }
 
+    clearTimeout(timeout);
+
     if (!result) {
-      console.error(`[Pipeline] No complete event received from ${endpoint}. Response text:`, text.substring(0, 500));
+      console.error(`[Pipeline] No complete event received from ${endpoint}`);
       throw new Error(`No complete event received from ${endpoint}`);
     }
     return result;
