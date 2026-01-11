@@ -336,7 +336,7 @@ export default function AutoPoster() {
             ) : (
               <div className="space-y-3">
                 {processedVideos.map((video) => (
-                  <div key={video.id} className="flex items-start gap-4 p-3 bg-muted/50 rounded-lg">
+                  <div key={video.id} className="flex items-start gap-4 p-3 bg-muted/50 rounded-lg overflow-hidden">
                     {video.original_thumbnail_url && (
                       <img
                         src={video.original_thumbnail_url}
@@ -372,10 +372,10 @@ export default function AutoPoster() {
                         </a>
                       )}
                       {video.error_message && (
-                        <p className="text-xs text-red-400 mt-1">{video.error_message}</p>
+                        <p className="text-xs text-red-400 mt-1 truncate">{video.error_message}</p>
                       )}
                       {video.status === 'processing' && video.current_step && (
-                        <p className="text-xs text-blue-400 mt-1">
+                        <p className="text-xs text-blue-400 mt-1 truncate">
                           <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
                           {video.current_step}
                         </p>
