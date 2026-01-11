@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { runPipeline, getNext5pmPST } from '../lib/pipeline-runner';
 import { getChannelVideos, ScrapedVideo } from '../lib/youtube-scraper';
+import { getCachedOutliersForChannel, CachedOutlier } from '../lib/outlier-cache';
 import fetch from 'node-fetch';
 
 const router = Router();
@@ -253,6 +254,7 @@ function isWithinDays(publishedText: string | undefined, days: number): boolean 
 type ScanProgressCallback = (channelIndex: number, totalChannels: number, channelName: string, outliersFound: number) => void;
 
 // Scan channels for outliers - returns outliers and count of channels scanned
+// Uses cached data when available for consistency with Outliers page
 async function scanForOutliers(
   channels: SavedChannel[],
   onProgress?: ScanProgressCallback
@@ -273,43 +275,93 @@ async function scanForOutliers(
         onProgress(i + 1, whitelistedChannels.length, channel.title, allOutliers.length);
       }
 
-      // Get recent videos from channel
-      const videos = await getChannelVideos(channel.id, 50);
+      // Try to use cached data first for consistency with Outliers page
+      const cachedOutliers = await getCachedOutliersForChannel(channel.id);
 
-      if (!videos || videos.length === 0) {
-        console.log(`[AutoClone] No videos found for ${channel.title}`);
-        continue;
-      }
+      if (cachedOutliers.length > 0) {
+        console.log(`[AutoClone] Using cached data for ${channel.title} (${cachedOutliers.length} videos)`);
 
-      // Calculate average views
-      const avgViews = calculateAverageViews(videos);
-      if (avgViews === 0) continue;
+        // Sort by recent and limit to 50 to match fresh fetch behavior
+        const sortedByRecent = [...cachedOutliers].sort((a, b) =>
+          new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+        );
+        const videosForStats = sortedByRecent.slice(0, 50);
 
-      // Find outliers (videos with significantly more views than average)
-      for (const video of videos) {
-        // Skip short videos (less than 2 hours)
-        if ((video.duration || 0) < MIN_DURATION_SECONDS) continue;
+        // Calculate average from cached videos (filter 0-view videos)
+        const videosWithViews = videosForStats.filter(v => v.view_count > 0);
+        const totalViews = videosWithViews.reduce((sum, v) => sum + v.view_count, 0);
+        const avgViews = videosWithViews.length > 0 ? totalViews / videosWithViews.length : 0;
 
-        // Skip videos not in last 7 days
-        if (!isWithinDays(video.publishedText, OUTLIER_DAYS)) continue;
+        if (avgViews === 0) continue;
 
-        // Calculate outlier multiplier
-        const multiplier = (video.views || 0) / avgViews;
+        // Find outliers from cached data
+        for (const cached of cachedOutliers) {
+          // Skip short videos
+          if (cached.duration_seconds < MIN_DURATION_SECONDS) continue;
 
-        // Consider it an outlier if 2x+ average views
-        if (multiplier >= 2.0) {
-          allOutliers.push({
-            videoId: video.id,
-            title: video.title,
-            thumbnailUrl: video.thumbnail || `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`,
-            channelId: channel.id,
-            channelName: channel.title,
-            subscriberCountFormatted: channel.subscriber_count_formatted || '',
-            viewCount: video.views || 0,
-            durationSeconds: video.duration || 0,
-            publishedAt: video.publishedText || '',
-            outlierMultiplier: multiplier,
-          });
+          // Skip old videos (check published_at date)
+          const publishedDate = new Date(cached.published_at);
+          const daysSincePublish = (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60 * 24);
+          if (daysSincePublish > OUTLIER_DAYS) continue;
+
+          // Recalculate outlier multiplier with consistent average
+          const multiplier = cached.view_count / avgViews;
+
+          if (multiplier >= 2.0) {
+            allOutliers.push({
+              videoId: cached.video_id,
+              title: cached.title,
+              thumbnailUrl: cached.thumbnail_url,
+              channelId: channel.id,
+              channelName: channel.title,
+              subscriberCountFormatted: channel.subscriber_count_formatted || '',
+              viewCount: cached.view_count,
+              durationSeconds: cached.duration_seconds,
+              publishedAt: cached.published_at,
+              outlierMultiplier: multiplier,
+            });
+          }
+        }
+      } else {
+        // Fallback to fresh fetch if no cache
+        console.log(`[AutoClone] No cache for ${channel.title}, fetching fresh...`);
+        const videos = await getChannelVideos(channel.id, 50);
+
+        if (!videos || videos.length === 0) {
+          console.log(`[AutoClone] No videos found for ${channel.title}`);
+          continue;
+        }
+
+        // Calculate average views
+        const avgViews = calculateAverageViews(videos);
+        if (avgViews === 0) continue;
+
+        // Find outliers (videos with significantly more views than average)
+        for (const video of videos) {
+          // Skip short videos (less than 1 hour)
+          if ((video.duration || 0) < MIN_DURATION_SECONDS) continue;
+
+          // Skip videos not in last 30 days
+          if (!isWithinDays(video.publishedText, OUTLIER_DAYS)) continue;
+
+          // Calculate outlier multiplier
+          const multiplier = (video.views || 0) / avgViews;
+
+          // Consider it an outlier if 2x+ average views
+          if (multiplier >= 2.0) {
+            allOutliers.push({
+              videoId: video.id,
+              title: video.title,
+              thumbnailUrl: video.thumbnail || `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`,
+              channelId: channel.id,
+              channelName: channel.title,
+              subscriberCountFormatted: channel.subscriber_count_formatted || '',
+              viewCount: video.views || 0,
+              durationSeconds: video.duration || 0,
+              publishedAt: video.publishedText || '',
+              outlierMultiplier: multiplier,
+            });
+          }
         }
       }
     } catch (error: any) {
