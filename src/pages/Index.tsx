@@ -1260,16 +1260,18 @@ const Index = () => {
     ];
 
     setProcessingSteps(steps);
+    setProcessingTitle("Generating Video Clips...");
     setViewState("processing");
 
     try {
-      updateStep("clips", "active", `0/${editedPrompts.length}`);
+      updateStep("clips", "active", `0/${editedPrompts.length} (0%)`);
 
       const clipsResult = await generateVideoClipsStreaming(
         projectId,
         editedPrompts,
         (completed, total, message) => {
-          updateStep("clips", "active", message);
+          const percent = Math.round((completed / total) * 100);
+          updateStep("clips", "active", `${completed}/${total} clips (${percent}%)`);
         }
       );
 

@@ -425,7 +425,7 @@ Multi-step generation with user review at each stage:
 - Cost: ~$0.21 per 12-second 720p clip (vs $7+ for self-hosted WAN 2.2)
 
 **Key constants** in `render-api/src/routes/generate-video-clips.ts`:
-- `CLIP_DURATION = 12` seconds per clip (Seedance max)
+- `CLIP_DURATION = 4` seconds per clip (shorter for dynamic storytelling)
 - `CLIP_RESOLUTION = '720p'`
 - `CLIP_ASPECT_RATIO = '16:9'`
 - `MAX_CONCURRENT_CLIPS = 5` (env var: `SEEDANCE_MAX_CONCURRENT_CLIPS`)
@@ -437,15 +437,27 @@ Multi-step generation with user review at each stage:
 - Film-grade cinematography
 
 **Clip Prompt Generation** (`/generate-clip-prompts`):
-- Uses Claude to generate cinematic scene descriptions
-- 10 clips × 12 seconds = 120 seconds of video intro
+- Uses Claude to generate ultra-realistic cinematic scene descriptions
+- 15 clips × 4 seconds = 60 seconds of video intro
+- Prompts always prefixed with "Ultra realistic" for photorealistic quality
+- Story flow emphasized - clips designed to flow as cohesive visual narrative
 - Prompts include camera movement, lighting, historical accuracy
 
+**Sequential Frame Continuity:**
+- `ENABLE_FRAME_CONTINUITY = true` enables seamless clip transitions
+- Each clip's last frame is extracted and used as the next clip's start frame
+- Creates visual continuity: Clip 1's end → Clip 2's start → Clip 3's start...
+- Clips processed sequentially (not parallel) to maintain frame chain
+- Uses `input_urls` parameter in Seedance API for image-to-video mode
+- Frame extraction via ffmpeg: extracts last frame, uploads to Supabase
+- Falls back to text-to-video if frame extraction fails
+
 **API Flow:**
-1. POST `/createTask` - Submit video generation request
+1. POST `/createTask` with optional `input_urls` for start frame
 2. Poll GET `/recordInfo?taskId=xxx` until state='success'
 3. Download video from `resultJson.resultUrls[0]`
-4. Copy to Supabase storage for persistence
+4. Extract last frame with ffmpeg (for next clip)
+5. Copy video + frame to Supabase storage
 
 ### Captions Generation Architecture
 

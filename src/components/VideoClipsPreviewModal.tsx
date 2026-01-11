@@ -193,7 +193,7 @@ export function VideoClipsPreviewModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="w-5 h-5" />
-            Generated Video Clips
+            Generate Video Clips
           </DialogTitle>
           <DialogDescription>
             Preview your {clips.length} intro video clips ({totalDuration} seconds total).

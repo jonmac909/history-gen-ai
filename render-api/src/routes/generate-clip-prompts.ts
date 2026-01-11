@@ -4,8 +4,8 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 
 // Constants
-const CLIP_COUNT = 5;  // 5 clips at 12 seconds each = 60 seconds intro
-const CLIP_DURATION = 12;  // 12 seconds per clip (Seedance max)
+const CLIP_COUNT = 15;  // 15 clips at 4 seconds each = 60 seconds intro
+const CLIP_DURATION = 4;  // 4 seconds per clip (shorter for dynamic storytelling)
 const TOTAL_CLIP_DURATION = CLIP_COUNT * CLIP_DURATION;  // 60 seconds
 
 interface ClipPrompt {
@@ -284,16 +284,18 @@ router.post('/', async (req: Request, res: Response) => {
     ).join('\n\n');
 
     // System prompt optimized for video clip generation - SHORT and SIMPLE
-    const systemPrompt = `You create SHORT video scene descriptions for AI video generation.
+    const systemPrompt = `You create SHORT ultra-realistic video scene descriptions for AI video generation.
 
 RULES:
 - 15-30 words per description MAXIMUM
+- ALWAYS start with "Ultra realistic"
 - Include ONE camera movement (pan, dolly, tracking)
 - Show historical scenes AS THEY HAPPENED - people living, not modern analysis
 - No museums, researchers, maps, documents, artifacts on display
+- Photorealistic quality with cinematic lighting
 
 Output format - JSON array ONLY:
-[{"index": 1, "sceneDescription": "..."}, {"index": 2, "sceneDescription": "..."}]`;
+[{"index": 1, "sceneDescription": "Ultra realistic..."}, {"index": 2, "sceneDescription": "Ultra realistic..."}]`;
 
     const systemConfig = [
       {
@@ -309,14 +311,14 @@ Output format - JSON array ONLY:
 
     const messageStream = await anthropic.messages.stream({
       model: selectedModel,
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: systemConfig,
       messages: [
         {
           role: 'user',
-          content: `Generate exactly ${CLIP_COUNT} cinematic video scene descriptions for the intro of a historical documentary.
+          content: `Generate exactly ${CLIP_COUNT} cinematic video scene descriptions that form a COHESIVE VISUAL STORY for a historical documentary intro.
 
-SCRIPT CONTEXT (first ~100 seconds):
+SCRIPT CONTEXT (first ~${TOTAL_CLIP_DURATION} seconds):
 ${introScriptWords}
 
 TIME-CODED SEGMENTS FOR EACH ${CLIP_DURATION}-SECOND CLIP:
@@ -324,10 +326,19 @@ ${clipDescriptions}
 
 STYLE GUIDANCE: ${stylePrompt || 'Historically accurate, immersive first-person perspective'}
 
+CRITICAL - STORYTELLING FLOW:
+- The ${CLIP_COUNT} clips MUST flow together as one continuous visual narrative
+- Each clip should naturally lead into the next (establish → develop → transition)
+- Start wide/establishing, then move to medium shots, then close-ups for emotional moments
+- Vary shot types: wide establishing → medium action → close-up detail → POV → sweeping panorama
+- Create visual momentum - each clip builds on the previous one
+- Think like a film editor: beginning hooks viewer, middle develops story, end creates anticipation
+
 Remember:
-- Each clip is ${CLIP_DURATION} seconds long
-- Include camera movements and motion descriptions
-- Show the era authentically with dynamic scenes
+- Each clip is only ${CLIP_DURATION} seconds long - keep actions SIMPLE and focused
+- One clear visual concept per clip (don't overcrowd short clips)
+- Include camera movements appropriate for ${CLIP_DURATION}s (subtle pans, slow zooms)
+- Show the era authentically with dynamic but achievable scenes
 - Output ONLY a JSON array with ${CLIP_COUNT} items`
         }
       ],
@@ -400,6 +411,15 @@ Remember:
       }
     }
 
+    // Helper to ensure "Ultra realistic" is always at the start
+    const ensureUltraRealistic = (desc: string): string => {
+      const normalized = desc.trim();
+      if (normalized.toLowerCase().startsWith('ultra realistic')) {
+        return normalized;
+      }
+      return `Ultra realistic ${normalized.charAt(0).toLowerCase()}${normalized.slice(1)}`;
+    };
+
     // Build final clip prompts
     const clipPrompts: ClipPrompt[] = [];
 
@@ -407,9 +427,12 @@ Remember:
       const window = windows[i];
       const scene = sceneDescriptions.find(s => s.index === i + 1);
 
-      const sceneDesc = regeneratedDescriptions.get(i)
+      let sceneDesc = regeneratedDescriptions.get(i)
         || scene?.sceneDescription
         || `Historical scene: ${window.text.substring(0, 200)}`;
+
+      // Ensure ultra realistic prefix
+      sceneDesc = ensureUltraRealistic(sceneDesc);
 
       clipPrompts.push({
         index: i + 1,

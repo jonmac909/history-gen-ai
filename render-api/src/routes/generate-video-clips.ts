@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
+const execAsync = promisify(exec);
 const router = Router();
 
 // Kie.ai Seedance API configuration
@@ -9,11 +15,13 @@ const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
 const KIE_MODEL = 'bytedance/seedance-1.5-pro';
 
 // Constants for video clip generation (Seedance 1.5 Pro)
-const CLIP_DURATION = 12;  // 12 seconds per clip (Seedance max)
+const CLIP_DURATION = 4;  // 4 seconds per clip (shorter for dynamic storytelling)
 const CLIP_RESOLUTION = '720p';
 const CLIP_ASPECT_RATIO = '16:9';
 // Max concurrent clips - Kie.ai handles queueing, but limit for cost control
 const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '5', 10);
+// Enable sequential mode with frame continuity (last frame -> next clip's start frame)
+const ENABLE_FRAME_CONTINUITY = true;
 
 interface ClipPrompt {
   index: number;
@@ -56,9 +64,27 @@ async function startVideoTask(
   prompt: string,
   clipIndex: number,
   duration: number = CLIP_DURATION,
-  resolution: string = CLIP_RESOLUTION
+  resolution: string = CLIP_RESOLUTION,
+  startFrameUrl?: string  // Optional start frame for seamless continuity
 ): Promise<string> {
-  console.log(`[Seedance] Starting task for clip ${clipIndex + 1}: ${prompt.substring(0, 50)}...`);
+  const hasStartFrame = !!startFrameUrl;
+  console.log(`[Seedance] Starting task for clip ${clipIndex + 1}: ${prompt.substring(0, 50)}...${hasStartFrame ? ' (with start frame)' : ''}`);
+
+  // Build input object
+  const input: any = {
+    prompt,
+    aspect_ratio: CLIP_ASPECT_RATIO,
+    resolution,
+    duration: String(duration),
+    generate_audio: false,  // We use our own TTS
+    fixed_lens: false,  // Allow dynamic camera movement
+  };
+
+  // Add start frame for image-to-video if provided
+  if (startFrameUrl) {
+    input.input_urls = [startFrameUrl];
+    console.log(`[Seedance] Using start frame: ${startFrameUrl.substring(0, 80)}...`);
+  }
 
   const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
@@ -68,14 +94,7 @@ async function startVideoTask(
     },
     body: JSON.stringify({
       model: KIE_MODEL,
-      input: {
-        prompt,
-        aspect_ratio: CLIP_ASPECT_RATIO,
-        resolution,
-        duration: String(duration),
-        generate_audio: false,  // We use our own TTS
-        fixed_lens: false,  // Allow dynamic camera movement
-      },
+      input,
     }),
   });
 
@@ -205,6 +224,87 @@ async function copyToSupabase(
   }
 }
 
+// Extract the last frame from a video for seamless clip continuity
+async function extractLastFrame(
+  videoUrl: string,
+  projectId: string,
+  clipIndex: number
+): Promise<string | null> {
+  const tempDir = os.tmpdir();
+  const videoPath = path.join(tempDir, `clip_${clipIndex}_${Date.now()}.mp4`);
+  const framePath = path.join(tempDir, `frame_${clipIndex}_${Date.now()}.jpg`);
+
+  try {
+    console.log(`[Seedance] Extracting last frame from clip ${clipIndex + 1}...`);
+
+    // Download video to temp file
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download video: ${response.status}`);
+    }
+    const videoBuffer = await response.buffer();
+    fs.writeFileSync(videoPath, videoBuffer);
+
+    // Get video duration using ffprobe
+    const { stdout: durationOutput } = await execAsync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`
+    );
+    const duration = parseFloat(durationOutput.trim());
+
+    if (isNaN(duration) || duration <= 0) {
+      throw new Error('Could not determine video duration');
+    }
+
+    // Extract the last frame (0.1 seconds before end for safety)
+    const frameTime = Math.max(0, duration - 0.1);
+    await execAsync(
+      `ffmpeg -y -ss ${frameTime} -i "${videoPath}" -vframes 1 -q:v 2 "${framePath}"`
+    );
+
+    // Verify frame was created
+    if (!fs.existsSync(framePath)) {
+      throw new Error('Frame extraction failed - no output file');
+    }
+
+    // Upload frame to Supabase
+    const supabase = getSupabaseClient();
+    const frameBuffer = fs.readFileSync(framePath);
+    const storagePath = `${projectId}/clips/frames/frame_${String(clipIndex).padStart(3, '0')}.jpg`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('generated-assets')
+      .upload(storagePath, frameBuffer, {
+        contentType: 'image/jpeg',
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error(`[Seedance] Failed to upload frame:`, uploadError);
+      return null;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(storagePath);
+
+    console.log(`[Seedance] Extracted last frame: ${urlData.publicUrl}`);
+    return urlData.publicUrl;
+
+  } catch (err) {
+    console.error(`[Seedance] Error extracting last frame:`, err);
+    return null;
+  } finally {
+    // Cleanup temp files
+    try {
+      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      if (fs.existsSync(framePath)) fs.unlinkSync(framePath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const kieApiKey = process.env.KIE_API_KEY;
@@ -259,6 +359,11 @@ async function handleStreamingClips(
   duration: number,
   resolution: string
 ) {
+  // Use sequential mode with frame continuity for seamless clip flow
+  if (ENABLE_FRAME_CONTINUITY) {
+    return handleSequentialClipsWithContinuity(req, res, projectId, clips, total, kieApiKey, duration, resolution);
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -592,6 +697,180 @@ async function handleNonStreamingClips(
       success: false,
       error: err instanceof Error ? err.message : 'Clip generation failed'
     });
+  }
+}
+
+// Handle sequential video clip generation with frame continuity
+// Each clip's last frame becomes the next clip's start frame for seamless flow
+async function handleSequentialClipsWithContinuity(
+  req: Request,
+  res: Response,
+  projectId: string,
+  clips: ClipPrompt[],
+  total: number,
+  kieApiKey: string,
+  duration: number,
+  resolution: string
+) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const heartbeatInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
+
+  const cleanup = () => {
+    clearInterval(heartbeatInterval);
+  };
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const POLL_INTERVAL = 3000;
+  const MAX_POLL_TIME_PER_CLIP = 5 * 60 * 1000; // 5 minutes per clip
+
+  try {
+    console.log(`\n=== Sequential clip generation with frame continuity ===`);
+    console.log(`Generating ${total} clips sequentially (last frame → next clip's start frame)`);
+
+    sendEvent({
+      type: 'progress',
+      completed: 0,
+      total,
+      message: `Starting sequential generation (seamless flow mode)...`
+    });
+
+    const successfulClips: { index: number; videoUrl: string; filename: string }[] = [];
+    let lastFrameUrl: string | null = null;
+    let failedCount = 0;
+
+    // Process clips one at a time, passing last frame to next clip
+    for (let i = 0; i < clips.length; i++) {
+      const clip = clips[i];
+      const clipIndex = clip.index - 1; // 0-indexed for filename
+
+      sendEvent({
+        type: 'progress',
+        completed: successfulClips.length,
+        total,
+        message: `Generating clip ${i + 1}/${total}${lastFrameUrl ? ' (with continuity frame)' : ''}...`
+      });
+
+      try {
+        // Start task with optional start frame from previous clip
+        const taskId = await startVideoTask(
+          kieApiKey,
+          clip.prompt,
+          clipIndex,
+          duration,
+          resolution,
+          lastFrameUrl || undefined  // Pass last frame URL if available
+        );
+
+        console.log(`[Seedance] Started clip ${i + 1}/${total}${lastFrameUrl ? ' (with start frame)' : ''}`);
+
+        // Poll until complete
+        const pollStart = Date.now();
+        let videoUrl: string | null = null;
+
+        while (Date.now() - pollStart < MAX_POLL_TIME_PER_CLIP) {
+          const status = await checkTaskStatus(kieApiKey, taskId);
+
+          if (status.state === 'success' && status.videoUrl) {
+            videoUrl = status.videoUrl;
+            const durationSec = ((Date.now() - pollStart) / 1000).toFixed(1);
+            console.log(`[Seedance] ✓ Clip ${i + 1}/${total} completed in ${durationSec}s`);
+            break;
+          } else if (status.state === 'fail') {
+            console.error(`[Seedance] ✗ Clip ${i + 1}/${total} failed: ${status.error}`);
+            break;
+          }
+
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+        }
+
+        if (videoUrl) {
+          // Copy video to Supabase
+          const supabaseUrl = await copyToSupabase(videoUrl, projectId, clipIndex);
+
+          successfulClips.push({
+            index: clip.index,
+            videoUrl: supabaseUrl,
+            filename: `clip_${String(clipIndex).padStart(3, '0')}.mp4`
+          });
+
+          // Extract last frame for next clip (except for the last clip)
+          if (i < clips.length - 1) {
+            sendEvent({
+              type: 'progress',
+              completed: successfulClips.length,
+              total,
+              message: `Extracting continuity frame from clip ${i + 1}...`
+            });
+
+            lastFrameUrl = await extractLastFrame(supabaseUrl, projectId, clipIndex);
+
+            if (lastFrameUrl) {
+              console.log(`[Seedance] Extracted continuity frame for clip ${i + 2}`);
+            } else {
+              console.warn(`[Seedance] Failed to extract frame, next clip will start fresh`);
+            }
+          }
+
+          sendEvent({
+            type: 'progress',
+            completed: successfulClips.length,
+            total,
+            message: `${successfulClips.length}/${total} clips generated`,
+            latestClip: {
+              index: clip.index,
+              videoUrl: supabaseUrl
+            }
+          });
+
+        } else {
+          console.error(`[Seedance] Clip ${i + 1} timed out or failed`);
+          failedCount++;
+          // Continue to next clip without frame continuity
+          lastFrameUrl = null;
+        }
+
+      } catch (err) {
+        console.error(`[Seedance] Error generating clip ${i + 1}:`, err);
+        failedCount++;
+        lastFrameUrl = null; // Reset frame continuity on error
+      }
+    }
+
+    console.log(`\n=== Sequential generation complete ===`);
+    console.log(`Success: ${successfulClips.length}/${total}`);
+    console.log(`Failed: ${failedCount}/${total}`);
+
+    sendEvent({
+      type: 'complete',
+      success: true,
+      clips: successfulClips,
+      total: successfulClips.length,
+      failed: failedCount,
+      clipDuration: duration,
+      totalDuration: successfulClips.length * duration,
+      mode: 'sequential_with_continuity'
+    });
+
+    cleanup();
+    res.end();
+
+  } catch (err) {
+    console.error('[Seedance] Sequential generation error:', err);
+    sendEvent({
+      type: 'error',
+      error: err instanceof Error ? err.message : 'Sequential clip generation failed'
+    });
+    cleanup();
+    res.end();
   }
 }
 
