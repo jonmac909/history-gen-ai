@@ -78,8 +78,8 @@ function validateVoiceSampleUrl(url: string): { valid: boolean; error?: string }
       return { valid: false, error: 'Voice sample URL must use HTTPS protocol' };
     }
 
-    // Allow Supabase storage and our own Netlify domain
-    const allowedDomains = ['supabase.co', 'supabase.com', 'historygenai.netlify.app'];
+    // Allow Supabase storage and our own domains
+    const allowedDomains = ['supabase.co', 'supabase.com', 'autoaigen.com', 'history-gen-ai.pages.dev'];
     const hostname = parsedUrl.hostname;
     const isAllowed = allowedDomains.some(domain =>
       hostname === domain || hostname.endsWith(`.${domain}`)
