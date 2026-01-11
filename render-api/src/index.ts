@@ -33,7 +33,7 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 // Middleware
 app.use(cors({
   origin: '*', // Configure this to your frontend domain in production
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '50mb' }));
