@@ -246,17 +246,29 @@ function isWithinDays(publishedText: string | undefined, days: number): boolean 
   return false;
 }
 
+// Progress callback type for scanning
+type ScanProgressCallback = (channelIndex: number, totalChannels: number, channelName: string, outliersFound: number) => void;
+
 // Scan channels for outliers - returns outliers and count of channels scanned
-async function scanForOutliers(channels: SavedChannel[]): Promise<{ outliers: OutlierVideo[]; scannedCount: number }> {
+async function scanForOutliers(
+  channels: SavedChannel[],
+  onProgress?: ScanProgressCallback
+): Promise<{ outliers: OutlierVideo[]; scannedCount: number }> {
   const allOutliers: OutlierVideo[] = [];
 
   // Filter to only whitelisted channels
   const whitelistedChannels = channels.filter(isWhitelistedChannel);
   console.log(`[AutoClone] Filtered to ${whitelistedChannels.length} whitelisted channels out of ${channels.length} total`);
 
-  for (const channel of whitelistedChannels) {
+  for (let i = 0; i < whitelistedChannels.length; i++) {
+    const channel = whitelistedChannels[i];
     try {
       console.log(`[AutoClone] Scanning channel: ${channel.title}`);
+
+      // Report progress
+      if (onProgress) {
+        onProgress(i + 1, whitelistedChannels.length, channel.title, allOutliers.length);
+      }
 
       // Get recent videos from channel
       const videos = await getChannelVideos(channel.id, 50);
@@ -281,8 +293,8 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<{ outliers: Ou
         // Calculate outlier multiplier
         const multiplier = (video.views || 0) / avgViews;
 
-        // Consider it an outlier if 1.5x+ average views
-        if (multiplier >= 1.5) {
+        // Consider it an outlier if 2x+ average views
+        if (multiplier >= 2.0) {
           allOutliers.push({
             videoId: video.id,
             title: video.title,
@@ -307,36 +319,64 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<{ outliers: Ou
   return { outliers: allOutliers, scannedCount: whitelistedChannels.length };
 }
 
-// Get best outlier (for modal auto-selection)
+// Get best outlier (for modal auto-selection) - streams progress via SSE
 router.get('/best-outlier', async (req: Request, res: Response) => {
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
   try {
     const supabase = getSupabaseClient();
 
     // Fetch saved channels
+    sendEvent({ type: 'progress', message: 'Loading channels...' });
     const channels = await fetchSavedChannels(supabase);
+
     if (channels.length === 0) {
-      return res.json({
+      sendEvent({
+        type: 'complete',
         success: true,
         outlier: null,
         channelsScanned: 0,
         reason: 'No saved channels found',
       });
+      res.end();
+      return;
     }
 
-    // Scan for outliers (already filters for 2hr+, last 7 days, and sorts by score)
+    // Scan for outliers with progress callback
     console.log(`[AutoClone] Scanning for best outlier...`);
-    const { outliers, scannedCount } = await scanForOutliers(channels);
+    const { outliers, scannedCount } = await scanForOutliers(channels, (index, total, channelName, foundCount) => {
+      sendEvent({
+        type: 'progress',
+        channelIndex: index,
+        totalChannels: total,
+        channelName,
+        outliersFound: foundCount,
+        message: `Scanning ${channelName}... (${index}/${total})`,
+      });
+    });
 
     if (outliers.length === 0) {
-      return res.json({
+      sendEvent({
+        type: 'complete',
         success: true,
         outlier: null,
         channelsScanned: scannedCount,
-        reason: 'No qualifying outliers found (need 2+ hours, 1.5x+ views, last 30 days)',
+        reason: 'No qualifying outliers found (need 2+ hours, 2x+ views, last 30 days)',
       });
+      res.end();
+      return;
     }
 
     // Find first unprocessed outlier (they're already sorted by score desc)
+    sendEvent({ type: 'progress', message: 'Checking processed videos...' });
     let bestOutlier: OutlierVideo | null = null;
     for (const outlier of outliers) {
       if (!await isVideoProcessed(supabase, outlier.videoId)) {
@@ -346,32 +386,39 @@ router.get('/best-outlier', async (req: Request, res: Response) => {
     }
 
     if (!bestOutlier) {
-      return res.json({
+      sendEvent({
+        type: 'complete',
         success: true,
         outlier: null,
         channelsScanned: scannedCount,
         outliersFound: outliers.length,
         reason: 'All recent outliers already processed',
       });
+      res.end();
+      return;
     }
 
     // Calculate scheduled publish time
     const publishAt = getNext5pmPST();
 
-    return res.json({
+    sendEvent({
+      type: 'complete',
       success: true,
       outlier: bestOutlier,
       channelsScanned: scannedCount,
       outliersFound: outliers.length,
       publishAt,
     });
+    res.end();
 
   } catch (error: any) {
     console.error(`[AutoClone] Error getting best outlier: ${error.message}`);
-    return res.status(500).json({
+    sendEvent({
+      type: 'error',
       success: false,
       error: error.message,
     });
+    res.end();
   }
 });
 

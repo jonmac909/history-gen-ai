@@ -82,6 +82,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
   const [publishAt, setPublishAt] = useState<string>("");
   const [reason, setReason] = useState<string>("");
   const [currentStep, setCurrentStep] = useState<string>("");
+  const [scanningMessage, setScanningMessage] = useState<string>("Loading channels...");
   const [youtubeUrl, setYoutubeUrl] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -110,26 +111,64 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
   const fetchBestOutlier = async () => {
     setState("scanning");
     setReason("");
+    setScanningMessage("Loading channels...");
 
     try {
       const response = await fetch(`${API_BASE_URL}/auto-clone/best-outlier`);
-      const data = await response.json();
+      const reader = response.body?.getReader();
 
-      if (!data.success) {
+      if (!reader) {
         setState("error");
-        setErrorMessage(data.error || "Failed to scan channels");
+        setErrorMessage("Failed to connect to server");
         return;
       }
 
-      setChannelsScanned(data.channelsScanned || 0);
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      if (data.outlier) {
-        setOutlier(data.outlier);
-        setPublishAt(data.publishAt || "");
-        setState("found");
-      } else {
-        setReason(data.reason || "No qualifying outliers found");
-        setState("not_found");
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          const dataMatch = event.match(/^data: (.+)$/m);
+          if (dataMatch) {
+            try {
+              const data = JSON.parse(dataMatch[1]);
+
+              if (data.type === "progress") {
+                setScanningMessage(data.message || "Scanning...");
+                if (data.totalChannels) {
+                  setChannelsScanned(data.channelIndex || 0);
+                }
+              } else if (data.type === "complete") {
+                setChannelsScanned(data.channelsScanned || 0);
+
+                if (data.outlier) {
+                  setOutlier(data.outlier);
+                  setPublishAt(data.publishAt || "");
+                  setState("found");
+                } else {
+                  setReason(data.reason || "No qualifying outliers found");
+                  setState("not_found");
+                }
+              } else if (data.type === "error") {
+                setState("error");
+                setErrorMessage(data.error || "Failed to scan channels");
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE event:", e);
+            }
+          }
+        }
       }
     } catch (err: any) {
       setState("error");
@@ -245,9 +284,9 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
             <div className="flex flex-col items-center justify-center py-8 gap-4">
               <Loader2 className="w-12 h-12 text-primary animate-spin" />
               <div className="text-center space-y-1">
-                <p className="font-medium">Scanning 17 whitelist channels...</p>
+                <p className="font-medium">{scanningMessage}</p>
                 <p className="text-sm text-muted-foreground">
-                  Looking for 2hr+ videos with 1.5x+ average views from last 30 days
+                  Looking for 2hr+ videos with 2x+ average views from last 30 days
                 </p>
               </div>
             </div>
@@ -310,21 +349,21 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
           {state === "generating" && (
             <div className="space-y-4">
               {outlier && (
-                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg overflow-hidden">
                   <img
                     src={outlier.thumbnailUrl}
                     alt=""
-                    className="w-16 h-10 rounded object-cover"
+                    className="w-16 h-10 rounded object-cover shrink-0"
                   />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <p className="font-medium text-sm truncate">{outlier.title}</p>
-                    <p className="text-xs text-muted-foreground">{outlier.channelName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{outlier.channelName}</p>
                   </div>
                 </div>
               )}
               <div className="flex items-center gap-3 py-4">
                 <Loader2 className="w-6 h-6 text-primary animate-spin shrink-0" />
-                <p className="text-sm">{currentStep}</p>
+                <p className="text-sm truncate">{currentStep}</p>
               </div>
             </div>
           )}
