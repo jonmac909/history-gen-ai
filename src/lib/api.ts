@@ -99,6 +99,7 @@ export interface ClipPrompt {
   endSeconds: number;
   prompt: string;
   sceneDescription: string;
+  imageUrl?: string;  // Source image for I2V video generation
 }
 
 export interface ClipPromptsResult {

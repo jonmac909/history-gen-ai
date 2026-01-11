@@ -18,22 +18,16 @@ const router = Router();
 
 // Kie.ai API configuration
 const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
-// Model for text-to-video (first clip only)
-const KIE_MODEL_T2V = 'bytedance/seedance-1.5-pro';
-// Model for image-to-video (clips 2+ with frame continuity) - 3x faster
+// Model for image-to-video (I2V) - generates video from static images
 const KIE_MODEL_I2V = 'bytedance/v1-pro-fast-image-to-video';
 
 // Constants for video clip generation
-// 15 clips × 4s = 60 seconds total intro (all using 1.5 Pro T2V)
-const CLIP_DURATION = 4;  // 4 seconds per clip (1.5 Pro supports 4/8/12)
-const CLIP_COUNT = 15;    // 15 clips for 60 second intro
+// 12 clips × 5s = 60 seconds total intro (image-first I2V approach)
+const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast supports 5/10s)
+const CLIP_COUNT = 12;    // 12 clips for 60 second intro
 const CLIP_RESOLUTION = '720p';
-const CLIP_ASPECT_RATIO = '16:9';  // Used for 1.5 Pro only
 // Max concurrent clips - submit all at once, Kie.ai handles queueing
-const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '15', 10);
-// Disable frame continuity - use parallel generation for speed
-// Clips will have fade in/out transitions instead
-const ENABLE_FRAME_CONTINUITY = false;
+const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '12', 10);
 // Fade duration in seconds for smooth transitions between clips
 const FADE_DURATION = 0.5;
 
@@ -43,6 +37,7 @@ interface ClipPrompt {
   endSeconds: number;
   prompt: string;
   sceneDescription?: string;
+  imageUrl: string;  // Required: source image for I2V (from Z-Image generation)
 }
 
 interface GenerateVideoClipsRequest {
@@ -72,45 +67,28 @@ function getSupabaseClient() {
   return createClient(url, key);
 }
 
-// Start a Kie.ai Seedance task
-// Uses 1.5 Pro (T2V) for first clip, v1-pro-fast (I2V) for clips 2+ with start frame
+// Start a Kie.ai I2V task
+// Uses v1-pro-fast-image-to-video to animate source images
 async function startVideoTask(
   apiKey: string,
   prompt: string,
   clipIndex: number,
+  imageUrl: string,  // Required: source image from Z-Image
   duration: number = CLIP_DURATION,
-  resolution: string = CLIP_RESOLUTION,
-  startFrameUrl?: string  // Optional start frame for seamless continuity
+  resolution: string = CLIP_RESOLUTION
 ): Promise<string> {
-  const hasStartFrame = !!startFrameUrl;
-  const model = hasStartFrame ? KIE_MODEL_I2V : KIE_MODEL_T2V;
-  console.log(`[Seedance] Starting task for clip ${clipIndex + 1} using ${model}: ${prompt.substring(0, 50)}...${hasStartFrame ? ' (with start frame)' : ''}`);
+  // Add slow camera movement guidance for sleep videos
+  const enhancedPrompt = `${prompt}. Slow gentle camera movement, smooth cinematic motion, relaxing pace.`;
+  console.log(`[I2V] Starting task for clip ${clipIndex + 1}: ${enhancedPrompt.substring(0, 60)}...`);
 
-  let input: any;
-
-  if (hasStartFrame) {
-    // v1-pro-fast-image-to-video: requires image_url (singular), supports 5s/10s
-    input = {
-      prompt,
-      image_url: startFrameUrl,  // v1-pro-fast uses image_url (singular), not input_urls
-      resolution,
-      duration: String(duration),
-    };
-    console.log(`[Seedance] Using I2V with start frame: ${startFrameUrl.substring(0, 80)}...`);
-  } else {
-    // seedance-1.5-pro: text-to-video for first clip, supports 4/8/12s
-    // Use 4s for short clips (5s target), 8s for medium, 12s for long
-    const t2vDuration = duration <= 5 ? 4 : duration <= 10 ? 8 : 12;
-    input = {
-      prompt,
-      aspect_ratio: CLIP_ASPECT_RATIO,
-      resolution,
-      duration: String(t2vDuration),
-      generate_audio: false,  // We use our own TTS
-      fixed_lens: false,  // Allow dynamic camera movement
-    };
-    console.log(`[Seedance] Using T2V for first clip (${t2vDuration}s duration)`);
-  }
+  // v1-pro-fast-image-to-video: animates static images, supports 5s/10s
+  const input = {
+    prompt: enhancedPrompt,
+    image_url: imageUrl,
+    resolution,
+    duration: String(duration),
+  };
+  console.log(`[I2V] Using image: ${imageUrl.substring(0, 80)}...`);
 
   const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
@@ -119,25 +97,25 @@ async function startVideoTask(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: KIE_MODEL_I2V,
       input,
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('[Seedance] Task creation error:', response.status, errorText);
+    console.error('[I2V] Task creation error:', response.status, errorText);
     throw new Error(`Failed to start video task: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json() as any;
 
   if (data.code !== 200 || !data.data?.taskId) {
-    console.error('[Seedance] Task creation failed:', data);
+    console.error('[I2V] Task creation failed:', data);
     throw new Error(data.message || 'Task creation failed: no taskId returned');
   }
 
-  console.log(`[Seedance] Task created: ${data.data.taskId}`);
+  console.log(`[I2V] Task created: ${data.data.taskId}`);
   return data.data.taskId;
 }
 
@@ -155,7 +133,7 @@ async function checkTaskStatus(
     });
 
     if (!response.ok) {
-      console.error(`[Seedance] Status check failed: ${response.status}`);
+      console.error(`[I2V] Status check failed: ${response.status}`);
       return { state: 'pending' };
     }
 
@@ -174,15 +152,15 @@ async function checkTaskStatus(
         const result = JSON.parse(task.resultJson);
         videoUrl = result.resultUrls?.[0];
       } catch {
-        console.error(`[Seedance] Failed to parse resultJson for task ${taskId}`);
+        console.error(`[I2V] Failed to parse resultJson for task ${taskId}`);
       }
 
       if (!videoUrl) {
-        console.error(`[Seedance] Task ${taskId} completed but no video URL`);
+        console.error(`[I2V] Task ${taskId} completed but no video URL`);
         return { state: 'fail', error: 'No video URL in result' };
       }
 
-      console.log(`[Seedance] Task ${taskId} completed: ${videoUrl}`);
+      console.log(`[I2V] Task ${taskId} completed: ${videoUrl}`);
       return {
         state: 'success',
         videoUrl,
@@ -190,7 +168,7 @@ async function checkTaskStatus(
       };
     } else if (task.state === 'fail') {
       const errorMsg = task.failMsg || 'Task failed';
-      console.error(`[Seedance] Task ${taskId} failed:`, errorMsg);
+      console.error(`[I2V] Task ${taskId} failed:`, errorMsg);
       return { state: 'fail', error: errorMsg };
     } else if (['waiting', 'queuing', 'generating'].includes(task.state)) {
       return { state: 'pending' };
@@ -198,7 +176,7 @@ async function checkTaskStatus(
 
     return { state: 'pending' };
   } catch (err) {
-    console.error(`[Seedance] Error checking task ${taskId}:`, err);
+    console.error(`[I2V] Error checking task ${taskId}:`, err);
     return { state: 'pending' };
   }
 }
@@ -234,14 +212,14 @@ async function copyToSupabase(
     if (!isNaN(duration) && duration > FADE_DURATION * 2) {
       // Apply fade in at start and fade out at end
       const fadeOutStart = duration - FADE_DURATION;
-      console.log(`[Seedance] Applying ${FADE_DURATION}s fade in/out to clip ${clipIndex + 1}`);
+      console.log(`[I2V] Applying ${FADE_DURATION}s fade in/out to clip ${clipIndex + 1}`);
 
       await execAsync(
         `"${FFMPEG_PATH}" -y -i "${inputPath}" -vf "fade=t=in:st=0:d=${FADE_DURATION},fade=t=out:st=${fadeOutStart}:d=${FADE_DURATION}" -c:a copy "${outputPath}"`
       );
     } else {
       // Video too short for fades, just copy
-      console.log(`[Seedance] Clip ${clipIndex + 1} too short for fades, skipping`);
+      console.log(`[I2V] Clip ${clipIndex + 1} too short for fades, skipping`);
       fs.copyFileSync(inputPath, outputPath);
     }
 
@@ -259,7 +237,7 @@ async function copyToSupabase(
       });
 
     if (error) {
-      console.error(`[Seedance] Failed to upload to Supabase:`, error);
+      console.error(`[I2V] Failed to upload to Supabase:`, error);
       return videoUrl;
     }
 
@@ -268,10 +246,10 @@ async function copyToSupabase(
       .from('generated-assets')
       .getPublicUrl(storagePath);
 
-    console.log(`[Seedance] Copied to Supabase: ${urlData.publicUrl}`);
+    console.log(`[I2V] Copied to Supabase: ${urlData.publicUrl}`);
     return urlData.publicUrl;
   } catch (err) {
-    console.error(`[Seedance] Error copying to Supabase:`, err);
+    console.error(`[I2V] Error copying to Supabase:`, err);
     // Return original URL if copy fails
     return videoUrl;
   } finally {
@@ -296,7 +274,7 @@ async function extractLastFrame(
   const framePath = path.join(tempDir, `frame_${clipIndex}_${Date.now()}.jpg`);
 
   try {
-    console.log(`[Seedance] Extracting last frame from clip ${clipIndex + 1}...`);
+    console.log(`[I2V] Extracting last frame from clip ${clipIndex + 1}...`);
 
     // Download video to temp file
     const response = await fetch(videoUrl);
@@ -340,7 +318,7 @@ async function extractLastFrame(
       });
 
     if (uploadError) {
-      console.error(`[Seedance] Failed to upload frame:`, uploadError);
+      console.error(`[I2V] Failed to upload frame:`, uploadError);
       return null;
     }
 
@@ -349,11 +327,11 @@ async function extractLastFrame(
       .from('generated-assets')
       .getPublicUrl(storagePath);
 
-    console.log(`[Seedance] Extracted last frame: ${urlData.publicUrl}`);
+    console.log(`[I2V] Extracted last frame: ${urlData.publicUrl}`);
     return urlData.publicUrl;
 
   } catch (err) {
-    console.error(`[Seedance] Error extracting last frame:`, err);
+    console.error(`[I2V] Error extracting last frame:`, err);
     return null;
   } finally {
     // Cleanup temp files
@@ -389,11 +367,19 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No clips provided' });
     }
 
-    // Validate duration (v1-pro-fast supports 5 or 10 seconds, 1.5 Pro adjusts internally)
+    // Validate that each clip has an imageUrl (required for I2V)
+    const missingImages = clips.filter(c => !c.imageUrl);
+    if (missingImages.length > 0) {
+      return res.status(400).json({
+        error: `Missing imageUrl for clips: ${missingImages.map(c => c.index).join(', ')}. Generate images first.`
+      });
+    }
+
+    // Validate duration (v1-pro-fast supports 5 or 10 seconds)
     const validDuration = [5, 10].includes(duration) ? duration : CLIP_DURATION;
 
     const total = clips.length;
-    console.log(`\n=== Generating ${total} video clips (1.5 Pro T2V + v1-pro-fast I2V) ===`);
+    console.log(`\n=== Generating ${total} video clips (image-first I2V) ===`);
     console.log(`Duration: ${validDuration}s, Resolution: ${resolution}`);
 
     if (stream) {
@@ -403,7 +389,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
   } catch (error) {
-    console.error('[Seedance] Error in generate-video-clips:', error);
+    console.error('[I2V] Error in generate-video-clips:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return res.status(500).json({ success: false, error: errorMessage });
   }
@@ -420,11 +406,6 @@ async function handleStreamingClips(
   duration: number,
   resolution: string
 ) {
-  // Use sequential mode with frame continuity for seamless clip flow
-  if (ENABLE_FRAME_CONTINUITY) {
-    return handleSequentialClipsWithContinuity(req, res, projectId, clips, total, kieApiKey, duration, resolution);
-  }
-
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -443,7 +424,7 @@ async function handleStreamingClips(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const POLL_INTERVAL = 3000; // 3 seconds (Seedance is fast)
+  const POLL_INTERVAL = 3000; // 3 seconds
   const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
   const MAX_RETRIES = 1;
 
@@ -452,7 +433,7 @@ async function handleStreamingClips(
       type: 'progress',
       completed: 0,
       total,
-      message: `Starting video clip generation with Seedance 1.5 Pro...`
+      message: `Starting video generation from images (I2V)...`
     });
 
     const allResults: ClipStatus[] = [];
@@ -468,7 +449,7 @@ async function handleStreamingClips(
       // First try retry queue, then main queue
       if (retryQueue.length > 0) {
         taskData = retryQueue.shift()!;
-        console.log(`[Seedance] Retrying clip ${taskData.clip.index} (attempt ${taskData.retryCount + 1})`);
+        console.log(`[I2V] Retrying clip ${taskData.clip.index} (attempt ${taskData.retryCount + 1})`);
       } else if (nextClipIndex < clips.length) {
         taskData = { clip: clips[nextClipIndex], retryCount: 0 };
         nextClipIndex++;
@@ -481,6 +462,7 @@ async function handleStreamingClips(
           kieApiKey,
           taskData.clip.prompt,
           taskData.clip.index - 1,  // Convert to 0-indexed for filename
+          taskData.clip.imageUrl,   // Source image for I2V
           duration,
           resolution
         );
@@ -490,9 +472,9 @@ async function handleStreamingClips(
           retryCount: taskData.retryCount,
           clip: taskData.clip
         });
-        console.log(`[Seedance] Started clip ${taskData.clip.index}/${total} (${activeTasks.size} active)`);
+        console.log(`[I2V] Started clip ${taskData.clip.index}/${total} (${activeTasks.size} active)`);
       } catch (err) {
-        console.error(`[Seedance] Failed to create task for clip ${taskData.clip.index}:`, err);
+        console.error(`[I2V] Failed to create task for clip ${taskData.clip.index}:`, err);
         if (taskData.retryCount < MAX_RETRIES) {
           retryQueue.push({ clip: taskData.clip, retryCount: taskData.retryCount + 1 });
         } else {
@@ -509,7 +491,7 @@ async function handleStreamingClips(
 
     // Fill initial window with tasks
     const initialBatch = Math.min(MAX_CONCURRENT_CLIPS, clips.length);
-    console.log(`[Seedance] Starting initial batch of ${initialBatch} clips...`);
+    console.log(`[I2V] Starting initial batch of ${initialBatch} clips...`);
     await Promise.all(Array.from({ length: initialBatch }, () => startNextTask()));
 
     // Poll active tasks and start new ones as they complete
@@ -529,7 +511,7 @@ async function handleStreamingClips(
       for (const { taskId, taskData, status } of checkResults) {
         if (status.state === 'success') {
           const durationSec = ((Date.now() - taskData.startTime) / 1000).toFixed(1);
-          console.log(`[Seedance] ✓ Clip ${taskData.index}/${total} completed in ${durationSec}s`);
+          console.log(`[I2V] ✓ Clip ${taskData.index}/${total} completed in ${durationSec}s`);
 
           // Copy video to our Supabase storage
           const supabaseUrl = await copyToSupabase(
@@ -566,14 +548,14 @@ async function handleStreamingClips(
           });
 
         } else if (status.state === 'fail') {
-          console.error(`[Seedance] ✗ Clip ${taskData.index}/${total} failed (attempt ${taskData.retryCount + 1}): ${status.error}`);
+          console.error(`[I2V] ✗ Clip ${taskData.index}/${total} failed (attempt ${taskData.retryCount + 1}): ${status.error}`);
 
           activeTasks.delete(taskId);
 
           // Retry if not exceeded max retries
           if (taskData.retryCount < MAX_RETRIES) {
             retryQueue.push({ clip: taskData.clip, retryCount: taskData.retryCount + 1 });
-            console.log(`[Seedance] Queued clip ${taskData.index} for retry`);
+            console.log(`[I2V] Queued clip ${taskData.index} for retry`);
           } else {
             allResults.push({
               taskId,
@@ -612,7 +594,7 @@ async function handleStreamingClips(
 
     // Timeout check
     if (activeTasks.size > 0) {
-      console.warn(`[Seedance] Timeout: ${activeTasks.size} clips still pending after ${MAX_POLLING_TIME / 1000}s`);
+      console.warn(`[I2V] Timeout: ${activeTasks.size} clips still pending after ${MAX_POLLING_TIME / 1000}s`);
       for (const [taskId, taskData] of activeTasks) {
         allResults.push({
           taskId,
@@ -654,7 +636,7 @@ async function handleStreamingClips(
     res.end();
 
   } catch (err) {
-    console.error('[Seedance] Stream error:', err);
+    console.error('[I2V] Stream error:', err);
     sendEvent({
       type: 'error',
       error: err instanceof Error ? err.message : 'Clip generation failed'
@@ -682,6 +664,7 @@ async function handleNonStreamingClips(
           kieApiKey,
           clip.prompt,
           clip.index - 1,
+          clip.imageUrl,  // Source image for I2V
           duration,
           resolution
         );
@@ -743,7 +726,7 @@ async function handleNonStreamingClips(
         filename: `clip_${String(r.index - 1).padStart(3, '0')}.mp4`
       }));
 
-    console.log(`[Seedance] Generated ${successfulClips.length}/${clips.length} video clips`);
+    console.log(`[I2V] Generated ${successfulClips.length}/${clips.length} video clips`);
 
     return res.json({
       success: true,
@@ -753,7 +736,7 @@ async function handleNonStreamingClips(
     });
 
   } catch (err) {
-    console.error('[Seedance] Non-streaming clip generation error:', err);
+    console.error('[I2V] Non-streaming clip generation error:', err);
     return res.status(500).json({
       success: false,
       error: err instanceof Error ? err.message : 'Clip generation failed'
@@ -821,17 +804,17 @@ async function handleSequentialClipsWithContinuity(
       });
 
       try {
-        // Start task with optional start frame from previous clip
+        // Start task with source image (image-first I2V approach)
         const taskId = await startVideoTask(
           kieApiKey,
           clip.prompt,
           clipIndex,
+          clip.imageUrl,  // Source image for I2V
           duration,
-          resolution,
-          lastFrameUrl || undefined  // Pass last frame URL if available
+          resolution
         );
 
-        console.log(`[Seedance] Started clip ${i + 1}/${total}${lastFrameUrl ? ' (with start frame)' : ''}`);
+        console.log(`[I2V] Started clip ${i + 1}/${total}${lastFrameUrl ? ' (with start frame)' : ''}`);
 
         // Poll until complete
         const pollStart = Date.now();
@@ -843,10 +826,10 @@ async function handleSequentialClipsWithContinuity(
           if (status.state === 'success' && status.videoUrl) {
             videoUrl = status.videoUrl;
             const durationSec = ((Date.now() - pollStart) / 1000).toFixed(1);
-            console.log(`[Seedance] ✓ Clip ${i + 1}/${total} completed in ${durationSec}s`);
+            console.log(`[I2V] ✓ Clip ${i + 1}/${total} completed in ${durationSec}s`);
             break;
           } else if (status.state === 'fail') {
-            console.error(`[Seedance] ✗ Clip ${i + 1}/${total} failed: ${status.error}`);
+            console.error(`[I2V] ✗ Clip ${i + 1}/${total} failed: ${status.error}`);
             break;
           }
 
@@ -875,9 +858,9 @@ async function handleSequentialClipsWithContinuity(
             lastFrameUrl = await extractLastFrame(supabaseUrl, projectId, clipIndex);
 
             if (lastFrameUrl) {
-              console.log(`[Seedance] Extracted continuity frame for clip ${i + 2}`);
+              console.log(`[I2V] Extracted continuity frame for clip ${i + 2}`);
             } else {
-              console.warn(`[Seedance] Failed to extract frame, next clip will start fresh`);
+              console.warn(`[I2V] Failed to extract frame, next clip will start fresh`);
             }
           }
 
@@ -893,14 +876,14 @@ async function handleSequentialClipsWithContinuity(
           });
 
         } else {
-          console.error(`[Seedance] Clip ${i + 1} timed out or failed`);
+          console.error(`[I2V] Clip ${i + 1} timed out or failed`);
           failedCount++;
           // Continue to next clip without frame continuity
           lastFrameUrl = null;
         }
 
       } catch (err) {
-        console.error(`[Seedance] Error generating clip ${i + 1}:`, err);
+        console.error(`[I2V] Error generating clip ${i + 1}:`, err);
         failedCount++;
         lastFrameUrl = null; // Reset frame continuity on error
       }
@@ -925,7 +908,7 @@ async function handleSequentialClipsWithContinuity(
     res.end();
 
   } catch (err) {
-    console.error('[Seedance] Sequential generation error:', err);
+    console.error('[I2V] Sequential generation error:', err);
     sendEvent({
       type: 'error',
       error: err instanceof Error ? err.message : 'Sequential clip generation failed'

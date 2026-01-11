@@ -1251,11 +1251,12 @@ const Index = () => {
     }
   };
 
-  // After clip prompts reviewed, generate video clips
+  // After clip prompts reviewed, generate images first, then video clips
   const handleClipPromptsConfirm = async (editedPrompts: ClipPrompt[], editedStylePrompt: string) => {
     setClipPrompts(editedPrompts);
 
     const steps: GenerationStep[] = [
+      { id: "images", label: "Generating Source Images", status: "pending" },
       { id: "clips", label: "Generating Video Clips", status: "pending" },
     ];
 
@@ -1264,11 +1265,54 @@ const Index = () => {
     setViewState("processing");
 
     try {
-      updateStep("clips", "active", `0/${editedPrompts.length} (0%)`);
+      // Step 1: Generate images first (required for I2V)
+      updateStep("images", "active", `0/${editedPrompts.length} (0%)`);
+
+      // Convert clip prompts to image prompts format
+      // Combine scene description with style prompt for better image quality
+      const imagePrompts = editedPrompts.map(p => ({
+        index: p.index,
+        startTime: formatSecondsToSrt(p.startSeconds),
+        endTime: formatSecondsToSrt(p.endSeconds),
+        startSeconds: p.startSeconds,
+        endSeconds: p.endSeconds,
+        prompt: `${editedStylePrompt ? editedStylePrompt + '. ' : ''}${p.sceneDescription}`,
+        sceneDescription: p.sceneDescription,
+      }));
+
+      const imageResult = await generateImagesStreaming(
+        imagePrompts,
+        "high",  // High quality for video source images
+        "16:9",  // Match video aspect ratio
+        (completed, total, message) => {
+          const percent = Math.round((completed / total) * 100);
+          updateStep("images", "active", `${completed}/${total} images (${percent}%)`);
+        },
+        projectId
+      );
+
+      if (!imageResult.success || !imageResult.images || imageResult.images.length === 0) {
+        throw new Error(imageResult.error || "Failed to generate source images for video clips");
+      }
+
+      updateStep("images", "completed", `${imageResult.images.length} images`);
+      console.log(`Generated ${imageResult.images.length} source images for video clips`);
+
+      // Step 2: Add image URLs to clip prompts
+      const promptsWithImages: ClipPrompt[] = editedPrompts.map((p, i) => ({
+        ...p,
+        imageUrl: imageResult.images![i] || imageResult.images![0],  // Fallback to first image if mismatch
+      }));
+
+      // Update state with image URLs
+      setClipPrompts(promptsWithImages);
+
+      // Step 3: Generate video clips from images
+      updateStep("clips", "active", `0/${promptsWithImages.length} (0%)`);
 
       const clipsResult = await generateVideoClipsStreaming(
         projectId,
-        editedPrompts,
+        promptsWithImages,
         (completed, total, message) => {
           const percent = Math.round((completed / total) * 100);
           updateStep("clips", "active", `${completed}/${total} clips (${percent}%)`);
@@ -1299,6 +1343,15 @@ const Index = () => {
       });
       setViewState("review-clip-prompts");
     }
+  };
+
+  // Helper to format seconds to SRT timestamp
+  const formatSecondsToSrt = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.round((seconds % 1) * 1000);
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
   };
 
   // After clips reviewed, continue to image prompts
@@ -1372,6 +1425,103 @@ const Index = () => {
       await handleGenerateClipPrompts();
     } finally {
       setIsRegeneratingClipPrompts(false);
+    }
+  };
+
+  // Regenerate a single video clip (regenerates image first for a fresh video)
+  const handleRegenerateVideoClip = async (clipIndex: number) => {
+    setRegeneratingClipIndex(clipIndex);
+    try {
+      // Find the clip prompt for this index
+      const clipPrompt = clipPrompts.find(p => p.index === clipIndex);
+      if (!clipPrompt) {
+        toast({
+          title: "Error",
+          description: `Could not find prompt for clip ${clipIndex}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Step 1: Regenerate the source image first
+      console.log(`Regenerating image for clip ${clipIndex}...`);
+      const imagePrompt = {
+        index: clipPrompt.index,
+        startTime: formatSecondsToSrt(clipPrompt.startSeconds),
+        endTime: formatSecondsToSrt(clipPrompt.endSeconds),
+        startSeconds: clipPrompt.startSeconds,
+        endSeconds: clipPrompt.endSeconds,
+        prompt: `${getSelectedImageStyle()}. ${clipPrompt.sceneDescription}`,
+        sceneDescription: clipPrompt.sceneDescription,
+      };
+
+      const imageResult = await generateImagesStreaming(
+        [imagePrompt],
+        "high",
+        "16:9",
+        (completed, total, message) => {
+          console.log(`Regenerating image: ${message}`);
+        },
+        projectId
+      );
+
+      if (!imageResult.success || !imageResult.images || imageResult.images.length === 0) {
+        throw new Error(imageResult.error || "Failed to regenerate source image");
+      }
+
+      const newImageUrl = imageResult.images[0];
+      console.log(`Regenerated image: ${newImageUrl}`);
+
+      // Step 2: Update clip prompt with new image URL
+      const updatedPrompt: ClipPrompt = {
+        ...clipPrompt,
+        imageUrl: newImageUrl,
+      };
+
+      // Update clipPrompts state with new image URL
+      setClipPrompts(prev => prev.map(p => p.index === clipIndex ? updatedPrompt : p));
+
+      // Step 3: Generate video from the new image
+      console.log(`Generating video from new image for clip ${clipIndex}...`);
+      const clipsResult = await generateVideoClipsStreaming(
+        projectId,
+        [updatedPrompt],
+        (completed, total, message, latestClip) => {
+          console.log(`Regenerating clip ${clipIndex}: ${message}`);
+        }
+      );
+
+      if (clipsResult.success && clipsResult.clips && clipsResult.clips.length > 0) {
+        // Update the clip in our array
+        setGeneratedClips(prev => {
+          const updated = [...prev];
+          const existingIndex = updated.findIndex(c => c.index === clipIndex);
+          if (existingIndex >= 0) {
+            updated[existingIndex] = clipsResult.clips![0];
+          }
+          return updated;
+        });
+
+        toast({
+          title: "Clip Regenerated",
+          description: `Clip ${clipIndex} has been regenerated with a new image`,
+        });
+      } else {
+        toast({
+          title: "Regeneration Failed",
+          description: clipsResult.error || "Failed to regenerate clip",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error regenerating video clip:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to regenerate clip",
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingClipIndex(undefined);
     }
   };
 
@@ -3179,7 +3329,7 @@ const Index = () => {
         isRegenerating={isRegeneratingClipPrompts}
       />
 
-      {/* Video Clips Preview Modal (LTX-2) - Preview generated clips */}
+      {/* Video Clips Preview Modal (I2V) - Preview generated clips */}
       <VideoClipsPreviewModal
         isOpen={viewState === "review-clips"}
         clips={generatedClips}
@@ -3187,6 +3337,7 @@ const Index = () => {
         onConfirm={handleClipsConfirm}
         onCancel={handleCancelRequest}
         onBack={() => setViewState("review-clip-prompts")}
+        onRegenerate={handleRegenerateVideoClip}
         isRegenerating={regeneratingClipIndex !== undefined}
         regeneratingIndex={regeneratingClipIndex}
       />

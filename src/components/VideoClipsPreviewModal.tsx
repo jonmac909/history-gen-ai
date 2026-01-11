@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { Check, X, Video, Play, Pause, ChevronLeft, ChevronRight, Download, RefreshCw, AlertTriangle } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Check, X, Video, Play, Pause, ChevronLeft, ChevronRight, Download, RefreshCw, AlertTriangle, Maximize2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,14 +36,16 @@ interface ClipCardProps {
   prompt?: ClipPrompt;
   onRegenerate?: () => void;
   isRegenerating?: boolean;
+  onOpenFullscreen?: () => void;
 }
 
-function ClipCard({ clip, prompt, onRegenerate, isRegenerating }: ClipCardProps) {
+function ClipCard({ clip, prompt, onRegenerate, isRegenerating, onOpenFullscreen }: ClipCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const togglePlay = () => {
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
@@ -61,9 +64,14 @@ function ClipCard({ clip, prompt, onRegenerate, isRegenerating }: ClipCardProps)
     setHasError(true);
   };
 
+  const handleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onOpenFullscreen?.();
+  };
+
   return (
     <div className="border rounded-lg overflow-hidden bg-card">
-      <div className="relative aspect-video bg-black">
+      <div className="relative aspect-video bg-black group">
         {hasError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
             <AlertTriangle className="w-8 h-8 mb-2" />
@@ -74,20 +82,30 @@ function ClipCard({ clip, prompt, onRegenerate, isRegenerating }: ClipCardProps)
             <video
               ref={videoRef}
               src={clip.videoUrl}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain cursor-pointer"
               onEnded={handleEnded}
               onError={handleError}
               preload="metadata"
+              onClick={handleFullscreen}
             />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              <Play className="w-12 h-12 text-white" />
+            </div>
             <button
               onClick={togglePlay}
-              className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors"
+              className="absolute bottom-2 left-2 p-2 bg-black/50 rounded-full hover:bg-black/70 transition-colors"
             >
               {isPlaying ? (
-                <Pause className="w-12 h-12 text-white" />
+                <Pause className="w-4 h-4 text-white" />
               ) : (
-                <Play className="w-12 h-12 text-white" />
+                <Play className="w-4 h-4 text-white" />
               )}
+            </button>
+            <button
+              onClick={handleFullscreen}
+              className="absolute bottom-2 right-2 p-2 bg-black/50 rounded-full hover:bg-black/70 transition-colors"
+            >
+              <Maximize2 className="w-4 h-4 text-white" />
             </button>
           </>
         )}
@@ -141,11 +159,71 @@ export function VideoClipsPreviewModal({
   regeneratingIndex
 }: VideoClipsPreviewModalProps) {
   const [isPlayingAll, setIsPlayingAll] = useState(false);
+  const [fullscreenClip, setFullscreenClip] = useState<GeneratedClip | null>(null);
+  const fullscreenVideoRef = useRef<HTMLVideoElement>(null);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
-  const totalDuration = clips.length * 10; // 10 seconds per clip
+  const totalDuration = clips.length * 5; // 5 seconds per clip (I2V)
   const successCount = clips.filter(c => c.videoUrl).length;
   const failedCount = clips.length - successCount;
+
+  // Keyboard navigation for fullscreen (capture phase to bypass Radix Dialog)
+  useEffect(() => {
+    if (!fullscreenClip) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreenClip(null);
+      } else if (e.key === 'ArrowRight' && canGoNext) {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreenClip(clips[currentClipIndex + 1]);
+      } else if (e.key === 'ArrowLeft' && canGoPrev) {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreenClip(clips[currentClipIndex - 1]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [fullscreenClip, currentClipIndex, canGoNext, canGoPrev, clips]);
+
+  // Close fullscreen on background click (capture phase)
+  useEffect(() => {
+    if (!fullscreenClip) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('video-lightbox-backdrop')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreenClip(null);
+      }
+    };
+
+    window.addEventListener('click', handleClick, { capture: true });
+    return () => window.removeEventListener('click', handleClick, { capture: true });
+  }, [fullscreenClip]);
+
+  // Get current clip index and navigation helpers
+  const currentClipIndex = fullscreenClip ? clips.findIndex(c => c.index === fullscreenClip.index) : -1;
+  const canGoNext = currentClipIndex < clips.length - 1;
+  const canGoPrev = currentClipIndex > 0;
+
+  const goToNextClip = () => {
+    if (canGoNext) {
+      setFullscreenClip(clips[currentClipIndex + 1]);
+    }
+  };
+
+  const goToPrevClip = () => {
+    if (canGoPrev) {
+      setFullscreenClip(clips[currentClipIndex - 1]);
+    }
+  };
 
   const handlePlayAll = async () => {
     if (isPlayingAll) {
@@ -212,7 +290,11 @@ export function VideoClipsPreviewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent
+        className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+        onPointerDownOutside={(e) => fullscreenClip && e.preventDefault()}
+        onInteractOutside={(e) => fullscreenClip && e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="w-5 h-5" />
@@ -274,6 +356,7 @@ export function VideoClipsPreviewModal({
                 prompt={getPromptForClip(clip.index)}
                 onRegenerate={onRegenerate ? () => onRegenerate(clip.index) : undefined}
                 isRegenerating={isRegenerating && regeneratingIndex === clip.index}
+                onOpenFullscreen={() => setFullscreenClip(clip)}
               />
             ))}
           </div>
@@ -303,6 +386,78 @@ export function VideoClipsPreviewModal({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Fullscreen Video Lightbox */}
+      {fullscreenClip && createPortal(
+        <div className="video-lightbox-backdrop fixed inset-0 z-[100] bg-black/90 flex items-center justify-center">
+          <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+            {/* Close button */}
+            <button
+              onClick={() => setFullscreenClip(null)}
+              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white transition-colors"
+            >
+              <X className="w-8 h-8" />
+            </button>
+
+            {/* Video player */}
+            <video
+              ref={fullscreenVideoRef}
+              src={fullscreenClip.videoUrl}
+              className="max-w-full max-h-[80vh] rounded-lg"
+              controls
+              autoPlay
+            />
+
+            {/* Navigation arrows */}
+            {canGoPrev && (
+              <button
+                onClick={goToPrevClip}
+                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-16 p-3 text-white/70 hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-10 h-10" />
+              </button>
+            )}
+            {canGoNext && (
+              <button
+                onClick={goToNextClip}
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-16 p-3 text-white/70 hover:text-white transition-colors"
+              >
+                <ChevronRight className="w-10 h-10" />
+              </button>
+            )}
+
+            {/* Clip info */}
+            <div className="mt-4 text-white text-center">
+              <p className="text-lg font-medium">Clip {fullscreenClip.index}</p>
+              {getPromptForClip(fullscreenClip.index) && (
+                <p className="text-sm text-white/70 mt-1 max-w-2xl">
+                  {getPromptForClip(fullscreenClip.index)?.sceneDescription}
+                </p>
+              )}
+              <p className="text-xs text-white/50 mt-2">
+                {currentClipIndex + 1} of {clips.length} • Press ESC or click outside to close
+              </p>
+            </div>
+
+            {/* Regenerate button in fullscreen */}
+            {onRegenerate && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onRegenerate(fullscreenClip.index);
+                }}
+                disabled={isRegenerating && regeneratingIndex === fullscreenClip.index}
+                className="mt-4"
+              >
+                <RefreshCw className={`w-4 h-4 mr-1 ${isRegenerating && regeneratingIndex === fullscreenClip.index ? 'animate-spin' : ''}`} />
+                {isRegenerating && regeneratingIndex === fullscreenClip.index ? 'Regenerating...' : 'Regenerate This Clip'}
+              </Button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </Dialog>
   );
 }
