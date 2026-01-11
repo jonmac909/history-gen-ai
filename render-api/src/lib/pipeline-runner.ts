@@ -18,7 +18,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // Base URL for internal API calls
 const API_BASE_URL = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -174,7 +174,7 @@ export async function runPipeline(
   input: PipelineInput,
   onProgress?: ProgressCallback
 ): Promise<PipelineResult> {
-  const projectId = uuidv4();
+  const projectId = randomUUID();
   const steps: PipelineStepResult[] = [];
   const supabase = getSupabaseClient();
 
