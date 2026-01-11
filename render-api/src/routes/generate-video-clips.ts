@@ -33,8 +33,11 @@ const CLIP_RESOLUTION = '720p';
 const CLIP_ASPECT_RATIO = '16:9';  // Used for 1.5 Pro only
 // Max concurrent clips - Kie.ai handles queueing, but limit for cost control
 const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '5', 10);
-// Enable sequential mode with frame continuity (last frame -> next clip's start frame)
-const ENABLE_FRAME_CONTINUITY = true;
+// Disable frame continuity - use parallel generation for speed
+// Clips will have fade in/out transitions instead
+const ENABLE_FRAME_CONTINUITY = false;
+// Fade duration in seconds for smooth transitions between clips
+const FADE_DURATION = 0.5;
 
 interface ClipPrompt {
   index: number;
@@ -202,12 +205,16 @@ async function checkTaskStatus(
   }
 }
 
-// Copy video from Kie.ai URL to our Supabase storage
+// Copy video from Kie.ai URL to our Supabase storage with fade in/out effects
 async function copyToSupabase(
   videoUrl: string,
   projectId: string,
   clipIndex: number
 ): Promise<string> {
+  const tempDir = os.tmpdir();
+  const inputPath = path.join(tempDir, `clip_input_${clipIndex}_${Date.now()}.mp4`);
+  const outputPath = path.join(tempDir, `clip_output_${clipIndex}_${Date.now()}.mp4`);
+
   try {
     const supabase = getSupabaseClient();
 
@@ -218,20 +225,43 @@ async function copyToSupabase(
     }
 
     const videoBuffer = await response.buffer();
+    fs.writeFileSync(inputPath, videoBuffer);
+
+    // Get video duration for fade out timing
+    const { stdout: durationOutput } = await execAsync(
+      `"${FFPROBE_PATH}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`
+    );
+    const duration = parseFloat(durationOutput.trim());
+
+    if (!isNaN(duration) && duration > FADE_DURATION * 2) {
+      // Apply fade in at start and fade out at end
+      const fadeOutStart = duration - FADE_DURATION;
+      console.log(`[Seedance] Applying ${FADE_DURATION}s fade in/out to clip ${clipIndex + 1}`);
+
+      await execAsync(
+        `"${FFMPEG_PATH}" -y -i "${inputPath}" -vf "fade=t=in:st=0:d=${FADE_DURATION},fade=t=out:st=${fadeOutStart}:d=${FADE_DURATION}" -c:a copy "${outputPath}"`
+      );
+    } else {
+      // Video too short for fades, just copy
+      console.log(`[Seedance] Clip ${clipIndex + 1} too short for fades, skipping`);
+      fs.copyFileSync(inputPath, outputPath);
+    }
+
+    // Read processed video
+    const processedBuffer = fs.readFileSync(outputPath);
     const filename = `clip_${String(clipIndex).padStart(3, '0')}.mp4`;
     const storagePath = `${projectId}/clips/${filename}`;
 
     // Upload to Supabase
     const { error } = await supabase.storage
       .from('generated-assets')
-      .upload(storagePath, videoBuffer, {
+      .upload(storagePath, processedBuffer, {
         contentType: 'video/mp4',
         upsert: true
       });
 
     if (error) {
       console.error(`[Seedance] Failed to upload to Supabase:`, error);
-      // Return original URL if upload fails
       return videoUrl;
     }
 
@@ -246,6 +276,14 @@ async function copyToSupabase(
     console.error(`[Seedance] Error copying to Supabase:`, err);
     // Return original URL if copy fails
     return videoUrl;
+  } finally {
+    // Cleanup temp files
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }
 
