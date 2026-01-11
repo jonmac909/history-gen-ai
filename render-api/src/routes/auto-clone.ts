@@ -209,11 +209,12 @@ async function fetchSavedChannels(supabase: SupabaseClient): Promise<SavedChanne
   return data || [];
 }
 
-// Calculate average views for a channel
+// Calculate average views for a channel (only videos with views > 0, matching Outliers page)
 function calculateAverageViews(videos: ScrapedVideo[]): number {
-  if (videos.length === 0) return 0;
-  const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
-  return totalViews / videos.length;
+  const videosWithViews = videos.filter(v => v.views && v.views > 0);
+  if (videosWithViews.length === 0) return 0;
+  const totalViews = videosWithViews.reduce((sum, v) => sum + (v.views || 0), 0);
+  return totalViews / videosWithViews.length;
 }
 
 // Parse relative time like "2 days ago" to check if within cutoff
