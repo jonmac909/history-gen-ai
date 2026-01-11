@@ -307,7 +307,7 @@ export async function runPipeline(
         if (data.type === 'progress') {
           reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script... ${data.progress}%`);
         }
-      }, 900000);  // 15 min timeout for long scripts
+      }, 1800000);  // 30 min timeout for very long scripts (200+ min videos)
       script = scriptRes.script;
       steps.push({
         step: 'script',
