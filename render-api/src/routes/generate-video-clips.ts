@@ -77,18 +77,20 @@ async function startVideoTask(
   duration: number = CLIP_DURATION,
   resolution: string = CLIP_RESOLUTION
 ): Promise<string> {
-  // Add slow camera movement guidance for sleep videos
-  const enhancedPrompt = `${prompt}. Slow gentle camera movement, smooth cinematic motion, relaxing pace.`;
-  console.log(`[I2V] Starting task for clip ${clipIndex + 1}: ${enhancedPrompt.substring(0, 60)}...`);
+  // For I2V, the image already contains the visual style
+  // The prompt should ONLY describe motion/camera movement, not visual style
+  // Simple motion prompts work best - the AI animates what it sees in the image
+  const motionPrompt = "Slow gentle camera movement, subtle cinematic motion, smooth relaxing pace";
+  console.log(`[I2V] Starting task for clip ${clipIndex + 1} with motion: ${motionPrompt}`);
 
   // v1-pro-fast-image-to-video: animates static images, supports 5s/10s
   const input = {
-    prompt: enhancedPrompt,
+    prompt: motionPrompt,
     image_url: imageUrl,
     resolution,
     duration: String(duration),
   };
-  console.log(`[I2V] Using image: ${imageUrl.substring(0, 80)}...`);
+  console.log(`[I2V] Using image: ${imageUrl.substring(0, 60)}...`);
 
   const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
