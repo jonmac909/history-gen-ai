@@ -528,10 +528,10 @@ export async function runPipeline(
         videoTitle: input.originalTitle,
       });
 
-      // Build a prompt that emphasizes recreating the same visual style
+      // Build a prompt that emphasizes recreating the same visual style (keep original text)
       const recreationPrompt = analysisRes.analysis?.recreationPrompt ||
         'Dramatic YouTube thumbnail, bold text, high contrast';
-      const enhancedPrompt = `Recreate this thumbnail style with similar composition, colors, and mood. ${recreationPrompt}. Replace any text with: "${clonedTitle}"`;
+      const enhancedPrompt = `Recreate this thumbnail as closely as possible - same composition, colors, text, mood, and visual style. ${recreationPrompt}`;
 
       // Generate new thumbnail using original as reference image (image-to-image)
       const thumbnailRes = await callStreamingAPI('/generate-thumbnails', {
