@@ -31,6 +31,7 @@ interface OutlierVideo {
   thumbnailUrl: string;
   channelId: string;
   channelName: string;
+  subscriberCountFormatted: string;
   viewCount: number;
   durationSeconds: number;
   publishedAt: string;
@@ -310,11 +311,17 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
                 />
                 <div className="p-4 space-y-2">
                   <h3 className="font-semibold line-clamp-2">{outlier.title}</h3>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <span>{outlier.channelName}</span>
-                    <span>-</span>
+                    {outlier.subscriberCountFormatted && (
+                      <>
+                        <span>•</span>
+                        <span>{outlier.subscriberCountFormatted} subs</span>
+                      </>
+                    )}
+                    <span>•</span>
                     <span>{formatDuration(outlier.durationSeconds)}</span>
-                    <span>-</span>
+                    <span>•</span>
                     <span>{formatViews(outlier.viewCount)} views</span>
                   </div>
                   <div className="flex items-center gap-2">

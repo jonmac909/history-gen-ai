@@ -79,6 +79,7 @@ interface SavedChannel {
   title: string;  // Channel name
   thumbnail_url: string | null;
   input: string;  // Original input used to find channel
+  subscriber_count_formatted: string | null;  // e.g., "1.2M"
 }
 
 interface OutlierVideo {
@@ -87,6 +88,7 @@ interface OutlierVideo {
   thumbnailUrl: string;
   channelId: string;
   channelName: string;
+  subscriberCountFormatted: string;  // e.g., "1.2M subs"
   viewCount: number;
   durationSeconds: number;
   publishedAt: string;
@@ -200,7 +202,7 @@ async function recordProcessedVideo(
 async function fetchSavedChannels(supabase: SupabaseClient): Promise<SavedChannel[]> {
   const { data, error } = await supabase
     .from('saved_channels')
-    .select('id, title, thumbnail_url, input')
+    .select('id, title, thumbnail_url, input, subscriber_count_formatted')
     .order('saved_at', { ascending: false });
 
   if (error) throw new Error(`Failed to fetch saved channels: ${error.message}`);
@@ -301,6 +303,7 @@ async function scanForOutliers(
             thumbnailUrl: video.thumbnail || `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`,
             channelId: channel.id,
             channelName: channel.title,
+            subscriberCountFormatted: channel.subscriber_count_formatted || '',
             viewCount: video.views || 0,
             durationSeconds: video.duration || 0,
             publishedAt: video.publishedText || '',

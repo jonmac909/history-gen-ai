@@ -2679,6 +2679,15 @@ const Index = () => {
             <Button
               variant="ghost"
               size="sm"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowAutoPosterModal(true)}
+            >
+              <Bot className="w-4 h-4" />
+              <span className="hidden sm:inline">Auto Poster</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               className={`gap-2 ${viewState === "outlier-finder" ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => setViewState("outlier-finder")}
             >
