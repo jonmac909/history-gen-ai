@@ -62,6 +62,16 @@ function getSupabaseClient(): SupabaseClient {
   return createClient(url, key);
 }
 
+// Download image URL and convert to base64
+async function downloadImageAsBase64(imageUrl: string): Promise<string> {
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download image: ${response.status}`);
+  }
+  const buffer = await response.buffer();
+  return buffer.toString('base64');
+}
+
 // Helper to call internal API routes
 async function callInternalAPI(
   endpoint: string,
@@ -503,27 +513,36 @@ export async function runPipeline(
       throw new Error(`Failed to generate images: ${error.message}`);
     }
 
-    // Step 10: Analyze thumbnail + generate
+    // Step 10: Analyze thumbnail + generate using original as reference
     reportProgress('thumbnail', 68, 'Analyzing and generating thumbnail...');
     const thumbnailStart = Date.now();
     let thumbnailUrl: string;
     try {
-      // Analyze original thumbnail
+      // Download original thumbnail as base64 for image-to-image generation
+      console.log(`[Pipeline] Downloading original thumbnail: ${input.originalThumbnailUrl}`);
+      const originalThumbnailBase64 = await downloadImageAsBase64(input.originalThumbnailUrl);
+
+      // Analyze original thumbnail style
       const analysisRes = await callInternalAPI('/analyze-thumbnail', {
         thumbnailUrl: input.originalThumbnailUrl,
         videoTitle: input.originalTitle,
       });
 
-      // Generate new thumbnail based on analysis
+      // Build a prompt that emphasizes recreating the same visual style
+      const recreationPrompt = analysisRes.analysis?.recreationPrompt ||
+        'Dramatic YouTube thumbnail, bold text, high contrast';
+      const enhancedPrompt = `Recreate this thumbnail style with similar composition, colors, and mood. ${recreationPrompt}. Replace any text with: "${clonedTitle}"`;
+
+      // Generate new thumbnail using original as reference image (image-to-image)
       const thumbnailRes = await callStreamingAPI('/generate-thumbnails', {
         projectId,
-        title: clonedTitle,
-        stylePrompt: analysisRes.analysis?.recreationPrompt || 'Dramatic YouTube thumbnail, bold text, high contrast',
-        count: 1,
+        exampleImageBase64: originalThumbnailBase64,
+        prompt: enhancedPrompt,
+        thumbnailCount: 1,
         stream: true,
       }, undefined, 120000);
 
-      thumbnailUrl = thumbnailRes.thumbnails?.[0]?.url || imageUrls[0];
+      thumbnailUrl = thumbnailRes.thumbnails?.[0] || imageUrls[0];
       steps.push({
         step: 'thumbnail',
         success: true,
