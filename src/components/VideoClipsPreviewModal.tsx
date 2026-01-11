@@ -168,18 +168,41 @@ export function VideoClipsPreviewModal({
     }
   };
 
-  const handleDownloadAll = () => {
-    clips.forEach((clip, index) => {
-      if (clip.videoUrl) {
-        const a = document.createElement('a');
-        a.href = clip.videoUrl;
-        a.download = clip.filename || `clip_${String(index).padStart(3, '0')}.mp4`;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadAll = async () => {
+    setIsDownloading(true);
+    try {
+      // Download clips sequentially to avoid overwhelming the browser
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i];
+        if (clip.videoUrl) {
+          try {
+            // Fetch as blob to bypass cross-origin download restrictions
+            const response = await fetch(clip.videoUrl);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = clip.filename || `clip_${String(i).padStart(3, '0')}.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Small delay between downloads
+            if (i < clips.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          } catch (err) {
+            console.error(`Failed to download clip ${i + 1}:`, err);
+          }
+        }
       }
-    });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // Find the prompt for each clip
@@ -228,10 +251,10 @@ export function VideoClipsPreviewModal({
           <Button
             variant="outline"
             onClick={handleDownloadAll}
-            disabled={successCount === 0}
+            disabled={successCount === 0 || isDownloading}
           >
-            <Download className="w-4 h-4 mr-1" />
-            Download All
+            <Download className={`w-4 h-4 mr-1 ${isDownloading ? 'animate-pulse' : ''}`} />
+            {isDownloading ? 'Downloading...' : 'Download All'}
           </Button>
 
           <div className="flex-1" />
