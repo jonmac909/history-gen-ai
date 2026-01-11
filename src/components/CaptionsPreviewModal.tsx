@@ -75,7 +75,7 @@ export function CaptionsPreviewModal({
             </span>
           </DialogTitle>
           <DialogDescription>
-            Review the generated SRT captions before generating images.
+            Review the generated SRT captions before generating video prompts.
           </DialogDescription>
         </DialogHeader>
 
@@ -170,13 +170,13 @@ export function CaptionsPreviewModal({
 
           {onForward ? (
             <Button onClick={onForward}>
-              Prompts
+              Video Prompts
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (
             <Button onClick={handleConfirm}>
               <Check className="w-4 h-4 mr-2" />
-              Create Image Prompts
+              Create Video Prompts
             </Button>
           )}
         </DialogFooter>

@@ -1877,6 +1877,12 @@ const Index = () => {
     }
   };
 
+  const handleForwardToClipPrompts = () => {
+    if (clipPrompts.length > 0) {
+      disableAutoAndGoTo("review-clip-prompts");
+    }
+  };
+
   const handleForwardToPrompts = () => {
     if (imagePrompts.length > 0) {
       disableAutoAndGoTo("review-prompts");
@@ -1892,6 +1898,7 @@ const Index = () => {
   // Check if forward navigation is available for each step
   const canGoForwardFromScript = () => pendingAudioUrl || pendingAudioSegments.length > 0;
   const canGoForwardFromAudio = () => !!pendingSrtContent;
+  const canGoForwardFromCaptionsToClipPrompts = () => clipPrompts.length > 0;
   const canGoForwardFromCaptions = () => imagePrompts.length > 0;
   const canGoForwardFromPrompts = () => pendingImages.length > 0;
 
@@ -3136,7 +3143,13 @@ const Index = () => {
         onConfirm={(srt) => enableVideoClips ? (setPendingSrtContent(srt), handleGenerateClipPrompts()) : handleCaptionsConfirm(srt)}
         onCancel={handleCancelRequest}
         onBack={handleBackToAudio}
-        onForward={canGoForwardFromCaptions() ? handleForwardToPrompts : undefined}
+        onForward={
+          enableVideoClips && canGoForwardFromCaptionsToClipPrompts()
+            ? handleForwardToClipPrompts
+            : canGoForwardFromCaptions()
+              ? handleForwardToPrompts
+              : undefined
+        }
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />
