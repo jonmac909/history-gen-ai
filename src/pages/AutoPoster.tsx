@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
@@ -56,6 +56,7 @@ export default function AutoPoster() {
   const [processedVideos, setProcessedVideos] = useState<ProcessedVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
+  const [retrying, setRetrying] = useState<string | null>(null);
   const [liveProgress, setLiveProgress] = useState<string | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -166,6 +167,33 @@ export default function AutoPoster() {
       setLiveProgress(null);
     } finally {
       setTriggering(false);
+    }
+  };
+
+  // Retry a failed video
+  const retryVideo = async (videoId: string) => {
+    setRetrying(videoId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auto-clone/retry/${videoId}`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || `Failed: ${response.status}`);
+      }
+      toast({
+        title: 'Retry started',
+        description: 'Video processing has been restarted',
+      });
+      fetchStatus();
+    } catch (err) {
+      toast({
+        title: 'Retry failed',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    } finally {
+      setRetrying(null);
     }
   };
 
@@ -354,6 +382,21 @@ export default function AutoPoster() {
                         <p className="text-xs text-red-400 mt-1">{video.error_message}</p>
                       )}
                     </div>
+                    {video.status === 'failed' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => retryVideo(video.video_id)}
+                        disabled={retrying === video.video_id}
+                        className="shrink-0"
+                      >
+                        {retrying === video.video_id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>

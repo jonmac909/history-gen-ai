@@ -149,6 +149,10 @@ async function callStreamingAPI(
       }
     }
 
+    if (!result) {
+      console.error(`[Pipeline] No complete event received from ${endpoint}. Response text:`, text.substring(0, 500));
+      throw new Error(`No complete event received from ${endpoint}`);
+    }
     return result;
   } catch (error: any) {
     clearTimeout(timeout);
