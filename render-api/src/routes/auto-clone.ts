@@ -544,7 +544,8 @@ router.post('/', async (req: Request, res: Response) => {
       sourceDurationSeconds: selectedVideo.durationSeconds,
     }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
-      const stepStr = `${step}: ${message} (${progress}%)`;
+      // Don't duplicate % if message already contains it
+      const stepStr = message.includes('%') ? `${step}: ${message}` : `${step}: ${message} (${progress}%)`;
       // Update current step in both tables for UI polling
       await updateRunRecord(supabase, runId!, { current_step: stepStr });
       await supabase
