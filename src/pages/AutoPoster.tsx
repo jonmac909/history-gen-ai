@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, RotateCcw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
@@ -45,6 +45,7 @@ interface ProcessedVideo {
   duration_seconds: number | null;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   error_message: string | null;
+  current_step: string | null;
   processed_at: string;
   completed_at: string | null;
 }
@@ -57,6 +58,7 @@ export default function AutoPoster() {
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [liveProgress, setLiveProgress] = useState<string | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -86,14 +88,16 @@ export default function AutoPoster() {
 
   useEffect(() => {
     fetchStatus();
-    // Poll every 10 seconds when a run is in progress
+    // Poll every 5 seconds when a run or video is in progress
     const interval = setInterval(() => {
-      if (runs.some(r => r.status === 'running') || triggering) {
+      const hasRunning = runs.some(r => r.status === 'running');
+      const hasProcessing = processedVideos.some(v => v.status === 'processing');
+      if (hasRunning || hasProcessing || triggering) {
         fetchStatus();
       }
-    }, 10000);
+    }, 5000);
     return () => clearInterval(interval);
-  }, [runs, triggering]);
+  }, [runs, processedVideos, triggering]);
 
   // Check if there's already a run today
   const hasRunToday = runs.length > 0 && runs[0].run_date === new Date().toISOString().split('T')[0];
@@ -194,6 +198,33 @@ export default function AutoPoster() {
       });
     } finally {
       setRetrying(null);
+    }
+  };
+
+  // Delete a processed video
+  const deleteVideo = async (videoId: string) => {
+    setDeleting(videoId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auto-clone/processed/${videoId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || `Failed: ${response.status}`);
+      }
+      toast({
+        title: 'Video deleted',
+        description: 'Video removed from processed list',
+      });
+      fetchStatus();
+    } catch (err) {
+      toast({
+        title: 'Delete failed',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -381,22 +412,42 @@ export default function AutoPoster() {
                       {video.error_message && (
                         <p className="text-xs text-red-400 mt-1">{video.error_message}</p>
                       )}
+                      {video.status === 'processing' && video.current_step && (
+                        <p className="text-xs text-blue-400 mt-1">
+                          <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
+                          {video.current_step}
+                        </p>
+                      )}
                     </div>
-                    {video.status === 'failed' && (
+                    <div className="flex gap-2 shrink-0">
+                      {video.status === 'failed' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => retryVideo(video.video_id)}
+                          disabled={retrying === video.video_id}
+                        >
+                          {retrying === video.video_id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-4 h-4" />
+                          )}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => retryVideo(video.video_id)}
-                        disabled={retrying === video.video_id}
-                        className="shrink-0"
+                        onClick={() => deleteVideo(video.video_id)}
+                        disabled={deleting === video.video_id}
+                        className="text-red-400 hover:text-red-300 hover:border-red-400"
                       >
-                        {retrying === video.video_id ? (
+                        {deleting === video.video_id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <RotateCcw className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         )}
                       </Button>
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>

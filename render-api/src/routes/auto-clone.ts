@@ -558,6 +558,26 @@ router.get('/processed', async (req: Request, res: Response) => {
   }
 });
 
+// Delete a processed video record
+router.delete('/processed/:videoId', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { videoId } = req.params;
+
+    const { error } = await supabase
+      .from('processed_videos')
+      .delete()
+      .eq('video_id', videoId);
+
+    if (error) throw error;
+
+    console.log(`[AutoClone] Deleted processed video: ${videoId}`);
+    return res.json({ success: true, message: 'Video deleted' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Retry a failed video
 router.post('/retry/:videoId', async (req: Request, res: Response) => {
   try {
@@ -611,8 +631,13 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
       originalTitle: video.original_title,
       originalThumbnailUrl: video.original_thumbnail_url,
       publishAt,
-    }, (step, progress, message) => {
+    }, async (step, progress, message) => {
       console.log(`[AutoClone Retry] ${step}: ${message} (${progress}%)`);
+      // Update current step in processed_videos for UI polling
+      await supabase
+        .from('processed_videos')
+        .update({ current_step: `${step}: ${message} (${progress}%)` })
+        .eq('video_id', videoId);
     }).then(async (result) => {
       console.log(`[AutoClone Retry] Pipeline completed. Success: ${result.success}`);
       if (result.success) {
@@ -625,6 +650,7 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
             youtube_video_id: result.youtubeVideoId,
             youtube_url: result.youtubeUrl,
             error_message: null,
+            current_step: null,
             completed_at: new Date().toISOString(),
           })
           .eq('video_id', videoId);
@@ -635,6 +661,7 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
             status: 'failed',
             project_id: result.projectId,
             error_message: result.error,
+            current_step: null,
           })
           .eq('video_id', videoId);
       }
@@ -645,6 +672,7 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
         .update({
           status: 'failed',
           error_message: error.message || 'Pipeline crashed',
+          current_step: null,
         })
         .eq('video_id', videoId);
     });
