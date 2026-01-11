@@ -233,9 +233,12 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
           {state === "scanning" && (
             <div className="flex flex-col items-center justify-center py-8 gap-4">
               <Loader2 className="w-12 h-12 text-primary animate-spin" />
-              <p className="text-muted-foreground">
-                Scanning {channelsScanned || "..."} channels for outliers...
-              </p>
+              <div className="text-center space-y-1">
+                <p className="font-medium">Scanning 17 whitelist channels...</p>
+                <p className="text-sm text-muted-foreground">
+                  Looking for 2hr+ videos with 1.5x+ average views from last 7 days
+                </p>
+              </div>
             </div>
           )}
 
