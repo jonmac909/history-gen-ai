@@ -4,17 +4,16 @@ import fetch from 'node-fetch';
 
 const router = Router();
 
-// RunPod LTX-2 endpoint configuration
-const RUNPOD_LTX_ENDPOINT_ID = process.env.RUNPOD_LTX_ENDPOINT_ID;
-const RUNPOD_API_URL = RUNPOD_LTX_ENDPOINT_ID ? `https://api.runpod.ai/v2/${RUNPOD_LTX_ENDPOINT_ID}` : null;
+// Kie.ai Seedance API configuration
+const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
+const KIE_MODEL = 'bytedance/seedance-1.5-pro';
 
-// Constants for video clip generation
-const CLIP_DURATION = 10;  // 10 seconds per clip
-const CLIP_WIDTH = 768;    // LTX-2 optimal width
-const CLIP_HEIGHT = 512;   // LTX-2 optimal height
-const CLIP_FPS = 24;       // Frames per second
-// Max concurrent clips - set via env var, default 5 workers
-const MAX_CONCURRENT_CLIPS = parseInt(process.env.LTX_MAX_CONCURRENT_CLIPS || '5', 10);
+// Constants for video clip generation (Seedance 1.5 Pro)
+const CLIP_DURATION = 12;  // 12 seconds per clip (Seedance max)
+const CLIP_RESOLUTION = '720p';
+const CLIP_ASPECT_RATIO = '16:9';
+// Max concurrent clips - Kie.ai handles queueing, but limit for cost control
+const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '5', 10);
 
 interface ClipPrompt {
   index: number;
@@ -28,10 +27,12 @@ interface GenerateVideoClipsRequest {
   projectId: string;
   clips: ClipPrompt[];
   stream?: boolean;
+  duration?: number;  // 4, 8, or 12 seconds
+  resolution?: string;  // 480p or 720p
 }
 
 interface ClipStatus {
-  jobId: string;
+  taskId: string;
   index: number;
   state: 'pending' | 'success' | 'fail';
   videoUrl?: string;
@@ -39,57 +40,69 @@ interface ClipStatus {
   filename?: string;
 }
 
-// Start a RunPod job for LTX-2 video generation
-async function startVideoJob(
+// Supabase client for copying videos to our storage
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  }
+  return createClient(url, key);
+}
+
+// Start a Kie.ai Seedance task
+async function startVideoTask(
   apiKey: string,
   prompt: string,
-  projectId: string,
-  clipIndex: number
+  clipIndex: number,
+  duration: number = CLIP_DURATION,
+  resolution: string = CLIP_RESOLUTION
 ): Promise<string> {
-  console.log(`Starting LTX-2 job for clip ${clipIndex + 1}: ${prompt.substring(0, 50)}...`);
+  console.log(`[Seedance] Starting task for clip ${clipIndex + 1}: ${prompt.substring(0, 50)}...`);
 
-  const response = await fetch(`${RUNPOD_API_URL}/run`, {
+  const response = await fetch(`${KIE_API_URL}/createTask`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
+      model: KIE_MODEL,
       input: {
         prompt,
-        project_id: projectId,
-        clip_index: clipIndex,
-        duration: CLIP_DURATION,
-        width: CLIP_WIDTH,
-        height: CLIP_HEIGHT,
-        fps: CLIP_FPS,
+        aspect_ratio: CLIP_ASPECT_RATIO,
+        resolution,
+        duration: String(duration),
+        generate_audio: false,  // We use our own TTS
+        fixed_lens: false,  // Allow dynamic camera movement
       },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('RunPod LTX-2 job creation error:', response.status, errorText);
-    throw new Error(`Failed to start video job: ${response.status}`);
+    console.error('[Seedance] Task creation error:', response.status, errorText);
+    throw new Error(`Failed to start video task: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json() as any;
 
-  if (!data.id) {
-    throw new Error('RunPod job creation failed: no job ID returned');
+  if (data.code !== 200 || !data.data?.taskId) {
+    console.error('[Seedance] Task creation failed:', data);
+    throw new Error(data.message || 'Task creation failed: no taskId returned');
   }
 
-  console.log(`LTX-2 job created: ${data.id}`);
-  return data.id;
+  console.log(`[Seedance] Task created: ${data.data.taskId}`);
+  return data.data.taskId;
 }
 
-// Check RunPod job status
-async function checkJobStatus(
+// Check Kie.ai task status
+async function checkTaskStatus(
   apiKey: string,
-  jobId: string
-): Promise<{ state: string; videoUrl?: string; error?: string; generationTime?: number }> {
+  taskId: string
+): Promise<{ state: string; videoUrl?: string; error?: string; costTime?: number }> {
   try {
-    const response = await fetch(`${RUNPOD_API_URL}/status/${jobId}`, {
+    const response = await fetch(`${KIE_API_URL}/recordInfo?taskId=${taskId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -97,59 +110,115 @@ async function checkJobStatus(
     });
 
     if (!response.ok) {
-      console.error(`RunPod status check failed: ${response.status}`);
+      console.error(`[Seedance] Status check failed: ${response.status}`);
       return { state: 'pending' };
     }
 
     const data = await response.json() as any;
 
-    if (data.status === 'COMPLETED' && data.output) {
-      if (data.output.error) {
-        console.error(`Job ${jobId} completed with error:`, data.output.error);
-        return { state: 'fail', error: data.output.error };
+    if (data.code !== 200 || !data.data) {
+      return { state: 'pending' };
+    }
+
+    const task = data.data;
+
+    if (task.state === 'success') {
+      // Parse resultJson to get video URL
+      let videoUrl: string | undefined;
+      try {
+        const result = JSON.parse(task.resultJson);
+        videoUrl = result.resultUrls?.[0];
+      } catch {
+        console.error(`[Seedance] Failed to parse resultJson for task ${taskId}`);
       }
 
-      // LTX-2 handler uploads directly to Supabase and returns URL
-      const videoUrl = data.output.video_url;
       if (!videoUrl) {
-        console.error(`Job ${jobId} completed but no video_url in output`);
-        return { state: 'fail', error: 'No video URL returned' };
+        console.error(`[Seedance] Task ${taskId} completed but no video URL`);
+        return { state: 'fail', error: 'No video URL in result' };
       }
 
-      console.log(`Job ${jobId} completed: ${videoUrl}`);
+      console.log(`[Seedance] Task ${taskId} completed: ${videoUrl}`);
       return {
         state: 'success',
         videoUrl,
-        generationTime: data.output.generation_time
+        costTime: task.costTime
       };
-    } else if (data.status === 'FAILED') {
-      const errorMsg = data.error || data.output?.error || 'Job failed';
-      console.error(`Job ${jobId} failed:`, errorMsg);
+    } else if (task.state === 'fail') {
+      const errorMsg = task.failMsg || 'Task failed';
+      console.error(`[Seedance] Task ${taskId} failed:`, errorMsg);
       return { state: 'fail', error: errorMsg };
-    } else if (data.status === 'CANCELLED' || data.status === 'TIMED_OUT') {
-      console.error(`Job ${jobId} ${data.status.toLowerCase()}`);
-      return { state: 'fail', error: `Job ${data.status.toLowerCase()}` };
+    } else if (['waiting', 'queuing', 'generating'].includes(task.state)) {
+      return { state: 'pending' };
     }
 
     return { state: 'pending' };
   } catch (err) {
-    console.error(`Error checking job ${jobId}:`, err);
+    console.error(`[Seedance] Error checking task ${taskId}:`, err);
     return { state: 'pending' };
+  }
+}
+
+// Copy video from Kie.ai URL to our Supabase storage
+async function copyToSupabase(
+  videoUrl: string,
+  projectId: string,
+  clipIndex: number
+): Promise<string> {
+  try {
+    const supabase = getSupabaseClient();
+
+    // Download video from Kie.ai
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download video: ${response.status}`);
+    }
+
+    const videoBuffer = await response.buffer();
+    const filename = `clip_${String(clipIndex).padStart(3, '0')}.mp4`;
+    const storagePath = `${projectId}/clips/${filename}`;
+
+    // Upload to Supabase
+    const { error } = await supabase.storage
+      .from('generated-assets')
+      .upload(storagePath, videoBuffer, {
+        contentType: 'video/mp4',
+        upsert: true
+      });
+
+    if (error) {
+      console.error(`[Seedance] Failed to upload to Supabase:`, error);
+      // Return original URL if upload fails
+      return videoUrl;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('generated-assets')
+      .getPublicUrl(storagePath);
+
+    console.log(`[Seedance] Copied to Supabase: ${urlData.publicUrl}`);
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error(`[Seedance] Error copying to Supabase:`, err);
+    // Return original URL if copy fails
+    return videoUrl;
   }
 }
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const runpodApiKey = process.env.RUNPOD_API_KEY;
-    if (!runpodApiKey) {
-      return res.status(500).json({ error: 'RUNPOD_API_KEY not configured' });
+    const kieApiKey = process.env.KIE_API_KEY;
+    if (!kieApiKey) {
+      return res.status(500).json({ error: 'KIE_API_KEY not configured' });
     }
 
-    if (!RUNPOD_LTX_ENDPOINT_ID || !RUNPOD_API_URL) {
-      return res.status(500).json({ error: 'RUNPOD_LTX_ENDPOINT_ID not configured' });
-    }
-
-    const { projectId, clips, stream = true }: GenerateVideoClipsRequest = req.body;
+    const {
+      projectId,
+      clips,
+      stream = true,
+      duration = CLIP_DURATION,
+      resolution = CLIP_RESOLUTION
+    }: GenerateVideoClipsRequest = req.body;
 
     if (!projectId) {
       return res.status(400).json({ error: 'Project ID is required' });
@@ -159,17 +228,21 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No clips provided' });
     }
 
+    // Validate duration (Seedance supports 4, 8, or 12 seconds)
+    const validDuration = [4, 8, 12].includes(duration) ? duration : CLIP_DURATION;
+
     const total = clips.length;
-    console.log(`\n=== Generating ${total} video clips with LTX-2 ===`);
+    console.log(`\n=== Generating ${total} video clips with Seedance 1.5 Pro ===`);
+    console.log(`Duration: ${validDuration}s, Resolution: ${resolution}`);
 
     if (stream) {
-      return handleStreamingClips(req, res, projectId, clips, total, runpodApiKey);
+      return handleStreamingClips(req, res, projectId, clips, total, kieApiKey, validDuration, resolution);
     } else {
-      return handleNonStreamingClips(req, res, projectId, clips, runpodApiKey);
+      return handleNonStreamingClips(req, res, projectId, clips, kieApiKey, validDuration, resolution);
     }
 
   } catch (error) {
-    console.error('Error in generate-video-clips:', error);
+    console.error('[Seedance] Error in generate-video-clips:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return res.status(500).json({ success: false, error: errorMessage });
   }
@@ -182,7 +255,9 @@ async function handleStreamingClips(
   projectId: string,
   clips: ClipPrompt[],
   total: number,
-  runpodApiKey: string
+  kieApiKey: string,
+  duration: number,
+  resolution: string
 ) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -202,105 +277,113 @@ async function handleStreamingClips(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const POLL_INTERVAL = 5000; // 5 seconds (video generation takes longer)
-  const MAX_POLLING_TIME = 20 * 60 * 1000; // 20 minutes total
-  const MAX_RETRIES = 1; // Retry failed jobs once
+  const POLL_INTERVAL = 3000; // 3 seconds (Seedance is fast)
+  const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
+  const MAX_RETRIES = 1;
 
   try {
     sendEvent({
       type: 'progress',
       completed: 0,
       total,
-      message: `Starting video clip generation (${MAX_CONCURRENT_CLIPS} concurrent)...`
+      message: `Starting video clip generation with Seedance 1.5 Pro...`
     });
 
     const allResults: ClipStatus[] = [];
     let nextClipIndex = 0;
-    const activeJobs = new Map<string, { index: number; startTime: number; retryCount: number; clip: ClipPrompt }>();
+    const activeTasks = new Map<string, { index: number; startTime: number; retryCount: number; clip: ClipPrompt }>();
     const startTime = Date.now();
     const retryQueue: { clip: ClipPrompt; retryCount: number }[] = [];
 
-    // Helper to start next job
-    const startNextJob = async (): Promise<void> => {
-      let jobData: { clip: ClipPrompt; retryCount: number } | null = null;
+    // Helper to start next task
+    const startNextTask = async (): Promise<void> => {
+      let taskData: { clip: ClipPrompt; retryCount: number } | null = null;
 
       // First try retry queue, then main queue
       if (retryQueue.length > 0) {
-        jobData = retryQueue.shift()!;
-        console.log(`Retrying clip ${jobData.clip.index} (attempt ${jobData.retryCount + 1})`);
+        taskData = retryQueue.shift()!;
+        console.log(`[Seedance] Retrying clip ${taskData.clip.index} (attempt ${taskData.retryCount + 1})`);
       } else if (nextClipIndex < clips.length) {
-        jobData = { clip: clips[nextClipIndex], retryCount: 0 };
+        taskData = { clip: clips[nextClipIndex], retryCount: 0 };
         nextClipIndex++;
       }
 
-      if (!jobData) return;
+      if (!taskData) return;
 
       try {
-        const jobId = await startVideoJob(
-          runpodApiKey,
-          jobData.clip.prompt,
-          projectId,
-          jobData.clip.index - 1  // Convert to 0-indexed for filename
+        const taskId = await startVideoTask(
+          kieApiKey,
+          taskData.clip.prompt,
+          taskData.clip.index - 1,  // Convert to 0-indexed for filename
+          duration,
+          resolution
         );
-        activeJobs.set(jobId, {
-          index: jobData.clip.index,
+        activeTasks.set(taskId, {
+          index: taskData.clip.index,
           startTime: Date.now(),
-          retryCount: jobData.retryCount,
-          clip: jobData.clip
+          retryCount: taskData.retryCount,
+          clip: taskData.clip
         });
-        console.log(`Started clip ${jobData.clip.index}/${total} (${activeJobs.size} active)`);
+        console.log(`[Seedance] Started clip ${taskData.clip.index}/${total} (${activeTasks.size} active)`);
       } catch (err) {
-        console.error(`Failed to create job for clip ${jobData.clip.index}:`, err);
-        if (jobData.retryCount < MAX_RETRIES) {
-          retryQueue.push({ clip: jobData.clip, retryCount: jobData.retryCount + 1 });
+        console.error(`[Seedance] Failed to create task for clip ${taskData.clip.index}:`, err);
+        if (taskData.retryCount < MAX_RETRIES) {
+          retryQueue.push({ clip: taskData.clip, retryCount: taskData.retryCount + 1 });
         } else {
           allResults.push({
-            jobId: '',
-            index: jobData.clip.index,
+            taskId: '',
+            index: taskData.clip.index,
             state: 'fail',
-            error: err instanceof Error ? err.message : 'Failed to create job after retries',
-            filename: `clip_${String(jobData.clip.index - 1).padStart(3, '0')}.mp4`
+            error: err instanceof Error ? err.message : 'Failed to create task after retries',
+            filename: `clip_${String(taskData.clip.index - 1).padStart(3, '0')}.mp4`
           });
         }
       }
     };
 
-    // Fill initial window with jobs
+    // Fill initial window with tasks
     const initialBatch = Math.min(MAX_CONCURRENT_CLIPS, clips.length);
-    console.log(`Starting initial batch of ${initialBatch} clips...`);
-    await Promise.all(Array.from({ length: initialBatch }, () => startNextJob()));
+    console.log(`[Seedance] Starting initial batch of ${initialBatch} clips...`);
+    await Promise.all(Array.from({ length: initialBatch }, () => startNextTask()));
 
-    // Poll active jobs and start new ones as they complete
-    while ((activeJobs.size > 0 || retryQueue.length > 0) && Date.now() - startTime < MAX_POLLING_TIME) {
-      const jobIds = Array.from(activeJobs.keys());
+    // Poll active tasks and start new ones as they complete
+    while ((activeTasks.size > 0 || retryQueue.length > 0) && Date.now() - startTime < MAX_POLLING_TIME) {
+      const taskIds = Array.from(activeTasks.keys());
 
-      // Check all active jobs in parallel
+      // Check all active tasks in parallel
       const checkResults = await Promise.all(
-        jobIds.map(async (jobId) => {
-          const jobData = activeJobs.get(jobId)!;
-          const status = await checkJobStatus(runpodApiKey, jobId);
-          return { jobId, jobData, status };
+        taskIds.map(async (taskId) => {
+          const taskData = activeTasks.get(taskId)!;
+          const status = await checkTaskStatus(kieApiKey, taskId);
+          return { taskId, taskData, status };
         })
       );
 
-      // Process completed jobs
-      for (const { jobId, jobData, status } of checkResults) {
+      // Process completed tasks
+      for (const { taskId, taskData, status } of checkResults) {
         if (status.state === 'success') {
-          const duration = ((Date.now() - jobData.startTime) / 1000).toFixed(1);
-          console.log(`✓ Clip ${jobData.index}/${total} completed in ${duration}s`);
+          const durationSec = ((Date.now() - taskData.startTime) / 1000).toFixed(1);
+          console.log(`[Seedance] ✓ Clip ${taskData.index}/${total} completed in ${durationSec}s`);
+
+          // Copy video to our Supabase storage
+          const supabaseUrl = await copyToSupabase(
+            status.videoUrl!,
+            projectId,
+            taskData.index - 1
+          );
 
           allResults.push({
-            jobId,
-            index: jobData.index,
+            taskId,
+            index: taskData.index,
             state: 'success',
-            videoUrl: status.videoUrl,
-            filename: `clip_${String(jobData.index - 1).padStart(3, '0')}.mp4`
+            videoUrl: supabaseUrl,
+            filename: `clip_${String(taskData.index - 1).padStart(3, '0')}.mp4`
           });
 
-          activeJobs.delete(jobId);
+          activeTasks.delete(taskId);
 
-          // Start next job in the queue
-          await startNextJob();
+          // Start next task in the queue
+          await startNextTask();
 
           // Send progress update
           const completed = allResults.filter(r => r.state === 'success').length;
@@ -310,33 +393,33 @@ async function handleStreamingClips(
             total,
             message: `${completed}/${total} clips generated`,
             latestClip: {
-              index: jobData.index,
-              videoUrl: status.videoUrl,
-              generationTime: status.generationTime
+              index: taskData.index,
+              videoUrl: supabaseUrl,
+              generationTime: status.costTime
             }
           });
 
         } else if (status.state === 'fail') {
-          console.error(`✗ Clip ${jobData.index}/${total} failed (attempt ${jobData.retryCount + 1}): ${status.error}`);
+          console.error(`[Seedance] ✗ Clip ${taskData.index}/${total} failed (attempt ${taskData.retryCount + 1}): ${status.error}`);
 
-          activeJobs.delete(jobId);
+          activeTasks.delete(taskId);
 
           // Retry if not exceeded max retries
-          if (jobData.retryCount < MAX_RETRIES) {
-            retryQueue.push({ clip: jobData.clip, retryCount: jobData.retryCount + 1 });
-            console.log(`Queued clip ${jobData.index} for retry`);
+          if (taskData.retryCount < MAX_RETRIES) {
+            retryQueue.push({ clip: taskData.clip, retryCount: taskData.retryCount + 1 });
+            console.log(`[Seedance] Queued clip ${taskData.index} for retry`);
           } else {
             allResults.push({
-              jobId,
-              index: jobData.index,
+              taskId,
+              index: taskData.index,
               state: 'fail',
               error: status.error,
-              filename: `clip_${String(jobData.index - 1).padStart(3, '0')}.mp4`
+              filename: `clip_${String(taskData.index - 1).padStart(3, '0')}.mp4`
             });
           }
 
-          // Start next job
-          await startNextJob();
+          // Start next task
+          await startNextTask();
 
           // Send progress update
           const completed = allResults.filter(r => r.state === 'success').length;
@@ -351,26 +434,26 @@ async function handleStreamingClips(
       }
 
       // Wait before next poll
-      if (activeJobs.size > 0 || retryQueue.length > 0) {
+      if (activeTasks.size > 0 || retryQueue.length > 0) {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
 
-        // If no active jobs but retries pending, start them
-        while (activeJobs.size < MAX_CONCURRENT_CLIPS && retryQueue.length > 0) {
-          await startNextJob();
+        // If no active tasks but retries pending, start them
+        while (activeTasks.size < MAX_CONCURRENT_CLIPS && retryQueue.length > 0) {
+          await startNextTask();
         }
       }
     }
 
     // Timeout check
-    if (activeJobs.size > 0) {
-      console.warn(`Timeout: ${activeJobs.size} clips still pending after ${MAX_POLLING_TIME / 1000}s`);
-      for (const [jobId, jobData] of activeJobs) {
+    if (activeTasks.size > 0) {
+      console.warn(`[Seedance] Timeout: ${activeTasks.size} clips still pending after ${MAX_POLLING_TIME / 1000}s`);
+      for (const [taskId, taskData] of activeTasks) {
         allResults.push({
-          jobId,
-          index: jobData.index,
+          taskId,
+          index: taskData.index,
           state: 'fail',
-          error: 'Job timed out',
-          filename: `clip_${String(jobData.index - 1).padStart(3, '0')}.mp4`
+          error: 'Task timed out',
+          filename: `clip_${String(taskData.index - 1).padStart(3, '0')}.mp4`
         });
       }
     }
@@ -387,7 +470,7 @@ async function handleStreamingClips(
 
     const failedCount = sortedResults.filter(r => r.state === 'fail').length;
 
-    console.log(`\n=== Video clip generation complete ===`);
+    console.log(`\n=== Seedance video clip generation complete ===`);
     console.log(`Success: ${successfulClips.length}/${total}`);
     console.log(`Failed: ${failedCount}/${total}`);
 
@@ -397,15 +480,15 @@ async function handleStreamingClips(
       clips: successfulClips,
       total: successfulClips.length,
       failed: failedCount,
-      clipDuration: CLIP_DURATION,
-      totalDuration: successfulClips.length * CLIP_DURATION
+      clipDuration: duration,
+      totalDuration: successfulClips.length * duration
     });
 
     cleanup();
     res.end();
 
   } catch (err) {
-    console.error('Stream error:', err);
+    console.error('[Seedance] Stream error:', err);
     sendEvent({
       type: 'error',
       error: err instanceof Error ? err.message : 'Clip generation failed'
@@ -421,28 +504,31 @@ async function handleNonStreamingClips(
   res: Response,
   projectId: string,
   clips: ClipPrompt[],
-  runpodApiKey: string
+  kieApiKey: string,
+  duration: number,
+  resolution: string
 ) {
   try {
-    // Start all jobs
-    const jobData = await Promise.all(
+    // Start all tasks
+    const taskData = await Promise.all(
       clips.map(async (clip) => {
-        const jobId = await startVideoJob(
-          runpodApiKey,
+        const taskId = await startVideoTask(
+          kieApiKey,
           clip.prompt,
-          projectId,
-          clip.index - 1
+          clip.index - 1,
+          duration,
+          resolution
         );
-        return { jobId, clip };
+        return { taskId, clip };
       })
     );
 
     // Poll all in parallel
-    const maxPollingTime = 20 * 60 * 1000; // 20 minutes
-    const pollInterval = 5000;
+    const maxPollingTime = 10 * 60 * 1000; // 10 minutes
+    const pollInterval = 3000;
     const startTime = Date.now();
     const results: { index: number; videoUrl: string | null; error?: string }[] = [];
-    const completed: boolean[] = new Array(jobData.length).fill(false);
+    const completed: boolean[] = new Array(taskData.length).fill(false);
 
     while (Date.now() - startTime < maxPollingTime) {
       const pendingIndices = completed.map((c, i) => c ? -1 : i).filter(i => i >= 0);
@@ -451,18 +537,25 @@ async function handleNonStreamingClips(
 
       const checks = await Promise.all(
         pendingIndices.map(async (i) => {
-          const { jobId, clip } = jobData[i];
-          const status = await checkJobStatus(runpodApiKey, jobId);
-          return { index: i, clip, status };
+          const { taskId, clip } = taskData[i];
+          const status = await checkTaskStatus(kieApiKey, taskId);
+          return { index: i, clip, taskId, status };
         })
       );
 
-      for (const { index, clip, status } of checks) {
+      for (const { index, clip, taskId, status } of checks) {
         if (status.state === 'success' || status.state === 'fail') {
           completed[index] = true;
+
+          let videoUrl = status.videoUrl || null;
+          if (videoUrl) {
+            // Copy to Supabase
+            videoUrl = await copyToSupabase(videoUrl, projectId, clip.index - 1);
+          }
+
           results.push({
             index: clip.index,
-            videoUrl: status.videoUrl || null,
+            videoUrl,
             error: status.error
           });
         }
@@ -484,7 +577,7 @@ async function handleNonStreamingClips(
         filename: `clip_${String(r.index - 1).padStart(3, '0')}.mp4`
       }));
 
-    console.log(`LTX-2 generated ${successfulClips.length}/${clips.length} video clips`);
+    console.log(`[Seedance] Generated ${successfulClips.length}/${clips.length} video clips`);
 
     return res.json({
       success: true,
@@ -494,7 +587,7 @@ async function handleNonStreamingClips(
     });
 
   } catch (err) {
-    console.error('Non-streaming clip generation error:', err);
+    console.error('[Seedance] Non-streaming clip generation error:', err);
     return res.status(500).json({
       success: false,
       error: err instanceof Error ? err.message : 'Clip generation failed'

@@ -228,8 +228,8 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/youtube-upload/auth` | Exchange OAuth code for tokens |
 | `/youtube-upload/token` | Refresh access token |
 | `/pronunciation` | GET/POST pronunciation fixes dictionary for TTS |
-| `/generate-clip-prompts` | Claude AI video scene prompts for LTX-2 (SSE streaming) |
-| `/generate-video-clips` | RunPod LTX-2 video generation with rolling concurrency |
+| `/generate-clip-prompts` | Claude AI video scene prompts for Seedance (SSE streaming) |
+| `/generate-video-clips` | Kie.ai Seedance 1.5 Pro video generation with rolling concurrency |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -414,37 +414,38 @@ Multi-step generation with user review at each stage:
 - Better progress reporting (batch completion is predictable)
 - Less RunPod queue pressure (max 4 jobs in flight)
 
-### Video Clip Generation Architecture (LTX-2)
+### Video Clip Generation Architecture (Seedance 1.5 Pro)
 
-**Uses LTX-Video model on RunPod for AI video generation (intro clips).**
+**Uses Kie.ai Seedance 1.5 Pro API for AI video generation (intro clips).**
 
-**RunPod LTX Worker** (Endpoint: `t20g389skpvxdt`):
-- GitHub repo: `jonmac909/ltx-video-runpod`
-- Model: Lightricks/LTX-Video (HuggingFace Diffusers `LTXPipeline`)
-- H100 80GB GPU, 100GB container disk (model ~50GB)
-- Output: 768x512 @ 24fps, 5-10 seconds per clip
+**Seedance 1.5 Pro** (ByteDance model via Kie.ai):
+- API: `https://api.kie.ai/api/v1/jobs`
+- Model: `bytedance/seedance-1.5-pro`
+- Output: 720p @ 16:9 aspect ratio, 4/8/12 seconds per clip
+- Cost: ~$0.21 per 12-second 720p clip (vs $7+ for self-hosted WAN 2.2)
 
 **Key constants** in `render-api/src/routes/generate-video-clips.ts`:
-- `CLIP_DURATION = 10` seconds per clip
-- `CLIP_WIDTH = 768`, `CLIP_HEIGHT = 512`
-- `CLIP_FPS = 24`
-- `MAX_CONCURRENT_CLIPS = 5` (env var: `LTX_MAX_CONCURRENT_CLIPS`)
+- `CLIP_DURATION = 12` seconds per clip (Seedance max)
+- `CLIP_RESOLUTION = '720p'`
+- `CLIP_ASPECT_RATIO = '16:9'`
+- `MAX_CONCURRENT_CLIPS = 5` (env var: `SEEDANCE_MAX_CONCURRENT_CLIPS`)
 
-**Worker Configuration** (`ltx-video-runpod/handler.py`):
-- HuggingFace cache set to `/tmp/hf_cache` (uses container disk, not system disk)
-- Memory optimizations: `enable_vae_slicing()`, `enable_vae_tiling()`
-- Disk space logging for debugging storage issues
+**Features:**
+- Cinema-quality video with dynamic camera movement
+- Optional native audio generation (disabled - we use Fish Speech TTS)
+- Multilingual support for dialogue
+- Film-grade cinematography
 
 **Clip Prompt Generation** (`/generate-clip-prompts`):
 - Uses Claude to generate cinematic scene descriptions
-- 10 clips × 10 seconds = 100 seconds of video intro
+- 10 clips × 12 seconds = 120 seconds of video intro
 - Prompts include camera movement, lighting, historical accuracy
 
-**Triggering Rebuilds:**
-```bash
-cd /Users/jonmac/Documents/ltx-video-runpod && git add . && git commit -m "message" && git push origin main
-```
-Wait 2-5 min for RunPod rebuild, then terminate old workers for new ones to pick up changes.
+**API Flow:**
+1. POST `/createTask` - Submit video generation request
+2. Poll GET `/recordInfo?taskId=xxx` until state='success'
+3. Download video from `resultJson.resultUrls[0]`
+4. Copy to Supabase storage for persistence
 
 ### Captions Generation Architecture
 
@@ -697,7 +698,7 @@ RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
-RUNPOD_LTX_ENDPOINT_ID=t20g389skpvxdt
+KIE_API_KEY=<kie-api-key-for-seedance>
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
 TUBELAB_API_KEY=<tubelab-api-key>
@@ -754,11 +755,6 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 **Fish Speech:** Uses Docker Hub image `jonmac909/fish-speech-runpod:latest`
 - To update: `cd /Users/jonmac/Documents/fish-speech-runpod && docker build --platform linux/amd64 -t jonmac909/fish-speech-runpod:latest . && docker push jonmac909/fish-speech-runpod:latest`
 - RunPod pulls new image on next cold start (may take a few minutes)
-
-**LTX-2 Video:** Uses GitHub-linked endpoint (push triggers rebuild)
-- To update: `cd /Users/jonmac/Documents/ltx-video-runpod && git add . && git commit -m "message" && git push origin main`
-- Requires 100GB container disk for ~50GB model files
-- HF cache must be set to `/tmp/hf_cache` (container disk, not system disk)
 
 ## Common Issues
 
@@ -834,13 +830,6 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - Exit code 2: Python import errors
 - Exit code 1: PyTorch/torchvision version mismatch
 - Check worker logs, push fix to GitHub, wait 5-10 min for rebuild
-
-### LTX-2 "No space left on device" error
-- **Symptom**: CAS service error with IO Error: No space left on device (os error 28)
-- **Cause**: HuggingFace downloading model to system disk instead of container disk
-- **Solution**: Set `HF_HOME=/tmp/hf_cache` in handler.py (uses 100GB container disk)
-- **Old workers**: Terminate old workers in RunPod dashboard so new ones pick up config changes
-- Model files are ~50GB; container disk must be ≥100GB
 
 ### Frontend not updating after deploy
 - Clear cache: `Cmd+Shift+R` or Incognito
