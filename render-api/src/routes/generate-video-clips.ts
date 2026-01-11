@@ -31,8 +31,8 @@ const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast supports 5s or 10s)
 const CLIP_COUNT = 12;    // 12 clips for 60 second intro
 const CLIP_RESOLUTION = '720p';
 const CLIP_ASPECT_RATIO = '16:9';  // Used for 1.5 Pro only
-// Max concurrent clips - Kie.ai handles queueing, but limit for cost control
-const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '5', 10);
+// Max concurrent clips - submit all at once, Kie.ai handles queueing
+const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '12', 10);
 // Disable frame continuity - use parallel generation for speed
 // Clips will have fade in/out transitions instead
 const ENABLE_FRAME_CONTINUITY = false;
