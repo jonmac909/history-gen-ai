@@ -283,34 +283,17 @@ router.post('/', async (req: Request, res: Response) => {
       `CLIP ${i + 1} (${w.startSeconds}s - ${w.endSeconds}s):\nNarration: "${w.text}"`
     ).join('\n\n');
 
-    // System prompt optimized for video clip generation
-    const systemPrompt = `You are an expert at creating cinematic video scene descriptions for AI video generation (LTX-2).
+    // System prompt optimized for video clip generation - SHORT and SIMPLE
+    const systemPrompt = `You create SHORT video scene descriptions for AI video generation.
 
-CRITICAL RULE - IMMERSIVE HISTORICAL SCENES ONLY:
-You are generating prompts for an AI VIDEO generator. The resulting clips must look like footage from the historical period itself, as if a camera was present witnessing events.
+RULES:
+- 15-30 words per description MAXIMUM
+- Include ONE camera movement (pan, dolly, tracking)
+- Show historical scenes AS THEY HAPPENED - people living, not modern analysis
+- No museums, researchers, maps, documents, artifacts on display
 
-VIDEO-SPECIFIC REQUIREMENTS:
-1. Include MOTION descriptions - what moves, how things animate
-2. Include camera movement suggestions (dolly forward, slow pan, tracking shot, crane up)
-3. Describe atmospheric effects (dust, smoke, light rays, weather)
-4. Focus on dynamic scenes with movement and action
-5. 50-100 words per description
-
-ABSOLUTELY FORBIDDEN:
-- Museums, exhibits, galleries, artifacts on display
-- Scientists, researchers, historians studying anything
-- Maps, documents, scrolls being examined
-- Modern photography or documentary framing
-- Anyone examining or analyzing historical items
-- Static scenes with no movement
-
-REQUIRED: Every scene must show events AS THEY HAPPENED - people LIVING history with dynamic motion.
-
-Output format - ONLY return this JSON array:
-[
-  {"index": 1, "sceneDescription": "..."},
-  {"index": 2, "sceneDescription": "..."}
-]`;
+Output format - JSON array ONLY:
+[{"index": 1, "sceneDescription": "..."}, {"index": 2, "sceneDescription": "..."}]`;
 
     const systemConfig = [
       {
