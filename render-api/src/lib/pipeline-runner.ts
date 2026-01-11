@@ -374,6 +374,18 @@ export async function runPipeline(
       throw new Error(`Failed to generate captions: ${error.message}`);
     }
 
+    // Download SRT content once to reuse for clip prompts and image prompts
+    let srtContent: string = '';
+    try {
+      const srtResponse = await fetch(captionsUrl);
+      if (srtResponse.ok) {
+        srtContent = await srtResponse.text();
+        console.log(`[Pipeline] Downloaded SRT: ${srtContent.length} chars`);
+      }
+    } catch (e) {
+      console.warn('[Pipeline] Could not download SRT, continuing...');
+    }
+
     // Step 6: Generate clip prompts (5 × 12s intro videos)
     reportProgress('clipPrompts', 45, 'Generating video clip prompts...');
     const clipPromptsStart = Date.now();
@@ -381,6 +393,7 @@ export async function runPipeline(
     try {
       const clipPromptsRes = await callStreamingAPI('/generate-clip-prompts', {
         script,
+        srtContent,
         projectId,
         clipCount: INTRO_CLIP_COUNT,
         clipDuration: INTRO_CLIP_DURATION,
@@ -459,7 +472,7 @@ export async function runPipeline(
     try {
       const promptsRes = await callStreamingAPI('/generate-image-prompts', {
         script,
-        captionsUrl,
+        srtContent,  // Reuse SRT downloaded earlier
         projectId,
         imageCount: 10,
         masterStylePrompt: 'Photorealistic historical scene, dramatic cinematic lighting, 8K quality',
