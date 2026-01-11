@@ -3149,6 +3149,7 @@ const Index = () => {
       )}
 
       {/* Captions Preview Modal - Review captions and set image count */}
+      {/* forwardLabel must match the actual navigation target, not just enableVideoClips */}
       <CaptionsPreviewModal
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent || ""}
@@ -3162,7 +3163,14 @@ const Index = () => {
               ? handleForwardToPrompts
               : undefined
         }
-        forwardLabel={enableVideoClips ? "Video Prompts" : "Image Prompts"}
+        forwardLabel={
+          // Label must match where button actually navigates
+          (enableVideoClips && canGoForwardFromCaptionsToClipPrompts())
+            ? "Video Prompts"
+            : canGoForwardFromCaptions()
+              ? "Image Prompts"
+              : (enableVideoClips ? "Video Prompts" : "Image Prompts")
+        }
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />
