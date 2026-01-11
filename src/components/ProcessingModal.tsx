@@ -20,9 +20,10 @@ interface ProcessingModalProps {
   isOpen: boolean;
   onClose: () => void;
   steps: GenerationStep[];
+  title?: string;
 }
 
-export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps) {
+export function ProcessingModal({ isOpen, onClose, steps, title = "Generating..." }: ProcessingModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -34,7 +35,7 @@ export function ProcessingModal({ isOpen, onClose, steps }: ProcessingModalProps
           <div className="flex items-center gap-3">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
             <DialogTitle className="text-2xl font-bold">
-              Generating Project...
+              {title}
             </DialogTitle>
           </div>
           <p className="text-muted-foreground pt-1">

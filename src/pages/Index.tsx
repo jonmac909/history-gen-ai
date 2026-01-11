@@ -180,6 +180,7 @@ const Index = () => {
   // Load settings from localStorage (persists across sessions)
   const [settings, setSettings] = useState<GenerationSettings>(loadLastSettings);
   const [processingSteps, setProcessingSteps] = useState<GenerationStep[]>([]);
+  const [processingTitle, setProcessingTitle] = useState("Generating...");
   const [scriptTemplates, setScriptTemplates] = useState<ScriptTemplate[]>(defaultTemplates);
   const [imageTemplates, setImageTemplates] = useState<ImageTemplate[]>(getImageTemplatesWithCustomOverrides);
   const [cartesiaVoices, setCartesiaVoices] = useState<CartesiaVoice[]>([]);
@@ -1197,10 +1198,11 @@ const Index = () => {
     }
 
     const steps: GenerationStep[] = [
-      { id: "clip-prompts", label: "Generating Clip Descriptions", status: "pending" },
+      { id: "clip-prompts", label: "Generating Video Prompts", status: "pending" },
     ];
 
     setProcessingSteps(steps);
+    setProcessingTitle("Generating Video Prompts...");
     setViewState("processing");
 
     try {
@@ -3105,6 +3107,7 @@ const Index = () => {
         isOpen={viewState === "processing"}
         onClose={handleCancelRequest}
         steps={processingSteps}
+        title={processingTitle}
       />
 
       {/* Script Review Modal */}
@@ -3149,21 +3152,15 @@ const Index = () => {
       )}
 
       {/* Captions Preview Modal - Review captions and set image count */}
-      {/* forwardLabel must match the actual navigation target, not just enableVideoClips */}
+      {/* Video Prompts is always the next step after Captions */}
       <CaptionsPreviewModal
         isOpen={viewState === "review-captions"}
         srtContent={pendingSrtContent || ""}
-        onConfirm={(srt) => enableVideoClips ? (setPendingSrtContent(srt), handleGenerateClipPrompts()) : handleCaptionsConfirm(srt)}
+        onConfirm={(srt) => { setPendingSrtContent(srt); handleGenerateClipPrompts(); }}
         onCancel={handleCancelRequest}
         onBack={handleBackToAudio}
-        onForward={
-          enableVideoClips && canGoForwardFromCaptionsToClipPrompts()
-            ? handleForwardToClipPrompts
-            : canGoForwardFromCaptions()
-              ? handleForwardToPrompts
-              : undefined
-        }
-        forwardLabel={enableVideoClips ? "Video Prompts" : "Image Prompts"}
+        onForward={canGoForwardFromCaptionsToClipPrompts() ? handleForwardToClipPrompts : undefined}
+        forwardLabel="Video Prompts"
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />

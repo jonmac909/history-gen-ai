@@ -4,9 +4,9 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 
 // Constants
-const CLIP_COUNT = 10;  // 10 clips at 10 seconds each = 100 seconds intro
-const CLIP_DURATION = 10;  // 10 seconds per clip
-const TOTAL_CLIP_DURATION = CLIP_COUNT * CLIP_DURATION;  // 100 seconds
+const CLIP_COUNT = 5;  // 5 clips at 12 seconds each = 60 seconds intro
+const CLIP_DURATION = 12;  // 12 seconds per clip (Seedance max)
+const TOTAL_CLIP_DURATION = CLIP_COUNT * CLIP_DURATION;  // 60 seconds
 
 interface ClipPrompt {
   index: number;
@@ -320,7 +320,7 @@ Output format - ONLY return this JSON array:
       }
     ];
 
-    sendEvent({ type: 'progress', progress: 15, message: 'Generating clip descriptions...' });
+    sendEvent({ type: 'progress', progress: 15, message: 'Generating video prompts...' });
 
     let fullResponse = '';
 
@@ -336,13 +336,13 @@ Output format - ONLY return this JSON array:
 SCRIPT CONTEXT (first ~100 seconds):
 ${introScriptWords}
 
-TIME-CODED SEGMENTS FOR EACH 10-SECOND CLIP:
+TIME-CODED SEGMENTS FOR EACH ${CLIP_DURATION}-SECOND CLIP:
 ${clipDescriptions}
 
 STYLE GUIDANCE: ${stylePrompt || 'Historically accurate, immersive first-person perspective'}
 
 Remember:
-- Each clip is 10 seconds long
+- Each clip is ${CLIP_DURATION} seconds long
 - Include camera movements and motion descriptions
 - Show the era authentically with dynamic scenes
 - Output ONLY a JSON array with ${CLIP_COUNT} items`
@@ -358,7 +358,7 @@ Remember:
         // Track progress based on completed descriptions
         const completedCount = (fullResponse.match(/\"sceneDescription\"\s*:\s*\"[^\"]+\"/g) || []).length;
         const progress = Math.min(70, 15 + Math.round((completedCount / CLIP_COUNT) * 55));
-        sendEvent({ type: 'progress', progress, message: `Generated ${completedCount}/${CLIP_COUNT} clip descriptions...` });
+        sendEvent({ type: 'progress', progress, message: `Generated ${completedCount}/${CLIP_COUNT} video prompts...` });
       }
     }
 
