@@ -10,6 +10,96 @@ try {
   console.warn('[generate-thumbnails] sharp not available, thumbnail compression disabled:', e);
 }
 
+// YouTube thumbnail dimensions (16:9 aspect ratio)
+const THUMBNAIL_WIDTH = 1280;
+const THUMBNAIL_HEIGHT = 720;
+const TARGET_ASPECT_RATIO = 16 / 9;
+
+// Crop image to 16:9 aspect ratio (center crop) and resize to target dimensions
+async function cropTo16x9(imageBuffer: Buffer, targetWidth = THUMBNAIL_WIDTH, targetHeight = THUMBNAIL_HEIGHT): Promise<Buffer> {
+  if (!sharp) {
+    console.warn('[Thumbnail] sharp not available, skipping 16:9 crop');
+    return imageBuffer;
+  }
+
+  try {
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+    const { width, height } = metadata;
+
+    if (!width || !height) {
+      console.warn('[Thumbnail] Could not get image dimensions, skipping crop');
+      return imageBuffer;
+    }
+
+    const currentAspect = width / height;
+    let cropWidth = width;
+    let cropHeight = height;
+    let left = 0;
+    let top = 0;
+
+    if (currentAspect > TARGET_ASPECT_RATIO) {
+      // Image is wider than 16:9 - crop sides
+      cropWidth = Math.round(height * TARGET_ASPECT_RATIO);
+      left = Math.round((width - cropWidth) / 2);
+      console.log(`[Thumbnail] Cropping width: ${width}x${height} -> ${cropWidth}x${cropHeight} (removing ${left}px from each side)`);
+    } else if (currentAspect < TARGET_ASPECT_RATIO) {
+      // Image is taller than 16:9 - crop top/bottom
+      cropHeight = Math.round(width / TARGET_ASPECT_RATIO);
+      top = Math.round((height - cropHeight) / 2);
+      console.log(`[Thumbnail] Cropping height: ${width}x${height} -> ${cropWidth}x${cropHeight} (removing ${top}px from top/bottom)`);
+    } else {
+      console.log(`[Thumbnail] Image already 16:9: ${width}x${height}`);
+    }
+
+    const result = await sharp(imageBuffer)
+      .extract({ left, top, width: cropWidth, height: cropHeight })
+      .resize(targetWidth, targetHeight, { fit: 'fill' })
+      .png()
+      .toBuffer();
+
+    console.log(`[Thumbnail] Cropped and resized to ${targetWidth}x${targetHeight}`);
+    return Buffer.from(result);
+  } catch (err) {
+    console.error('[Thumbnail] Error cropping to 16:9:', err);
+    return imageBuffer;
+  }
+}
+
+// Remove letterboxing (black bars) from image edges
+async function removeLetterboxing(imageBuffer: Buffer): Promise<Buffer> {
+  if (!sharp) {
+    console.warn('[Thumbnail] sharp not available, skipping letterbox removal');
+    return imageBuffer;
+  }
+
+  try {
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+    const { width, height } = metadata;
+
+    if (!width || !height) {
+      return imageBuffer;
+    }
+
+    // Use trim to remove black borders (with small tolerance for near-black pixels)
+    const trimmed = await sharp(imageBuffer)
+      .trim({ threshold: 10 })  // Remove pixels within 10 of black
+      .toBuffer();
+
+    // Check new dimensions
+    const trimmedMeta = await sharp(trimmed).metadata();
+    if (trimmedMeta.width && trimmedMeta.height) {
+      console.log(`[Thumbnail] Letterbox removal: ${width}x${height} -> ${trimmedMeta.width}x${trimmedMeta.height}`);
+    }
+
+    return Buffer.from(trimmed);
+  } catch (err) {
+    console.error('[Thumbnail] Error removing letterboxing:', err);
+    return imageBuffer;
+  }
+}
+
 const router = Router();
 
 // YouTube thumbnail size limit
@@ -75,7 +165,11 @@ async function uploadReferenceImage(
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   // Decode base64 to buffer
-  const imageBuffer = Buffer.from(base64, 'base64');
+  let imageBuffer = Buffer.from(base64, 'base64');
+
+  // Crop reference image to 16:9 to prevent Seedream from letterboxing
+  console.log(`[Thumbnail] Pre-processing reference image (${imageBuffer.length} bytes)...`);
+  imageBuffer = Buffer.from(await cropTo16x9(imageBuffer));
 
   // Generate unique filename for reference image
   const filename = `reference_${Date.now()}.png`;
@@ -254,7 +348,14 @@ async function downloadAndUploadImage(
   }
 
   const arrayBuffer = await imageResponse.arrayBuffer();
-  const originalBuffer = Buffer.from(arrayBuffer);
+  let originalBuffer = Buffer.from(arrayBuffer);
+
+  // Remove any letterboxing (black bars) that Seedream may have added
+  console.log(`[Thumbnail] Post-processing generated image (${originalBuffer.length} bytes)...`);
+  originalBuffer = Buffer.from(await removeLetterboxing(originalBuffer));
+
+  // Crop to exact 16:9 and resize to YouTube thumbnail dimensions
+  originalBuffer = Buffer.from(await cropTo16x9(originalBuffer));
 
   // Compress to JPEG under 2MB for YouTube compatibility
   const { buffer: imageBuffer, contentType } = await compressImageForYouTube(originalBuffer);

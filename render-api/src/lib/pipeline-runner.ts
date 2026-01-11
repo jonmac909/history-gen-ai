@@ -7,11 +7,13 @@
  * 3. Generate script from transcript
  * 4. Generate audio (voice cloning)
  * 5. Generate captions
- * 6. Generate image prompts
- * 7. Generate images
- * 8. Analyze + generate thumbnail
- * 9. Render video
- * 10. Upload to YouTube
+ * 6. Generate clip prompts (5 × 12s video intro)
+ * 7. Generate video clips (Seedance 1.5 Pro)
+ * 8. Generate image prompts (for remaining duration)
+ * 9. Generate images
+ * 10. Analyze + generate thumbnail
+ * 11. Render video (clips + images)
+ * 12. Upload to YouTube
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -160,6 +162,11 @@ async function callStreamingAPI(
 // Default voice sample URL
 const DEFAULT_VOICE_SAMPLE = 'https://autoaigen.com/voices/clone_voice.mp3';
 
+// Intro video clips configuration
+const INTRO_CLIP_COUNT = 5;  // 5 video clips at start
+const INTRO_CLIP_DURATION = 12;  // 12 seconds each (Seedance max)
+const INTRO_TOTAL_DURATION = INTRO_CLIP_COUNT * INTRO_CLIP_DURATION;  // 60 seconds total
+
 /**
  * Run the full video generation pipeline
  */
@@ -300,8 +307,84 @@ export async function runPipeline(
       throw new Error(`Failed to generate captions: ${error.message}`);
     }
 
-    // Step 6: Generate image prompts (streaming)
-    reportProgress('imagePrompts', 45, 'Generating image prompts...');
+    // Step 6: Generate clip prompts (5 × 12s intro videos)
+    reportProgress('clipPrompts', 45, 'Generating video clip prompts...');
+    const clipPromptsStart = Date.now();
+    let clipPrompts: any[];
+    try {
+      const clipPromptsRes = await callStreamingAPI('/generate-clip-prompts', {
+        script,
+        projectId,
+        clipCount: INTRO_CLIP_COUNT,
+        clipDuration: INTRO_CLIP_DURATION,
+      }, (data) => {
+        if (data.type === 'progress') {
+          reportProgress('clipPrompts', 45 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
+        }
+      });
+      clipPrompts = clipPromptsRes.prompts;
+      steps.push({
+        step: 'clipPrompts',
+        success: true,
+        duration: Date.now() - clipPromptsStart,
+        data: { count: clipPrompts.length },
+      });
+    } catch (error: any) {
+      // Clip prompts failure is non-fatal - continue without intro clips
+      console.warn(`[Pipeline] Clip prompts failed, continuing without intro clips: ${error.message}`);
+      clipPrompts = [];
+      steps.push({ step: 'clipPrompts', success: false, duration: Date.now() - clipPromptsStart, error: error.message });
+    }
+
+    // Step 7: Generate video clips (Seedance 1.5 Pro)
+    reportProgress('videoClips', 47, 'Generating intro video clips...');
+    const videoClipsStart = Date.now();
+    let introClips: { url: string; startSeconds: number; endSeconds: number }[] = [];
+    if (clipPrompts.length > 0) {
+      try {
+        const clipsRes = await callStreamingAPI('/generate-video-clips', {
+          projectId,
+          clips: clipPrompts.map((p: any, i: number) => ({
+            index: i + 1,
+            startSeconds: i * INTRO_CLIP_DURATION,
+            endSeconds: (i + 1) * INTRO_CLIP_DURATION,
+            prompt: p.prompt || p,
+          })),
+          duration: INTRO_CLIP_DURATION,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('videoClips', 47 + Math.round((data.completed / data.total) * 8), `Generating clips ${data.completed}/${data.total}...`);
+          }
+        }, 900000);  // 15 min timeout for 5 clips
+
+        introClips = (clipsRes.clips || []).map((c: any) => ({
+          url: c.videoUrl,
+          startSeconds: (c.index - 1) * INTRO_CLIP_DURATION,
+          endSeconds: c.index * INTRO_CLIP_DURATION,
+        }));
+        steps.push({
+          step: 'videoClips',
+          success: true,
+          duration: Date.now() - videoClipsStart,
+          data: { count: introClips.length, totalDuration: introClips.length * INTRO_CLIP_DURATION },
+        });
+      } catch (error: any) {
+        // Video clips failure is non-fatal - continue without intro clips
+        console.warn(`[Pipeline] Video clips failed, continuing without intro clips: ${error.message}`);
+        introClips = [];
+        steps.push({ step: 'videoClips', success: false, duration: Date.now() - videoClipsStart, error: error.message });
+      }
+    } else {
+      steps.push({
+        step: 'videoClips',
+        success: false,
+        duration: 0,
+        error: 'Skipped - no clip prompts',
+      });
+    }
+
+    // Step 8: Generate image prompts (streaming)
+    reportProgress('imagePrompts', 55, 'Generating image prompts...');
     const imagePromptsStart = Date.now();
     let imagePrompts: any[];
     try {
@@ -313,7 +396,7 @@ export async function runPipeline(
         masterStylePrompt: 'Photorealistic historical scene, dramatic cinematic lighting, 8K quality',
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('imagePrompts', 45 + Math.round(data.progress * 0.05), `Generating prompts...`);
+          reportProgress('imagePrompts', 55 + Math.round(data.progress * 0.03), `Generating prompts...`);
         }
       });
       imagePrompts = promptsRes.prompts;
@@ -328,8 +411,8 @@ export async function runPipeline(
       throw new Error(`Failed to generate image prompts: ${error.message}`);
     }
 
-    // Step 7: Generate images (streaming)
-    reportProgress('images', 50, 'Generating images...');
+    // Step 9: Generate images (streaming)
+    reportProgress('images', 58, 'Generating images...');
     const imagesStart = Date.now();
     let imageUrls: string[];
     try {
@@ -338,7 +421,7 @@ export async function runPipeline(
         projectId,
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('images', 50 + Math.round((data.completed / data.total) * 15), `Generating images ${data.completed}/${data.total}...`);
+          reportProgress('images', 58 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
         }
       }, 600000);
       imageUrls = imagesRes.images.map((img: any) => img.imageUrl);
@@ -353,8 +436,8 @@ export async function runPipeline(
       throw new Error(`Failed to generate images: ${error.message}`);
     }
 
-    // Step 8: Analyze thumbnail + generate
-    reportProgress('thumbnail', 65, 'Analyzing and generating thumbnail...');
+    // Step 10: Analyze thumbnail + generate
+    reportProgress('thumbnail', 68, 'Analyzing and generating thumbnail...');
     const thumbnailStart = Date.now();
     let thumbnailUrl: string;
     try {
@@ -392,8 +475,8 @@ export async function runPipeline(
       });
     }
 
-    // Step 9: Render video (streaming)
-    reportProgress('render', 70, 'Rendering video...');
+    // Step 11: Render video (streaming) - with intro clips if available
+    reportProgress('render', 72, 'Rendering video...');
     const renderStart = Date.now();
     let videoUrl: string;
     try {
@@ -403,9 +486,10 @@ export async function runPipeline(
         captionsUrl,
         imageUrls,
         effectType: 'smoke_embers',
+        introClips: introClips.length > 0 ? introClips : undefined,
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('render', 70 + Math.round(data.progress * 0.2), `Rendering video... ${data.progress}%`);
+          reportProgress('render', 72 + Math.round(data.progress * 0.18), `Rendering video... ${data.progress}%`);
         }
       }, 1800000);  // 30 min timeout
       videoUrl = renderRes.videoUrl;
@@ -420,7 +504,7 @@ export async function runPipeline(
       throw new Error(`Failed to render video: ${error.message}`);
     }
 
-    // Step 10: Upload to YouTube (streaming)
+    // Step 12: Upload to YouTube (streaming)
     reportProgress('upload', 90, 'Uploading to YouTube...');
     const uploadStart = Date.now();
     let youtubeVideoId: string;
