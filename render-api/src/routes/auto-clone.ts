@@ -246,8 +246,8 @@ function isWithinDays(publishedText: string | undefined, days: number): boolean 
   return false;
 }
 
-// Scan channels for outliers
-async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]> {
+// Scan channels for outliers - returns outliers and count of channels scanned
+async function scanForOutliers(channels: SavedChannel[]): Promise<{ outliers: OutlierVideo[]; scannedCount: number }> {
   const allOutliers: OutlierVideo[] = [];
 
   // Filter to only whitelisted channels
@@ -304,7 +304,7 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]
   // Sort by outlier multiplier (highest first)
   allOutliers.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
 
-  return allOutliers;
+  return { outliers: allOutliers, scannedCount: whitelistedChannels.length };
 }
 
 // Main auto-clone trigger
@@ -347,13 +347,14 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    await updateRunRecord(supabase, runId, { channels_scanned: channels.length });
+    // Scan for outliers (only whitelisted channels)
+    console.log(`[AutoClone] Scanning channels for outliers...`);
+    const { outliers, scannedCount } = await scanForOutliers(channels);
 
-    // Scan for outliers
-    console.log(`[AutoClone] Scanning ${channels.length} channels for outliers...`);
-    const outliers = await scanForOutliers(channels);
-
-    await updateRunRecord(supabase, runId, { outliers_found: outliers.length });
+    await updateRunRecord(supabase, runId, {
+      channels_scanned: scannedCount,
+      outliers_found: outliers.length
+    });
 
     if (outliers.length === 0) {
       await updateRunRecord(supabase, runId, {
@@ -364,7 +365,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(200).json({
         success: true,
         message: 'No qualifying outliers found',
-        channelsScanned: channels.length,
+        channelsScanned: scannedCount,
       });
     }
 
