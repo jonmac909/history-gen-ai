@@ -169,16 +169,27 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
 
   const pollProgress = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auto-clone/processed?limit=1`);
-      const data = await response.json();
+      // Poll both endpoints for progress
+      const [processedRes, statusRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/auto-clone/processed?limit=1`),
+        fetch(`${API_BASE_URL}/auto-clone/status?limit=1`),
+      ]);
 
-      if (data.success && data.videos?.length > 0) {
-        const video = data.videos[0];
+      const processedData = await processedRes.json();
+      const statusData = await statusRes.json();
+
+      // Get progress from run status (more reliable)
+      const runStep = statusData.runs?.[0]?.current_step;
+      if (runStep) {
+        setCurrentStep(runStep);
+      }
+
+      // Check completion/failure from processed videos
+      if (processedData.success && processedData.videos?.length > 0) {
+        const video = processedData.videos[0];
 
         if (video.video_id === outlier?.videoId) {
-          if (video.status === "processing") {
-            setCurrentStep(video.current_step || "Processing...");
-          } else if (video.status === "completed") {
+          if (video.status === "completed") {
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;
