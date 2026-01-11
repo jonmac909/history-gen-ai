@@ -425,8 +425,10 @@ router.post('/', async (req: Request, res: Response) => {
       originalThumbnailUrl: selectedVideo.thumbnailUrl,
       channelName: selectedVideo.channelName,
       publishAt,
-    }, (step, progress, message) => {
+    }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
+      // Update current step in database for UI polling
+      await updateRunRecord(supabase, runId!, { current_step: `${step}: ${message} (${progress}%)` });
     }).then(async (result) => {
       if (result.success) {
         console.log(`[AutoClone] Pipeline completed! YouTube: ${result.youtubeUrl}`);

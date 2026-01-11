@@ -26,6 +26,7 @@ interface AutoCloneRun {
   outliers_found: number;
   video_selected_id: string | null;
   error_message: string | null;
+  current_step: string | null;
   started_at: string;
   completed_at: string | null;
 }
@@ -278,6 +279,12 @@ export default function AutoPoster() {
                         <p className="text-xs text-muted-foreground">
                           {run.channels_scanned} channels scanned, {run.outliers_found} outliers found
                         </p>
+                        {run.status === 'running' && run.current_step && (
+                          <p className="text-xs text-blue-400 mt-1">
+                            <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
+                            {run.current_step}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="text-right text-sm text-muted-foreground">
