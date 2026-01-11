@@ -41,8 +41,8 @@ async function sendWhatsAppNotification(message: string): Promise<void> {
   }
 }
 
-// Minimum video duration for outlier selection (2 hours)
-const MIN_DURATION_SECONDS = 7200;
+// Minimum video duration for outlier selection (1 hour)
+const MIN_DURATION_SECONDS = 3600;
 
 // Days to look back for outliers
 const OUTLIER_DAYS = 30;
