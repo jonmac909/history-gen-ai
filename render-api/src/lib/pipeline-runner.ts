@@ -3,17 +3,16 @@
  *
  * Runs the complete pipeline for cloning a video:
  * 1. Fetch transcript from source video
- * 2. Rewrite title
- * 3. Generate script from transcript
- * 4. Generate audio (voice cloning)
- * 5. Generate captions
- * 6. Generate clip prompts (5 × 12s video intro)
- * 7. Generate video clips (Seedance 1.5 Pro)
- * 8. Generate image prompts (for remaining duration)
- * 9. Generate images
- * 10. Analyze + generate thumbnail
- * 11. Render video (clips + images)
- * 12. Upload to YouTube
+ * 2. Generate script from transcript
+ * 3. Generate audio (voice cloning)
+ * 4. Generate captions
+ * 5. Generate clip prompts (5 × 12s video intro)
+ * 6. Generate video clips (Seedance 1.5 Pro)
+ * 7. Generate image prompts (for remaining duration)
+ * 8. Generate images
+ * 9. Analyze + generate thumbnail
+ * 10. Render video (clips + images)
+ * 11. Upload to YouTube (title rewriting done in modal)
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -262,28 +261,10 @@ export async function runPipeline(
       throw new Error(`Failed to fetch transcript: ${error.message}`);
     }
 
-    // Step 2: Rewrite title
-    reportProgress('title', 10, 'Rewriting title...');
-    const titleStart = Date.now();
-    let clonedTitle: string;
-    try {
-      const titleRes = await callInternalAPI('/rewrite-title', {
-        originalTitle: input.originalTitle,
-        channelName: input.channelName,
-      });
-      clonedTitle = titleRes.recommendedTitle;
-      steps.push({
-        step: 'title',
-        success: true,
-        duration: Date.now() - titleStart,
-        data: { original: input.originalTitle, rewritten: clonedTitle },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'title', success: false, duration: Date.now() - titleStart, error: error.message });
-      throw new Error(`Failed to rewrite title: ${error.message}`);
-    }
+    // Use original title (title rewriting happens in YouTube upload modal)
+    const clonedTitle = input.originalTitle;
 
-    // Step 3: Generate script (streaming)
+    // Step 2: Generate script (streaming)
     reportProgress('script', 15, 'Generating script...');
     const scriptStart = Date.now();
     let script: string;
