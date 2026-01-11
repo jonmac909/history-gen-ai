@@ -24,15 +24,13 @@ const KIE_MODEL_T2V = 'bytedance/seedance-1.5-pro';
 const KIE_MODEL_I2V = 'bytedance/v1-pro-fast-image-to-video';
 
 // Constants for video clip generation
-// 12 clips = ~59 seconds total intro
-// Clip 1: 1.5 Pro T2V (4s, since T2V supports 4/8/12)
-// Clips 2-12: v1-pro-fast I2V (5s each, 3x faster)
-const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast supports 5s or 10s)
-const CLIP_COUNT = 12;    // 12 clips for 60 second intro
+// 15 clips × 4s = 60 seconds total intro (all using 1.5 Pro T2V)
+const CLIP_DURATION = 4;  // 4 seconds per clip (1.5 Pro supports 4/8/12)
+const CLIP_COUNT = 15;    // 15 clips for 60 second intro
 const CLIP_RESOLUTION = '720p';
 const CLIP_ASPECT_RATIO = '16:9';  // Used for 1.5 Pro only
 // Max concurrent clips - submit all at once, Kie.ai handles queueing
-const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '12', 10);
+const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '15', 10);
 // Disable frame continuity - use parallel generation for speed
 // Clips will have fade in/out transitions instead
 const ENABLE_FRAME_CONTINUITY = false;
