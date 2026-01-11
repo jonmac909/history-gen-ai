@@ -250,6 +250,7 @@ export async function runPipeline(
         projectId,
         voiceStyle: '(sincere) (soft tone)',
         wordCount: targetWordCount,
+        stream: true,  // Required for SSE mode
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script... ${data.progress}%`);
@@ -278,6 +279,7 @@ export async function runPipeline(
         projectId,
         voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
         voiceStyle: '(sincere) (soft tone)',
+        stream: true,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('audio', 25 + Math.round(data.progress * 0.15), `Generating audio... ${data.progress}%`);
@@ -304,6 +306,7 @@ export async function runPipeline(
       const captionsRes = await callStreamingAPI('/generate-captions', {
         audioUrl,
         projectId,
+        stream: true,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('captions', 40 + Math.round(data.progress * 0.05), `Generating captions... ${data.progress}%`);
@@ -331,6 +334,7 @@ export async function runPipeline(
         projectId,
         clipCount: INTRO_CLIP_COUNT,
         clipDuration: INTRO_CLIP_DURATION,
+        stream: true,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('clipPrompts', 45 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
@@ -365,6 +369,7 @@ export async function runPipeline(
             prompt: p.prompt || p,
           })),
           duration: INTRO_CLIP_DURATION,
+          stream: true,
         }, (data) => {
           if (data.type === 'progress') {
             reportProgress('videoClips', 47 + Math.round((data.completed / data.total) * 8), `Generating clips ${data.completed}/${data.total}...`);
@@ -408,6 +413,7 @@ export async function runPipeline(
         projectId,
         imageCount: 10,
         masterStylePrompt: 'Photorealistic historical scene, dramatic cinematic lighting, 8K quality',
+        stream: true,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('imagePrompts', 55 + Math.round(data.progress * 0.03), `Generating prompts...`);
@@ -433,6 +439,7 @@ export async function runPipeline(
       const imagesRes = await callStreamingAPI('/generate-images', {
         prompts: imagePrompts,
         projectId,
+        stream: true,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('images', 58 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
@@ -467,6 +474,7 @@ export async function runPipeline(
         title: clonedTitle,
         stylePrompt: analysisRes.analysis?.recreationPrompt || 'Dramatic YouTube thumbnail, bold text, high contrast',
         count: 1,
+        stream: true,
       }, undefined, 120000);
 
       thumbnailUrl = thumbnailRes.thumbnails?.[0]?.url || imageUrls[0];
