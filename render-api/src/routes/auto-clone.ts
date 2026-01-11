@@ -497,8 +497,13 @@ router.post('/', async (req: Request, res: Response) => {
       sourceDurationSeconds: selectedVideo.durationSeconds,
     }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
-      // Update current step in database for UI polling
-      await updateRunRecord(supabase, runId!, { current_step: `${step}: ${message} (${progress}%)` });
+      const stepStr = `${step}: ${message} (${progress}%)`;
+      // Update current step in both tables for UI polling
+      await updateRunRecord(supabase, runId!, { current_step: stepStr });
+      await supabase
+        .from('processed_videos')
+        .update({ current_step: stepStr })
+        .eq('video_id', selectedVideo!.videoId);
     }).then(async (result) => {
       if (result.success) {
         console.log(`[AutoClone] Pipeline completed! YouTube: ${result.youtubeUrl}`);
