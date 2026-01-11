@@ -426,6 +426,7 @@ router.post('/', async (req: Request, res: Response) => {
       originalThumbnailUrl: selectedVideo.thumbnailUrl,
       channelName: selectedVideo.channelName,
       publishAt,
+      sourceDurationSeconds: selectedVideo.durationSeconds,
     }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
       // Update current step in database for UI polling
@@ -631,6 +632,7 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
       originalTitle: video.original_title,
       originalThumbnailUrl: video.original_thumbnail_url,
       publishAt,
+      sourceDurationSeconds: video.duration_seconds,
     }, async (step, progress, message) => {
       console.log(`[AutoClone Retry] ${step}: ${message} (${progress}%)`);
       // Update current step in processed_videos for UI polling

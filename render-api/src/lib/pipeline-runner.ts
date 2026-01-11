@@ -32,6 +32,7 @@ export interface PipelineInput {
   originalThumbnailUrl: string;
   channelName?: string;
   publishAt?: string;  // ISO timestamp for scheduled publish (5 PM PST)
+  sourceDurationSeconds?: number;  // Original video duration for matching script length
 }
 
 export interface PipelineResult {
@@ -235,11 +236,20 @@ export async function runPipeline(
     reportProgress('script', 15, 'Generating script...');
     const scriptStart = Date.now();
     let script: string;
+
+    // Calculate target word count based on source video duration
+    // 150 words/minute is typical documentary narration pace
+    const WORDS_PER_MINUTE = 150;
+    const durationMinutes = input.sourceDurationSeconds ? Math.round(input.sourceDurationSeconds / 60) : 20;
+    const targetWordCount = durationMinutes * WORDS_PER_MINUTE;
+    console.log(`[Pipeline] Target word count: ${targetWordCount} (${durationMinutes} min @ ${WORDS_PER_MINUTE} wpm)`);
+
     try {
       const scriptRes = await callStreamingAPI('/rewrite-script', {
         transcript,
         projectId,
         voiceStyle: '(sincere) (soft tone)',
+        wordCount: targetWordCount,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script... ${data.progress}%`);
