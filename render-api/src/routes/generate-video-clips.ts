@@ -6,8 +6,14 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
 
 const execAsync = promisify(exec);
+
+// Use static binaries for ffmpeg/ffprobe
+const FFMPEG_PATH = ffmpegStatic || 'ffmpeg';
+const FFPROBE_PATH = ffprobeStatic.path || 'ffprobe';
 const router = Router();
 
 // Kie.ai API configuration
@@ -264,9 +270,9 @@ async function extractLastFrame(
     const videoBuffer = await response.buffer();
     fs.writeFileSync(videoPath, videoBuffer);
 
-    // Get video duration using ffprobe
+    // Get video duration using ffprobe (static binary)
     const { stdout: durationOutput } = await execAsync(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`
+      `"${FFPROBE_PATH}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`
     );
     const duration = parseFloat(durationOutput.trim());
 
@@ -274,10 +280,10 @@ async function extractLastFrame(
       throw new Error('Could not determine video duration');
     }
 
-    // Extract the last frame (0.1 seconds before end for safety)
+    // Extract the last frame (0.1 seconds before end for safety) using ffmpeg (static binary)
     const frameTime = Math.max(0, duration - 0.1);
     await execAsync(
-      `ffmpeg -y -ss ${frameTime} -i "${videoPath}" -vframes 1 -q:v 2 "${framePath}"`
+      `"${FFMPEG_PATH}" -y -ss ${frameTime} -i "${videoPath}" -vframes 1 -q:v 2 "${framePath}"`
     );
 
     // Verify frame was created
