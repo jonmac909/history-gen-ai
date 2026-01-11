@@ -10,14 +10,21 @@ import * as os from 'os';
 const execAsync = promisify(exec);
 const router = Router();
 
-// Kie.ai Seedance API configuration
+// Kie.ai API configuration
 const KIE_API_URL = 'https://api.kie.ai/api/v1/jobs';
-const KIE_MODEL = 'bytedance/seedance-1.5-pro';
+// Model for text-to-video (first clip only)
+const KIE_MODEL_T2V = 'bytedance/seedance-1.5-pro';
+// Model for image-to-video (clips 2+ with frame continuity) - 3x faster
+const KIE_MODEL_I2V = 'bytedance/v1-pro-fast-image-to-video';
 
-// Constants for video clip generation (Seedance 1.5 Pro)
-const CLIP_DURATION = 4;  // 4 seconds per clip (shorter for dynamic storytelling)
+// Constants for video clip generation
+// 12 clips × 5s = 60 seconds total intro
+// Clip 1: 1.5 Pro (T2V, 8s rounded from 5s since T2V supports 4/8/12)
+// Clips 2-12: v1-pro-fast (I2V, 5s each, 3x faster)
+const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast supports 5s or 10s)
+const CLIP_COUNT = 12;    // 12 clips for 60 second intro
 const CLIP_RESOLUTION = '720p';
-const CLIP_ASPECT_RATIO = '16:9';
+const CLIP_ASPECT_RATIO = '16:9';  // Used for 1.5 Pro only
 // Max concurrent clips - Kie.ai handles queueing, but limit for cost control
 const MAX_CONCURRENT_CLIPS = parseInt(process.env.SEEDANCE_MAX_CONCURRENT_CLIPS || '5', 10);
 // Enable sequential mode with frame continuity (last frame -> next clip's start frame)
@@ -59,6 +66,7 @@ function getSupabaseClient() {
 }
 
 // Start a Kie.ai Seedance task
+// Uses 1.5 Pro (T2V) for first clip, v1-pro-fast (I2V) for clips 2+ with start frame
 async function startVideoTask(
   apiKey: string,
   prompt: string,
@@ -68,22 +76,33 @@ async function startVideoTask(
   startFrameUrl?: string  // Optional start frame for seamless continuity
 ): Promise<string> {
   const hasStartFrame = !!startFrameUrl;
-  console.log(`[Seedance] Starting task for clip ${clipIndex + 1}: ${prompt.substring(0, 50)}...${hasStartFrame ? ' (with start frame)' : ''}`);
+  const model = hasStartFrame ? KIE_MODEL_I2V : KIE_MODEL_T2V;
+  console.log(`[Seedance] Starting task for clip ${clipIndex + 1} using ${model}: ${prompt.substring(0, 50)}...${hasStartFrame ? ' (with start frame)' : ''}`);
 
-  // Build input object
-  const input: any = {
-    prompt,
-    aspect_ratio: CLIP_ASPECT_RATIO,
-    resolution,
-    duration: String(duration),
-    generate_audio: false,  // We use our own TTS
-    fixed_lens: false,  // Allow dynamic camera movement
-  };
+  let input: any;
 
-  // Add start frame for image-to-video if provided
-  if (startFrameUrl) {
-    input.input_urls = [startFrameUrl];
-    console.log(`[Seedance] Using start frame: ${startFrameUrl.substring(0, 80)}...`);
+  if (hasStartFrame) {
+    // v1-pro-fast-image-to-video: requires image_url (singular), supports 5s/10s
+    input = {
+      prompt,
+      image_url: startFrameUrl,  // v1-pro-fast uses image_url (singular), not input_urls
+      resolution,
+      duration: String(duration),
+    };
+    console.log(`[Seedance] Using I2V with start frame: ${startFrameUrl.substring(0, 80)}...`);
+  } else {
+    // seedance-1.5-pro: text-to-video for first clip, supports 4/8/12s
+    // Adjust duration for T2V (1.5 Pro supports 4, 8, 12 but we use 8 as closest to 5)
+    const t2vDuration = duration <= 4 ? 4 : duration <= 8 ? 8 : 12;
+    input = {
+      prompt,
+      aspect_ratio: CLIP_ASPECT_RATIO,
+      resolution,
+      duration: String(t2vDuration),
+      generate_audio: false,  // We use our own TTS
+      fixed_lens: false,  // Allow dynamic camera movement
+    };
+    console.log(`[Seedance] Using T2V for first clip (${t2vDuration}s duration)`);
   }
 
   const response = await fetch(`${KIE_API_URL}/createTask`, {
@@ -93,7 +112,7 @@ async function startVideoTask(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: KIE_MODEL,
+      model,
       input,
     }),
   });
@@ -328,11 +347,11 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No clips provided' });
     }
 
-    // Validate duration (Seedance supports 4, 8, or 12 seconds)
-    const validDuration = [4, 8, 12].includes(duration) ? duration : CLIP_DURATION;
+    // Validate duration (v1-pro-fast supports 5 or 10 seconds, 1.5 Pro adjusts internally)
+    const validDuration = [5, 10].includes(duration) ? duration : CLIP_DURATION;
 
     const total = clips.length;
-    console.log(`\n=== Generating ${total} video clips with Seedance 1.5 Pro ===`);
+    console.log(`\n=== Generating ${total} video clips (1.5 Pro T2V + v1-pro-fast I2V) ===`);
     console.log(`Duration: ${validDuration}s, Resolution: ${resolution}`);
 
     if (stream) {
