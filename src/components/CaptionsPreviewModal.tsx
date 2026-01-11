@@ -20,6 +20,7 @@ interface CaptionsPreviewModalProps {
   onCancel: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  forwardLabel?: string;  // Label for forward button (e.g., "Video Prompts" or "Image Prompts")
   imageCount?: number;
   onImageCountChange?: (count: number) => void;
 }
@@ -31,6 +32,7 @@ export function CaptionsPreviewModal({
   onCancel,
   onBack,
   onForward,
+  forwardLabel = "Video Prompts",
   imageCount,
   onImageCountChange,
 }: CaptionsPreviewModalProps) {
@@ -75,7 +77,7 @@ export function CaptionsPreviewModal({
             </span>
           </DialogTitle>
           <DialogDescription>
-            Review the generated SRT captions before generating video prompts.
+            Review the generated SRT captions before generating {forwardLabel.toLowerCase()}.
           </DialogDescription>
         </DialogHeader>
 
@@ -170,13 +172,13 @@ export function CaptionsPreviewModal({
 
           {onForward ? (
             <Button onClick={onForward}>
-              Video Prompts
+              {forwardLabel}
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (
             <Button onClick={handleConfirm}>
               <Check className="w-4 h-4 mr-2" />
-              Create Video Prompts
+              Create {forwardLabel}
             </Button>
           )}
         </DialogFooter>

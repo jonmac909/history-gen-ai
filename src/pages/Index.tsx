@@ -1863,6 +1863,14 @@ const Index = () => {
     disableAutoAndGoTo("review-prompts");
   };
 
+  const handleBackToClipPrompts = () => {
+    disableAutoAndGoTo("review-clip-prompts");
+  };
+
+  const handleBackToClips = () => {
+    disableAutoAndGoTo("review-clips");
+  };
+
   // Forward navigation handlers (to skip ahead if data already exists)
   // These disable fullAutomation because user is manually navigating
   const handleForwardToAudio = () => {
@@ -2593,9 +2601,13 @@ const Index = () => {
           thumbnails={generatedThumbnails}
           selectedThumbnailIndex={selectedThumbnailIndex}
           script={confirmedScript}
+          clipPrompts={clipPrompts.map(p => p.sceneDescription)}
+          clipUrls={generatedClips.map(c => c.videoUrl)}
           onGoToScript={handleBackToScript}
           onGoToAudio={handleBackToAudio}
           onGoToCaptions={handleBackToCaptions}
+          onGoToClipPrompts={handleBackToClipPrompts}
+          onGoToClips={handleBackToClips}
           onGoToPrompts={handleBackToPrompts}
           onGoToImages={handleBackToImages}
           onGoToThumbnails={handleBackToThumbnails}
@@ -3150,6 +3162,7 @@ const Index = () => {
               ? handleForwardToPrompts
               : undefined
         }
+        forwardLabel={enableVideoClips ? "Video Prompts" : "Image Prompts"}
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />
