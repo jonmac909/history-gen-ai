@@ -62,9 +62,9 @@ export default function AutoPoster() {
   const [liveProgress, setLiveProgress] = useState<string | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
-  // Fetch status data
-  const fetchStatus = async () => {
-    setLoading(true);
+  // Fetch status data (showLoading=false for background polling)
+  const fetchStatus = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const [runsRes, videosRes] = await Promise.all([
         fetch(`${API_BASE_URL}/auto-clone/status`),
@@ -88,13 +88,13 @@ export default function AutoPoster() {
   };
 
   useEffect(() => {
-    fetchStatus();
+    fetchStatus(true); // Show loading on initial load
     // Poll every 5 seconds when a run or video is in progress
     const interval = setInterval(() => {
       const hasRunning = runs.some(r => r.status === 'running');
       const hasProcessing = processedVideos.some(v => v.status === 'processing');
       if (hasRunning || hasProcessing || triggering) {
-        fetchStatus();
+        fetchStatus(false); // No loading spinner for polling
       }
     }, 5000);
     return () => clearInterval(interval);
@@ -279,7 +279,7 @@ export default function AutoPoster() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={fetchStatus} disabled={loading}>
+            <Button variant="outline" onClick={() => fetchStatus(true)} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
@@ -311,53 +311,6 @@ export default function AutoPoster() {
             </CardContent>
           </Card>
         )}
-
-        {/* Run History */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="w-5 h-5" />
-              Run History
-            </CardTitle>
-            <CardDescription>Daily auto-clone runs (6 AM PST → uploads at 5 PM PST)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin" />
-              </div>
-            ) : runs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No runs yet. Click "Run Now" to start.</p>
-            ) : (
-              <div className="space-y-3">
-                {runs.map((run) => (
-                  <div key={run.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-4">
-                      {getStatusBadge(run.status)}
-                      <div>
-                        <p className="font-medium">{new Date(run.run_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {run.channels_scanned} channels scanned, {run.outliers_found} outliers found
-                        </p>
-                        {run.status === 'running' && run.current_step && (
-                          <p className="text-xs text-blue-400 mt-1">
-                            <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
-                            {run.current_step}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right text-sm text-muted-foreground">
-                      <p>Started: {formatDate(run.started_at)}</p>
-                      {run.completed_at && <p>Completed: {formatDate(run.completed_at)}</p>}
-                      {run.error_message && <p className="text-red-400 text-xs">{run.error_message}</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Processed Videos */}
         <Card>
