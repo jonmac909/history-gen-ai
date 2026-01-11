@@ -249,7 +249,7 @@ const Index = () => {
   const [imagesProjectTitle, setImagesProjectTitle] = useState("");
   // customStylePrompt is now part of settings for persistence
   // Pipeline approval tracking
-  type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
+  type PipelineStep = 'script' | 'audio' | 'captions' | 'clips' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
   const [approvedSteps, setApprovedSteps] = useState<PipelineStep[]>([]);
   // YouTube metadata state
   const [youtubeTitle, setYoutubeTitle] = useState("");

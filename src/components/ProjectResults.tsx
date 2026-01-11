@@ -30,7 +30,7 @@ export interface GeneratedAsset {
 }
 
 // Pipeline step types for approval tracking
-type PipelineStep = 'script' | 'audio' | 'captions' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
+type PipelineStep = 'script' | 'audio' | 'captions' | 'clips' | 'prompts' | 'images' | 'thumbnails' | 'render' | 'youtube';
 
 interface ProjectResultsProps {
   sourceUrl: string;
@@ -62,10 +62,13 @@ interface ProjectResultsProps {
   youtubeCategoryId?: string;  // YouTube category ID
   youtubePlaylistId?: string | null;  // Playlist to add video to
   onYouTubeMetadataChange?: (title: string, description: string, tags: string, categoryId: string, playlistId: string | null) => void;  // Callback to update metadata
+  // Video clips (5 × 12s intro clips)
+  clipUrls?: string[];
   // Navigation callbacks to go back to specific pipeline steps
   onGoToScript?: () => void;
   onGoToAudio?: () => void;
   onGoToCaptions?: () => void;
+  onGoToClips?: () => void;
   onGoToPrompts?: () => void;
   onGoToImages?: () => void;
   onGoToThumbnails?: () => void;
@@ -177,6 +180,7 @@ export function ProjectResults({
   onBack,
   assets,
   srtContent,
+  clipUrls,
   imagePrompts,
   audioUrl,
   audioDuration,
@@ -202,6 +206,7 @@ export function ProjectResults({
   onGoToScript,
   onGoToAudio,
   onGoToCaptions,
+  onGoToClips,
   onGoToPrompts,
   onGoToImages,
   onGoToThumbnails,
@@ -1471,6 +1476,41 @@ export function ProjectResults({
                 title={approvedSteps.includes('captions') ? 'Mark as not approved' : 'Mark as approved'}
               >
                 {approvedSteps.includes('captions') ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Video Clips */}
+          <div
+            className={`flex items-center justify-between py-3 ${onGoToClips ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors px-2 -mx-2 rounded-lg`}
+            onClick={onGoToClips}
+          >
+            <div className="flex items-center gap-3">
+              <Film className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Video Clips</span>
+              <span className="text-sm text-muted-foreground">
+                {clipUrls && clipUrls.length > 0
+                  ? `${clipUrls.length} × 12s clips`
+                  : 'Pending'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApproval('clips', e)}
+                className={`h-8 w-8 ${
+                  approvedSteps.includes('clips')
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={approvedSteps.includes('clips') ? 'Mark as not approved' : 'Mark as approved'}
+              >
+                {approvedSteps.includes('clips') ? (
                   <CheckSquare className="w-4 h-4" />
                 ) : (
                   <Square className="w-4 h-4" />
