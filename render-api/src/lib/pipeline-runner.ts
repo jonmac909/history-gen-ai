@@ -192,7 +192,7 @@ export async function runPipeline(
     let transcript: string;
     try {
       const transcriptRes = await callInternalAPI('/get-youtube-transcript', {
-        videoId: input.sourceVideoId,
+        url: input.sourceVideoUrl,  // Route expects 'url', not 'videoId'
       });
       transcript = transcriptRes.transcript;
       steps.push({
