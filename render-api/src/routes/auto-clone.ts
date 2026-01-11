@@ -15,7 +15,7 @@ import fetch from 'node-fetch';
 
 const router = Router();
 
-// WhatsApp notification via CallMeBot
+// WhatsApp notification via TextMeBot (https://www.textmebot.com)
 async function sendWhatsAppNotification(message: string): Promise<void> {
   const phone = process.env.WHATSAPP_PHONE;
   const apiKey = process.env.WHATSAPP_API_KEY;
@@ -27,13 +27,14 @@ async function sendWhatsAppNotification(message: string): Promise<void> {
 
   try {
     const encodedMessage = encodeURIComponent(message);
-    const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodedMessage}&apikey=${apiKey}`;
+    const url = `https://api.textmebot.com/send.php?recipient=${phone}&apikey=${apiKey}&text=${encodedMessage}`;
 
     const response = await fetch(url);
+    const responseText = await response.text();
     if (response.ok) {
-      console.log('[AutoClone] WhatsApp notification sent successfully');
+      console.log('[AutoClone] WhatsApp notification sent:', responseText);
     } else {
-      console.error(`[AutoClone] WhatsApp notification failed: ${response.status}`);
+      console.error(`[AutoClone] WhatsApp notification failed: ${response.status} - ${responseText}`);
     }
   } catch (error) {
     console.error('[AutoClone] WhatsApp notification error:', error);
