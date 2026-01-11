@@ -48,10 +48,10 @@ const MIN_DURATION_SECONDS = 7200;
 const OUTLIER_DAYS = 7;
 
 interface SavedChannel {
-  id: string;
-  channel_id: string;
-  channel_name: string;
-  channel_url: string;
+  id: string;  // This IS the YouTube channel ID (e.g., UCxxxxxx)
+  title: string;  // Channel name
+  thumbnail_url: string | null;
+  input: string;  // Original input used to find channel
 }
 
 interface OutlierVideo {
@@ -173,8 +173,8 @@ async function recordProcessedVideo(
 async function fetchSavedChannels(supabase: SupabaseClient): Promise<SavedChannel[]> {
   const { data, error } = await supabase
     .from('saved_channels')
-    .select('id, channel_id, channel_name, channel_url')
-    .order('created_at', { ascending: false });
+    .select('id, title, thumbnail_url, input')
+    .order('saved_at', { ascending: false });
 
   if (error) throw new Error(`Failed to fetch saved channels: ${error.message}`);
   return data || [];
@@ -225,13 +225,13 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]
 
   for (const channel of channels) {
     try {
-      console.log(`[AutoClone] Scanning channel: ${channel.channel_name}`);
+      console.log(`[AutoClone] Scanning channel: ${channel.title}`);
 
       // Get recent videos from channel
-      const videos = await getChannelVideos(channel.channel_id, 50);
+      const videos = await getChannelVideos(channel.id, 50);
 
       if (!videos || videos.length === 0) {
-        console.log(`[AutoClone] No videos found for ${channel.channel_name}`);
+        console.log(`[AutoClone] No videos found for ${channel.title}`);
         continue;
       }
 
@@ -256,8 +256,8 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]
             videoId: video.id,
             title: video.title,
             thumbnailUrl: video.thumbnail || `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`,
-            channelId: channel.channel_id,
-            channelName: channel.channel_name,
+            channelId: channel.id,
+            channelName: channel.title,
             viewCount: video.views || 0,
             durationSeconds: video.duration || 0,
             publishedAt: video.publishedText || '',
@@ -266,7 +266,7 @@ async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]
         }
       }
     } catch (error: any) {
-      console.error(`[AutoClone] Error scanning channel ${channel.channel_name}: ${error.message}`);
+      console.error(`[AutoClone] Error scanning channel ${channel.title}: ${error.message}`);
     }
   }
 
