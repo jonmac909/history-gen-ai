@@ -438,6 +438,20 @@ router.post('/', async (req: Request, res: Response) => {
     const targetWordCount = req.body.targetWordCount ? parseInt(req.body.targetWordCount, 10) : undefined;
     const today = getTodayDate();
 
+    // Check if there's already a video processing (prevent parallel runs)
+    const { data: processingVideos } = await supabase
+      .from('processed_videos')
+      .select('video_id')
+      .eq('status', 'processing')
+      .limit(1);
+
+    if (processingVideos && processingVideos.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Another video is already processing. Wait for it to complete.',
+      });
+    }
+
     if (force) {
       // Delete existing run record for today to allow re-run
       await supabase.from('auto_clone_runs').delete().eq('run_date', today);
@@ -761,10 +775,12 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
       sourceDurationSeconds: video.duration_seconds,
     }, async (step, progress, message) => {
       console.log(`[AutoClone Retry] ${step}: ${message} (${progress}%)`);
+      // Don't duplicate % if message already contains it
+      const stepStr = message.includes('%') ? `${step}: ${message}` : `${step}: ${message} (${progress}%)`;
       // Update current step in processed_videos for UI polling
       await supabase
         .from('processed_videos')
-        .update({ current_step: `${step}: ${message} (${progress}%)` })
+        .update({ current_step: stepStr })
         .eq('video_id', videoId);
     }).then(async (result) => {
       console.log(`[AutoClone Retry] Pipeline completed. Success: ${result.success}`);
