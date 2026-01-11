@@ -195,10 +195,11 @@ router.post('/', async (req: Request, res: Response) => {
         // Get cached channel info
         const cachedChannel = await getCachedChannel(channelId);
 
-        // Calculate stats from cached videos
-        const totalViews = videos.reduce((sum, v) => sum + v.viewCount, 0);
-        const averageViews = Math.round(totalViews / videos.length);
-        const variance = videos.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / videos.length;
+        // Calculate stats from cached videos (filter out 0-view videos for accurate average)
+        const videosWithViews = videos.filter(v => v.viewCount > 0);
+        const totalViews = videosWithViews.reduce((sum, v) => sum + v.viewCount, 0);
+        const averageViews = videosWithViews.length > 0 ? Math.round(totalViews / videosWithViews.length) : 0;
+        const variance = videosWithViews.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / (videosWithViews.length || 1);
         const standardDeviation = Math.sqrt(variance);
 
         return res.json({

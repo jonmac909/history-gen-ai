@@ -87,16 +87,24 @@ export default function AutoPoster() {
     }
   };
 
+  // Initial fetch on mount only
   useEffect(() => {
-    fetchStatus(true); // Show loading on initial load
-    // Poll every 5 seconds when a run or video is in progress
+    fetchStatus(true);
+  }, []);
+
+  // Polling when something is in progress
+  useEffect(() => {
+    const hasRunning = runs.some(r => r.status === 'running');
+    const hasProcessing = processedVideos.some(v => v.status === 'processing');
+
+    if (!hasRunning && !hasProcessing && !triggering) {
+      return; // No polling needed
+    }
+
     const interval = setInterval(() => {
-      const hasRunning = runs.some(r => r.status === 'running');
-      const hasProcessing = processedVideos.some(v => v.status === 'processing');
-      if (hasRunning || hasProcessing || triggering) {
-        fetchStatus(false); // No loading spinner for polling
-      }
+      fetchStatus(false); // No loading spinner for polling
     }, 5000);
+
     return () => clearInterval(interval);
   }, [runs, processedVideos, triggering]);
 
