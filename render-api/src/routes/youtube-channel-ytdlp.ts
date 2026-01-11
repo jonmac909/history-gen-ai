@@ -183,7 +183,34 @@ router.post('/', async (req: Request, res: Response) => {
 
         let videos = cachedOutliers.map(cachedOutlierToVideo);
 
-        // Sort according to sortBy
+        // Get cached channel info
+        const cachedChannel = await getCachedChannel(channelId);
+
+        // IMPORTANT: Limit to maxResults for average calculation to match fresh fetch behavior
+        // Sort by published date (most recent first) and take only first N for average
+        const sortedByRecent = [...videos].sort((a, b) =>
+          new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        );
+        const videosForStats = sortedByRecent.slice(0, maxResults);
+
+        // Calculate stats (filter out 0-view videos for accurate average)
+        const videosWithViews = videosForStats.filter(v => v.viewCount > 0);
+        const totalViews = videosWithViews.reduce((sum, v) => sum + v.viewCount, 0);
+        const averageViews = videosWithViews.length > 0 ? Math.round(totalViews / videosWithViews.length) : 0;
+        const variance = videosWithViews.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / (videosWithViews.length || 1);
+        const standardDeviation = Math.sqrt(variance);
+
+        // IMPORTANT: Recalculate outlierMultiplier using the fresh averageViews
+        // The cached outlier_multiplier may have been calculated with different average
+        videos = videos.map(v => ({
+          ...v,
+          outlierMultiplier: averageViews > 0 ? v.viewCount / averageViews : 0,
+          zScore: standardDeviation > 0 ? (v.viewCount - averageViews) / standardDeviation : 0,
+          isPositiveOutlier: standardDeviation > 0 ? (v.viewCount - averageViews) / standardDeviation > 2 : false,
+          isNegativeOutlier: standardDeviation > 0 ? (v.viewCount - averageViews) / standardDeviation < -1.5 : false,
+        }));
+
+        // Sort according to sortBy (after recalculation)
         if (sortBy === 'outlier') {
           videos.sort((a, b) => b.outlierMultiplier - a.outlierMultiplier);
         } else if (sortBy === 'views') {
@@ -191,16 +218,6 @@ router.post('/', async (req: Request, res: Response) => {
         } else if (sortBy === 'uploaded') {
           videos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
         }
-
-        // Get cached channel info
-        const cachedChannel = await getCachedChannel(channelId);
-
-        // Calculate stats from cached videos (filter out 0-view videos for accurate average)
-        const videosWithViews = videos.filter(v => v.viewCount > 0);
-        const totalViews = videosWithViews.reduce((sum, v) => sum + v.viewCount, 0);
-        const averageViews = videosWithViews.length > 0 ? Math.round(totalViews / videosWithViews.length) : 0;
-        const variance = videosWithViews.reduce((sum, v) => sum + Math.pow(v.viewCount - averageViews, 2), 0) / (videosWithViews.length || 1);
-        const standardDeviation = Math.sqrt(variance);
 
         return res.json({
           success: true,
