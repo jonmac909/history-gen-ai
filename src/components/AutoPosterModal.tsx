@@ -270,7 +270,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
-        className="sm:max-w-lg"
+        className="sm:max-w-lg overflow-hidden"
         onPointerDownOutside={(e) => state === "generating" && e.preventDefault()}
         onInteractOutside={(e) => state === "generating" && e.preventDefault()}
       >
@@ -286,7 +286,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="py-4">
+        <div className="py-4 overflow-hidden">
           {/* Scanning State */}
           {state === "scanning" && (
             <div className="flex flex-col items-center justify-center py-8 gap-4">
@@ -302,15 +302,15 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
 
           {/* Found State - Show Outlier Card */}
           {state === "found" && outlier && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-hidden">
               <div className="border rounded-lg overflow-hidden">
                 <img
                   src={outlier.thumbnailUrl}
                   alt={outlier.title}
                   className="w-full aspect-video object-cover"
                 />
-                <div className="p-4 space-y-2">
-                  <h3 className="font-semibold line-clamp-2">{outlier.title}</h3>
+                <div className="p-4 space-y-2 overflow-hidden">
+                  <h3 className="font-semibold line-clamp-2 break-words overflow-hidden">{outlier.title}</h3>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <span>{outlier.channelName}</span>
                     {outlier.subscriberCountFormatted && (
