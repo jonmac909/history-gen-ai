@@ -47,6 +47,33 @@ const MIN_DURATION_SECONDS = 7200;
 // Days to look back for outliers
 const OUTLIER_DAYS = 7;
 
+// Whitelist of channel handles to scan for outliers
+const CHANNEL_WHITELIST = [
+  'sleepinghistory',
+  'sleepytimehistory',
+  'sleeplesshomo',
+  'vaticanmysteriesforsleep',
+  'boringhistory',
+  'hollertales',
+  'thesleepingstoryvault',
+  'comfyhistory',
+  'thehistorytrip',
+  'dustandglory',
+  'sleepandhistory',
+  'thesleeproom',
+  'historiansleepy',
+  'thesnoozetorian',
+  'mysteryhistoryforsleep',
+  'nightpsalms',
+  'godsandmortals',
+];
+
+// Check if channel is in whitelist (by handle from input field)
+function isWhitelistedChannel(channel: SavedChannel): boolean {
+  const input = (channel.input || '').toLowerCase().replace('@', '');
+  return CHANNEL_WHITELIST.some(handle => input.includes(handle));
+}
+
 interface SavedChannel {
   id: string;  // This IS the YouTube channel ID (e.g., UCxxxxxx)
   title: string;  // Channel name
@@ -223,7 +250,11 @@ function isWithinDays(publishedText: string | undefined, days: number): boolean 
 async function scanForOutliers(channels: SavedChannel[]): Promise<OutlierVideo[]> {
   const allOutliers: OutlierVideo[] = [];
 
-  for (const channel of channels) {
+  // Filter to only whitelisted channels
+  const whitelistedChannels = channels.filter(isWhitelistedChannel);
+  console.log(`[AutoClone] Filtered to ${whitelistedChannels.length} whitelisted channels out of ${channels.length} total`);
+
+  for (const channel of whitelistedChannels) {
     try {
       console.log(`[AutoClone] Scanning channel: ${channel.title}`);
 
