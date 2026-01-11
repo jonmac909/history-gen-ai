@@ -286,7 +286,13 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if already ran today (unless force=true)
     const force = req.body.force === true;
-    if (!force && await checkAlreadyRanToday(supabase)) {
+    const today = getTodayDate();
+
+    if (force) {
+      // Delete existing run record for today to allow re-run
+      await supabase.from('auto_clone_runs').delete().eq('run_date', today);
+      console.log('[AutoClone] Force flag set - deleted existing run record');
+    } else if (await checkAlreadyRanToday(supabase)) {
       return res.status(400).json({
         success: false,
         error: 'Already ran today. Use force=true to run again.',
