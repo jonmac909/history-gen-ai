@@ -21,6 +21,9 @@ import nicheAnalyzeRouter from './routes/niche-analyze';
 import generateClipPromptsRouter from './routes/generate-clip-prompts';
 import generateVideoClipsRouter from './routes/generate-video-clips';
 import bulkChannelsRouter from './routes/bulk-channels';
+import analyzeThumbnailRouter from './routes/analyze-thumbnail';
+import rewriteTitleRouter from './routes/rewrite-title';
+import autoCloneRouter from './routes/auto-clone';
 
 dotenv.config();
 
@@ -102,6 +105,9 @@ app.use('/niche-analyze', nicheAnalyzeRouter);
 app.use('/generate-clip-prompts', generateClipPromptsRouter);
 app.use('/generate-video-clips', generateVideoClipsRouter);
 app.use('/bulk-channels', bulkChannelsRouter);
+app.use('/analyze-thumbnail', analyzeThumbnailRouter);
+app.use('/rewrite-title', rewriteTitleRouter);
+app.use('/auto-clone', autoCloneRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
