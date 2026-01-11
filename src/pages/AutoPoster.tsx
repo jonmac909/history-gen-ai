@@ -64,6 +64,7 @@ export default function AutoPoster() {
 
   // Fetch status data
   const fetchStatus = async () => {
+    setLoading(true);
     try {
       const [runsRes, videosRes] = await Promise.all([
         fetch(`${API_BASE_URL}/auto-clone/status`),
