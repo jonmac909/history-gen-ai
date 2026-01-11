@@ -604,13 +604,17 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
     });
 
     // Run in background
+    console.log(`[AutoClone] Starting retry pipeline for ${video.video_id}...`);
     runPipeline({
       sourceVideoId: video.video_id,
       sourceVideoUrl: `https://www.youtube.com/watch?v=${video.video_id}`,
       originalTitle: video.original_title,
       originalThumbnailUrl: video.original_thumbnail_url,
       publishAt,
+    }, (step, progress, message) => {
+      console.log(`[AutoClone Retry] ${step}: ${message} (${progress}%)`);
     }).then(async (result) => {
+      console.log(`[AutoClone Retry] Pipeline completed. Success: ${result.success}`);
       if (result.success) {
         await supabase
           .from('processed_videos')
@@ -634,6 +638,15 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
           })
           .eq('video_id', videoId);
       }
+    }).catch(async (error) => {
+      console.error(`[AutoClone Retry] Pipeline crashed:`, error);
+      await supabase
+        .from('processed_videos')
+        .update({
+          status: 'failed',
+          error_message: error.message || 'Pipeline crashed',
+        })
+        .eq('video_id', videoId);
     });
 
   } catch (error: any) {
