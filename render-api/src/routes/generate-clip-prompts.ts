@@ -4,9 +4,9 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 
 // Constants
-// 12 clips × 5s = 60 seconds intro
-// Clip 1: 1.5 Pro T2V (text-to-video, 8s rounded)
-// Clips 2-12: v1-pro-fast I2V (image-to-video, 5s each, 3x faster)
+// 12 clips = ~59 seconds intro
+// Clip 1: 1.5 Pro T2V (4s, since T2V supports 4/8/12)
+// Clips 2-12: v1-pro-fast I2V (5s each, 3x faster)
 const CLIP_COUNT = 12;  // 12 clips for 60 second intro
 const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast I2V supports 5s or 10s)
 const TOTAL_CLIP_DURATION = CLIP_COUNT * CLIP_DURATION;  // 60 seconds

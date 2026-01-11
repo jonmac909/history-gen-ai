@@ -18,9 +18,9 @@ const KIE_MODEL_T2V = 'bytedance/seedance-1.5-pro';
 const KIE_MODEL_I2V = 'bytedance/v1-pro-fast-image-to-video';
 
 // Constants for video clip generation
-// 12 clips × 5s = 60 seconds total intro
-// Clip 1: 1.5 Pro (T2V, 8s rounded from 5s since T2V supports 4/8/12)
-// Clips 2-12: v1-pro-fast (I2V, 5s each, 3x faster)
+// 12 clips = ~59 seconds total intro
+// Clip 1: 1.5 Pro T2V (4s, since T2V supports 4/8/12)
+// Clips 2-12: v1-pro-fast I2V (5s each, 3x faster)
 const CLIP_DURATION = 5;  // 5 seconds per clip (v1-pro-fast supports 5s or 10s)
 const CLIP_COUNT = 12;    // 12 clips for 60 second intro
 const CLIP_RESOLUTION = '720p';
@@ -92,8 +92,8 @@ async function startVideoTask(
     console.log(`[Seedance] Using I2V with start frame: ${startFrameUrl.substring(0, 80)}...`);
   } else {
     // seedance-1.5-pro: text-to-video for first clip, supports 4/8/12s
-    // Adjust duration for T2V (1.5 Pro supports 4, 8, 12 but we use 8 as closest to 5)
-    const t2vDuration = duration <= 4 ? 4 : duration <= 8 ? 8 : 12;
+    // Use 4s for short clips (5s target), 8s for medium, 12s for long
+    const t2vDuration = duration <= 5 ? 4 : duration <= 10 ? 8 : 12;
     input = {
       prompt,
       aspect_ratio: CLIP_ASPECT_RATIO,
