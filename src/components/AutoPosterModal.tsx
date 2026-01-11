@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Search, Play, CheckCircle2, XCircle, ExternalLink, Clock, TrendingUp, AlertCircle } from "lucide-react";
+import { Loader2, Search, Play, CheckCircle2, XCircle, ExternalLink, Clock, TrendingUp, AlertCircle, FileText } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || "";
@@ -85,6 +87,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
   const [scanningMessage, setScanningMessage] = useState<string>("Loading channels...");
   const [youtubeUrl, setYoutubeUrl] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [wordCount, setWordCount] = useState<number>(0);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch best outlier when modal opens
@@ -101,6 +104,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
       setCurrentStep("");
       setYoutubeUrl("");
       setErrorMessage("");
+      setWordCount(0);
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
@@ -155,6 +159,9 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
                 if (data.outlier) {
                   setOutlier(data.outlier);
                   setPublishAt(data.publishAt || "");
+                  // Calculate default word count: 150 words per minute
+                  const durationMinutes = Math.round(data.outlier.durationSeconds / 60);
+                  setWordCount(durationMinutes * 150);
                   setState("found");
                 } else {
                   setReason(data.reason || "No qualifying outliers found");
@@ -186,7 +193,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
       const response = await fetch(`${API_BASE_URL}/auto-clone`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: true }),
+        body: JSON.stringify({ force: true, targetWordCount: wordCount }),
       });
 
       const data = await response.json();
@@ -319,6 +326,29 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
                       {outlier.publishedAt}
                     </Badge>
                   </div>
+                </div>
+              </div>
+
+              {/* Word Count Input */}
+              <div className="space-y-2">
+                <Label htmlFor="wordCount" className="text-sm flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Target Word Count
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="wordCount"
+                    type="number"
+                    value={wordCount}
+                    onChange={(e) => setWordCount(parseInt(e.target.value) || 0)}
+                    min={1000}
+                    max={50000}
+                    step={500}
+                    className="w-32"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    (~{Math.round(wordCount / 150)} min @ 150 wpm)
+                  </span>
                 </div>
               </div>
 

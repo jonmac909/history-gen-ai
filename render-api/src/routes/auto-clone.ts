@@ -432,6 +432,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if already ran today (unless force=true)
     const force = req.body.force === true;
+    const targetWordCount = req.body.targetWordCount ? parseInt(req.body.targetWordCount, 10) : undefined;
     const today = getTodayDate();
 
     if (force) {
@@ -542,6 +543,7 @@ router.post('/', async (req: Request, res: Response) => {
       channelName: selectedVideo.channelName,
       publishAt,
       sourceDurationSeconds: selectedVideo.durationSeconds,
+      targetWordCount,  // Optional manual override from request
     }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
       // Don't duplicate % if message already contains it
