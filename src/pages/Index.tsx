@@ -3163,14 +3163,7 @@ const Index = () => {
               ? handleForwardToPrompts
               : undefined
         }
-        forwardLabel={
-          // Label must match where button actually navigates
-          (enableVideoClips && canGoForwardFromCaptionsToClipPrompts())
-            ? "Video Prompts"
-            : canGoForwardFromCaptions()
-              ? "Image Prompts"
-              : (enableVideoClips ? "Video Prompts" : "Image Prompts")
-        }
+        forwardLabel={enableVideoClips ? "Video Prompts" : "Image Prompts"}
         imageCount={settings.imageCount}
         onImageCountChange={(count) => setSettings(prev => ({ ...prev, imageCount: count }))}
       />
