@@ -93,8 +93,12 @@ export default function AutoPoster() {
     return () => clearInterval(interval);
   }, [runs, triggering]);
 
+  // Check if there's already a run today
+  const hasRunToday = runs.length > 0 && runs[0].run_date === new Date().toISOString().split('T')[0];
+  const isRunning = runs.some(r => r.status === 'running');
+
   // Trigger manual run with SSE progress
-  const triggerRun = async () => {
+  const triggerRun = async (force = false) => {
     setTriggering(true);
     setLiveProgress('Starting auto-clone...');
 
@@ -102,6 +106,7 @@ export default function AutoPoster() {
       const response = await fetch(`${API_BASE_URL}/auto-clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
       });
 
       if (!response.ok) {
@@ -217,13 +222,19 @@ export default function AutoPoster() {
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Button onClick={triggerRun} disabled={triggering}>
+            <Button
+              onClick={() => triggerRun(hasRunToday)}
+              disabled={triggering || isRunning}
+              variant={hasRunToday && !isRunning ? "destructive" : "default"}
+            >
               {triggering ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : isRunning ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <Play className="w-4 h-4 mr-2" />
               )}
-              Run Now
+              {isRunning ? 'Running...' : hasRunToday ? 'Force Re-Run' : 'Run Now'}
             </Button>
           </div>
         </div>
