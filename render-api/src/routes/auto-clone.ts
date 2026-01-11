@@ -45,7 +45,7 @@ async function sendWhatsAppNotification(message: string): Promise<void> {
 const MIN_DURATION_SECONDS = 7200;
 
 // Days to look back for outliers
-const OUTLIER_DAYS = 7;
+const OUTLIER_DAYS = 30;
 
 // Whitelist of channel handles to scan for outliers
 const CHANNEL_WHITELIST = [
@@ -332,7 +332,7 @@ router.get('/best-outlier', async (req: Request, res: Response) => {
         success: true,
         outlier: null,
         channelsScanned: scannedCount,
-        reason: 'No qualifying outliers found (need 2+ hours, 1.5x+ views, last 7 days)',
+        reason: 'No qualifying outliers found (need 2+ hours, 1.5x+ views, last 30 days)',
       });
     }
 

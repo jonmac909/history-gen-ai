@@ -247,7 +247,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
               <div className="text-center space-y-1">
                 <p className="font-medium">Scanning 17 whitelist channels...</p>
                 <p className="text-sm text-muted-foreground">
-                  Looking for 2hr+ videos with 1.5x+ average views from last 7 days
+                  Looking for 2hr+ videos with 1.5x+ average views from last 30 days
                 </p>
               </div>
             </div>
