@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Outliers from "./pages/Outliers";
+import AutoPoster from "./pages/AutoPoster";
 import NotFound from "./pages/NotFound";
 import YouTubeOAuthCallback from "./pages/YouTubeOAuthCallback";
 
@@ -89,6 +90,7 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/outliers" element={<Outliers />} />
+            <Route path="/auto-poster" element={<AutoPoster />} />
             <Route path="/oauth/youtube/callback" element={<YouTubeOAuthCallback />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

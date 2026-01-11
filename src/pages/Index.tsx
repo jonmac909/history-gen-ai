@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -172,6 +173,7 @@ function getImageTemplatesWithCustomOverrides(): ImageTemplate[] {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
   const [inputMode, setInputMode] = useState<InputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [viewState, setViewState] = useState<ViewState>("create");
@@ -2920,6 +2922,14 @@ const Index = () => {
                   >
                     <Zap className="w-5 h-5 mr-2" />
                     Full Auto Generate
+                  </Button>
+                  <Button
+                    onClick={() => navigate('/auto-poster')}
+                    variant="outline"
+                    className="w-full rounded-xl py-6 text-base border-orange-500/30 hover:bg-orange-500/10 text-orange-400"
+                  >
+                    <Bot className="w-5 h-5 mr-2" />
+                    Auto Poster
                   </Button>
                 </div>
               )}

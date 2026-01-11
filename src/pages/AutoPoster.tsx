@@ -1,0 +1,348 @@
+/**
+ * Auto Poster - Live view of automated video cloning workflow
+ *
+ * Shows:
+ * - Run history (auto_clone_runs table)
+ * - Processed videos (processed_videos table)
+ * - Manual trigger button
+ * - Live progress when running
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
+
+interface AutoCloneRun {
+  id: string;
+  run_date: string;
+  status: 'running' | 'completed' | 'failed' | 'no_candidates';
+  channels_scanned: number;
+  outliers_found: number;
+  video_selected_id: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+}
+
+interface ProcessedVideo {
+  id: string;
+  video_id: string;
+  channel_id: string;
+  original_title: string;
+  original_thumbnail_url: string | null;
+  cloned_title: string | null;
+  project_id: string | null;
+  youtube_video_id: string | null;
+  youtube_url: string | null;
+  outlier_multiplier: number | null;
+  duration_seconds: number | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error_message: string | null;
+  processed_at: string;
+  completed_at: string | null;
+}
+
+export default function AutoPoster() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [runs, setRuns] = useState<AutoCloneRun[]>([]);
+  const [processedVideos, setProcessedVideos] = useState<ProcessedVideo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [triggering, setTriggering] = useState(false);
+  const [liveProgress, setLiveProgress] = useState<string | null>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  // Fetch status data
+  const fetchStatus = async () => {
+    try {
+      const [runsRes, videosRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/auto-clone/status`),
+        fetch(`${API_BASE_URL}/auto-clone/processed`),
+      ]);
+
+      if (runsRes.ok) {
+        const runsData = await runsRes.json();
+        setRuns(runsData.runs || []);
+      }
+
+      if (videosRes.ok) {
+        const videosData = await videosRes.json();
+        setProcessedVideos(videosData.videos || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch status:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    // Poll every 10 seconds when a run is in progress
+    const interval = setInterval(() => {
+      if (runs.some(r => r.status === 'running') || triggering) {
+        fetchStatus();
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [runs, triggering]);
+
+  // Trigger manual run with SSE progress
+  const triggerRun = async () => {
+    setTriggering(true);
+    setLiveProgress('Starting auto-clone...');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auto-clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to trigger: ${response.status}`);
+      }
+
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value);
+          const lines = text.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.type === 'progress') {
+                  setLiveProgress(`${data.step}: ${data.message} (${data.progress}%)`);
+                } else if (data.type === 'complete') {
+                  setLiveProgress(null);
+                  toast({
+                    title: 'Auto-clone complete',
+                    description: data.success
+                      ? `Video uploaded: ${data.youtubeUrl}`
+                      : 'No suitable candidates found',
+                  });
+                  fetchStatus();
+                } else if (data.type === 'error') {
+                  setLiveProgress(null);
+                  toast({
+                    title: 'Auto-clone failed',
+                    description: data.error,
+                    variant: 'destructive',
+                  });
+                  fetchStatus();
+                }
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      toast({
+        title: 'Failed to trigger',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        variant: 'destructive',
+      });
+      setLiveProgress(null);
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'running':
+      case 'processing':
+        return <Badge variant="secondary" className="bg-blue-500/20 text-blue-400"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Running</Badge>;
+      case 'completed':
+        return <Badge variant="secondary" className="bg-green-500/20 text-green-400"><CheckCircle className="w-3 h-3 mr-1" />Completed</Badge>;
+      case 'failed':
+        return <Badge variant="secondary" className="bg-red-500/20 text-red-400"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>;
+      case 'no_candidates':
+        return <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-400"><Clock className="w-3 h-3 mr-1" />No Candidates</Badge>;
+      case 'pending':
+        return <Badge variant="secondary" className="bg-gray-500/20 text-gray-400"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '-';
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  };
+
+  return (
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Auto Poster</h1>
+              <p className="text-muted-foreground">Daily automated video cloning workflow</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={fetchStatus} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button onClick={triggerRun} disabled={triggering}>
+              {triggering ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
+              Run Now
+            </Button>
+          </div>
+        </div>
+
+        {/* Live Progress */}
+        {liveProgress && (
+          <Card className="border-blue-500/50 bg-blue-500/10">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                <span className="text-sm font-medium">{liveProgress}</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Run History */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="w-5 h-5" />
+              Run History
+            </CardTitle>
+            <CardDescription>Daily auto-clone runs (6 AM PST → uploads at 5 PM PST)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : runs.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No runs yet. Click "Run Now" to start.</p>
+            ) : (
+              <div className="space-y-3">
+                {runs.map((run) => (
+                  <div key={run.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      {getStatusBadge(run.status)}
+                      <div>
+                        <p className="font-medium">{new Date(run.run_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {run.channels_scanned} channels scanned, {run.outliers_found} outliers found
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right text-sm text-muted-foreground">
+                      <p>Started: {formatDate(run.started_at)}</p>
+                      {run.completed_at && <p>Completed: {formatDate(run.completed_at)}</p>}
+                      {run.error_message && <p className="text-red-400 text-xs">{run.error_message}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Processed Videos */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Processed Videos</CardTitle>
+            <CardDescription>Videos that have been cloned (won't be selected again)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : processedVideos.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No videos processed yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {processedVideos.map((video) => (
+                  <div key={video.id} className="flex items-start gap-4 p-3 bg-muted/50 rounded-lg">
+                    {video.original_thumbnail_url && (
+                      <img
+                        src={video.original_thumbnail_url}
+                        alt={video.original_title}
+                        className="w-32 h-18 object-cover rounded"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getStatusBadge(video.status)}
+                        {video.outlier_multiplier && (
+                          <Badge variant="outline" className="text-xs">
+                            {video.outlier_multiplier.toFixed(1)}x views
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="font-medium truncate">{video.original_title}</p>
+                      {video.cloned_title && (
+                        <p className="text-sm text-muted-foreground truncate">→ {video.cloned_title}</p>
+                      )}
+                      <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                        <span>Duration: {formatDuration(video.duration_seconds)}</span>
+                        <span>Processed: {formatDate(video.processed_at)}</span>
+                      </div>
+                      {video.youtube_url && (
+                        <a
+                          href={video.youtube_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-400 hover:underline mt-1 inline-block"
+                        >
+                          View on YouTube
+                        </a>
+                      )}
+                      {video.error_message && (
+                        <p className="text-xs text-red-400 mt-1">{video.error_message}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
