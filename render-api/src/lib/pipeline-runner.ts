@@ -20,10 +20,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 
-// Base URL for internal API calls
-const API_BASE_URL = process.env.RAILWAY_PUBLIC_DOMAIN
-  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-  : `http://localhost:${process.env.PORT || 10000}`;
+// Base URL for internal API calls - always use localhost to avoid SSL issues
+const API_BASE_URL = `http://localhost:${process.env.PORT || 10000}`;
 
 export interface PipelineInput {
   sourceVideoId: string;
