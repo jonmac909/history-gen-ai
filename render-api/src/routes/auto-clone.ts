@@ -241,8 +241,14 @@ function isWithinDays(publishedText: string | undefined, days: number): boolean 
     return parseInt(weekMatch[1]) * 7 <= days;
   }
 
-  // If it says "month" or "year", it's too old
-  if (text.includes('month') || text.includes('year')) {
+  // Check for months (1 month = ~30 days)
+  const monthMatch = text.match(/(\d+)\s*month/);
+  if (monthMatch) {
+    return parseInt(monthMatch[1]) * 30 <= days;
+  }
+
+  // If it says "year", it's too old
+  if (text.includes('year')) {
     return false;
   }
 
