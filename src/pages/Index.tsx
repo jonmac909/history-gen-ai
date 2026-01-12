@@ -3465,7 +3465,7 @@ const Index = () => {
         srtContent={pendingSrtContent}
         introClips={generatedClips.length > 0 ? generatedClips.map(c => ({
           index: c.index,
-          videoUrl: c.videoUrl,
+          url: c.videoUrl,
           startSeconds: c.startSeconds,
           endSeconds: c.endSeconds
         })) : undefined}

@@ -473,6 +473,11 @@ export async function runPipeline(
         projectId,
         voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
         voiceStyle: '(sincere) (soft tone)',
+        ttsSettings: {
+          temperature: 0.9,
+          topP: 0.85,
+          repetitionPenalty: 1.1,
+        },
         stream: true,
       }, (data) => {
         if (data.type === 'progress') {

@@ -115,6 +115,8 @@ export interface GeneratedClip {
   index: number;
   videoUrl: string;
   filename?: string;
+  startSeconds: number;
+  endSeconds: number;
 }
 
 export interface VideoClipsResult {
@@ -1578,7 +1580,7 @@ export async function renderVideoStreaming(
   callbacks: RenderVideoCallbacks | ((progress: RenderVideoProgress) => void),
   effects?: VideoEffects,
   useGpu?: boolean,  // Use RunPod GPU rendering (faster)
-  introClips?: { index: number; videoUrl: string; startSeconds: number; endSeconds: number }[]  // Intro video clips (60s)
+  introClips?: { index: number; url: string; startSeconds: number; endSeconds: number }[]  // Intro video clips (60s)
 ): Promise<RenderVideoResult> {
   // Support both old callback style and new object style
   const { onProgress } = typeof callbacks === 'function'

@@ -15,7 +15,7 @@ import { renderVideoStreaming, type RenderVideoProgress } from "@/lib/api";
 
 interface IntroClip {
   index: number;
-  videoUrl: string;
+  url: string;
   startSeconds: number;
   endSeconds: number;
 }

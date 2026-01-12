@@ -616,7 +616,9 @@ async function handleStreamingClips(
       .map(r => ({
         index: r.index,
         videoUrl: r.videoUrl!,
-        filename: r.filename
+        filename: r.filename,
+        startSeconds: (r.index - 1) * duration,
+        endSeconds: r.index * duration
       }));
 
     const failedCount = sortedResults.filter(r => r.state === 'fail').length;
@@ -739,7 +741,9 @@ async function handleNonStreamingClips(
       .map(r => ({
         index: r.index,
         videoUrl: r.videoUrl!,
-        filename: `clip_${String(r.index - 1).padStart(3, '0')}.mp4`
+        filename: `clip_${String(r.index - 1).padStart(3, '0')}.mp4`,
+        startSeconds: (r.index - 1) * duration,
+        endSeconds: r.index * duration
       }));
 
     console.log(`[I2V] Generated ${successfulClips.length}/${clips.length} video clips`);
@@ -816,7 +820,7 @@ async function handleSequentialClipsWithContinuity(
       message: `Starting sequential generation (seamless flow mode)...`
     });
 
-    const successfulClips: { index: number; videoUrl: string; filename: string }[] = [];
+    const successfulClips: { index: number; videoUrl: string; filename: string; startSeconds: number; endSeconds: number }[] = [];
     let lastFrameUrl: string | null = null;
     let failedCount = 0;
 
@@ -872,7 +876,9 @@ async function handleSequentialClipsWithContinuity(
           successfulClips.push({
             index: clip.index,
             videoUrl: supabaseUrl,
-            filename: `clip_${String(clipIndex).padStart(3, '0')}.mp4`
+            filename: `clip_${String(clipIndex).padStart(3, '0')}.mp4`,
+            startSeconds: (clip.index - 1) * duration,
+            endSeconds: clip.index * duration
           });
 
           // Extract last frame for next clip (except for the last clip)
