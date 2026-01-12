@@ -652,9 +652,11 @@ const Index = () => {
   };
 
   // Step 1: Generate transcript and script
-  const handleGenerate = async (overrideUrl?: string) => {
+  const handleGenerate = async (overrideUrl?: string, overrideWordCount?: number) => {
     // Use override URL if provided (for Auto Poster), otherwise use inputValue
     const effectiveUrl = overrideUrl || inputValue;
+    // Use override word count if provided (fixes race condition with Auto Poster modal)
+    const effectiveWordCount = overrideWordCount ?? settings.wordCount;
 
     // Check if using custom script (skip YouTube fetch and AI rewriting)
     const usingCustomScript = settings.customScript && settings.customScript.trim().length > 0;
@@ -800,7 +802,7 @@ const Index = () => {
         currentTemplate.template,
         transcriptResult.title || "History Documentary",
         settings.aiModel,
-        settings.wordCount,
+        effectiveWordCount,
         (progress, wordCount) => {
           // Show only progress percentage and word count (no script preview)
           const progressText = `${progress}% (${wordCount.toLocaleString()} words)`;
@@ -3591,8 +3593,8 @@ const Index = () => {
           const nextDay5pmPST = getNext5pmPST();
           setYoutubePublishAt(nextDay5pmPST);
           console.log(`[Auto Poster] Scheduled for: ${nextDay5pmPST}`);
-          // Trigger the generate flow with the URL directly (don't rely on state update)
-          handleGenerate(videoUrl);
+          // Trigger the generate flow with URL and word count directly (fixes race condition)
+          handleGenerate(videoUrl, targetWordCount);
         }}
       />
     </div>
