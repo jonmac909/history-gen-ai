@@ -303,10 +303,11 @@ export function YouTubeUploadModal({
           publishAt = initialPublishAt;
         }
 
-        // Ensure tags is an array (handle both string and array inputs)
-        const tagsArray = Array.isArray(currentTags)
+        // Ensure tags is an array (handle both string and array inputs) - limit to 5 max
+        const tagsArray = (Array.isArray(currentTags)
           ? currentTags
-          : (typeof currentTags === 'string' ? currentTags.split(',').map(t => t.trim()).filter(Boolean) : []);
+          : (typeof currentTags === 'string' ? currentTags.split(',').map(t => t.trim()).filter(Boolean) : [])
+        ).slice(0, 5);
 
         const result = await uploadToYouTube(
           {
@@ -315,11 +316,12 @@ export function YouTubeUploadModal({
             title: currentTitle || projectTitle || "Untitled Video",
             description: currentDescription,
             tags: tagsArray,
-            categoryId,
+            categoryId: "22", // People & Blogs
             privacyStatus: publishAt ? 'private' : 'private', // Always private until scheduled
             publishAt,
             thumbnailUrl,
             isAlteredContent: true, // AI-generated content
+            playlistId: selectedPlaylist || undefined,
           },
           (progress) => {
             setUploadProgress(progress.percent);
@@ -574,12 +576,13 @@ export function YouTubeUploadModal({
           accessToken,
           title: finalTitle,
           description,
-          tags: tagsArray,
-          categoryId,
+          tags: tagsArray.slice(0, 5), // Limit to 5 tags max
+          categoryId: "22", // People & Blogs
           privacyStatus: actualPrivacyStatus,
           publishAt,
           thumbnailUrl,
           isAlteredContent,
+          playlistId: selectedPlaylist && selectedPlaylist !== "none" ? selectedPlaylist : undefined,
         },
         (progress) => {
           setUploadProgress(progress.percent);
@@ -591,36 +594,9 @@ export function YouTubeUploadModal({
         setUploadedVideoId(result.videoId);
         setYoutubeUrl(result.youtubeUrl || null);
 
-        // Add to playlist if selected
+        // Playlist is now handled by the backend
         if (selectedPlaylist && selectedPlaylist !== "none") {
-          console.log(`[YouTubeUpload] Adding video ${result.videoId} to playlist ${selectedPlaylist}`);
-          try {
-            const { addVideoToPlaylist } = await import("@/lib/youtubeAuth");
-            const playlistResult = await addVideoToPlaylist(selectedPlaylist, result.videoId);
-            if (playlistResult.success) {
-              console.log(`[YouTubeUpload] Successfully added to playlist`);
-              toast({
-                title: "Added to Playlist",
-                description: "Video has been added to the selected playlist.",
-              });
-            } else {
-              console.error(`[YouTubeUpload] Playlist add failed:`, playlistResult.error);
-              toast({
-                title: "Playlist Warning",
-                description: playlistResult.error || "Failed to add to playlist.",
-                variant: "destructive",
-              });
-            }
-          } catch (playlistError) {
-            console.error("[YouTubeUpload] Failed to add to playlist:", playlistError);
-            toast({
-              title: "Playlist Warning",
-              description: "Video uploaded but failed to add to playlist.",
-              variant: "destructive",
-            });
-          }
-        } else {
-          console.log(`[YouTubeUpload] No playlist selected (selectedPlaylist: ${selectedPlaylist})`);
+          console.log(`[YouTubeUpload] Video added to playlist via backend`);
         }
 
         // Notify parent with final metadata

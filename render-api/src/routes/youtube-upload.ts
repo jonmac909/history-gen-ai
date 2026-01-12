@@ -47,6 +47,7 @@ interface UploadRequest {
   publishAt?: string; // ISO 8601 date for scheduled publish
   thumbnailUrl?: string; // URL of custom thumbnail to set
   isAlteredContent?: boolean; // AI-generated/altered content declaration
+  playlistId?: string; // Optional playlist to add video to after upload
 }
 
 interface AuthCodeExchangeRequest {
@@ -444,7 +445,8 @@ router.post('/', async (req: Request, res: Response) => {
     privacyStatus,
     publishAt,
     thumbnailUrl,
-    isAlteredContent
+    isAlteredContent,
+    playlistId
   }: UploadRequest = req.body;
 
   // Validate required fields
@@ -768,6 +770,46 @@ router.post('/', async (req: Request, res: Response) => {
             }
           } catch (thumbError) {
             console.error('Thumbnail upload error:', thumbError);
+            // Don't fail the whole upload, just log the error
+          }
+        }
+
+        // Add video to playlist if playlistId provided
+        if (playlistId) {
+          sendEvent({
+            type: 'progress',
+            stage: 'uploading',
+            percent: 98,
+            message: 'Adding to playlist...'
+          });
+
+          try {
+            const playlistResponse = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                snippet: {
+                  playlistId,
+                  resourceId: {
+                    kind: 'youtube#video',
+                    videoId,
+                  },
+                },
+              }),
+            });
+
+            if (playlistResponse.ok) {
+              console.log('Video added to playlist:', playlistId);
+            } else {
+              const playlistError = await playlistResponse.text();
+              console.error('Failed to add video to playlist:', playlistResponse.status, playlistError);
+              // Don't fail the whole upload, just log the error
+            }
+          } catch (playlistError) {
+            console.error('Playlist add error:', playlistError);
             // Don't fail the whole upload, just log the error
           }
         }

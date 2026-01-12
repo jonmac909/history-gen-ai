@@ -1896,6 +1896,7 @@ export interface YouTubeUploadParams {
   publishAt?: string; // ISO 8601 date for scheduled publish
   thumbnailUrl?: string; // URL of custom thumbnail to set
   isAlteredContent?: boolean; // AI-generated/altered content declaration
+  playlistId?: string; // Optional playlist to add video to after upload
 }
 
 export interface YouTubeUploadResult {
