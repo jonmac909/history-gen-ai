@@ -164,21 +164,22 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   });
   console.log('⏰ Auto Poster scheduled: Daily at 14:00 UTC (6am PST)');
 
-  // TEST CRON - DELETE AFTER VERIFICATION - runs at 15:40 UTC
-  cron.schedule('40 15 * * *', async () => {
-    console.log('[Cron TEST] 🧪 Test cron triggered at 15:40 UTC!');
+  // TEST CRON - DELETE AFTER VERIFICATION - runs at 15:50 UTC
+  cron.schedule('50 15 * * *', async () => {
+    console.log('[Cron TEST] 🧪 Test cron triggered at 15:50 UTC - triggering Auto Poster!');
     try {
-      await fetch(`http://localhost:${PORT}/auto-clone/test-whatsapp`, {
+      const response = await fetch(`http://localhost:${PORT}/auto-clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: '🧪 Cron test successful! The scheduler is working.' }),
+        body: JSON.stringify({ force: true }),
       });
-      console.log('[Cron TEST] WhatsApp notification sent');
+      const result = await response.json() as { success?: boolean; error?: string };
+      console.log('[Cron TEST] Auto Poster triggered:', result.success ? 'Started' : result.error || 'Failed');
     } catch (error) {
       console.error('[Cron TEST] Failed:', error);
     }
   });
-  console.log('🧪 TEST CRON scheduled: 15:40 UTC (delete after verification)');
+  console.log('🧪 TEST CRON scheduled: 15:50 UTC (delete after verification)');
 });
 
 // Increase timeouts for long-running SSE connections (video rendering)
