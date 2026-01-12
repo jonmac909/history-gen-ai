@@ -778,6 +778,40 @@ router.delete('/processed/:videoId', async (req: Request, res: Response) => {
   }
 });
 
+// Manually add a processed video record (for debugging/recovery)
+router.post('/processed', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { videoId, title, thumbnailUrl, channelId, channelName, outlierMultiplier, durationSeconds, status } = req.body;
+
+    if (!videoId || !title) {
+      return res.status(400).json({ success: false, error: 'videoId and title are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('processed_videos')
+      .upsert({
+        video_id: videoId,
+        original_title: title,
+        original_thumbnail_url: thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+        channel_id: channelId || 'unknown',
+        outlier_multiplier: outlierMultiplier || null,
+        duration_seconds: durationSeconds || null,
+        status: status || 'failed',
+        error_message: 'Manually added for recovery',
+      }, { onConflict: 'video_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    console.log(`[AutoClone] Manually added processed video: ${videoId}`);
+    return res.json({ success: true, video: data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Retry a failed video
 router.post('/retry/:videoId', async (req: Request, res: Response) => {
   try {
