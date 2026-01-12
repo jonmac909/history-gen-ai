@@ -316,11 +316,11 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
   let tempDir: string | null = null;
 
   try {
-    const { projectId, audioUrl, imageUrls, imageTimings, effects } = params;
+    const { projectId, audioUrl, imageUrls, imageTimings, effects, introClips } = params;
     const applyEffects = effects?.smoke_embers || effects?.embers || false;
 
     console.log(`Job ${jobId}: Starting PARALLEL render for project ${projectId}`);
-    console.log(`Images: ${imageUrls.length}, Workers: ${PARALLEL_WORKERS}, Effects: ${applyEffects}`);
+    console.log(`Images: ${imageUrls.length}, Intro Clips: ${introClips?.length || 0}, Workers: ${PARALLEL_WORKERS}, Effects: ${applyEffects}`);
 
     await updateJobStatus(supabase, jobId, 'queued', 2, 'Preparing parallel render...');
 
@@ -518,6 +518,8 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
           supabase_url: supabaseUrl,
           supabase_key: supabaseKey,
           render_job_id: jobId,
+          intro_clips: introClips || [],  // Video clips to prepend with effects
+          apply_effects: applyEffects,    // Whether to apply smoke+embers to intro clips
         },
       }),
     });
