@@ -17,7 +17,15 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { randomUUID } from 'crypto';
+
+// Proxy for YouTube requests (same as youtube-scraper)
+const PROXY_URL = process.env.YTDLP_PROXY_URL || '';
+function getProxyAgent() {
+  if (!PROXY_URL) return undefined;
+  return new HttpsProxyAgent(PROXY_URL);
+}
 
 // Base URL for internal API calls - always use localhost to avoid SSL issues
 const API_BASE_URL = `http://localhost:${process.env.PORT || 10000}`;
@@ -143,8 +151,16 @@ async function saveProjectToDatabase(
 }
 
 // Download image URL and convert to base64
+// Uses proxy for YouTube URLs (ytimg.com) to avoid IP blocking
 async function downloadImageAsBase64(imageUrl: string): Promise<string> {
-  const response = await fetch(imageUrl);
+  const isYouTubeUrl = imageUrl.includes('ytimg.com') || imageUrl.includes('youtube.com');
+  const agent = isYouTubeUrl ? getProxyAgent() : undefined;
+
+  if (isYouTubeUrl && agent) {
+    console.log(`[Pipeline] Downloading YouTube image via proxy: ${imageUrl.substring(0, 60)}...`);
+  }
+
+  const response = await fetch(imageUrl, { agent });
   if (!response.ok) {
     throw new Error(`Failed to download image: ${response.status}`);
   }

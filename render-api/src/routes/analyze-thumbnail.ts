@@ -1,8 +1,16 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const router = Router();
+
+// Proxy for YouTube URLs (same as youtube-scraper)
+const PROXY_URL = process.env.YTDLP_PROXY_URL || '';
+function getProxyAgent() {
+  if (!PROXY_URL) return undefined;
+  return new HttpsProxyAgent(PROXY_URL);
+}
 
 interface AnalyzeThumbnailRequest {
   thumbnailUrl: string;
@@ -34,8 +42,14 @@ router.post('/', async (req: Request, res: Response) => {
 
     console.log(`[AnalyzeThumbnail] Analyzing: ${thumbnailUrl}`);
 
-    // Download thumbnail image
-    const imageResponse = await fetch(thumbnailUrl);
+    // Download thumbnail image (use proxy for YouTube URLs)
+    const isYouTubeUrl = thumbnailUrl.includes('ytimg.com') || thumbnailUrl.includes('youtube.com');
+    const agent = isYouTubeUrl ? getProxyAgent() : undefined;
+    if (isYouTubeUrl && agent) {
+      console.log(`[AnalyzeThumbnail] Using proxy for YouTube thumbnail`);
+    }
+
+    const imageResponse = await fetch(thumbnailUrl, { agent });
     if (!imageResponse.ok) {
       return res.status(400).json({ error: `Failed to fetch thumbnail: ${imageResponse.status}` });
     }
