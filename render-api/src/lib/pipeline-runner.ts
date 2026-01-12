@@ -623,7 +623,7 @@ export async function runPipeline(
         stream: true,
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('imagePrompts', 55 + Math.round(data.progress * 0.03), `Generating prompts...`);
+          reportProgress('imagePrompts', 55 + Math.round(data.progress * 0.03), `Generating image prompts...`);
         }
       });
       imagePrompts = promptsRes.prompts;
