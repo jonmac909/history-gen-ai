@@ -225,7 +225,7 @@ async function callStreamingAPI(
 }
 
 // Default voice sample URL
-const DEFAULT_VOICE_SAMPLE = 'https://autoaigen.com/voices/clone_voice.mp3';
+const DEFAULT_VOICE_SAMPLE = 'https://autoaigen.com/voices/clone_voice.wav';
 
 // Auto Poster Template: Complete Histories (template-a)
 const COMPLETE_HISTORIES_TEMPLATE = `THESE ARE INSTRUCTIONS FOR YOU - DO NOT INCLUDE ANY OF THIS MARKDOWN FORMATTING IN YOUR OUTPUT!

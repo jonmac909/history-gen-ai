@@ -79,7 +79,7 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   scriptTemplate: "template-a",
   imageTemplate: "image-a",
   aiModel: "claude-sonnet-4-5",
-  voiceSampleUrl: "https://autoaigen.com/voices/clone_voice.mp3",
+  voiceSampleUrl: "https://autoaigen.com/voices/clone_voice.wav",
   speed: 1,
   imageCount: 10,
   wordCount: 1000,
@@ -98,15 +98,15 @@ function loadLastSettings(): GenerationSettings {
       const parsed = JSON.parse(saved);
 
       // Validate and fix voiceSampleUrl if it's an old/invalid URL
-      // Old URLs: historygenai.netlify.app, .wav extension, etc.
+      // Old URLs: historygenai.netlify.app, old .mp3 default
       let voiceSampleUrl = parsed.voiceSampleUrl;
       if (voiceSampleUrl) {
         const isOldDomain = voiceSampleUrl.includes('netlify.app') ||
                            voiceSampleUrl.includes('historygenai.');
-        const isWrongExtension = voiceSampleUrl.endsWith('.wav') &&
-                                 voiceSampleUrl.includes('clone_voice');
-        if (isOldDomain || isWrongExtension) {
-          console.log('[Settings] Resetting invalid voiceSampleUrl:', voiceSampleUrl);
+        // Reset old .mp3 default to new .wav default
+        const isOldMp3Default = voiceSampleUrl === 'https://autoaigen.com/voices/clone_voice.mp3';
+        if (isOldDomain || isOldMp3Default) {
+          console.log('[Settings] Resetting old voiceSampleUrl:', voiceSampleUrl);
           voiceSampleUrl = DEFAULT_SETTINGS.voiceSampleUrl;
         }
       }
