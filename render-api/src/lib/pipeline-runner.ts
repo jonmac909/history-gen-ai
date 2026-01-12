@@ -228,8 +228,8 @@ async function callStreamingAPI(
 const DEFAULT_VOICE_SAMPLE = 'https://autoaigen.com/voices/clone_voice.mp3';
 
 // Intro video clips configuration
-const INTRO_CLIP_COUNT = 5;  // 5 video clips at start
-const INTRO_CLIP_DURATION = 12;  // 12 seconds each (Seedance max)
+const INTRO_CLIP_COUNT = 12;  // 12 video clips at start
+const INTRO_CLIP_DURATION = 5;  // 5 seconds each
 const INTRO_TOTAL_DURATION = INTRO_CLIP_COUNT * INTRO_CLIP_DURATION;  // 60 seconds total
 
 /**
@@ -278,6 +278,7 @@ export async function runPipeline(
     reportProgress('script', 15, 'Generating script...');
     const scriptStart = Date.now();
     let script: string;
+    let calculatedImageCount: number = 10;  // Will be recalculated based on actual word count
 
     // Calculate target word count based on source video duration (or use manual override)
     // 150 words/minute is typical documentary narration pace
@@ -300,12 +301,17 @@ export async function runPipeline(
         }
       }, 1800000);  // 30 min timeout for very long scripts (200+ min videos)
       script = scriptRes.script;
+      const actualWordCount = script.split(/\s+/).length;
       steps.push({
         step: 'script',
         success: true,
         duration: Date.now() - scriptStart,
-        data: { wordCount: script.split(/\s+/).length },
+        data: { wordCount: actualWordCount },
       });
+
+      // Calculate image count: 1 image per 100 words (min 10, max 300)
+      calculatedImageCount = Math.min(300, Math.max(10, Math.ceil(actualWordCount / 100)));
+      console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
     } catch (error: any) {
       steps.push({ step: 'script', success: false, duration: Date.now() - scriptStart, error: error.message });
       throw new Error(`Failed to generate script: ${error.message}`);
@@ -430,7 +436,7 @@ export async function runPipeline(
           if (data.type === 'progress') {
             reportProgress('videoClips', 47 + Math.round((data.completed / data.total) * 8), `Generating clips ${data.completed}/${data.total}...`);
           }
-        }, 900000);  // 15 min timeout for 5 clips
+        }, 1800000);  // 30 min timeout for 12 clips
 
         introClips = (clipsRes.clips || []).map((c: any) => ({
           url: c.videoUrl,
@@ -467,7 +473,7 @@ export async function runPipeline(
         script,
         srtContent,  // Reuse SRT downloaded earlier
         projectId,
-        imageCount: 10,
+        imageCount: calculatedImageCount,
         masterStylePrompt: 'Photorealistic historical scene, dramatic cinematic lighting, 8K quality',
         stream: true,
       }, (data) => {
