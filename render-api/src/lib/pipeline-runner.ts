@@ -322,6 +322,15 @@ export async function runPipeline(
     const audioStart = Date.now();
     let audioUrl: string;
     let audioDuration: number;
+
+    // Debug: Log script info before audio generation
+    console.log(`[Pipeline] Script length: ${script?.length || 0} chars, type: ${typeof script}`);
+    console.log(`[Pipeline] Script first 500 chars: "${script?.substring(0, 500)}..."`);
+    console.log(`[Pipeline] Script last 200 chars: "...${script?.slice(-200)}"`);
+    if (!script || script.trim().length < 100) {
+      console.error(`[Pipeline] ERROR: Script is empty or too short! Length: ${script?.length || 0}`);
+    }
+
     try {
       const audioRes = await callStreamingAPI('/generate-audio', {
         script,
