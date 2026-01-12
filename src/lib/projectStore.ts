@@ -737,5 +737,14 @@ export async function getRootProjects(): Promise<Project[]> {
     return [];
   }
 
+  // DEBUG: Log video-related fields for first few projects
+  (data || []).slice(0, 3).forEach((row, i) => {
+    console.log(`[projectStore DEBUG] Project ${i}: ${row.video_title}`, {
+      video_url: row.video_url,
+      thumbnails: row.thumbnails,
+      clips: row.clips?.length || 0,
+    });
+  });
+
   return (data || []).map(rowToProject);
 }
