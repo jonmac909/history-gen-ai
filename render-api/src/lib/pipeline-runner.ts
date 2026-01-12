@@ -644,8 +644,65 @@ export async function runPipeline(
       currentStep: 'prompts',
     });
 
-    // Step 6: Generate clip prompts (5 × 12s intro videos)
-    reportProgress('clipPrompts', 45, 'Generating video clip prompts...');
+    // Step 6: Generate image prompts (streaming) - MOVED BEFORE clip prompts/video clips
+    // because video clips use I2V mode which requires source images
+    reportProgress('imagePrompts', 45, 'Generating image prompts...');
+    const imagePromptsStart = Date.now();
+    let imagePrompts: any[];
+    try {
+      const promptsRes = await callStreamingAPI('/generate-image-prompts', {
+        script,
+        srtContent,  // Reuse SRT downloaded earlier
+        projectId,
+        imageCount: calculatedImageCount,
+        masterStylePrompt: DUTCH_GOLDEN_AGE_STYLE,  // Use Dutch Golden Age style for Auto Poster
+        stream: true,
+      }, (data) => {
+        if (data.type === 'progress') {
+          reportProgress('imagePrompts', 45 + Math.round(data.progress * 0.03), `Generating image prompts...`);
+        }
+      });
+      imagePrompts = promptsRes.prompts;
+      steps.push({
+        step: 'imagePrompts',
+        success: true,
+        duration: Date.now() - imagePromptsStart,
+        data: { count: imagePrompts.length },
+      });
+    } catch (error: any) {
+      steps.push({ step: 'imagePrompts', success: false, duration: Date.now() - imagePromptsStart, error: error.message });
+      throw new Error(`Failed to generate image prompts: ${error.message}`);
+    }
+
+    // Step 7: Generate images (streaming) - MOVED BEFORE clip prompts/video clips
+    reportProgress('images', 48, 'Generating images...');
+    const imagesStart = Date.now();
+    let imageUrls: string[];
+    try {
+      const imagesRes = await callStreamingAPI('/generate-images', {
+        prompts: imagePrompts,
+        projectId,
+        stream: true,
+      }, (data) => {
+        if (data.type === 'progress') {
+          reportProgress('images', 48 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
+        }
+      }, 600000);
+      // imagesRes.images is already an array of URL strings, not objects
+      imageUrls = imagesRes.images as string[];
+      steps.push({
+        step: 'images',
+        success: true,
+        duration: Date.now() - imagesStart,
+        data: { count: imageUrls.length },
+      });
+    } catch (error: any) {
+      steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: error.message });
+      throw new Error(`Failed to generate images: ${error.message}`);
+    }
+
+    // Step 8: Generate clip prompts (12 × 5s intro videos)
+    reportProgress('clipPrompts', 58, 'Generating video clip prompts...');
     const clipPromptsStart = Date.now();
     let clipPrompts: any[];
     try {
@@ -658,7 +715,7 @@ export async function runPipeline(
         stream: true,
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('clipPrompts', 45 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
+          reportProgress('clipPrompts', 58 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
         }
       });
       clipPrompts = clipPromptsRes.prompts;
@@ -675,25 +732,33 @@ export async function runPipeline(
       steps.push({ step: 'clipPrompts', success: false, duration: Date.now() - clipPromptsStart, error: error.message });
     }
 
-    // Step 7: Generate video clips (Seedance 1.5 Pro)
-    reportProgress('videoClips', 47, 'Generating intro video clips...');
+    // Step 9: Generate video clips (Kie.ai I2V - Image-to-Video)
+    // Uses the first N generated images as source frames for I2V animation
+    reportProgress('videoClips', 60, 'Generating intro video clips...');
     const videoClipsStart = Date.now();
     let introClips: { url: string; startSeconds: number; endSeconds: number }[] = [];
-    if (clipPrompts.length > 0) {
+    if (clipPrompts.length > 0 && imageUrls.length > 0) {
       try {
+        // Map clip prompts to clips with imageUrl from generated images
+        // Use first N images for N clips (cycle if needed)
+        const clipsWithImages = clipPrompts.map((p: any, i: number) => ({
+          index: i + 1,
+          startSeconds: i * INTRO_CLIP_DURATION,
+          endSeconds: (i + 1) * INTRO_CLIP_DURATION,
+          prompt: p.prompt || p,
+          imageUrl: imageUrls[i % imageUrls.length],  // Use generated images as source for I2V
+        }));
+
+        console.log(`[Pipeline] Sending ${clipsWithImages.length} clips with imageUrls to generate-video-clips`);
+
         const clipsRes = await callStreamingAPI('/generate-video-clips', {
           projectId,
-          clips: clipPrompts.map((p: any, i: number) => ({
-            index: i + 1,
-            startSeconds: i * INTRO_CLIP_DURATION,
-            endSeconds: (i + 1) * INTRO_CLIP_DURATION,
-            prompt: p.prompt || p,
-          })),
+          clips: clipsWithImages,
           duration: INTRO_CLIP_DURATION,
           stream: true,
         }, (data) => {
           if (data.type === 'progress') {
-            reportProgress('videoClips', 47 + Math.round((data.completed / data.total) * 8), `Generating clips ${data.completed}/${data.total}...`);
+            reportProgress('videoClips', 60 + Math.round((data.completed / data.total) * 8), `Generating clips ${data.completed}/${data.total}...`);
           }
         }, 1800000);  // 30 min timeout for 12 clips
 
@@ -715,78 +780,24 @@ export async function runPipeline(
         steps.push({ step: 'videoClips', success: false, duration: Date.now() - videoClipsStart, error: error.message });
       }
     } else {
+      const skipReason = clipPrompts.length === 0 ? 'no clip prompts' : 'no images available';
+      console.log(`[Pipeline] Skipping video clips: ${skipReason}`);
       steps.push({
         step: 'videoClips',
         success: false,
         duration: 0,
-        error: 'Skipped - no clip prompts',
+        error: `Skipped - ${skipReason}`,
       });
     }
 
-    // Step 8: Generate image prompts (streaming)
-    reportProgress('imagePrompts', 55, 'Generating image prompts...');
-    const imagePromptsStart = Date.now();
-    let imagePrompts: any[];
-    try {
-      const promptsRes = await callStreamingAPI('/generate-image-prompts', {
-        script,
-        srtContent,  // Reuse SRT downloaded earlier
-        projectId,
-        imageCount: calculatedImageCount,
-        masterStylePrompt: DUTCH_GOLDEN_AGE_STYLE,  // Use Dutch Golden Age style for Auto Poster
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('imagePrompts', 55 + Math.round(data.progress * 0.03), `Generating image prompts...`);
-        }
-      });
-      imagePrompts = promptsRes.prompts;
-      steps.push({
-        step: 'imagePrompts',
-        success: true,
-        duration: Date.now() - imagePromptsStart,
-        data: { count: imagePrompts.length },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'imagePrompts', success: false, duration: Date.now() - imagePromptsStart, error: error.message });
-      throw new Error(`Failed to generate image prompts: ${error.message}`);
-    }
-
-    // Step 9: Generate images (streaming)
-    reportProgress('images', 58, 'Generating images...');
-    const imagesStart = Date.now();
-    let imageUrls: string[];
-    try {
-      const imagesRes = await callStreamingAPI('/generate-images', {
-        prompts: imagePrompts,
-        projectId,
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('images', 58 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
-        }
-      }, 600000);
-      // imagesRes.images is already an array of URL strings, not objects
-      imageUrls = imagesRes.images as string[];
-      steps.push({
-        step: 'images',
-        success: true,
-        duration: Date.now() - imagesStart,
-        data: { count: imageUrls.length },
-      });
-
-      // Save images to project
-      await saveProjectToDatabase(supabase, projectId, {
-        imagePrompts,
-        imageUrls,
-        clipPrompts,
-        clips: introClips,
-        currentStep: 'images',
-      });
-    } catch (error: any) {
-      steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: error.message });
-      throw new Error(`Failed to generate images: ${error.message}`);
-    }
+    // Save images, clip prompts, and clips to project
+    await saveProjectToDatabase(supabase, projectId, {
+      imagePrompts,
+      imageUrls,
+      clipPrompts,
+      clips: introClips,
+      currentStep: 'images',
+    });
 
     // Step 10: Analyze thumbnail + generate using original as reference
     reportProgress('thumbnail', 68, 'Analyzing and generating thumbnail...');

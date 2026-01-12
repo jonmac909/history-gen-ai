@@ -2648,13 +2648,6 @@ const Index = () => {
       setImagePrompts(basicPrompts);
     }
     // Load video URLs if available
-    console.log('[handleOpenProject] Video URLs from project:', {
-      videoUrl: project.videoUrl,
-      smokeEmbersVideoUrl: project.smokeEmbersVideoUrl,
-      embersVideoUrl: project.embersVideoUrl,
-      thumbnails: project.thumbnails,
-      clipsCount: project.clips?.length || 0,
-    });
     if (project.videoUrl) {
       setVideoUrl(project.videoUrl);
     }
