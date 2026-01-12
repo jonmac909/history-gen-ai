@@ -446,7 +446,7 @@ export async function runPipeline(
       });
 
       // Calculate image count: 1 image per 100 words (min 10, max 300)
-      calculatedImageCount = Math.min(300, Math.max(10, Math.ceil(actualWordCount / 100)));
+      calculatedImageCount = Math.min(300, Math.max(10, Math.round(actualWordCount / 100)));
       console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
     } catch (error: any) {
       steps.push({ step: 'script', success: false, duration: Date.now() - scriptStart, error: error.message });
