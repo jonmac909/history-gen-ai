@@ -1698,9 +1698,11 @@ router.post('/', async (req: Request, res: Response) => {
     repetitionPenalty: ttsRepetitionPenalty,
   };
 
-  // Log raw input immediately
+  // Log raw input immediately with more detail
   const rawWordCount = script ? script.split(/\s+/).filter(Boolean).length : 0;
   console.log(`\n[AUDIO REQUEST] Raw script: ${script?.length || 0} chars, ${rawWordCount} words, stream=${stream}, speed=${speed}, voiceSampleUrl=${voiceSampleUrl ? 'YES' : 'NO'}`);
+  console.log(`[AUDIO DEBUG] Script first 500 chars: "${script?.substring(0, 500)}"`);
+  console.log(`[AUDIO DEBUG] Script last 200 chars: "${script?.slice(-200)}"`);
 
   // Helper to send SSE error events when streaming
   const sendStreamError = (error: string) => {
@@ -1757,12 +1759,16 @@ router.post('/', async (req: Request, res: Response) => {
     const originalWordCount = script.split(/\s+/).filter(Boolean).length;
     const cleanedWordCount = cleanScript.split(/\s+/).filter(Boolean).length;
     const wordsRemoved = originalWordCount - cleanedWordCount;
+    console.log(`[AUDIO DEBUG] After cleaning: ${cleanedWordCount} words (removed ${wordsRemoved})`);
+    console.log(`[AUDIO DEBUG] CleanScript first 500: "${cleanScript.substring(0, 500)}"`);
     if (wordsRemoved > 0) {
       logger.info(`Cleaned script: removed ${wordsRemoved} words (headers, metadata, etc.)`);
       logger.debug(`  Original: ${originalWordCount} words, Cleaned: ${cleanedWordCount} words`);
     }
 
     cleanScript = normalizeText(cleanScript);
+    console.log(`[AUDIO DEBUG] After normalizeText: ${cleanScript.length} chars`);
+    console.log(`[AUDIO DEBUG] Normalized first 500: "${cleanScript.substring(0, 500)}"`);
 
     // Remove repetitions from source text BEFORE TTS generation (proactive)
     const { cleaned, removedCount } = removeTextRepetitions(cleanScript);
@@ -1799,6 +1805,19 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     if (chunks.length === 0) {
+      console.error(`[AUDIO DEBUG] ALL ${rawChunks.length} chunks failed validation!`);
+      console.error(`[AUDIO DEBUG] First 3 raw chunks:`);
+      rawChunks.slice(0, 3).forEach((c, i) => {
+        console.error(`  Chunk ${i}: "${c.substring(0, 100)}..." (${c.length} chars)`);
+        console.error(`    - Length OK: ${c.trim().length >= MIN_TEXT_LENGTH}`);
+        console.error(`    - Under max: ${c.length <= MAX_TEXT_LENGTH}`);
+        console.error(`    - ASCII only: ${!/[^\x00-\x7F]/.test(c)}`);
+        console.error(`    - Has alphanum: ${/[a-zA-Z0-9]/.test(c)}`);
+        if (/[^\x00-\x7F]/.test(c)) {
+          const nonAscii = c.match(/[^\x00-\x7F]/g) || [];
+          console.error(`    - Non-ASCII chars: ${[...new Set(nonAscii)].join(', ')}`);
+        }
+      });
       const errorMsg = 'No valid text chunks after validation. Script may contain only special characters or be too short.';
       if (stream) {
         return sendStreamError(errorMsg);
