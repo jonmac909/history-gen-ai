@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -60,7 +61,7 @@ async function generateScriptChunk(options: GenerateScriptChunkOptions): Promise
 }
 
 // Streaming version (for streaming endpoint)
-async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string }> {
+async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions): Promise<{ text: string; stopReason: string; inputTokens: number; outputTokens: number }> {
   const { apiKey, model, systemPrompt, messages, maxTokens, usePromptCaching, onToken } = options;
 
   const anthropic = new Anthropic({ apiKey });
@@ -82,6 +83,8 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
 
     let fullText = '';
     let stopReason = 'end_turn';
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     // OPTIMIZATION: Token streaming for real-time progress
     const stream = await anthropic.messages.stream({
@@ -100,10 +103,20 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
         }
       } else if (chunk.type === 'message_stop') {
         stopReason = 'end_turn';
+      } else if (chunk.type === 'message_delta' && (chunk as any).usage) {
+        // Capture usage from message_delta event
+        outputTokens = (chunk as any).usage.output_tokens || 0;
       }
     }
 
-    return { text: fullText, stopReason };
+    // Get final message for usage stats
+    const finalMessage = await stream.finalMessage();
+    if (finalMessage?.usage) {
+      inputTokens = finalMessage.usage.input_tokens || 0;
+      outputTokens = finalMessage.usage.output_tokens || outputTokens;
+    }
+
+    return { text: fullText, stopReason, inputTokens, outputTokens };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -111,7 +124,7 @@ async function generateScriptChunkStreaming(options: GenerateScriptChunkOptions)
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { transcript, template, title, topic, model, stream, wordCount } = req.body;
+    const { transcript, template, title, topic, model, stream, wordCount, projectId } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: 'Transcript is required' });
@@ -186,6 +199,8 @@ When continuing a script, seamlessly continue from where you left off.`;
         let currentWordCount = 0;
         let iteration = 0;
         let maxProgressSent = 0; // Track max progress to prevent going backward
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
 
         while (currentWordCount < targetWords && iteration < MAX_ITERATIONS) {
           iteration++;
@@ -375,6 +390,10 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
             clearInterval(keepaliveInterval);
           }
 
+          // Accumulate token usage for cost tracking
+          totalInputTokens += result.inputTokens || 0;
+          totalOutputTokens += result.outputTokens || 0;
+
           if (iteration === 1) {
             fullScript = result.text;
           } else {
@@ -382,7 +401,7 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
           }
 
           currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
-          console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason})`);
+          console.log(`After iteration ${iteration}: ${currentWordCount} words (stop: ${result.stopReason}), tokens: +${result.inputTokens}/${result.outputTokens}`);
 
           // Send REAL progress update after iteration completes (only if higher than previous)
           const realProgress = Math.max(maxProgressSent, Math.min(Math.round((currentWordCount / targetWords) * 100), 99));
@@ -432,6 +451,33 @@ Write EXACTLY ${wordLimit} more words. Stop when you reach ${wordLimit} words.`
         }
 
         console.log(`Script complete: ${currentWordCount} words after ${iteration} iterations`);
+        console.log(`Total tokens: ${totalInputTokens} input, ${totalOutputTokens} output`);
+
+        // Save costs to Supabase if projectId provided
+        if (projectId) {
+          try {
+            await Promise.all([
+              saveCost({
+                projectId,
+                source: 'manual',
+                step: 'script',
+                service: 'claude',
+                units: totalInputTokens,
+                unitType: 'input_tokens',
+              }),
+              saveCost({
+                projectId,
+                source: 'manual',
+                step: 'script',
+                service: 'claude',
+                units: totalOutputTokens,
+                unitType: 'output_tokens',
+              }),
+            ]);
+          } catch (costError) {
+            console.error('[rewrite-script] Error saving costs:', costError);
+          }
+        }
 
         sendEvent({
           type: 'complete',

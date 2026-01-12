@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
 import { checkAudioIntegrity, logAudioIntegrity } from '../utils/audio-integrity';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -567,9 +568,22 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
     }
 
     const videoUrl = finalizeResult.video_url;
-    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    const totalTimeSeconds = (Date.now() - startTime) / 1000;
+    const totalTime = totalTimeSeconds.toFixed(1);
     console.log(`Video finalized: ${videoUrl}`);
     console.log(`Total parallel render time: ${totalTime}s (finalize: ${finalizeResult.finalize_time_seconds?.toFixed(1)}s)`);
+
+    // Save cost to Supabase (RunPod CPU: $0.0003733/second)
+    if (projectId && totalTimeSeconds > 0) {
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'render',
+        service: 'runpod_cpu',
+        units: totalTimeSeconds,
+        unitType: 'seconds',
+      }).catch(err => console.error('[cost-tracker] Failed to save render cost:', err));
+    }
 
     // Clean up chunk files from Supabase storage
     const chunkStoragePaths = chunks.map(c => `${projectId}/chunks/chunk_${c.index.toString().padStart(2, '0')}.mp4`);
@@ -676,6 +690,18 @@ async function processRenderJobCpuRunpod(jobId: string, params: RenderVideoReque
           const renderTime = statusData.output.render_time_seconds || 0;
           console.log(`Job ${jobId}: CPU render complete in ${renderTime.toFixed(1)}s`);
           console.log(`Video URL: ${videoUrl}`);
+
+          // Save cost to Supabase (RunPod CPU: $0.0003733/second)
+          if (projectId && renderTime > 0) {
+            saveCost({
+              projectId,
+              source: 'manual',
+              step: 'render',
+              service: 'runpod_cpu',
+              units: renderTime,
+              unitType: 'seconds',
+            }).catch(err => console.error('[cost-tracker] Failed to save render cost:', err));
+          }
 
           await updateJobStatus(supabase, jobId, 'complete', 100,
             `Video rendered successfully (CPU: ${renderTime.toFixed(1)}s)`,

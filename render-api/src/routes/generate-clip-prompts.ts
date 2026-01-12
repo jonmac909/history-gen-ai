@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -91,7 +92,7 @@ async function regeneratePrompt(
   originalDescription: string,
   foundKeywords: string[],
   narrationText: string
-): Promise<string> {
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
@@ -122,13 +123,20 @@ Write ONLY the description, no quotes or explanation.`
     });
 
     const content = response.content[0];
+    const inputTokens = response.usage?.input_tokens || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+
     if (content.type === 'text') {
-      return content.text.trim().replace(/^["']|["']$/g, '');
+      return {
+        text: content.text.trim().replace(/^["']|["']$/g, ''),
+        inputTokens,
+        outputTokens,
+      };
     }
-    return originalDescription;
+    return { text: originalDescription, inputTokens, outputTokens };
   } catch (error) {
     console.error('Failed to regenerate clip prompt:', error);
-    return originalDescription;
+    return { text: originalDescription, inputTokens: 0, outputTokens: 0 };
   }
 }
 
@@ -204,7 +212,7 @@ function groupSegmentsForClips(segments: SrtSegment[]): { startSeconds: number; 
 }
 
 router.post('/', async (req: Request, res: Response) => {
-  const { script, srtContent, stylePrompt, stream } = req.body;
+  const { script, srtContent, stylePrompt, stream, projectId } = req.body;
 
   const selectedModel = 'claude-sonnet-4-5-20250929';
 
@@ -308,6 +316,10 @@ Output format - JSON array ONLY:
 
     sendEvent({ type: 'progress', progress: 15, message: 'Generating video prompts...' });
 
+    // Track token usage for cost tracking
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
     let fullResponse = '';
 
     const messageStream = await anthropic.messages.stream({
@@ -357,6 +369,13 @@ Remember:
       }
     }
 
+    // Get token usage from stream
+    const finalMessage = await messageStream.finalMessage();
+    if (finalMessage?.usage) {
+      totalInputTokens += finalMessage.usage.input_tokens || 0;
+      totalOutputTokens += finalMessage.usage.output_tokens || 0;
+    }
+
     // Parse JSON response
     const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
@@ -402,13 +421,15 @@ Remember:
       const regenResults = await Promise.all(
         regenTasks.map(async (task) => {
           console.log(`Clip ${task.index + 1}: Found modern keywords [${task.foundKeywords.join(', ')}], regenerating...`);
-          const finalDesc = await regeneratePrompt(anthropic, task.sceneDesc, task.foundKeywords, task.narrationText);
-          return { index: task.index, description: finalDesc };
+          const regenResult = await regeneratePrompt(anthropic, task.sceneDesc, task.foundKeywords, task.narrationText);
+          return { index: task.index, description: regenResult.text, inputTokens: regenResult.inputTokens, outputTokens: regenResult.outputTokens };
         })
       );
 
       for (const result of regenResults) {
         regeneratedDescriptions.set(result.index, result.description);
+        totalInputTokens += result.inputTokens;
+        totalOutputTokens += result.outputTokens;
       }
     }
 
@@ -445,6 +466,33 @@ Remember:
     }
 
     console.log(`✅ Generated ${clipPrompts.length} video clip prompts (regenerated ${regenTasks.length} with modern keywords)`);
+    console.log(`Total tokens: ${totalInputTokens} input, ${totalOutputTokens} output`);
+
+    // Save costs to Supabase if projectId provided
+    if (projectId) {
+      try {
+        await Promise.all([
+          saveCost({
+            projectId,
+            source: 'manual',
+            step: 'clip_prompts',
+            service: 'claude',
+            units: totalInputTokens,
+            unitType: 'input_tokens',
+          }),
+          saveCost({
+            projectId,
+            source: 'manual',
+            step: 'clip_prompts',
+            service: 'claude',
+            units: totalOutputTokens,
+            unitType: 'output_tokens',
+          }),
+        ]);
+      } catch (costError) {
+        console.error('[generate-clip-prompts] Error saving costs:', costError);
+      }
+    }
 
     const result = {
       success: true,

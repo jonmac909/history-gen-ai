@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -125,7 +126,7 @@ async function regeneratePrompt(
   originalDescription: string,
   foundKeywords: string[],
   narrationText: string
-): Promise<string> {
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
@@ -160,14 +161,21 @@ Write 50-100 words describing the scene from an immersive historical perspective
     });
 
     const content = response.content[0];
+    const inputTokens = response.usage?.input_tokens || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+
     if (content.type === 'text') {
       // Clean up any quotes that might wrap the response
-      return content.text.trim().replace(/^["']|["']$/g, '');
+      return {
+        text: content.text.trim().replace(/^["']|["']$/g, ''),
+        inputTokens,
+        outputTokens,
+      };
     }
-    return originalDescription;
+    return { text: originalDescription, inputTokens, outputTokens };
   } catch (error) {
     console.error('Failed to regenerate prompt:', error);
-    return originalDescription;
+    return { text: originalDescription, inputTokens: 0, outputTokens: 0 };
   }
 }
 
@@ -254,7 +262,7 @@ function groupSegmentsForImages(segments: SrtSegment[], imageCount: number, audi
 }
 
 router.post('/', async (req: Request, res: Response) => {
-  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream } = req.body;
+  const { script, srtContent, imageCount, stylePrompt, audioDuration, stream, projectId } = req.body;
 
   // Always use Sonnet for best quality scene descriptions
   const selectedModel = 'claude-sonnet-4-5-20250929';
@@ -393,6 +401,10 @@ Output format:
       }
     ];
 
+    // Track token usage for cost tracking
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
     // Create all batch promises to run in parallel
     const batchPromises = Array.from({ length: numBatches }, async (_, batchIndex) => {
       const batchStart = batchIndex * BATCH_SIZE_PARALLEL;
@@ -440,6 +452,13 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
           batchProgress[batchIndex] = completedInBatch;
           updateTotalProgress();
         }
+      }
+
+      // Get token usage from this batch
+      const finalMessage = await messageStream.finalMessage();
+      if (finalMessage?.usage) {
+        totalInputTokens += finalMessage.usage.input_tokens || 0;
+        totalOutputTokens += finalMessage.usage.output_tokens || 0;
       }
 
       // Parse the JSON response for this batch
@@ -513,12 +532,15 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
             console.log(`Image ${task.index + 1}: Found modern keywords [${task.foundKeywords.join(', ')}], regenerating...`);
 
             // First attempt
-            let finalDesc = await regeneratePrompt(
+            let regenResult = await regeneratePrompt(
               anthropic,
               task.sceneDesc,
               task.foundKeywords,
               task.narrationText
             );
+            let finalDesc = regenResult.text;
+            let taskInputTokens = regenResult.inputTokens;
+            let taskOutputTokens = regenResult.outputTokens;
 
             // Check if regeneration still has keywords
             const remainingKeywords = containsModernKeywords(finalDesc);
@@ -530,21 +552,25 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
                 remainingKeywords,
                 task.narrationText
               );
+              taskInputTokens += secondAttempt.inputTokens;
+              taskOutputTokens += secondAttempt.outputTokens;
 
-              const finalKeywords = containsModernKeywords(secondAttempt);
+              const finalKeywords = containsModernKeywords(secondAttempt.text);
               if (finalKeywords.length > 0) {
                 console.log(`Image ${task.index + 1}: Warning - still has keywords after 2 regeneration attempts, using best attempt`);
               }
-              finalDesc = secondAttempt;
+              finalDesc = secondAttempt.text;
             }
 
-            return { index: task.index, description: finalDesc };
+            return { index: task.index, description: finalDesc, inputTokens: taskInputTokens, outputTokens: taskOutputTokens };
           })
         );
 
-        // Store results
+        // Store results and accumulate token usage
         for (const result of batchResults) {
           regeneratedDescriptions.set(result.index, result.description);
+          totalInputTokens += result.inputTokens;
+          totalOutputTokens += result.outputTokens;
         }
 
         completedRegen += batch.length;
@@ -577,6 +603,33 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
     }
 
     console.log(`Generated ${imagePrompts.length} image prompts successfully (regenerated ${regenTasks.length} prompts with modern keywords)`);
+    console.log(`Total tokens: ${totalInputTokens} input, ${totalOutputTokens} output`);
+
+    // Save costs to Supabase if projectId provided
+    if (projectId) {
+      try {
+        await Promise.all([
+          saveCost({
+            projectId,
+            source: 'manual',
+            step: 'image_prompts',
+            service: 'claude',
+            units: totalInputTokens,
+            unitType: 'input_tokens',
+          }),
+          saveCost({
+            projectId,
+            source: 'manual',
+            step: 'image_prompts',
+            service: 'claude',
+            units: totalOutputTokens,
+            unitType: 'output_tokens',
+          }),
+        ]);
+      } catch (costError) {
+        console.error('[generate-image-prompts] Error saving costs:', costError);
+      }
+    }
 
     const result = {
       success: true,

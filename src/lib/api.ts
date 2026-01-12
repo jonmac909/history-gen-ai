@@ -2388,3 +2388,67 @@ export async function getChannelOutliersYtdlp(
     };
   }
 }
+
+// ============================================================================
+// Project Costs
+// ============================================================================
+
+export interface ProjectCostStep {
+  step: string;
+  totalCost: number;
+  breakdown: Array<{
+    service: string;
+    units: number;
+    unitType: string;
+    cost: number;
+  }>;
+}
+
+export interface ProjectCostsResult {
+  success: boolean;
+  costs?: {
+    steps: ProjectCostStep[];
+    totalCost: number;
+  };
+  error?: string;
+}
+
+/**
+ * Fetch costs for a project from the database
+ */
+export async function fetchProjectCosts(projectId: string): Promise<ProjectCostsResult> {
+  const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+
+  if (!renderUrl) {
+    return {
+      success: false,
+      error: 'Render API URL not configured. Please set VITE_RENDER_API_URL in .env'
+    };
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/costs/${projectId}?byStep=true`);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Fetch costs error:', response.status, errorData);
+      return {
+        success: false,
+        error: errorData.error || `Failed to fetch costs: ${response.status}`
+      };
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      costs: result.costs
+    };
+
+  } catch (error) {
+    console.error('Fetch costs error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch costs'
+    };
+  }
+}

@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as os from 'os';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
+import { saveCost } from '../lib/cost-tracker';
 
 const execAsync = promisify(exec);
 
@@ -624,6 +625,19 @@ async function handleStreamingClips(
     console.log(`Success: ${successfulClips.length}/${total}`);
     console.log(`Failed: ${failedCount}/${total}`);
 
+    // Save cost to Supabase (Seedance: $0.21/12s clip, prorated by duration)
+    const totalClipDuration = successfulClips.length * duration;
+    if (projectId && totalClipDuration > 0) {
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'video_clips',
+        service: 'seedance',
+        units: totalClipDuration,
+        unitType: 'seconds',
+      }).catch(err => console.error('[cost-tracker] Failed to save video clips cost:', err));
+    }
+
     sendEvent({
       type: 'complete',
       success: true,
@@ -729,6 +743,19 @@ async function handleNonStreamingClips(
       }));
 
     console.log(`[I2V] Generated ${successfulClips.length}/${clips.length} video clips`);
+
+    // Save cost to Supabase (Seedance: $0.21/12s clip, prorated by duration)
+    const totalClipDuration = successfulClips.length * duration;
+    if (projectId && totalClipDuration > 0) {
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'video_clips',
+        service: 'seedance',
+        units: totalClipDuration,
+        unitType: 'seconds',
+      }).catch(err => console.error('[cost-tracker] Failed to save video clips cost:', err));
+    }
 
     return res.json({
       success: true,
@@ -894,6 +921,19 @@ async function handleSequentialClipsWithContinuity(
     console.log(`\n=== Sequential generation complete ===`);
     console.log(`Success: ${successfulClips.length}/${total}`);
     console.log(`Failed: ${failedCount}/${total}`);
+
+    // Save cost to Supabase (Seedance: $0.21/12s clip, prorated by duration)
+    const totalClipDuration = successfulClips.length * duration;
+    if (projectId && totalClipDuration > 0) {
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'video_clips',
+        service: 'seedance',
+        units: totalClipDuration,
+        unitType: 'seconds',
+      }).catch(err => console.error('[cost-tracker] Failed to save video clips cost:', err));
+    }
 
     sendEvent({
       type: 'complete',

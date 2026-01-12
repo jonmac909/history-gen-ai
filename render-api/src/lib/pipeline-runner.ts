@@ -564,13 +564,21 @@ export async function runPipeline(
     reportProgress('render', 72, 'Rendering video...');
     const renderStart = Date.now();
     let videoUrl: string;
+
+    // Build image timings from the prompts (each prompt has startSeconds/endSeconds)
+    const imageTimings = imagePrompts.map((p: any) => ({
+      startSeconds: p.startSeconds,
+      endSeconds: p.endSeconds,
+    }));
+
     try {
       const renderRes = await callStreamingAPI('/render-video', {
         projectId,
         audioUrl,
-        captionsUrl,
         imageUrls,
-        effectType: 'smoke_embers',
+        imageTimings,
+        srtContent,
+        effects: { smoke_embers: true },
         introClips: introClips.length > 0 ? introClips : undefined,
       }, (data) => {
         if (data.type === 'progress') {

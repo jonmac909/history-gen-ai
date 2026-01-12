@@ -5,6 +5,8 @@ import fetch from 'node-fetch';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import crypto from 'crypto';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -647,6 +649,19 @@ router.post('/', async (req: Request, res: Response) => {
       .getPublicUrl(fileName);
 
     console.log('Captions uploaded successfully:', urlData.publicUrl);
+
+    // Save cost to Supabase (Whisper: $0.006/minute of audio input)
+    if (projectId && totalDuration > 0) {
+      const durationMinutes = totalDuration / 60;
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'captions',
+        service: 'whisper',
+        units: durationMinutes,
+        unitType: 'minutes',
+      }).catch(err => console.error('[cost-tracker] Failed to save captions cost:', err));
+    }
 
     const result = {
       success: true,

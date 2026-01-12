@@ -24,6 +24,7 @@ import bulkChannelsRouter from './routes/bulk-channels';
 import analyzeThumbnailRouter from './routes/analyze-thumbnail';
 import rewriteTitleRouter from './routes/rewrite-title';
 import autoCloneRouter from './routes/auto-clone';
+import costsRouter from './routes/costs';
 
 dotenv.config();
 
@@ -108,6 +109,7 @@ app.use('/bulk-channels', bulkChannelsRouter);
 app.use('/analyze-thumbnail', analyzeThumbnailRouter);
 app.use('/rewrite-title', rewriteTitleRouter);
 app.use('/auto-clone', autoCloneRouter);
+app.use('/costs', costsRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

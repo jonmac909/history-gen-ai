@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
+import { saveCost } from '../lib/cost-tracker';
 
 const router = Router();
 
@@ -450,6 +451,18 @@ async function handleStreamingImages(
     console.log(`Success: ${successfulImages.length}/${total}`);
     console.log(`Failed: ${failedCount}/${total}`);
 
+    // Save cost to Supabase (Z-Image: $0.035/image)
+    if (projectId && successfulImages.length > 0) {
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'images',
+        service: 'z_image',
+        units: successfulImages.length,
+        unitType: 'images',
+      }).catch(err => console.error('[cost-tracker] Failed to save images cost:', err));
+    }
+
     sendEvent({
       type: 'complete',
       success: true,
@@ -525,6 +538,18 @@ async function handleNonStreamingImages(
 
   const imageUrls = results.filter((url): url is string => url !== null);
   console.log(`Z-Image generated ${imageUrls.length} images`);
+
+  // Save cost to Supabase (Z-Image: $0.035/image)
+  if (projectId && imageUrls.length > 0) {
+    saveCost({
+      projectId,
+      source: 'manual',
+      step: 'images',
+      service: 'z_image',
+      units: imageUrls.length,
+      unitType: 'images',
+    }).catch(err => console.error('[cost-tracker] Failed to save images cost:', err));
+  }
 
   return res.json({ success: true, images: imageUrls });
 }

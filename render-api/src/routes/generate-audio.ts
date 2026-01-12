@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { getPronunciationFixesRecord } from './pronunciation';
+import { saveCost } from '../lib/cost-tracker';
 
 // Set FFmpeg and FFprobe paths
 if (ffmpegStatic) {
@@ -2466,6 +2467,19 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     console.log(`Combined audio URL: ${combinedUrlData.publicUrl}`);
     console.log(`Total duration: ${Math.round(totalDuration)}s`);
 
+    // Save cost to Supabase (Fish Speech: $0.004/minute of audio output)
+    if (projectId) {
+      const durationMinutes = totalDuration / 60;
+      saveCost({
+        projectId,
+        source: 'manual',
+        step: 'audio',
+        service: 'fish_speech',
+        units: durationMinutes,
+        unitType: 'minutes',
+      }).catch(err => console.error('[cost-tracker] Failed to save audio cost:', err));
+    }
+
     // Clean up segment results for client (remove internal fields)
     const cleanedSegments: AudioSegmentResult[] = segmentResults.map(r => ({
       index: r.index,
@@ -2596,6 +2610,19 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
   const { data: urlData } = supabase.storage
     .from('generated-assets')
     .getPublicUrl(fileName);
+
+  // Save cost to Supabase (Fish Speech: $0.004/minute of audio output)
+  if (projectId) {
+    const durationMinutes = durationSeconds / 60;
+    saveCost({
+      projectId,
+      source: 'manual',
+      step: 'audio',
+      service: 'fish_speech',
+      units: durationMinutes,
+      unitType: 'minutes',
+    }).catch(err => console.error('[cost-tracker] Failed to save audio cost:', err));
+  }
 
   return res.json({
     success: true,

@@ -879,4 +879,31 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
   }
 });
 
+// Test WhatsApp notification
+router.post('/test-whatsapp', async (req: Request, res: Response) => {
+  const phone = process.env.WHATSAPP_PHONE;
+  const apiKey = process.env.WHATSAPP_API_KEY;
+
+  if (!phone || !apiKey) {
+    return res.status(400).json({
+      success: false,
+      error: 'WhatsApp not configured',
+      phoneConfigured: !!phone,
+      apiKeyConfigured: !!apiKey,
+    });
+  }
+
+  try {
+    const message = req.body.message || '🧪 Test notification from AutoAIGen';
+    await sendWhatsAppNotification(message);
+    return res.json({
+      success: true,
+      message: 'Test notification sent',
+      phoneNumber: phone,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

@@ -13,7 +13,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { supabase } from "@/integrations/supabase/client";
-import { renderVideoStreaming, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects } from "@/lib/api";
+import { renderVideoStreaming, fetchProjectCosts, type ImagePromptWithTiming, type RenderVideoProgress, type VideoEffects, type ProjectCostStep } from "@/lib/api";
 import { YouTubeUploadModal } from "./YouTubeUploadModal";
 import { VideoRenderModal } from "./VideoRenderModal";
 import { checkYouTubeConnection, authenticateYouTube, disconnectYouTube } from "@/lib/youtubeAuth";
@@ -265,6 +265,35 @@ export function ProjectResults({
 
   // State for video render modal
   const [isVideoRenderModalOpen, setIsVideoRenderModalOpen] = useState(false);
+
+  // State for project costs
+  const [costs, setCosts] = useState<{ steps: ProjectCostStep[]; totalCost: number } | null>(null);
+
+  // Fetch project costs on mount/projectId change
+  useEffect(() => {
+    if (!projectId) return;
+
+    fetchProjectCosts(projectId).then(result => {
+      if (result.success && result.costs) {
+        setCosts(result.costs);
+      }
+    }).catch(err => {
+      console.error('[ProjectResults] Failed to fetch costs:', err);
+    });
+  }, [projectId]);
+
+  // Helper to get cost for a specific step
+  const getCostForStep = (stepName: string): number | null => {
+    if (!costs) return null;
+    const step = costs.steps.find(s => s.step === stepName);
+    return step?.totalCost ?? null;
+  };
+
+  // Format cost for display
+  const formatCost = (cost: number | null): string => {
+    if (cost === null) return '';
+    return `$${cost.toFixed(2)}`;
+  };
 
   // Reset all video URLs when project changes
   useEffect(() => {
@@ -1294,6 +1323,11 @@ export function ProjectResults({
                   ? assets.find(a => a.id === 'script')!.size
                   : 'Pending'}
               </span>
+              {getCostForStep('script') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('script'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1360,6 +1394,11 @@ export function ProjectResults({
                   ? assets.find(a => a.id === 'audio')!.size
                   : 'Pending'}
               </span>
+              {getCostForStep('audio') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('audio'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1426,6 +1465,11 @@ export function ProjectResults({
                   ? `${(srtContent.match(/^\d+$/gm) || []).length} segments`
                   : 'Pending'}
               </span>
+              {getCostForStep('captions') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('captions'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1501,6 +1545,11 @@ export function ProjectResults({
                   ? `${clipPrompts.length} scenes`
                   : 'Pending'}
               </span>
+              {getCostForStep('clip_prompts') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('clip_prompts'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1536,6 +1585,11 @@ export function ProjectResults({
                   ? `${clipUrls.length} × 12s clips`
                   : 'Pending'}
               </span>
+              {getCostForStep('video_clips') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('video_clips'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1571,6 +1625,11 @@ export function ProjectResults({
                   ? `${imagePrompts.length} scenes`
                   : 'Pending'}
               </span>
+              {getCostForStep('image_prompts') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('image_prompts'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1636,6 +1695,11 @@ export function ProjectResults({
                   ? `${assets.filter(a => a.id.startsWith('image-') && a.url).length} generated`
                   : 'Pending'}
               </span>
+              {getCostForStep('images') !== null && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  {formatCost(getCostForStep('images'))}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -1711,6 +1775,11 @@ export function ProjectResults({
                   <span className="text-sm text-muted-foreground">
                     {statusText}
                   </span>
+                  {getCostForStep('render') !== null && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                      {formatCost(getCostForStep('render'))}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
@@ -1871,6 +1940,18 @@ export function ProjectResults({
             );
           })()}
 
+
+          {/* Total Cost */}
+          {costs && costs.totalCost > 0 && (
+            <div className="flex items-center justify-between py-3 border-t border-dashed mt-2">
+              <div className="flex items-center gap-3">
+                <span className="font-medium text-foreground">Total Cost</span>
+              </div>
+              <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                ${costs.totalCost.toFixed(2)}
+              </span>
+            </div>
+          )}
 
           {/* Tags Section */}
           <div className="py-3 space-y-3">
