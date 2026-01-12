@@ -115,7 +115,7 @@ export function YouTubeUploadModal({
   const [title, setTitle] = useState(initialTitle || projectTitle || "");
   const [description, setDescription] = useState(initialDescription || "");
   const [tags, setTags] = useState(initialTags || "");
-  const [categoryId, setCategoryId] = useState(initialCategoryId || "27"); // Default: Education
+  const [categoryId, setCategoryId] = useState(initialCategoryId || "22"); // Default: People & Blogs
 
   // AI generation state
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
@@ -235,11 +235,11 @@ export function YouTubeUploadModal({
       let currentTags = tags;
 
       if (!currentTitle || currentTitle === projectTitle) {
-        console.log("[Full Auto YouTube] Generating metadata...");
+        console.log("[Full Auto YouTube] Generating metadata with script length:", script?.length || 0);
         setIsGeneratingMetadata(true);
 
         try {
-          const result = await generateYouTubeMetadata(script || "");
+          const result = await generateYouTubeMetadata(projectTitle || "Historical Documentary", script || "");
           if (result.success && result.titles && result.titles.length > 0) {
             currentTitle = result.titles[0];
             setTitle(currentTitle);
@@ -381,7 +381,19 @@ export function YouTubeUploadModal({
     setIsLoadingPlaylists(true);
     try {
       const result = await fetchYouTubePlaylists();
-      setPlaylists(result.playlists || []);
+      const loadedPlaylists = result.playlists || [];
+      setPlaylists(loadedPlaylists);
+
+      // Auto-select "Complete Histories" playlist if not already selected
+      if (!selectedPlaylist && !initialPlaylistId) {
+        const completeHistoriesPlaylist = loadedPlaylists.find(
+          p => p.title.toLowerCase().includes('complete histories')
+        );
+        if (completeHistoriesPlaylist) {
+          setSelectedPlaylist(completeHistoriesPlaylist.id);
+          console.log('[YouTubeModal] Auto-selected Complete Histories playlist:', completeHistoriesPlaylist.id);
+        }
+      }
     } catch (error) {
       console.error('Error loading playlists:', error);
     } finally {

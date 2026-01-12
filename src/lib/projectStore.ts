@@ -1,5 +1,5 @@
 import type { GenerationSettings } from "@/components/SettingsPopover";
-import type { ImagePromptWithTiming, AudioSegment } from "@/lib/api";
+import type { ImagePromptWithTiming, AudioSegment, ClipPrompt, GeneratedClip } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 
 // Helper to merge imageUrls array into imagePrompts
@@ -51,6 +51,10 @@ export interface Project {
   embersVideoUrl?: string;
   smokeEmbersVideoUrl?: string;
 
+  // Video Clips (intro clips for video)
+  clipPrompts?: ClipPrompt[];
+  clips?: GeneratedClip[];
+
   // Thumbnails
   thumbnails?: string[];  // Array of generated thumbnail URLs
   selectedThumbnailIndex?: number;  // Index of selected thumbnail for YouTube upload
@@ -98,6 +102,8 @@ function rowToProject(row: {
   video_url_captioned: string | null;
   embers_video_url: string | null;
   smoke_embers_video_url: string | null;
+  clip_prompts: unknown;
+  clips: unknown;
   settings: unknown;
   thumbnails: unknown;
   selected_thumbnail_index: number | null;
@@ -140,6 +146,8 @@ function rowToProject(row: {
     videoUrlCaptioned: row.video_url_captioned || undefined,
     embersVideoUrl: row.embers_video_url || undefined,
     smokeEmbersVideoUrl: row.smoke_embers_video_url || undefined,
+    clipPrompts: (row.clip_prompts as ClipPrompt[]) || undefined,
+    clips: (row.clips as GeneratedClip[]) || undefined,
     thumbnails: (row.thumbnails as string[]) || undefined,
     selectedThumbnailIndex: row.selected_thumbnail_index ?? undefined,
     approvedSteps: (row.approved_steps as Project['approvedSteps']) || undefined,
@@ -182,6 +190,8 @@ function projectToRow(project: Partial<Project> & { id: string }, isNew: boolean
   if (project.videoUrlCaptioned !== undefined) row.video_url_captioned = project.videoUrlCaptioned || null;
   if (project.embersVideoUrl !== undefined) row.embers_video_url = project.embersVideoUrl || null;
   if (project.smokeEmbersVideoUrl !== undefined) row.smoke_embers_video_url = project.smokeEmbersVideoUrl || null;
+  if (project.clipPrompts !== undefined) row.clip_prompts = project.clipPrompts || [];
+  if (project.clips !== undefined) row.clips = project.clips || [];
   if (project.settings !== undefined) row.settings = project.settings || null;
   if (project.thumbnails !== undefined) row.thumbnails = project.thumbnails || [];
   if (project.selectedThumbnailIndex !== undefined) row.selected_thumbnail_index = project.selectedThumbnailIndex ?? null;

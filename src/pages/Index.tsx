@@ -270,7 +270,7 @@ const Index = () => {
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeDescription, setYoutubeDescription] = useState("");
   const [youtubeTags, setYoutubeTags] = useState("");
-  const [youtubeCategoryId, setYoutubeCategoryId] = useState("27"); // Default: Education
+  const [youtubeCategoryId, setYoutubeCategoryId] = useState("22"); // Default: People & Blogs
   const [youtubePlaylistId, setYoutubePlaylistId] = useState<string | null>(null);
   const [youtubePublishAt, setYoutubePublishAt] = useState<string | null>(null); // Scheduled publish time
 
@@ -439,6 +439,12 @@ const Index = () => {
     const smokeEmbersVideoUrlValue = overrides?.smokeEmbersVideoUrl || smokeEmbersVideoUrl;
     if (smokeEmbersVideoUrlValue) projectData.smokeEmbersVideoUrl = smokeEmbersVideoUrlValue;
 
+    // Video clips - only if has content
+    const clipPromptsValue = overrides?.clipPrompts || clipPrompts;
+    if (clipPromptsValue && clipPromptsValue.length > 0) projectData.clipPrompts = clipPromptsValue;
+    const clipsValue = overrides?.clips || generatedClips;
+    if (clipsValue && clipsValue.length > 0) projectData.clips = clipsValue;
+
     // Thumbnails - CRITICAL: only save if explicitly provided in overrides or has actual content
     // This prevents state initialization (empty array) from overwriting saved thumbnails
     if (overrides?.thumbnails !== undefined) {
@@ -502,6 +508,8 @@ const Index = () => {
     if (savedProject.srtUrl) setPendingSrtUrl(savedProject.srtUrl);
     if (savedProject.imagePrompts) setImagePrompts(savedProject.imagePrompts);
     if (savedProject.imageUrls) setPendingImages(savedProject.imageUrls);
+    if (savedProject.clipPrompts) setClipPrompts(savedProject.clipPrompts);
+    if (savedProject.clips) setGeneratedClips(savedProject.clips);
     if (savedProject.videoUrl) setVideoUrl(savedProject.videoUrl);
     if (savedProject.videoUrlCaptioned) setVideoUrlCaptioned(savedProject.videoUrlCaptioned);
     if (savedProject.embersVideoUrl) setEmbersVideoUrl(savedProject.embersVideoUrl);
@@ -1385,6 +1393,12 @@ const Index = () => {
       updateStep("clips", "completed", "Done");
       setGeneratedClips(clipsResult.clips || []);
 
+      // Save clip prompts and generated clips to project
+      autoSave("prompts", {
+        clipPrompts: promptsWithImages,
+        clips: clipsResult.clips || []
+      });
+
       await new Promise(resolve => setTimeout(resolve, 300));
       setViewState("review-clips");
 
@@ -1410,6 +1424,12 @@ const Index = () => {
 
   // After clips reviewed, continue to image prompts
   const handleClipsConfirm = async () => {
+    // Save confirmed clips to project
+    autoSave("prompts", {
+      clipPrompts: clipPrompts,
+      clips: generatedClips
+    });
+
     // Continue to image prompt generation
     const srt = pendingSrtContent || srtContent || "";
     if (!srt) {
