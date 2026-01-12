@@ -1073,8 +1073,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       // First, get a fresh access token from stored refresh token
       console.log('[Pipeline] Getting YouTube access token...');
       const tokenRes = await fetch(`http://localhost:${process.env.PORT || 10000}/youtube-upload/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'GET',
       });
       const tokenData = await tokenRes.json() as { success?: boolean; accessToken?: string; error?: string; needsAuth?: boolean };
 
