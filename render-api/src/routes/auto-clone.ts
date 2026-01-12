@@ -562,6 +562,7 @@ router.post('/', async (req: Request, res: Response) => {
         thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
         channelId: 'direct-url',
         channelName: 'Direct URL',
+        subscriberCountFormatted: 'N/A',
         viewCount: 0,
         outlierMultiplier: 1,
         durationSeconds: 0,
