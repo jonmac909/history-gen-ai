@@ -495,6 +495,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Check if already ran today (unless force=true)
     const force = req.body.force === true;
     const targetWordCount = req.body.targetWordCount ? parseInt(req.body.targetWordCount, 10) : undefined;
+    const videoUrl = req.body.videoUrl as string | undefined;  // Optional: run specific video
     const today = getTodayDate();
 
     // Check if there's already a video processing (prevent parallel runs)
@@ -524,6 +525,127 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Create run record
     runId = await createRunRecord(supabase);
+
+    // If specific videoUrl provided, bypass outlier scanning
+    if (videoUrl) {
+      console.log(`[AutoClone] Direct video URL provided: ${videoUrl}`);
+
+      // Extract video ID from URL
+      const videoIdMatch = videoUrl.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (!videoIdMatch) {
+        return res.status(400).json({ success: false, error: 'Invalid YouTube URL' });
+      }
+      const videoId = videoIdMatch[1];
+
+      // Check if already processed
+      if (await isVideoProcessed(supabase, videoId)) {
+        // Delete from processed_videos to allow re-run
+        await supabase.from('processed_videos').delete().eq('video_id', videoId);
+        console.log(`[AutoClone] Deleted previous processed record for ${videoId}`);
+      }
+
+      // Get video title from YouTube (using oEmbed which doesn't require API key)
+      let videoTitle = req.body.videoTitle || 'Unknown Title';
+      try {
+        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`);
+        if (oembedRes.ok) {
+          const oembed = await oembedRes.json() as { title?: string };
+          videoTitle = oembed.title || videoTitle;
+        }
+      } catch (e) {
+        console.log(`[AutoClone] Could not fetch video title, using provided: ${videoTitle}`);
+      }
+
+      const selectedVideo: OutlierVideo = {
+        videoId,
+        title: videoTitle,
+        thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+        channelId: 'direct-url',
+        channelName: 'Direct URL',
+        viewCount: 0,
+        outlierMultiplier: 1,
+        durationSeconds: 0,
+        publishedAt: new Date().toISOString(),
+      };
+
+      await updateRunRecord(supabase, runId, { video_selected_id: videoId });
+      console.log(`[AutoClone] Direct video: "${videoTitle}"`);
+
+      // Record as processing
+      await recordProcessedVideo(supabase, selectedVideo, 'processing');
+
+      // Calculate publish time (5 PM PST)
+      const publishAt = getNext5pmPST();
+      console.log(`[AutoClone] Scheduled publish: ${publishAt}`);
+
+      // Start pipeline
+      res.json({
+        success: true,
+        message: 'Auto-clone started (direct URL)',
+        runId,
+        selectedVideo: { videoId, title: videoTitle },
+        publishAt,
+      });
+
+      // Run pipeline in background
+      runPipeline({
+        sourceVideoId: videoId,
+        sourceVideoUrl: videoUrl,
+        originalTitle: videoTitle,
+        originalThumbnailUrl: selectedVideo.thumbnailUrl,
+        channelName: 'Direct URL',
+        publishAt,
+        targetWordCount,
+      }, async (step, progress, message) => {
+        console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
+        const stepStr = message.includes('%') ? message : `${message} (${progress}%)`;
+        await updateRunRecord(supabase, runId!, { current_step: stepStr });
+        await supabase
+          .from('processed_videos')
+          .update({ current_step: stepStr })
+          .eq('video_id', videoId);
+      }).then(async (result) => {
+        console.log(`[AutoClone] Pipeline complete for ${videoId}:`, result.success ? 'SUCCESS' : result.error);
+        await updateRunRecord(supabase, runId!, {
+          status: result.success ? 'completed' : 'failed',
+          error_message: result.error || null,
+          completed_at: new Date().toISOString(),
+        });
+        await supabase
+          .from('processed_videos')
+          .update({
+            status: result.success ? 'completed' : 'failed',
+            error_message: result.error || null,
+            completed_at: new Date().toISOString(),
+            project_id: result.projectId || null,
+            youtube_video_id: result.youtubeVideoId || null,
+          })
+          .eq('video_id', videoId);
+
+        // Send notification
+        const emoji = result.success ? '✅' : '❌';
+        const statusMsg = result.success ? 'completed' : 'failed';
+        await sendWhatsAppNotification(`${emoji} Auto Poster ${statusMsg}: ${videoTitle}\n${result.error || ''}`);
+      }).catch(async (error) => {
+        console.error(`[AutoClone] Pipeline crashed for ${videoId}:`, error);
+        await updateRunRecord(supabase, runId!, {
+          status: 'failed',
+          error_message: error.message,
+          completed_at: new Date().toISOString(),
+        });
+        await supabase
+          .from('processed_videos')
+          .update({
+            status: 'failed',
+            error_message: error.message,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('video_id', videoId);
+        await sendWhatsAppNotification(`💥 Auto Poster CRASHED: ${videoTitle}\n${error.message}`);
+      });
+
+      return;  // Early return - don't continue to outlier scanning
+    }
 
     // Fetch saved channels
     const channels = await fetchSavedChannels(supabase);

@@ -164,6 +164,23 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   });
   console.log('⏰ Auto Poster scheduled: Daily at 14:00 UTC (6am PST)');
 
+  // ONE-TIME: Run Auto Poster in 10 minutes (will pick highest outlier automatically)
+  setTimeout(async () => {
+    console.log('[OneTime] 🎯 Running scheduled Auto Poster (outlier scan)...');
+    try {
+      const response = await fetch(`http://localhost:${PORT}/auto-clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true }),
+      });
+      const result = await response.json() as { success?: boolean; error?: string };
+      console.log('[OneTime] Auto Poster triggered:', result.success ? 'Started' : result.error || 'Failed');
+    } catch (error) {
+      console.error('[OneTime] Failed to trigger Auto Poster:', error);
+    }
+  }, 10 * 60 * 1000); // 10 minutes
+  console.log('⏱️ One-time Auto Poster scheduled for 10 minutes from now');
+
 });
 
 // Increase timeouts for long-running SSE connections (video rendering)
