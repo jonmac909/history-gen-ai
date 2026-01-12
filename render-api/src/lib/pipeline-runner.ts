@@ -652,7 +652,8 @@ export async function runPipeline(
           reportProgress('images', 58 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
         }
       }, 600000);
-      imageUrls = imagesRes.images.map((img: any) => img.imageUrl);
+      // imagesRes.images is already an array of URL strings, not objects
+      imageUrls = imagesRes.images as string[];
       steps.push({
         step: 'images',
         success: true,
