@@ -302,37 +302,16 @@ async function scanForOutliers(
 
         // Find outliers from cached data
         for (const cached of cachedOutliers) {
-          // Debug logging for specific video (8x Planet-Sized Prison)
-          if (cached.video_id === 'GbHa-UiT7NM') {
-            console.log(`[AutoClone DEBUG] Found 8x video in cache: duration=${cached.duration_seconds}s, published_at=${cached.published_at}, view_count=${cached.view_count}`);
-          }
-
           // Skip short videos
-          if (cached.duration_seconds < MIN_DURATION_SECONDS) {
-            if (cached.video_id === 'GbHa-UiT7NM') {
-              console.log(`[AutoClone DEBUG] 8x video SKIPPED: duration ${cached.duration_seconds}s < ${MIN_DURATION_SECONDS}s`);
-            }
-            continue;
-          }
+          if (cached.duration_seconds < MIN_DURATION_SECONDS) continue;
 
           // Skip old videos (check published_at date)
           const publishedDate = new Date(cached.published_at);
           const daysSincePublish = (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60 * 24);
-          if (cached.video_id === 'GbHa-UiT7NM') {
-            console.log(`[AutoClone DEBUG] 8x video days since publish: ${daysSincePublish.toFixed(1)} vs OUTLIER_DAYS=${OUTLIER_DAYS}`);
-          }
-          if (daysSincePublish > OUTLIER_DAYS) {
-            if (cached.video_id === 'GbHa-UiT7NM') {
-              console.log(`[AutoClone DEBUG] 8x video SKIPPED: ${daysSincePublish.toFixed(1)} days > ${OUTLIER_DAYS} days`);
-            }
-            continue;
-          }
+          if (daysSincePublish > OUTLIER_DAYS) continue;
 
           // Recalculate outlier multiplier with consistent average
           const multiplier = cached.view_count / avgViews;
-          if (cached.video_id === 'GbHa-UiT7NM') {
-            console.log(`[AutoClone DEBUG] 8x video multiplier: ${multiplier.toFixed(2)}x (views=${cached.view_count}, avgViews=${avgViews.toFixed(0)})`);
-          }
 
           if (multiplier >= 2.0) {
             allOutliers.push({
