@@ -705,10 +705,11 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
         voiceStyle: '(sincere) (soft tone)',
         ttsSettings: {
-          // Low temperature + topP for consistent voice/accent across segments
+          // Low temperature + topP + fixed seed for consistent voice/accent across segments
           temperature: 0.3,
           topP: 0.6,
           repetitionPenalty: 1.2,
+          seed: 42,  // Fixed seed for deterministic output
         },
         stream: true,
       }, (data) => {

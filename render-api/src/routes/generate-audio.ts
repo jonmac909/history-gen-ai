@@ -1256,6 +1256,7 @@ interface TTSJobSettings {
   temperature?: number;
   topP?: number;
   repetitionPenalty?: number;
+  seed?: number;  // Fixed seed for deterministic/consistent voice output
 }
 
 // Start TTS job
@@ -1293,6 +1294,9 @@ async function startTTSJob(
     }
     if (ttsSettings.repetitionPenalty !== undefined) {
       inputPayload.repetition_penalty = ttsSettings.repetitionPenalty;
+    }
+    if (ttsSettings.seed !== undefined) {
+      inputPayload.seed = ttsSettings.seed;
     }
   }
 
