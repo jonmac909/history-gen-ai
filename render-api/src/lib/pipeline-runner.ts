@@ -780,7 +780,7 @@ export async function runPipeline(
         imagePrompts,
         imageUrls,
         clipPrompts,
-        clips: generatedClips,
+        clips: introClips,
         currentStep: 'images',
       });
     } catch (error: any) {
