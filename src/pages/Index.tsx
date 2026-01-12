@@ -1318,12 +1318,12 @@ const Index = () => {
     setClipPrompts(editedPrompts);
 
     const steps: GenerationStep[] = [
-      { id: "images", label: "Generating Source Images", status: "pending" },
-      { id: "clips", label: "Generating Video Clips", status: "pending" },
+      { id: "images", label: "Creating Reference Images for Clips", status: "pending" },
+      { id: "clips", label: "Generating AI Video Clips", status: "pending" },
     ];
 
     setProcessingSteps(steps);
-    setProcessingTitle("Generating Video Clips...");
+    setProcessingTitle("Creating Video Intro Clips...");
     setViewState("processing");
 
     try {

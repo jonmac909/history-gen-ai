@@ -179,7 +179,7 @@ export function YouTubeUploadModal({
       // Default tags for sleep history channel
       const defaultTags = "history for sleep, sleepy history, sleepy history";
       setTags(initialTags || defaultTags);
-      setCategoryId(initialCategoryId || "27");
+      setCategoryId(initialCategoryId || "22"); // Default: People & Blogs
       setSelectedPlaylist(initialPlaylistId || null);
       setGeneratedTitles([]);
       setShowTitleSelector(false);
@@ -250,7 +250,8 @@ export function YouTubeUploadModal({
             setDescription(currentDescription);
           }
           if (result.tags) {
-            currentTags = result.tags;
+            // result.tags is string[], convert to comma-separated string
+            currentTags = Array.isArray(result.tags) ? result.tags.join(', ') : result.tags;
             setTags(currentTags);
           }
         } catch (error) {
@@ -289,12 +290,17 @@ export function YouTubeUploadModal({
           publishAt = initialPublishAt;
         }
 
+        // Ensure tags is an array (handle both string and array inputs)
+        const tagsArray = Array.isArray(currentTags)
+          ? currentTags
+          : (typeof currentTags === 'string' ? currentTags.split(',').map(t => t.trim()).filter(Boolean) : []);
+
         const result = await uploadToYouTube(
           {
             videoUrl,
             title: currentTitle || projectTitle || "Untitled Video",
             description: currentDescription,
-            tags: currentTags.split(',').map(t => t.trim()).filter(Boolean),
+            tags: tagsArray,
             categoryId,
             privacyStatus: publishAt ? 'private' : 'private', // Always private until scheduled
             publishAt,
