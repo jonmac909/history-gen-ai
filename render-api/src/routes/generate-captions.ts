@@ -243,12 +243,21 @@ async function downloadToTempFile(url: string, onProgress?: (percent: number) =>
 
     response.body.on('end', () => {
       writeStream.end();
-      console.log(`Downloaded ${downloadedBytes} bytes to ${tempFile}`);
-      resolve(tempFile);
     });
 
     response.body.on('error', (err: Error) => {
       writeStream.end();
+      fs.unlinkSync(tempFile);
+      reject(err);
+    });
+
+    // Wait for write stream to fully flush to disk before resolving
+    writeStream.on('finish', () => {
+      console.log(`Downloaded ${downloadedBytes} bytes to ${tempFile}`);
+      resolve(tempFile);
+    });
+
+    writeStream.on('error', (err: Error) => {
       fs.unlinkSync(tempFile);
       reject(err);
     });
