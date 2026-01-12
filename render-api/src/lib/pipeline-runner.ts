@@ -903,6 +903,13 @@ export async function runPipeline(
         duration: Date.now() - renderStart,
         data: { videoUrl },
       });
+
+      // Save video URL and thumbnail immediately after render (before YouTube upload)
+      await saveProjectToDatabase(supabase, projectId, {
+        videoUrl,
+        thumbnails: [thumbnailUrl],
+        currentStep: 'upload',
+      });
     } catch (error: any) {
       steps.push({ step: 'render', success: false, duration: Date.now() - renderStart, error: error.message });
       throw new Error(`Failed to render video: ${error.message}`);
