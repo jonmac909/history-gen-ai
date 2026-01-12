@@ -616,8 +616,8 @@ router.post('/', async (req: Request, res: Response) => {
       targetWordCount,  // Optional manual override from request
     }, async (step, progress, message) => {
       console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
-      // Don't duplicate % if message already contains it
-      const stepStr = message.includes('%') ? `${step}: ${message}` : `${step}: ${message} (${progress}%)`;
+      // Progress message without step prefix - just show the message with percentage
+      const stepStr = message.includes('%') ? message : `${message} (${progress}%)`;
       // Update current step in both tables for UI polling
       await updateRunRecord(supabase, runId!, { current_step: stepStr });
       await supabase

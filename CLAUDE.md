@@ -230,6 +230,9 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/pronunciation` | GET/POST pronunciation fixes dictionary for TTS |
 | `/generate-clip-prompts` | Claude AI video scene prompts for Seedance (SSE streaming) |
 | `/generate-video-clips` | Kie.ai Seedance 1.5 Pro video generation with rolling concurrency |
+| `/auto-clone` | Auto Poster - automated video cloning system |
+| `/auto-clone/test-whatsapp` | Test WhatsApp notification |
+| `/costs/:projectId` | Cost tracking - per-step and total costs |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -689,6 +692,56 @@ GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 - Stores encrypted refresh tokens for token refresh flow
 - Single-row table (app uses shared password auth)
 
+### Auto Poster Architecture
+
+**Automated daily video cloning system that scans channels for outlier videos and processes them through the full pipeline.**
+
+**Routes** (`render-api/src/routes/auto-clone.ts`):
+| Route | Purpose |
+|-------|---------|
+| `POST /auto-clone` | Trigger daily clone (cron job or manual) |
+| `GET /auto-clone/status` | View run history |
+| `GET /auto-clone/processed` | View processed videos |
+| `POST /auto-clone/retry/:videoId` | Retry a failed video |
+| `GET /auto-clone/best-outlier` | SSE stream for modal auto-selection |
+| `POST /auto-clone/test-whatsapp` | Test WhatsApp notification |
+| `DELETE /auto-clone/processed/:videoId` | Delete a processed video record |
+
+**Pipeline Runner** (`render-api/src/lib/pipeline-runner.ts`):
+- Server-side orchestrator for full video generation
+- Steps: transcript → script → audio → captions → clip prompts → video clips → image prompts → images → thumbnail → render → YouTube upload
+- Uses internal API calls to Railway routes (localhost)
+- Progress callbacks for UI updates via `processed_videos.current_step`
+- Scheduled publishing at 5 PM PST via `getNext5pmPST()`
+
+**WhatsApp Notifications** (via TextMeBot):
+- Sends notifications on pipeline completion/failure/crash
+- Environment variables: `WHATSAPP_PHONE`, `WHATSAPP_API_KEY`
+- Test endpoint: `POST /auto-clone/test-whatsapp`
+
+**Channel Whitelist**: Only scans channels in `CHANNEL_WHITELIST` array (hardcoded handles)
+**Outlier Criteria**: 2x+ average views, 1+ hour duration, last 30 days
+**Supabase Tables**: `auto_clone_runs`, `processed_videos`
+
+### Cost Tracking
+
+**Tracks actual costs for each generation step in Supabase.**
+
+**Pricing** (`render-api/src/lib/cost-tracker.ts`):
+| Service | Step | Unit | Cost |
+|---------|------|------|------|
+| Claude Sonnet 4.5 | Script, Prompts | Input tokens | $3/1M |
+| Claude Sonnet 4.5 | Script, Prompts | Output tokens | $15/1M |
+| Fish Speech | Audio | Per minute | $0.004 |
+| Z-Image | Images | Per image | $0.035 |
+| Seedance | Video Clips | Per second | $0.0175 (prorated from $0.21/12s) |
+| Whisper | Captions | Per minute | $0.006 |
+| RunPod CPU | Render | Per second | $0.0003733 |
+
+**API**: `GET /costs/:projectId` - Returns per-step costs and total
+**UI**: Costs displayed in ProjectResults view next to each pipeline item
+**Supabase Table**: `project_costs` (columns: `project_id`, `step`, `service`, `units`, `unit_type`, `unit_cost`, `total_cost`)
+
 ## Configuration
 
 ### Frontend Environment (`.env`)
@@ -719,6 +772,8 @@ GOOGLE_CLIENT_ID=<google-oauth-client-id>
 GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
 GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 YTDLP_PROXY_URL=http://user:pass@host:port  # Residential proxy for YouTube scraping
+WHATSAPP_PHONE=+1xxxxxxxxxx  # WhatsApp notification recipient
+WHATSAPP_API_KEY=<textmebot-api-key>  # TextMeBot API key
 PORT=10000
 ```
 
