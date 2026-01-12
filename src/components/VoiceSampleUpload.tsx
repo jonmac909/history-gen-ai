@@ -90,17 +90,32 @@ export function VoiceSampleUpload({ voiceSampleUrl, onVoiceSampleChange }: Voice
   const togglePlayback = () => {
     if (!voiceSampleUrl) return;
 
-    if (!audioRef.current) {
+    // Create new audio element if none exists or URL changed
+    if (!audioRef.current || audioRef.current.src !== voiceSampleUrl) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
       audioRef.current = new Audio(voiceSampleUrl);
       audioRef.current.onended = () => setIsPlaying(false);
-      audioRef.current.onerror = () => setIsPlaying(false);
+      audioRef.current.onerror = (e) => {
+        console.error('[VoiceSampleUpload] Audio error:', e);
+        setIsPlaying(false);
+        toast({
+          title: "Playback Error",
+          description: "Failed to play voice sample. The file may be unavailable.",
+          variant: "destructive",
+        });
+      };
     }
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch((error) => {
+        console.error('[VoiceSampleUpload] Play error:', error);
+        setIsPlaying(false);
+      });
       setIsPlaying(true);
     }
   };
