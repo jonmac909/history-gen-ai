@@ -715,7 +715,7 @@ export async function runPipeline(
     // Step 11: Render video (streaming) - with intro clips if available
     reportProgress('render', 72, 'Rendering video...');
     const renderStart = Date.now();
-    let videoUrl: string;
+    let videoUrl: string = '';
 
     // Build image timings from the prompts (each prompt has startSeconds/endSeconds)
     const imageTimings = imagePrompts.map((p: any) => ({

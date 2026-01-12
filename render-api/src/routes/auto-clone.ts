@@ -425,7 +425,7 @@ router.get('/best-outlier', async (req: Request, res: Response) => {
         success: true,
         outlier: null,
         channelsScanned: scannedCount,
-        reason: 'No qualifying outliers found (need 2+ hours, 2x+ views, last 30 days)',
+        reason: 'No qualifying outliers found (need 1+ hour, 2x+ views, last 30 days)',
       });
       res.end();
       return;
@@ -545,7 +545,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (outliers.length === 0) {
       await updateRunRecord(supabase, runId, {
         status: 'no_candidates',
-        error_message: 'No qualifying outliers found (need 2+ hours, 1.5x+ views)',
+        error_message: 'No qualifying outliers found (need 1+ hour, 2x+ views)',
         completed_at: new Date().toISOString(),
       });
       return res.status(200).json({

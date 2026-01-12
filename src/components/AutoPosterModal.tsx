@@ -1,15 +1,14 @@
 /**
- * Auto Poster Modal - Auto-selects best outlier and runs full pipeline
+ * Auto Poster Modal - Auto-selects best outlier and triggers frontend Full Auto pipeline
  *
  * Flow:
  * 1. Modal opens -> Auto-scans whitelist channels
  * 2. Shows best outlier (highest score, 2hr+, last 7 days)
- * 3. User clicks Generate -> Runs 12-step pipeline
- * 4. Shows real-time progress -> YouTube link on complete
+ * 3. User clicks Generate -> Closes modal, triggers Full Auto Generate on main page
  */
 
-import { useState, useEffect, useRef } from "react";
-import { Loader2, Search, Play, CheckCircle2, XCircle, ExternalLink, Clock, TrendingUp, AlertCircle, FileText } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader2, Search, Play, XCircle, Clock, TrendingUp, AlertCircle, FileText } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || "";
 
@@ -41,9 +39,10 @@ interface OutlierVideo {
 interface AutoPosterModalProps {
   open: boolean;
   onClose: () => void;
+  onSelectVideo: (videoUrl: string, wordCount: number) => void;
 }
 
-type ModalState = "scanning" | "found" | "not_found" | "generating" | "complete" | "error";
+type ModalState = "scanning" | "found" | "not_found" | "error";
 
 // Format duration from seconds to "Xh Ym"
 function formatDuration(seconds: number): string {
@@ -77,19 +76,15 @@ function formatPublishTime(isoString: string): string {
   });
 }
 
-export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
-  const { toast } = useToast();
+export function AutoPosterModal({ open, onClose, onSelectVideo }: AutoPosterModalProps) {
   const [state, setState] = useState<ModalState>("scanning");
   const [outlier, setOutlier] = useState<OutlierVideo | null>(null);
   const [channelsScanned, setChannelsScanned] = useState(0);
   const [publishAt, setPublishAt] = useState<string>("");
   const [reason, setReason] = useState<string>("");
-  const [currentStep, setCurrentStep] = useState<string>("");
   const [scanningMessage, setScanningMessage] = useState<string>("Loading channels...");
-  const [youtubeUrl, setYoutubeUrl] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [wordCount, setWordCount] = useState<number>(0);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch best outlier when modal opens
   useEffect(() => {
@@ -102,14 +97,8 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
       setChannelsScanned(0);
       setPublishAt("");
       setReason("");
-      setCurrentStep("");
-      setYoutubeUrl("");
       setErrorMessage("");
       setWordCount(0);
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
     }
   }, [open]);
 
@@ -184,103 +173,25 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
     }
   };
 
-  const startGeneration = async () => {
+  const handleGenerateClick = () => {
     if (!outlier) return;
 
-    setState("generating");
-    setCurrentStep("Starting pipeline...");
+    // Build YouTube URL from video ID
+    const videoUrl = `https://www.youtube.com/watch?v=${outlier.videoId}`;
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/auto-clone`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: true, targetWordCount: wordCount }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        setState("error");
-        setErrorMessage(data.error || "Failed to start generation");
-        return;
-      }
-
-      // Start polling for progress
-      pollIntervalRef.current = setInterval(pollProgress, 3000);
-
-    } catch (err: any) {
-      setState("error");
-      setErrorMessage(err.message || "Failed to start generation");
-    }
+    // Close modal and trigger frontend pipeline
+    onClose();
+    onSelectVideo(videoUrl, wordCount);
   };
-
-  const pollProgress = async () => {
-    try {
-      // Poll both endpoints for progress
-      const [processedRes, statusRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/auto-clone/processed?limit=1`),
-        fetch(`${API_BASE_URL}/auto-clone/status?limit=1`),
-      ]);
-
-      const processedData = await processedRes.json();
-      const statusData = await statusRes.json();
-
-      // Get progress from run status (more reliable)
-      const runStep = statusData.runs?.[0]?.current_step;
-      if (runStep) {
-        setCurrentStep(runStep);
-      }
-
-      // Check completion/failure from processed videos
-      if (processedData.success && processedData.videos?.length > 0) {
-        const video = processedData.videos[0];
-
-        if (video.video_id === outlier?.videoId) {
-          if (video.status === "completed") {
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
-              pollIntervalRef.current = null;
-            }
-            setYoutubeUrl(video.youtube_url || "");
-            setState("complete");
-          } else if (video.status === "failed") {
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
-              pollIntervalRef.current = null;
-            }
-            setState("error");
-            setErrorMessage(video.error_message || "Pipeline failed");
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Failed to poll progress:", err);
-    }
-  };
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
-  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent
-        className="sm:max-w-lg overflow-hidden"
-        onPointerDownOutside={(e) => state === "generating" && e.preventDefault()}
-        onInteractOutside={(e) => state === "generating" && e.preventDefault()}
-      >
+      <DialogContent className="sm:max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             {state === "scanning" && <Search className="w-5 h-5 animate-pulse" />}
             {state === "found" && <TrendingUp className="w-5 h-5 text-green-500" />}
             {state === "not_found" && <AlertCircle className="w-5 h-5 text-yellow-500" />}
-            {state === "generating" && <Loader2 className="w-5 h-5 animate-spin" />}
-            {state === "complete" && <CheckCircle2 className="w-5 h-5 text-green-500" />}
             {state === "error" && <XCircle className="w-5 h-5 text-red-500" />}
             Auto Poster
           </DialogTitle>
@@ -294,7 +205,7 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
               <div className="text-center space-y-1">
                 <p className="font-medium">{scanningMessage}</p>
                 <p className="text-sm text-muted-foreground">
-                  Looking for 2hr+ videos with 2x+ average views from last 30 days
+                  Looking for 1hr+ videos with 2x+ average views from last 30 days
                 </p>
               </div>
             </div>
@@ -382,50 +293,6 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
             </div>
           )}
 
-          {/* Generating State */}
-          {state === "generating" && (
-            <div className="space-y-4">
-              {outlier && (
-                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg w-full max-w-full overflow-hidden">
-                  <img
-                    src={outlier.thumbnailUrl}
-                    alt=""
-                    className="w-16 h-10 rounded object-cover shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate max-w-full">{outlier.title}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-full">{outlier.channelName}</p>
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center gap-3 py-4 w-full max-w-full overflow-hidden">
-                <Loader2 className="w-6 h-6 text-primary animate-spin shrink-0" />
-                <p className="text-sm truncate min-w-0 flex-1">{currentStep}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Complete State */}
-          {state === "complete" && (
-            <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
-              <CheckCircle2 className="w-12 h-12 text-green-500" />
-              <div>
-                <p className="font-medium">Video Scheduled!</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Will publish at {formatPublishTime(publishAt)}
-                </p>
-              </div>
-              {youtubeUrl && (
-                <Button asChild variant="outline">
-                  <a href={youtubeUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    View on YouTube
-                  </a>
-                </Button>
-              )}
-            </div>
-          )}
-
           {/* Error State */}
           {state === "error" && (
             <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
@@ -443,12 +310,12 @@ export function AutoPosterModal({ open, onClose }: AutoPosterModalProps) {
 
         <DialogFooter>
           {state === "found" && (
-            <Button onClick={startGeneration} className="w-full">
+            <Button onClick={handleGenerateClick} className="w-full">
               <Play className="w-4 h-4 mr-2" />
               Generate Video
             </Button>
           )}
-          {(state === "not_found" || state === "complete" || state === "error") && (
+          {(state === "not_found" || state === "error") && (
             <Button variant="outline" onClick={onClose} className="w-full">
               Close
             </Button>

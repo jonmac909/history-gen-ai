@@ -345,6 +345,29 @@ const Index = () => {
     }
   }, [settings.fullAutomation, viewState, pendingImages]);
 
+  // Full Automation: Auto-confirm video clip prompts when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-clip-prompts" && clipPrompts.length > 0) {
+      console.log("[Full Automation] Auto-confirming clip prompts...");
+      const timer = setTimeout(() => {
+        // Pass clip prompts as-is with empty style (style already in prompts from generation)
+        handleClipPromptsConfirm(clipPrompts, "");
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, clipPrompts]);
+
+  // Full Automation: Auto-confirm video clips when ready
+  useEffect(() => {
+    if (settings.fullAutomation && viewState === "review-clips" && generatedClips.length > 0) {
+      console.log("[Full Automation] Auto-confirming clips...");
+      const timer = setTimeout(() => {
+        handleClipsConfirm();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.fullAutomation, viewState, generatedClips]);
+
   // Auto-save helper - uses unified project store (upsert by id)
   // Fire-and-forget async to avoid blocking UI
   // IMPORTANT: Only include fields that have actual content to avoid overwriting existing data with empty values
@@ -3477,6 +3500,17 @@ const Index = () => {
       <AutoPosterModal
         open={showAutoPosterModal}
         onClose={() => setShowAutoPosterModal(false)}
+        onSelectVideo={(videoUrl, targetWordCount) => {
+          // Set up for Full Auto Generate with the selected video
+          setInputValue(videoUrl);
+          setSourceUrl(videoUrl);
+          setInputMode("url");
+          setSettings(prev => ({ ...prev, wordCount: targetWordCount, fullAutomation: true }));
+          // Trigger the generate flow
+          setTimeout(() => {
+            handleGenerate();
+          }, 100);
+        }}
       />
     </div>
   );
