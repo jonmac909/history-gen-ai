@@ -612,7 +612,10 @@ const Index = () => {
   };
 
   // Step 1: Generate transcript and script
-  const handleGenerate = async () => {
+  const handleGenerate = async (overrideUrl?: string) => {
+    // Use override URL if provided (for Auto Poster), otherwise use inputValue
+    const effectiveUrl = overrideUrl || inputValue;
+
     // Check if using custom script (skip YouTube fetch and AI rewriting)
     const usingCustomScript = settings.customScript && settings.customScript.trim().length > 0;
 
@@ -669,7 +672,7 @@ const Index = () => {
     }
 
     // Normal flow - validate inputs for YouTube/AI generation
-    if (!inputValue.trim()) {
+    if (!effectiveUrl.trim()) {
       toast({
         title: inputMode === "url" ? "URL Required" : "Title Required",
         description: inputMode === "url"
@@ -692,7 +695,7 @@ const Index = () => {
 
     if (inputMode === "url") {
       const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
-      if (!youtubeRegex.test(inputValue)) {
+      if (!youtubeRegex.test(effectiveUrl)) {
         toast({
           title: "Invalid URL",
           description: "Please enter a valid YouTube URL.",
@@ -724,7 +727,7 @@ const Index = () => {
     // CRITICAL: Reset pending state FIRST to clear any old project data
     resetPendingState();
 
-    setSourceUrl(inputValue);
+    setSourceUrl(effectiveUrl);
     // ALWAYS generate a new projectId for new generations from the main page
     // This prevents overwriting existing project files when starting fresh
     const useProjectId = crypto.randomUUID();
@@ -740,7 +743,7 @@ const Index = () => {
 
     try {
       updateStep("transcript", "active");
-      const transcriptResult = await getYouTubeTranscript(inputValue);
+      const transcriptResult = await getYouTubeTranscript(effectiveUrl);
       
       if (!transcriptResult.success || !transcriptResult.transcript) {
         throw new Error(transcriptResult.message || transcriptResult.error || "Failed to fetch transcript");
@@ -3503,13 +3506,10 @@ const Index = () => {
         onSelectVideo={(videoUrl, targetWordCount) => {
           // Set up for Full Auto Generate with the selected video
           setInputValue(videoUrl);
-          setSourceUrl(videoUrl);
           setInputMode("url");
           setSettings(prev => ({ ...prev, wordCount: targetWordCount, fullAutomation: true }));
-          // Trigger the generate flow
-          setTimeout(() => {
-            handleGenerate();
-          }, 100);
+          // Trigger the generate flow with the URL directly (don't rely on state update)
+          handleGenerate(videoUrl);
         }}
       />
     </div>
