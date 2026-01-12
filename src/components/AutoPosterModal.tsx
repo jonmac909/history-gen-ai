@@ -39,7 +39,7 @@ interface OutlierVideo {
 interface AutoPosterModalProps {
   open: boolean;
   onClose: () => void;
-  onSelectVideo: (videoUrl: string, wordCount: number) => void;
+  onSelectVideo: (videoUrl: string, wordCount: number, thumbnailUrl: string, videoTitle: string) => void;
 }
 
 type ModalState = "scanning" | "found" | "not_found" | "error";
@@ -181,7 +181,7 @@ export function AutoPosterModal({ open, onClose, onSelectVideo }: AutoPosterModa
 
     // Close modal and trigger frontend pipeline
     onClose();
-    onSelectVideo(videoUrl, wordCount);
+    onSelectVideo(videoUrl, wordCount, outlier.thumbnailUrl, outlier.title);
   };
 
   return (

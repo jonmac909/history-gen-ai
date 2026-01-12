@@ -30,6 +30,9 @@ interface ThumbnailGeneratorModalProps {
   onBack?: () => void;
   onSkip?: () => void;
   onForward?: () => void;  // Navigate to next step (YouTube)
+  // Full Auto mode props
+  sourceThumbnailUrl?: string;  // Original YouTube thumbnail to use as reference
+  autoGenerate?: boolean;       // Auto-generate thumbnails when modal opens
 }
 
 export function ThumbnailGeneratorModal({
@@ -45,6 +48,8 @@ export function ThumbnailGeneratorModal({
   onBack,
   onSkip,
   onForward,
+  sourceThumbnailUrl,
+  autoGenerate = false,
 }: ThumbnailGeneratorModalProps) {
   // Default reference thumbnail
   const DEFAULT_THUMBNAIL_URL = "/thumbs/boring.jpg";
@@ -122,6 +127,106 @@ export function ThumbnailGeneratorModal({
       }
     }
   }, [isOpen, initialThumbnails, initialSelectedIndex]);
+
+  // Track if auto-generation has been triggered for this session
+  const autoGenTriggeredRef = useRef(false);
+
+  // Full Auto mode: Load source thumbnail and auto-generate
+  useEffect(() => {
+    if (!isOpen || !autoGenerate || !sourceThumbnailUrl || autoGenTriggeredRef.current) {
+      return;
+    }
+
+    // Mark as triggered to prevent re-running
+    autoGenTriggeredRef.current = true;
+
+    const loadAndGenerate = async () => {
+      console.log("[Full Auto Thumbnails] Loading source thumbnail:", sourceThumbnailUrl);
+      setIsUploading(true);
+
+      try {
+        // Download source thumbnail
+        const response = await fetch(sourceThumbnailUrl);
+        const blob = await response.blob();
+        const file = new File([blob], 'source-thumbnail.jpg', { type: blob.type });
+        setExampleImage(file);
+
+        // Convert to data URL for preview
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const preview = e.target?.result as string;
+          setExamplePreview(preview);
+          setIsUploading(false);
+
+          // Set the auto-generation prompt (same as pipeline-runner)
+          const autoPrompt = "Create an original thumbnail inspired by this image. Use the same style, color palette, text placement, and mood - but make it a unique, original composition. Keep similar visual elements and aesthetic but don't copy directly.";
+          setImagePrompt(autoPrompt);
+          setThumbnailCount(1);  // Generate 1 thumbnail for efficiency
+
+          // Wait a moment for state to settle, then trigger generation
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          console.log("[Full Auto Thumbnails] Starting auto-generation...");
+
+          // Extract base64 from preview
+          const base64Prefix = ';base64,';
+          const prefixIndex = preview.indexOf(base64Prefix);
+          if (prefixIndex === -1) {
+            console.error("[Full Auto Thumbnails] Invalid image format");
+            return;
+          }
+          const base64Data = preview.substring(prefixIndex + base64Prefix.length);
+
+          setIsGenerating(true);
+
+          try {
+            const result = await generateThumbnailsStreaming(
+              base64Data,
+              autoPrompt,
+              1,  // Generate 1 thumbnail
+              projectId,
+              (prog) => setProgress(prog)
+            );
+
+            if (result.success && result.thumbnails && result.thumbnails.length > 0) {
+              console.log("[Full Auto Thumbnails] Generated thumbnail:", result.thumbnails[0]);
+              setGeneratedThumbnails(result.thumbnails);
+              setSelectedThumbnail(result.thumbnails[0]);
+
+              // Auto-confirm after short delay
+              setTimeout(() => {
+                console.log("[Full Auto Thumbnails] Auto-confirming...");
+                onConfirm(result.thumbnails, 0);
+              }, 500);
+            } else {
+              console.error("[Full Auto Thumbnails] Generation failed:", result.error);
+              // Fall back to manual mode
+            }
+          } catch (genError) {
+            console.error("[Full Auto Thumbnails] Generation error:", genError);
+          } finally {
+            setIsGenerating(false);
+            setProgress(null);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.error("[Full Auto Thumbnails] Failed to load source thumbnail:", error);
+        setIsUploading(false);
+        // Fall back to default thumbnail
+        loadDefaultThumbnail();
+      }
+    };
+
+    loadAndGenerate();
+  }, [isOpen, autoGenerate, sourceThumbnailUrl, projectId, onConfirm]);
+
+  // Reset auto-gen trigger when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      autoGenTriggeredRef.current = false;
+    }
+  }, [isOpen]);
 
   // Notify parent when selection changes (for real-time persistence)
   // Note: onSelectionChange excluded from deps to prevent infinite loops with inline callbacks

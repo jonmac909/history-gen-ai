@@ -1577,7 +1577,8 @@ export async function renderVideoStreaming(
   projectTitle: string,
   callbacks: RenderVideoCallbacks | ((progress: RenderVideoProgress) => void),
   effects?: VideoEffects,
-  useGpu?: boolean  // Use RunPod GPU rendering (faster)
+  useGpu?: boolean,  // Use RunPod GPU rendering (faster)
+  introClips?: { index: number; videoUrl: string; startSeconds: number; endSeconds: number }[]  // Intro video clips (60s)
 ): Promise<RenderVideoResult> {
   // Support both old callback style and new object style
   const { onProgress } = typeof callbacks === 'function'
@@ -1614,7 +1615,8 @@ export async function renderVideoStreaming(
         srtContent,
         projectTitle,
         effects,
-        useGpu
+        useGpu,
+        introClips
       })
     });
 

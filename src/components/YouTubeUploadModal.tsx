@@ -61,6 +61,9 @@ interface YouTubeUploadModalProps {
   initialTags?: string;
   initialCategoryId?: string;
   initialPlaylistId?: string | null;
+  // Full Auto mode props
+  autoUpload?: boolean;           // Auto-start upload when modal opens
+  initialPublishAt?: string;      // ISO timestamp for scheduled publish (e.g., 5 PM PST next day)
 }
 
 // YouTube video categories
@@ -93,6 +96,8 @@ export function YouTubeUploadModal({
   initialTags,
   initialCategoryId,
   initialPlaylistId,
+  autoUpload = false,
+  initialPublishAt,
 }: YouTubeUploadModalProps) {
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -197,6 +202,156 @@ export function YouTubeUploadModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, description, tags, categoryId, selectedPlaylist, isOpen]);
+
+  // Track if auto-upload has been triggered for this session
+  const autoUploadTriggeredRef = useRef(false);
+
+  // Full Auto mode: Auto-generate metadata and upload with scheduled publish
+  useEffect(() => {
+    if (!isOpen || !autoUpload || !videoUrl || autoUploadTriggeredRef.current) {
+      return;
+    }
+
+    // Wait for connection check to complete
+    if (isConnected === null) {
+      return;
+    }
+
+    // Need to be connected to proceed
+    if (!isConnected) {
+      console.log("[Full Auto YouTube] Not connected, skipping auto-upload");
+      return;
+    }
+
+    // Mark as triggered to prevent re-running
+    autoUploadTriggeredRef.current = true;
+
+    const runAutoUpload = async () => {
+      console.log("[Full Auto YouTube] Starting auto-upload...");
+
+      // Generate metadata if title is empty or just project title
+      let currentTitle = title;
+      let currentDescription = description;
+      let currentTags = tags;
+
+      if (!currentTitle || currentTitle === projectTitle) {
+        console.log("[Full Auto YouTube] Generating metadata...");
+        setIsGeneratingMetadata(true);
+
+        try {
+          const result = await generateYouTubeMetadata(script || "");
+          if (result.success && result.titles && result.titles.length > 0) {
+            currentTitle = result.titles[0];
+            setTitle(currentTitle);
+            setGeneratedTitles(result.titles);
+          }
+          if (result.description) {
+            currentDescription = result.description;
+            setDescription(currentDescription);
+          }
+          if (result.tags) {
+            currentTags = result.tags;
+            setTags(currentTags);
+          }
+        } catch (error) {
+          console.error("[Full Auto YouTube] Metadata generation failed:", error);
+          // Continue with existing title
+        } finally {
+          setIsGeneratingMetadata(false);
+        }
+      }
+
+      // Set scheduled publish if provided
+      if (initialPublishAt) {
+        const publishDate = new Date(initialPublishAt);
+        setPrivacyStatus('scheduled');
+        setScheduleDate(publishDate.toISOString().split('T')[0]);
+        setScheduleTime(publishDate.toTimeString().slice(0, 5));
+        console.log(`[Full Auto YouTube] Scheduled for: ${publishDate.toLocaleString()}`);
+      }
+
+      // Wait a moment for state to settle
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Trigger upload
+      console.log("[Full Auto YouTube] Starting upload...");
+      setIsUploading(true);
+
+      try {
+        // Get thumbnail URL if available
+        const thumbnailUrl = (thumbnails && selectedThumbnailIndex !== undefined)
+          ? thumbnails[selectedThumbnailIndex]
+          : undefined;
+
+        // Determine publish time
+        let publishAt: string | undefined;
+        if (initialPublishAt) {
+          publishAt = initialPublishAt;
+        }
+
+        const result = await uploadToYouTube(
+          {
+            videoUrl,
+            title: currentTitle || projectTitle || "Untitled Video",
+            description: currentDescription,
+            tags: currentTags.split(',').map(t => t.trim()).filter(Boolean),
+            categoryId,
+            privacyStatus: publishAt ? 'private' : 'private', // Always private until scheduled
+            publishAt,
+            thumbnailUrl,
+            isAlteredContent: true, // AI-generated content
+          },
+          (progress) => {
+            setUploadProgress(progress.percent);
+            setUploadMessage(progress.message || "");
+          }
+        );
+
+        if (result.success && result.videoId) {
+          console.log("[Full Auto YouTube] Upload successful:", result.videoId);
+          setUploadedVideoId(result.videoId);
+          setYoutubeUrl(result.youtubeUrl || null);
+
+          toast({
+            title: "Video Uploaded",
+            description: publishAt
+              ? `Scheduled to publish at ${new Date(publishAt).toLocaleString()}`
+              : "Your video has been uploaded to YouTube.",
+          });
+
+          // Auto-close and notify success
+          setTimeout(() => {
+            onSuccess?.();
+          }, 1000);
+        } else {
+          console.error("[Full Auto YouTube] Upload failed:", result.error);
+          toast({
+            title: "Upload Failed",
+            description: result.error || "Failed to upload video to YouTube.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("[Full Auto YouTube] Upload error:", error);
+        toast({
+          title: "Upload Failed",
+          description: error instanceof Error ? error.message : "Failed to upload video.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    };
+
+    runAutoUpload();
+  }, [isOpen, autoUpload, videoUrl, isConnected, initialPublishAt, title, projectTitle, script, thumbnails, selectedThumbnailIndex, categoryId, onSuccess]);
+
+  // Reset auto-upload trigger when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      autoUploadTriggeredRef.current = false;
+    }
+  }, [isOpen]);
 
   const checkConnection = async () => {
     const status = await checkYouTubeConnection();

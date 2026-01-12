@@ -173,6 +173,18 @@ function getImageTemplatesWithCustomOverrides(): ImageTemplate[] {
   });
 }
 
+// Helper to get next day at 5 PM PST as ISO string
+function getNext5pmPST(): string {
+  const now = new Date();
+  // Create date for tomorrow at 5pm PST (UTC-8)
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Set to 5pm PST = 1am UTC next day (or 12am UTC if during DST)
+  // PST is UTC-8, so 5pm PST = 1am UTC the next day
+  tomorrow.setUTCHours(1, 0, 0, 0); // 5pm PST = 1am UTC (next day)
+  return tomorrow.toISOString();
+}
+
 const Index = () => {
   const navigate = useNavigate();
   const [inputMode, setInputMode] = useState<InputMode>("url");
@@ -260,6 +272,10 @@ const Index = () => {
   const [youtubeTags, setYoutubeTags] = useState("");
   const [youtubeCategoryId, setYoutubeCategoryId] = useState("27"); // Default: Education
   const [youtubePlaylistId, setYoutubePlaylistId] = useState<string | null>(null);
+  const [youtubePublishAt, setYoutubePublishAt] = useState<string | null>(null); // Scheduled publish time
+
+  // Source video thumbnail (from Auto Poster - used as reference for thumbnail generation)
+  const [sourceThumbnailUrl, setSourceThumbnailUrl] = useState<string | null>(null);
 
   // Project tags state
   const [projectTags, setProjectTags] = useState<string[]>([]);
@@ -1083,13 +1099,23 @@ const Index = () => {
     }
   };
 
-  // Step 4: After captions confirmed, generate image prompts for review
+  // Step 4: After captions confirmed, generate clip prompts (Full Auto) or image prompts
   const handleCaptionsConfirm = async (srt: string) => {
     setPendingSrtContent(srt);
 
     // Auto-save captions immediately
     autoSave("captions", { srtContent: srt });
 
+    // In Full Auto mode, generate video clip prompts first (12 × 5s intro)
+    if (settings.fullAutomation) {
+      console.log("[Full Automation] Generating video clip prompts before images...");
+      // handleGenerateClipPrompts will set view to review-clip-prompts
+      // Then Full Auto hooks will auto-confirm and continue the pipeline
+      await handleGenerateClipPrompts();
+      return;
+    }
+
+    // Non-Full Auto: generate image prompts directly
     const steps: GenerationStep[] = [
       { id: "prompts", label: "Generating Scene Descriptions", status: "pending" },
     ];
@@ -3417,6 +3443,12 @@ const Index = () => {
         imageUrls={pendingImages}
         imageTimings={imagePrompts.map(p => ({ startSeconds: p.startSeconds, endSeconds: p.endSeconds }))}
         srtContent={pendingSrtContent}
+        introClips={generatedClips.length > 0 ? generatedClips.map(c => ({
+          index: c.index,
+          videoUrl: c.videoUrl,
+          startSeconds: c.startSeconds,
+          endSeconds: c.endSeconds
+        })) : undefined}
         existingBasicVideoUrl={videoUrl}
         existingEffectsVideoUrl={smokeEmbersVideoUrl}
         autoRender={settings.fullAutomation}
@@ -3452,6 +3484,8 @@ const Index = () => {
         onBack={handleBackToRender}
         onSkip={handleThumbnailsSkip}
         onForward={() => disableAutoAndGoTo("review-youtube")}
+        sourceThumbnailUrl={sourceThumbnailUrl || undefined}
+        autoGenerate={settings.fullAutomation && !!sourceThumbnailUrl}
       />
 
       {/* YouTube Upload Modal */}
@@ -3497,17 +3531,27 @@ const Index = () => {
             });
           }
         }}
+        autoUpload={settings.fullAutomation && !!youtubePublishAt}
+        initialPublishAt={youtubePublishAt || undefined}
       />
 
       {/* Auto Poster Modal */}
       <AutoPosterModal
         open={showAutoPosterModal}
         onClose={() => setShowAutoPosterModal(false)}
-        onSelectVideo={(videoUrl, targetWordCount) => {
+        onSelectVideo={(videoUrl, targetWordCount, thumbnailUrl, videoTitle) => {
           // Set up for Full Auto Generate with the selected video
           setInputValue(videoUrl);
           setInputMode("url");
           setSettings(prev => ({ ...prev, wordCount: targetWordCount, fullAutomation: true }));
+          // Store source thumbnail for reference in thumbnail generation
+          setSourceThumbnailUrl(thumbnailUrl);
+          // Set video title for YouTube upload
+          setVideoTitle(videoTitle);
+          // Schedule for 5pm PST next day
+          const nextDay5pmPST = getNext5pmPST();
+          setYoutubePublishAt(nextDay5pmPST);
+          console.log(`[Auto Poster] Scheduled for: ${nextDay5pmPST}`);
           // Trigger the generate flow with the URL directly (don't rely on state update)
           handleGenerate(videoUrl);
         }}

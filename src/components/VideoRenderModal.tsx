@@ -13,6 +13,13 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { renderVideoStreaming, type RenderVideoProgress } from "@/lib/api";
 
+interface IntroClip {
+  index: number;
+  videoUrl: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
 interface VideoRenderModalProps {
   isOpen: boolean;
   projectId: string;
@@ -21,6 +28,7 @@ interface VideoRenderModalProps {
   imageUrls: string[];
   imageTimings: { startSeconds: number; endSeconds: number }[];
   srtContent: string;
+  introClips?: IntroClip[];  // Optional intro video clips (60s intro)
   existingBasicVideoUrl?: string;  // Pre-rendered basic video URL
   existingEffectsVideoUrl?: string;  // Pre-rendered effects video URL
   autoRender?: boolean;  // Auto-start rendering when modal opens (for full automation mode)
@@ -59,6 +67,7 @@ export function VideoRenderModal({
   imageUrls,
   imageTimings,
   srtContent,
+  introClips,
   existingBasicVideoUrl,
   existingEffectsVideoUrl,
   autoRender = false,
@@ -180,7 +189,8 @@ export function VideoRenderModal({
           }
         },
         { embers: false, smoke_embers: false },  // No effects for pass 1
-        true  // Use CPU rendering
+        true,  // Use CPU rendering
+        introClips  // Include intro video clips
       );
 
       if (!pass1Result.success || !pass1Result.videoUrl) {
@@ -218,7 +228,8 @@ export function VideoRenderModal({
           }
         },
         { embers: false, smoke_embers: true },  // Smoke + embers for pass 2
-        true  // Use CPU rendering
+        true,  // Use CPU rendering
+        introClips  // Include intro video clips
       );
 
       if (pass2Result.success && pass2Result.videoUrl) {
@@ -271,7 +282,8 @@ export function VideoRenderModal({
           }
         },
         { embers: false, smoke_embers: true },  // Smoke + embers
-        true  // Use CPU rendering
+        true,  // Use CPU rendering
+        introClips  // Include intro video clips
       );
 
       if (pass2Result.success && pass2Result.videoUrl) {
