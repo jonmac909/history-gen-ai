@@ -45,8 +45,8 @@ async function sendWhatsAppNotification(message: string): Promise<void> {
 // Minimum video duration for outlier selection (1 hour)
 const MIN_DURATION_SECONDS = 3600;
 
-// Days to look back for outliers
-const OUTLIER_DAYS = 30;
+// Days to look back for outliers (35 days to catch "about 1 month" videos)
+const OUTLIER_DAYS = 35;
 
 // Whitelist of channel handles to scan for outliers
 const CHANNEL_WHITELIST = [
@@ -347,7 +347,7 @@ async function scanForOutliers(
           // Skip short videos (less than 1 hour)
           if ((video.duration || 0) < MIN_DURATION_SECONDS) continue;
 
-          // Skip videos not in last 30 days
+          // Skip videos not in last 35 days
           if (!isWithinDays(video.publishedText, OUTLIER_DAYS)) continue;
 
           // Calculate outlier multiplier
@@ -431,7 +431,7 @@ router.get('/best-outlier', async (req: Request, res: Response) => {
         success: true,
         outlier: null,
         channelsScanned: scannedCount,
-        reason: 'No qualifying outliers found (need 1+ hour, 2x+ views, last 30 days)',
+        reason: 'No qualifying outliers found (need 1+ hour, 2x+ views, last 35 days)',
       });
       res.end();
       return;
