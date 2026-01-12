@@ -88,6 +88,7 @@ async function saveProjectToDatabase(
     imagePrompts?: any[];
     imageUrls?: string[];
     videoUrl?: string;
+    smokeEmbersVideoUrl?: string;
     clipPrompts?: any[];
     clips?: any[];
     thumbnails?: string[];
@@ -123,6 +124,7 @@ async function saveProjectToDatabase(
   if (data.imagePrompts !== undefined) row.image_prompts = data.imagePrompts;
   if (data.imageUrls !== undefined) row.image_urls = data.imageUrls;
   if (data.videoUrl !== undefined) row.video_url = data.videoUrl;
+  if (data.smokeEmbersVideoUrl !== undefined) row.smoke_embers_video_url = data.smokeEmbersVideoUrl;
   if (data.clipPrompts !== undefined) row.clip_prompts = data.clipPrompts;
   if (data.clips !== undefined) row.clips = data.clips;
   if (data.thumbnails !== undefined) row.thumbnails = data.thumbnails;
@@ -874,7 +876,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     // Uses the first N generated images as source frames for I2V animation
     reportProgress('videoClips', 60, 'Generating intro video clips...');
     const videoClipsStart = Date.now();
-    let introClips: { url: string; startSeconds: number; endSeconds: number }[] = [];
+    let introClips: { index: number; videoUrl: string; startSeconds: number; endSeconds: number }[] = [];
     if (clipPrompts.length > 0 && imageUrls.length > 0) {
       try {
         // Map clip prompts to clips with imageUrl from generated images
@@ -901,7 +903,8 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         }, 1800000);  // 30 min timeout for 12 clips
 
         introClips = (clipsRes.clips || []).map((c: any) => ({
-          url: c.videoUrl,
+          index: c.index,
+          videoUrl: c.videoUrl,  // Use videoUrl to match GeneratedClip interface
           startSeconds: (c.index - 1) * INTRO_CLIP_DURATION,
           endSeconds: c.index * INTRO_CLIP_DURATION,
         }));
@@ -997,6 +1000,10 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
 
     try {
       // Start render job (returns immediately with job ID)
+      // Transform clips to use 'url' property for render-video route (worker expects 'url')
+      const renderClips = introClips.length > 0
+        ? introClips.map(c => ({ url: c.videoUrl, startSeconds: c.startSeconds, endSeconds: c.endSeconds }))
+        : undefined;
       const startRes = await callInternalAPI('/render-video', {
         projectId,
         audioUrl,
@@ -1004,7 +1011,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         imageTimings,
         srtContent,
         effects: { smoke_embers: true },
-        introClips: introClips.length > 0 ? introClips : undefined,
+        introClips: renderClips,
       });
 
       const jobId = startRes.jobId;
@@ -1054,8 +1061,9 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       });
 
       // Save video URL and thumbnail immediately after render (before YouTube upload)
+      // Use smokeEmbersVideoUrl since pipeline always renders with smoke+embers effects
       await saveProjectToDatabase(supabase, projectId, {
-        videoUrl,
+        smokeEmbersVideoUrl: videoUrl,
         thumbnails: [thumbnailUrl],
         currentStep: 'upload',
       });
@@ -1115,8 +1123,9 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     reportProgress('complete', 100, 'Pipeline complete!');
 
     // Save final project state
+    // Use smokeEmbersVideoUrl since pipeline always renders with smoke+embers effects
     await saveProjectToDatabase(supabase, projectId, {
-      videoUrl,
+      smokeEmbersVideoUrl: videoUrl,
       thumbnails: [thumbnailUrl],
       status: 'completed',
       currentStep: 'complete',
