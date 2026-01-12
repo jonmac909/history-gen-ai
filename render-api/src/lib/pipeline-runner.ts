@@ -724,7 +724,8 @@ export async function runPipeline(
     }));
 
     try {
-      const renderRes = await callStreamingAPI('/render-video', {
+      // Start render job (returns immediately with job ID)
+      const startRes = await callInternalAPI('/render-video', {
         projectId,
         audioUrl,
         imageUrls,
@@ -732,12 +733,47 @@ export async function runPipeline(
         srtContent,
         effects: { smoke_embers: true },
         introClips: introClips.length > 0 ? introClips : undefined,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('render', 72 + Math.round(data.progress * 0.18), `Rendering video... ${data.progress}%`);
+      });
+
+      const jobId = startRes.jobId;
+      console.log(`[Pipeline] Render job started: ${jobId}`);
+
+      // Poll for completion (render-video uses polling, not SSE)
+      const POLL_INTERVAL = 3000;  // 3 seconds
+      const MAX_POLL_TIME = 60 * 60 * 1000;  // 1 hour
+      const pollStart = Date.now();
+      let lastProgress = 0;
+
+      while (Date.now() - pollStart < MAX_POLL_TIME) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+        const statusRes = await fetch(`${API_BASE_URL}/render-video/status/${jobId}`);
+        if (!statusRes.ok) {
+          console.warn(`[Pipeline] Render status poll failed: ${statusRes.status}`);
+          continue;
         }
-      }, 1800000);  // 30 min timeout
-      videoUrl = renderRes.videoUrl;
+
+        const job = await statusRes.json() as { status: string; progress: number; message: string; video_url?: string; error?: string };
+
+        // Update progress if changed
+        if (job.progress !== lastProgress) {
+          lastProgress = job.progress;
+          reportProgress('render', 72 + Math.round(job.progress * 0.18), `Rendering video... ${job.progress}%`);
+        }
+
+        if (job.status === 'complete') {
+          videoUrl = job.video_url!;
+          console.log(`[Pipeline] Render complete: ${videoUrl}`);
+          break;
+        } else if (job.status === 'failed') {
+          throw new Error(job.error || 'Render job failed');
+        }
+        // Continue polling for queued, rendering, muxing, uploading statuses
+      }
+
+      if (!videoUrl) {
+        throw new Error('Render job timed out after 1 hour');
+      }
       steps.push({
         step: 'render',
         success: true,
