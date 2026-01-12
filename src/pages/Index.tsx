@@ -3568,6 +3568,9 @@ const Index = () => {
           setSourceThumbnailUrl(thumbnailUrl);
           // Set video title for YouTube upload
           setVideoTitle(videoTitle);
+          // Reset YouTube settings for Auto Poster
+          setYoutubeCategoryId("22"); // People & Blogs
+          setYoutubePlaylistId(null); // Will auto-select Complete Histories
           // Schedule for 5pm PST next day
           const nextDay5pmPST = getNext5pmPST();
           setYoutubePublishAt(nextDay5pmPST);

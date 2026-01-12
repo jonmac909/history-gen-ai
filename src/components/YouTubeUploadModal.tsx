@@ -279,6 +279,19 @@ export function YouTubeUploadModal({
       setIsUploading(true);
 
       try {
+        // Get access token first
+        const accessToken = await getValidAccessToken();
+        if (!accessToken) {
+          console.error("[Full Auto YouTube] No access token - user not authenticated");
+          toast({
+            title: "YouTube Not Connected",
+            description: "Please connect your YouTube account to enable auto-upload.",
+            variant: "destructive",
+          });
+          setIsUploading(false);
+          return;
+        }
+
         // Get thumbnail URL if available
         const thumbnailUrl = (thumbnails && selectedThumbnailIndex !== undefined)
           ? thumbnails[selectedThumbnailIndex]
@@ -298,6 +311,7 @@ export function YouTubeUploadModal({
         const result = await uploadToYouTube(
           {
             videoUrl,
+            accessToken,
             title: currentTitle || projectTitle || "Untitled Video",
             description: currentDescription,
             tags: tagsArray,
