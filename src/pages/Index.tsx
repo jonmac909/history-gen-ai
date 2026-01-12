@@ -366,8 +366,8 @@ const Index = () => {
     if (settings.fullAutomation && viewState === "review-clip-prompts" && clipPrompts.length > 0) {
       console.log("[Full Automation] Auto-confirming clip prompts...");
       const timer = setTimeout(() => {
-        // Pass clip prompts as-is with empty style (style already in prompts from generation)
-        handleClipPromptsConfirm(clipPrompts, "");
+        // Pass clip prompts with the selected image style (Dutch Golden Age by default)
+        handleClipPromptsConfirm(clipPrompts, getSelectedImageStyle());
       }, 500);
       return () => clearTimeout(timer);
     }
