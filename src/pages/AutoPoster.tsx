@@ -361,16 +361,26 @@ export default function AutoPoster() {
                         <span>Duration: {formatDuration(video.duration_seconds)}</span>
                         <span>Processed: {formatDate(video.processed_at)}</span>
                       </div>
-                      {video.youtube_url && (
-                        <a
-                          href={video.youtube_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-400 hover:underline mt-1 inline-block"
-                        >
-                          View on YouTube
-                        </a>
-                      )}
+                      <div className="flex gap-3 mt-1">
+                        {video.youtube_url && (
+                          <a
+                            href={video.youtube_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:underline"
+                          >
+                            View on YouTube
+                          </a>
+                        )}
+                        {video.project_id && (
+                          <button
+                            onClick={() => navigate(`/?project=${video.project_id}`)}
+                            className="text-xs text-green-400 hover:underline"
+                          >
+                            View Project
+                          </button>
+                        )}
+                      </div>
                       {video.error_message && (
                         <p className="text-xs text-red-400 mt-1 truncate">{video.error_message}</p>
                       )}
