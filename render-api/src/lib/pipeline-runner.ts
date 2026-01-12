@@ -62,6 +62,86 @@ function getSupabaseClient(): SupabaseClient {
   return createClient(url, key);
 }
 
+// Save/update project in generation_projects table (for Projects drawer)
+async function saveProjectToDatabase(
+  supabase: SupabaseClient,
+  projectId: string,
+  data: {
+    videoTitle?: string;
+    sourceUrl?: string;
+    status?: 'in_progress' | 'completed' | 'archived';
+    currentStep?: string;
+    script?: string;
+    audioUrl?: string;
+    audioDuration?: number;
+    audioSegments?: any[];
+    srtContent?: string;
+    srtUrl?: string;
+    imagePrompts?: any[];
+    imageUrls?: string[];
+    videoUrl?: string;
+    clipPrompts?: any[];
+    clips?: any[];
+    thumbnails?: string[];
+    youtubeTitle?: string;
+    youtubeDescription?: string;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Check if project exists
+  const { data: existing } = await supabase
+    .from('generation_projects')
+    .select('id')
+    .eq('id', projectId)
+    .single();
+
+  const row: Record<string, unknown> = {
+    id: projectId,
+    updated_at: now,
+  };
+
+  // Only set fields that are provided
+  if (data.videoTitle !== undefined) row.video_title = data.videoTitle;
+  if (data.sourceUrl !== undefined) row.source_url = data.sourceUrl;
+  if (data.status !== undefined) row.status = data.status;
+  if (data.currentStep !== undefined) row.current_step = data.currentStep;
+  if (data.script !== undefined) row.script_content = data.script;
+  if (data.audioUrl !== undefined) row.audio_url = data.audioUrl;
+  if (data.audioDuration !== undefined) row.audio_duration = data.audioDuration;
+  if (data.audioSegments !== undefined) row.audio_segments = data.audioSegments;
+  if (data.srtContent !== undefined) row.srt_content = data.srtContent;
+  if (data.srtUrl !== undefined) row.srt_url = data.srtUrl;
+  if (data.imagePrompts !== undefined) row.image_prompts = data.imagePrompts;
+  if (data.imageUrls !== undefined) row.image_urls = data.imageUrls;
+  if (data.videoUrl !== undefined) row.video_url = data.videoUrl;
+  if (data.clipPrompts !== undefined) row.clip_prompts = data.clipPrompts;
+  if (data.clips !== undefined) row.clips = data.clips;
+  if (data.thumbnails !== undefined) row.thumbnails = data.thumbnails;
+  if (data.youtubeTitle !== undefined) row.youtube_title = data.youtubeTitle;
+  if (data.youtubeDescription !== undefined) row.youtube_description = data.youtubeDescription;
+
+  // For new projects, set required defaults
+  if (!existing) {
+    row.created_at = now;
+    row.source_type = 'youtube';
+    row.version_number = 1;
+    if (!row.source_url) row.source_url = '';
+    if (!row.status) row.status = 'in_progress';
+    if (!row.current_step) row.current_step = 'script';
+  }
+
+  const { error } = await supabase
+    .from('generation_projects')
+    .upsert(row, { onConflict: 'id' });
+
+  if (error) {
+    console.error(`[Pipeline] Failed to save project to database: ${error.message}`);
+  } else {
+    console.log(`[Pipeline] Saved project ${projectId} to generation_projects (step: ${data.currentStep || 'init'})`);
+  }
+}
+
 // Download image URL and convert to base64
 async function downloadImageAsBase64(imageUrl: string): Promise<string> {
   const response = await fetch(imageUrl);
@@ -386,6 +466,14 @@ export async function runPipeline(
   try {
     reportProgress('init', 0, 'Starting pipeline...');
 
+    // Create project in database at start
+    await saveProjectToDatabase(supabase, projectId, {
+      videoTitle: input.originalTitle,
+      sourceUrl: input.sourceVideoUrl,
+      status: 'in_progress',
+      currentStep: 'script',
+    });
+
     // Step 1: Fetch transcript
     reportProgress('transcript', 5, 'Fetching source transcript...');
     const transcriptStart = Date.now();
@@ -448,6 +536,12 @@ export async function runPipeline(
       // Calculate image count: 1 image per 100 words (min 10, max 300)
       calculatedImageCount = Math.min(300, Math.max(10, Math.round(actualWordCount / 100)));
       console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
+
+      // Save script to project
+      await saveProjectToDatabase(supabase, projectId, {
+        script,
+        currentStep: 'audio',
+      });
     } catch (error: any) {
       steps.push({ step: 'script', success: false, duration: Date.now() - scriptStart, error: error.message });
       throw new Error(`Failed to generate script: ${error.message}`);
@@ -492,6 +586,14 @@ export async function runPipeline(
         duration: Date.now() - audioStart,
         data: { audioUrl, audioDuration },
       });
+
+      // Save audio to project
+      await saveProjectToDatabase(supabase, projectId, {
+        audioUrl,
+        audioDuration,
+        audioSegments: audioRes.segments,
+        currentStep: 'captions',
+      });
     } catch (error: any) {
       steps.push({ step: 'audio', success: false, duration: Date.now() - audioStart, error: error.message });
       throw new Error(`Failed to generate audio: ${error.message}`);
@@ -534,6 +636,13 @@ export async function runPipeline(
     } catch (e) {
       console.warn('[Pipeline] Could not download SRT, continuing...');
     }
+
+    // Save captions to project
+    await saveProjectToDatabase(supabase, projectId, {
+      srtUrl: captionsUrl,
+      srtContent,
+      currentStep: 'prompts',
+    });
 
     // Step 6: Generate clip prompts (5 × 12s intro videos)
     reportProgress('clipPrompts', 45, 'Generating video clip prompts...');
@@ -664,6 +773,15 @@ export async function runPipeline(
         success: true,
         duration: Date.now() - imagesStart,
         data: { count: imageUrls.length },
+      });
+
+      // Save images to project
+      await saveProjectToDatabase(supabase, projectId, {
+        imagePrompts,
+        imageUrls,
+        clipPrompts,
+        clips: generatedClips,
+        currentStep: 'images',
       });
     } catch (error: any) {
       steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: error.message });
@@ -824,6 +942,15 @@ export async function runPipeline(
     }
 
     reportProgress('complete', 100, 'Pipeline complete!');
+
+    // Save final project state
+    await saveProjectToDatabase(supabase, projectId, {
+      videoUrl,
+      thumbnails: [thumbnailUrl],
+      status: 'completed',
+      currentStep: 'complete',
+      youtubeTitle: clonedTitle,
+    });
 
     return {
       success: true,
