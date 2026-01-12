@@ -16,6 +16,49 @@ import fetch from 'node-fetch';
 
 const router = Router();
 
+// Fetch video info (title, duration) from YouTube using InnerTube API
+async function getVideoInfo(videoId: string): Promise<{ title: string; durationSeconds: number } | null> {
+  try {
+    const response = await fetch('https://www.youtube.com/youtubei/v1/player', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      body: JSON.stringify({
+        videoId,
+        context: {
+          client: {
+            clientName: 'WEB',
+            clientVersion: '2.20240101.00.00',
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`[AutoClone] Failed to fetch video info: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json() as any;
+    const videoDetails = data?.videoDetails;
+
+    if (!videoDetails) {
+      console.log('[AutoClone] No video details in response');
+      return null;
+    }
+
+    return {
+      title: videoDetails.title || 'Unknown Title',
+      durationSeconds: parseInt(videoDetails.lengthSeconds || '0', 10),
+    };
+  } catch (error) {
+    console.error('[AutoClone] Error fetching video info:', error);
+    return null;
+  }
+}
+
 // WhatsApp notification via TextMeBot (https://www.textmebot.com)
 async function sendWhatsAppNotification(message: string): Promise<void> {
   const phone = process.env.WHATSAPP_PHONE;
@@ -544,16 +587,26 @@ router.post('/', async (req: Request, res: Response) => {
         console.log(`[AutoClone] Deleted previous processed record for ${videoId}`);
       }
 
-      // Get video title from YouTube (using oEmbed which doesn't require API key)
+      // Get video info from YouTube (title + duration)
       let videoTitle = req.body.videoTitle || 'Unknown Title';
-      try {
-        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`);
-        if (oembedRes.ok) {
-          const oembed = await oembedRes.json() as { title?: string };
-          videoTitle = oembed.title || videoTitle;
+      let videoDurationSeconds = 0;
+
+      const videoInfo = await getVideoInfo(videoId);
+      if (videoInfo) {
+        videoTitle = videoInfo.title;
+        videoDurationSeconds = videoInfo.durationSeconds;
+        console.log(`[AutoClone] Video info: "${videoTitle}" (${Math.round(videoDurationSeconds / 60)} min)`);
+      } else {
+        // Fallback to oEmbed for title only
+        try {
+          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`);
+          if (oembedRes.ok) {
+            const oembed = await oembedRes.json() as { title?: string };
+            videoTitle = oembed.title || videoTitle;
+          }
+        } catch (e) {
+          console.log(`[AutoClone] Could not fetch video info, using provided title: ${videoTitle}`);
         }
-      } catch (e) {
-        console.log(`[AutoClone] Could not fetch video title, using provided: ${videoTitle}`);
       }
 
       const selectedVideo: OutlierVideo = {
@@ -565,7 +618,7 @@ router.post('/', async (req: Request, res: Response) => {
         subscriberCountFormatted: 'N/A',
         viewCount: 0,
         outlierMultiplier: 1,
-        durationSeconds: 0,
+        durationSeconds: videoDurationSeconds,
         publishedAt: new Date().toISOString(),
       };
 
@@ -596,7 +649,8 @@ router.post('/', async (req: Request, res: Response) => {
         originalThumbnailUrl: selectedVideo.thumbnailUrl,
         channelName: 'Direct URL',
         publishAt,
-        targetWordCount,
+        sourceDurationSeconds: videoDurationSeconds,  // Pass duration for word count calculation
+        targetWordCount,  // Manual override if specified
       }, async (step, progress, message) => {
         console.log(`[AutoClone] Pipeline ${step}: ${message} (${progress}%)`);
         const stepStr = message.includes('%') ? message : `${message} (${progress}%)`;
