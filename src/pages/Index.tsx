@@ -96,10 +96,26 @@ function loadLastSettings(): GenerationSettings {
     const saved = localStorage.getItem(LAST_SETTINGS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+
+      // Validate and fix voiceSampleUrl if it's an old/invalid URL
+      // Old URLs: historygenai.netlify.app, .wav extension, etc.
+      let voiceSampleUrl = parsed.voiceSampleUrl;
+      if (voiceSampleUrl) {
+        const isOldDomain = voiceSampleUrl.includes('netlify.app') ||
+                           voiceSampleUrl.includes('historygenai.');
+        const isWrongExtension = voiceSampleUrl.endsWith('.wav') &&
+                                 voiceSampleUrl.includes('clone_voice');
+        if (isOldDomain || isWrongExtension) {
+          console.log('[Settings] Resetting invalid voiceSampleUrl:', voiceSampleUrl);
+          voiceSampleUrl = DEFAULT_SETTINGS.voiceSampleUrl;
+        }
+      }
+
       // Merge with defaults to ensure all fields exist
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
+        voiceSampleUrl, // Use validated URL
         // Always reset project-specific fields for new projects
         projectTitle: "",
         topic: "",
