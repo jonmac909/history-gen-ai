@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,7 @@ import {
   getStepLabel,
   createProjectVersion,
   duplicateProject,
+  getProject,
   type Project,
 } from "@/lib/projectStore";
 import { ProjectsDrawer } from "@/components/ProjectsDrawer";
@@ -203,6 +204,7 @@ function getNext5pmPST(): string {
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [inputMode, setInputMode] = useState<InputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [viewState, setViewState] = useState<ViewState>("create");
@@ -301,6 +303,130 @@ const Index = () => {
     migrateFromLocalStorage();
   }, []);
 
+  // Load project from ?project= query parameter (e.g., from Auto Poster "View Project" link)
+  useEffect(() => {
+    const projectIdParam = searchParams.get('project');
+    if (!projectIdParam) return;
+
+    console.log('[Index] Loading project from URL param:', projectIdParam);
+
+    getProject(projectIdParam).then((project) => {
+      if (!project) {
+        console.error('[Index] Project not found:', projectIdParam);
+        toast({
+          title: "Project Not Found",
+          description: `Could not find project ${projectIdParam}`,
+          variant: "destructive",
+        });
+        // Clear the query param
+        setSearchParams({});
+        return;
+      }
+
+      console.log('[Index] Loaded project from URL:', project.id, project.videoTitle);
+
+      // Disable fullAutomation when viewing a project
+      setSettings(prev => ({ ...prev, fullAutomation: false }));
+
+      // Restore state from project
+      setProjectId(project.id);
+      setSourceUrl(project.sourceUrl);
+      setVideoTitle(project.videoTitle);
+
+      if (project.script) {
+        setPendingScript(project.script);
+        setConfirmedScript(project.script);
+      }
+      if (project.audioUrl) setPendingAudioUrl(project.audioUrl);
+      if (project.audioDuration) setPendingAudioDuration(project.audioDuration);
+      if (project.audioSegments) setPendingAudioSegments(project.audioSegments);
+      if (project.srtContent) setPendingSrtContent(project.srtContent);
+      if (project.srtUrl) setPendingSrtUrl(project.srtUrl);
+      if (project.imagePrompts) setImagePrompts(project.imagePrompts);
+      if (project.imageUrls) setPendingImages(project.imageUrls);
+      if (project.clipPrompts) setClipPrompts(project.clipPrompts);
+      if (project.clips) setGeneratedClips(project.clips);
+      if (project.videoUrl) setVideoUrl(project.videoUrl);
+      if (project.videoUrlCaptioned) setVideoUrlCaptioned(project.videoUrlCaptioned);
+      if (project.embersVideoUrl) setEmbersVideoUrl(project.embersVideoUrl);
+      if (project.smokeEmbersVideoUrl) setSmokeEmbersVideoUrl(project.smokeEmbersVideoUrl);
+      if (project.thumbnails) setGeneratedThumbnails(project.thumbnails);
+      if (project.selectedThumbnailIndex !== undefined) setSelectedThumbnailIndex(project.selectedThumbnailIndex);
+      if (project.approvedSteps) setApprovedSteps(project.approvedSteps);
+      // Restore YouTube metadata
+      if (project.youtubeTitle) setYoutubeTitle(project.youtubeTitle);
+      if (project.youtubeDescription) setYoutubeDescription(project.youtubeDescription);
+      if (project.youtubeTags) setYoutubeTags(project.youtubeTags);
+      if (project.youtubeCategoryId) setYoutubeCategoryId(project.youtubeCategoryId);
+      if (project.youtubePlaylistId !== undefined) setYoutubePlaylistId(project.youtubePlaylistId);
+
+      // Build generated assets for results view
+      const assets: GeneratedAsset[] = [];
+      if (project.script) {
+        assets.push({
+          id: "script",
+          name: "Rewritten Script",
+          type: "Markdown",
+          size: `${Math.round(project.script.length / 1024)} KB`,
+          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+          content: project.script,
+        });
+      }
+      if (project.audioUrl) {
+        assets.push({
+          id: "audio",
+          name: "Voiceover Audio",
+          type: "MP3",
+          size: project.audioDuration ? `${Math.round(project.audioDuration / 60)} min` : "Unknown",
+          icon: <Mic className="w-5 h-5 text-muted-foreground" />,
+          url: project.audioUrl,
+        });
+        setAudioUrl(project.audioUrl);
+      }
+      if (project.srtContent) {
+        assets.push({
+          id: "captions",
+          name: "Captions",
+          type: "SRT",
+          size: `${Math.round(project.srtContent.length / 1024)} KB`,
+          icon: <FileText className="w-5 h-5 text-muted-foreground" />,
+          url: project.srtUrl,
+          content: project.srtContent,
+        });
+        setSrtContent(project.srtContent);
+      }
+      if (project.imageUrls) {
+        project.imageUrls.forEach((imageUrl, index) => {
+          assets.push({
+            id: `image-${index + 1}`,
+            name: `Image ${index + 1}`,
+            type: "PNG",
+            size: "~1 MB",
+            icon: <Image className="w-5 h-5 text-muted-foreground" />,
+            url: imageUrl,
+          });
+        });
+      }
+      setGeneratedAssets(assets);
+
+      // Go to results page and clear the query param
+      setViewState("results");
+      setSearchParams({});
+
+      toast({
+        title: "Project Loaded",
+        description: `Viewing "${project.videoTitle}"`,
+      });
+    }).catch((err) => {
+      console.error('[Index] Failed to load project:', err);
+      toast({
+        title: "Error Loading Project",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+      setSearchParams({});
+    });
+  }, [searchParams]);
 
   // Persist settings to localStorage whenever they change
   useEffect(() => {

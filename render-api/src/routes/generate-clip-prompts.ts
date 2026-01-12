@@ -72,6 +72,18 @@ const MODERN_KEYWORDS_TO_REMOVE = [
   'historical record', 'historical records', 'ancient text', 'ancient texts',
   'surviving', 'survives', 'remains of', 'ruins of', 'remnants of',
   'investigation', 'investigating',
+
+  // 3D/CGI/reconstruction terms
+  '3d', '3d model', '3d reconstruction', 'cgi', 'render', 'rendered',
+  'holographic', 'hologram', 'projection', 'projected',
+  'virtual', 'simulation', 'simulated',
+  'laid out', 'arranged on', 'placed on',
+
+  // Additional display/presentation terms
+  'presentation', 'presented', 'showcase', 'showcased', 'showcasing',
+  'on display', 'on exhibit', 'on show', 'on view',
+  'pedestal', 'stand', 'platform', 'table', 'desk',
+  'lit by', 'illuminated by spotlight', 'dramatic lighting on object',
 ];
 
 // Check if description contains any modern keywords
