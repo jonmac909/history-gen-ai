@@ -914,8 +914,24 @@ export async function runPipeline(
     let youtubeVideoId: string;
     let youtubeUrl: string;
     try {
+      // First, get a fresh access token from stored refresh token
+      console.log('[Pipeline] Getting YouTube access token...');
+      const tokenRes = await fetch(`http://localhost:${process.env.PORT || 10000}/youtube-upload/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const tokenData = await tokenRes.json() as { success?: boolean; accessToken?: string; error?: string; needsAuth?: boolean };
+
+      if (!tokenRes.ok || !tokenData.accessToken) {
+        throw new Error(tokenData.needsAuth
+          ? 'YouTube not authenticated. Please connect YouTube account in the app first.'
+          : tokenData.error || 'Failed to get YouTube access token');
+      }
+      console.log('[Pipeline] Got YouTube access token');
+
       const uploadRes = await callStreamingAPI('/youtube-upload', {
         videoUrl,
+        accessToken: tokenData.accessToken,
         title: clonedTitle,
         description: `${clonedTitle}\n\nGenerated with AI`,
         tags: ['history', 'documentary', 'education'],
