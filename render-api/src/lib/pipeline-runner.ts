@@ -150,6 +150,79 @@ async function saveProjectToDatabase(
   }
 }
 
+// Clean script of markdown headers, section markers, and formatting that breaks TTS
+function cleanScript(script: string): string {
+  let cleaned = script
+    // Remove entire lines starting with # (markdown headers)
+    .replace(/^#.*$/gm, '')
+    // Remove standalone ALL CAPS lines (section headers like OPENING, CONCLUSION)
+    .replace(/^[A-Z][A-Z\s]{2,}$/gm, '')
+    // Remove markdown horizontal rules
+    .replace(/^[-*_]{3,}$/gm, '')
+    // Remove bracketed content like [SCENE X], [PAUSE], etc.
+    .replace(/\[.*?\]/g, '')
+    // Remove markdown bold/italic markers
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+    // Remove parenthetical time markers like (5-10 minutes)
+    .replace(/\(\d+-?\d*\s*(?:minutes?|seconds?|mins?|secs?)\)/gi, '')
+    // Remove inline hashtags
+    .replace(/#\w+/g, '')
+    // Collapse multiple newlines to single
+    .replace(/\n{3,}/g, '\n\n')
+    // Trim whitespace
+    .trim();
+
+  // Log if significant cleaning happened
+  const removed = script.length - cleaned.length;
+  if (removed > 50) {
+    console.log(`[Pipeline] Cleaned script: removed ${removed} chars of formatting`);
+  }
+
+  return cleaned;
+}
+
+// Grade a script using Claude to check topic adherence and quality
+async function gradeScript(
+  script: string,
+  expectedTopic: string,
+  apiKey: string
+): Promise<{ grade: 'A' | 'B' | 'C'; feedback: string }> {
+  const Anthropic = (await import('@anthropic-ai/sdk')).default;
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `Grade this script for a history documentary video. The expected topic is: "${expectedTopic}"
+
+Script (first 2000 chars):
+${script.substring(0, 2000)}
+
+Grade the script:
+- A = On topic, engaging narration, ready for TTS
+- B = Mostly on topic but needs minor improvements
+- C = Off topic, contains formatting issues, or major problems
+
+Respond in JSON format: {"grade": "A/B/C", "feedback": "brief explanation"}`,
+    }],
+  });
+
+  try {
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]);
+      return { grade: result.grade || 'C', feedback: result.feedback || 'Unknown' };
+    }
+  } catch (e) {
+    console.warn('[Pipeline] Failed to parse grade response:', e);
+  }
+
+  return { grade: 'C', feedback: 'Failed to grade script' };
+}
+
 // Download image URL and convert to base64
 // Uses proxy for YouTube URLs (ytimg.com) to avoid IP blocking
 async function downloadImageAsBase64(imageUrl: string): Promise<string> {
@@ -516,7 +589,7 @@ export async function runPipeline(
     // Step 2: Generate script (streaming)
     reportProgress('script', 15, 'Generating script...');
     const scriptStart = Date.now();
-    let script: string;
+    let script: string = '';
     let calculatedImageCount: number = 10;  // Will be recalculated based on actual word count
 
     // Calculate target word count based on source video duration (or use manual override)
@@ -527,26 +600,74 @@ export async function runPipeline(
     const targetWordCount = input.targetWordCount || calculatedWordCount;
     console.log(`[Pipeline] Target word count: ${targetWordCount}${input.targetWordCount ? ' (manual override)' : ` (${durationMinutes} min @ ${WORDS_PER_MINUTE} wpm)`}`);
 
+    const MAX_SCRIPT_RETRIES = 2;
+    let scriptAttempt = 0;
+    let scriptGrade: 'A' | 'B' | 'C' = 'C';
+    let scriptFeedback = '';
+
     try {
-      const scriptRes = await callStreamingAPI('/rewrite-script', {
-        transcript,
-        projectId,
-        voiceStyle: '(sincere) (soft tone)',
-        wordCount: targetWordCount,
-        template: COMPLETE_HISTORIES_TEMPLATE,  // Use Complete Histories template for Auto Poster
-        stream: true,  // Required for SSE mode
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script... ${data.progress}%`);
+      while (scriptAttempt < MAX_SCRIPT_RETRIES && scriptGrade !== 'A') {
+        scriptAttempt++;
+        const attemptLabel = scriptAttempt > 1 ? ` (attempt ${scriptAttempt})` : '';
+        reportProgress('script', 15, `Generating script${attemptLabel}...`);
+
+        // Add feedback to template if regenerating
+        let templateWithFeedback = COMPLETE_HISTORIES_TEMPLATE;
+        if (scriptAttempt > 1 && scriptFeedback) {
+          templateWithFeedback = `CRITICAL: Previous script was rejected. Fix these issues:
+${scriptFeedback}
+
+The topic is: "${input.originalTitle}"
+Stay focused on this specific topic. Do not go off on tangents about documentary filmmaking or unrelated subjects.
+
+${COMPLETE_HISTORIES_TEMPLATE}`;
+          console.log(`[Pipeline] Regenerating script with feedback: ${scriptFeedback}`);
         }
-      }, 1800000);  // 30 min timeout for very long scripts (200+ min videos)
-      script = scriptRes.script;
+
+        const scriptRes = await callStreamingAPI('/rewrite-script', {
+          transcript,
+          projectId,
+          voiceStyle: '(sincere) (soft tone)',
+          wordCount: targetWordCount,
+          template: templateWithFeedback,
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script${attemptLabel}... ${data.progress}%`);
+          }
+        }, 1800000);
+
+        script = scriptRes.script;
+
+        // Clean the script of markdown headers and formatting
+        script = cleanScript(script);
+        console.log(`[Pipeline] Script cleaned, length: ${script.length} chars`);
+
+        // Grade the script for topic adherence
+        const anthropicKey = process.env.ANTHROPIC_API_KEY;
+        if (anthropicKey) {
+          reportProgress('script', 24, 'Grading script...');
+          const gradeResult = await gradeScript(script, input.originalTitle, anthropicKey);
+          scriptGrade = gradeResult.grade;
+          scriptFeedback = gradeResult.feedback;
+          console.log(`[Pipeline] Script grade: ${scriptGrade} - ${scriptFeedback}`);
+
+          if (scriptGrade !== 'A' && scriptAttempt < MAX_SCRIPT_RETRIES) {
+            console.log(`[Pipeline] Script grade ${scriptGrade}, will regenerate...`);
+          }
+        } else {
+          // No API key for grading, assume OK
+          scriptGrade = 'A';
+          console.log(`[Pipeline] Skipping script grading (no ANTHROPIC_API_KEY)`);
+        }
+      }
+
       const actualWordCount = script.split(/\s+/).length;
       steps.push({
         step: 'script',
         success: true,
         duration: Date.now() - scriptStart,
-        data: { wordCount: actualWordCount },
+        data: { wordCount: actualWordCount, grade: scriptGrade, attempts: scriptAttempt },
       });
 
       // Calculate image count: 1 image per 100 words (min 10, max 300)
@@ -584,9 +705,10 @@ export async function runPipeline(
         voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
         voiceStyle: '(sincere) (soft tone)',
         ttsSettings: {
-          temperature: 0.9,
-          topP: 0.85,
-          repetitionPenalty: 1.1,
+          // Low temperature + topP for consistent voice/accent across segments
+          temperature: 0.3,
+          topP: 0.6,
+          repetitionPenalty: 1.2,
         },
         stream: true,
       }, (data) => {
