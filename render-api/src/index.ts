@@ -156,7 +156,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force: false }),
       });
-      const result = await response.json();
+      const result = await response.json() as { success?: boolean; error?: string };
       console.log('[Cron] Auto Poster triggered:', result.success ? 'Started' : result.error || 'Failed');
     } catch (error) {
       console.error('[Cron] Failed to trigger Auto Poster:', error);
