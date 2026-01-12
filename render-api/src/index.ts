@@ -146,10 +146,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   //   console.warn('⚠️ PO Token provider init failed:', err.message);
   // });
 
-  // Schedule Auto Poster to run daily at 6am PST (14:00 UTC during PST, 13:00 UTC during PDT)
-  // Using America/Los_Angeles timezone to handle daylight saving automatically
-  cron.schedule('0 6 * * *', async () => {
-    console.log('[Cron] 🕕 Running daily Auto Poster at 6am PST...');
+  // Schedule Auto Poster to run daily at 6am PST = 14:00 UTC (no DST adjustment - PST is fixed)
+  // Note: During PDT (Mar-Nov), this will be 7am local time. Use 13:00 UTC for 6am PDT.
+  cron.schedule('0 14 * * *', async () => {
+    console.log('[Cron] 🕕 Running daily Auto Poster at 14:00 UTC (6am PST)...');
     try {
       const response = await fetch(`http://localhost:${PORT}/auto-clone`, {
         method: 'POST',
@@ -161,10 +161,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     } catch (error) {
       console.error('[Cron] Failed to trigger Auto Poster:', error);
     }
-  }, {
-    timezone: 'America/Los_Angeles'
   });
-  console.log('⏰ Auto Poster scheduled: Daily at 6:00 AM PST');
+  console.log('⏰ Auto Poster scheduled: Daily at 14:00 UTC (6am PST)');
 });
 
 // Increase timeouts for long-running SSE connections (video rendering)
