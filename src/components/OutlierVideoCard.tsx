@@ -121,7 +121,7 @@ export function OutlierVideoCard({ video, averageViewsFormatted, channelTitle, s
         {/* Outlier badge + views comparison row */}
         <div className="flex items-center gap-2 pt-1">
           <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${outlierBadgeStyle}`}>
-            {video.outlierMultiplier}x
+            {video.outlierMultiplier.toFixed(2)}x
           </span>
           <span className="text-xs text-gray-600">
             {viewsFormatted} views vs {averageViewsFormatted} avg
