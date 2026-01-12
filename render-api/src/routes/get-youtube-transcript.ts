@@ -69,6 +69,21 @@ router.post('/', async (req: Request, res: Response) => {
     const data = await response.json() as any;
     console.log(`Supadata response received`);
 
+    // Check for error in response body (Supadata returns 200 with error object for some errors)
+    if (data.error) {
+      console.error('Supadata error:', data.error, data.message);
+      if (data.error === 'transcript-unavailable') {
+        return res.status(404).json({
+          success: false,
+          error: 'No transcript available for this video. The video may not have captions enabled.',
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: data.message || data.error || 'Supadata API error',
+      });
+    }
+
     // Supadata returns content array with text segments
     if (!data.content || !Array.isArray(data.content)) {
       console.error('Unexpected response format:', JSON.stringify(data).substring(0, 200));
