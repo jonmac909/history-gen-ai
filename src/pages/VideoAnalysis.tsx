@@ -26,11 +26,8 @@ import {
   BarChart3,
   Video,
   Palette,
-  Clock,
-  Scissors,
-  ExternalLink,
   Eye,
-  X,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -69,12 +66,6 @@ interface Insights {
   sceneRange: [number, number] | null;
 }
 
-interface QueryResponse {
-  answer: string;
-  sources: { videoId: string; title: string; channelName: string; metric: string }[];
-  videoCount: number;
-}
-
 export default function VideoAnalysis() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -82,10 +73,7 @@ export default function VideoAnalysis() {
   const [insights, setInsights] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
-  const [querying, setQuerying] = useState(false);
   const [newVideoUrl, setNewVideoUrl] = useState('');
-  const [query, setQuery] = useState('');
-  const [queryResponse, setQueryResponse] = useState<QueryResponse | null>(null);
   const [healthStatus, setHealthStatus] = useState<{ imagebind: boolean; supabase: boolean } | null>(null);
   const [currentAnalysis, setCurrentAnalysis] = useState<{
     videoId: string;
@@ -179,10 +167,67 @@ export default function VideoAnalysis() {
     }
   };
 
+  // Delete a video
+  const deleteVideo = async (videoId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening preview
+    if (!confirm('Delete this video analysis?')) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/video-analysis/${videoId}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ title: 'Deleted', description: 'Video analysis removed' });
+        fetchVideos(); // Refresh list
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // Video-specific chat state
+  const [videoQuery, setVideoQuery] = useState('');
+  const [videoQueryResponse, setVideoQueryResponse] = useState<string | null>(null);
+  const [videoQuerying, setVideoQuerying] = useState(false);
+
+  // Ask question about specific video
+  const askAboutVideo = async () => {
+    if (!videoQuery.trim() || !selectedVideo) return;
+
+    setVideoQuerying(true);
+    setVideoQueryResponse(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/video-analysis/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: videoQuery.trim(),
+          videoIds: [selectedVideo.video_id],
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setVideoQueryResponse(data.answer);
+      } else {
+        throw new Error(data.error || 'Query failed');
+      }
+    } catch (err: any) {
+      toast({ title: 'Query failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setVideoQuerying(false);
+    }
+  };
+
   // Open video preview
   const openVideoPreview = (video: AnalyzedVideo) => {
     setSelectedVideo(video);
     setVideoDetails(null);
+    setVideoQuery('');
+    setVideoQueryResponse(null);
     fetchVideoDetails(video.video_id);
   };
 
@@ -268,40 +313,6 @@ export default function VideoAnalysis() {
       });
     } finally {
       setAnalyzing(false);
-    }
-  };
-
-  // Query analyzed videos
-  const submitQuery = async () => {
-    if (!query.trim()) return;
-
-    setQuerying(true);
-    setQueryResponse(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/video-analysis/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim() }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setQueryResponse({
-          answer: data.answer,
-          sources: data.sources || [],
-          videoCount: data.videoCount || 0,
-        });
-      } else {
-        throw new Error(data.error || 'Query failed');
-      }
-    } catch (err: any) {
-      toast({
-        title: 'Query failed',
-        description: err.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setQuerying(false);
     }
   };
 
@@ -408,151 +419,6 @@ export default function VideoAnalysis() {
           </CardContent>
         </Card>
 
-        {/* Insights Dashboard */}
-        {insights && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <Video className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{insights.videoCount}</p>
-                    <p className="text-sm text-muted-foreground">Videos Analyzed</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-500/10 rounded-lg">
-                    <Clock className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {insights.avgSceneDuration ? `${insights.avgSceneDuration.toFixed(1)}s` : '-'}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Avg Scene Duration</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-500/10 rounded-lg">
-                    <Scissors className="h-5 w-5 text-orange-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {insights.avgCutsPerMinute ? `${insights.avgCutsPerMinute.toFixed(1)}` : '-'}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Cuts Per Minute</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-500/10 rounded-lg">
-                    <Palette className="h-5 w-5 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{insights.topColors.length}</p>
-                    <p className="text-sm text-muted-foreground">Color Palette Size</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Top Colors */}
-        {insights?.topColors && insights.topColors.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Palette className="h-5 w-5" />
-                Dominant Colors
-              </CardTitle>
-              <CardDescription>Most common colors across analyzed videos</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {insights.topColors.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 border rounded-lg">
-                    <div
-                      className="w-5 h-5 rounded border"
-                      style={{ backgroundColor: c.color }}
-                    />
-                    <span className="text-sm font-mono">{c.color}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {(c.frequency * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Q&A Interface */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Ask Questions
-            </CardTitle>
-            <CardDescription>
-              Query patterns across analyzed videos using natural language
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="What visual effects are most common? How long are intro hooks?"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && submitQuery()}
-                className="flex-1"
-              />
-              <Button onClick={submitQuery} disabled={querying || !query.trim()}>
-                {querying ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Search className="h-4 w-4 mr-2" />
-                )}
-                Ask
-              </Button>
-            </div>
-
-            {queryResponse && (
-              <div className="space-y-4 pt-4 border-t">
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <p className="whitespace-pre-wrap">{queryResponse.answer}</p>
-                </div>
-                {queryResponse.sources.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Sources ({queryResponse.videoCount} videos):</p>
-                    <div className="flex flex-wrap gap-2">
-                      {queryResponse.sources.map((s, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {s.title || s.videoId} - {s.metric}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Analyzed Videos List */}
         {videos.length > 0 && (
@@ -615,6 +481,14 @@ export default function VideoAnalysis() {
                           <Eye className="h-4 w-4" />
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-red-500"
+                        onClick={(e) => deleteVideo(video.video_id, e)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -664,6 +538,17 @@ export default function VideoAnalysis() {
             </div>
           ) : videoDetails?.video ? (
             <div className="space-y-6">
+              {/* YouTube Video Player */}
+              <div className="aspect-video w-full rounded-lg overflow-hidden bg-black">
+                <iframe
+                  src={`https://www.youtube.com/embed/${selectedVideo?.video_id}`}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  title={selectedVideo?.title || 'Video player'}
+                />
+              </div>
+
               {/* Video Info */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center p-3 bg-muted rounded-lg">
@@ -732,17 +617,33 @@ export default function VideoAnalysis() {
                 </div>
               )}
 
-              {/* YouTube Link */}
+              {/* Ask Questions About This Video */}
               <div className="pt-4 border-t">
-                <a
-                  href={selectedVideo?.video_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm text-blue-500 hover:underline"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Watch on YouTube
-                </a>
+                <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Search className="h-4 w-4" />
+                  Ask About This Video
+                </h4>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="What visual techniques are used? What's the pacing like?"
+                    value={videoQuery}
+                    onChange={(e) => setVideoQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && askAboutVideo()}
+                    className="flex-1"
+                  />
+                  <Button onClick={askAboutVideo} disabled={videoQuerying || !videoQuery.trim()}>
+                    {videoQuerying ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                {videoQueryResponse && (
+                  <div className="mt-3 p-3 bg-muted rounded-lg">
+                    <p className="text-sm whitespace-pre-wrap">{videoQueryResponse}</p>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

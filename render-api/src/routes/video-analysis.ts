@@ -27,24 +27,43 @@ import {
 
 const router = Router();
 
-// Fetch video title from Supadata API
+// Fetch video title from YouTube oEmbed API (no API key required)
 async function fetchVideoTitle(videoId: string): Promise<string | null> {
+  // Try YouTube oEmbed first (most reliable, no API key needed)
   try {
-    const apiKey = process.env.SUPADATA_API_KEY;
-    if (!apiKey) return null;
-
-    const response = await fetch(
-      `https://api.supadata.ai/v1/youtube/transcript?video_id=${videoId}&text=false`,
-      { headers: { 'x-api-key': apiKey } }
-    );
-
+    const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const response = await fetch(oEmbedUrl);
     if (response.ok) {
       const data = await response.json() as { title?: string };
-      return data.title || null;
+      if (data.title) {
+        console.log(`[video-analysis] Got title from oEmbed: ${data.title}`);
+        return data.title;
+      }
     }
   } catch (err) {
-    console.warn(`[video-analysis] Failed to fetch title: ${err}`);
+    console.warn(`[video-analysis] oEmbed title fetch failed: ${err}`);
   }
+
+  // Fallback to Supadata API
+  try {
+    const apiKey = process.env.SUPADATA_API_KEY;
+    if (apiKey) {
+      const response = await fetch(
+        `https://api.supadata.ai/v1/youtube/transcript?video_id=${videoId}&text=false`,
+        { headers: { 'x-api-key': apiKey } }
+      );
+      if (response.ok) {
+        const data = await response.json() as { title?: string };
+        if (data.title) {
+          console.log(`[video-analysis] Got title from Supadata: ${data.title}`);
+          return data.title;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[video-analysis] Supadata title fetch failed: ${err}`);
+  }
+
   return null;
 }
 
@@ -658,6 +677,104 @@ router.get('/health', async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /video-analysis/backfill-titles
+ * Fetch and update titles for videos that have null titles
+ */
+router.post('/backfill-titles', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabase();
+
+    // Get videos with null titles
+    const { data: videos, error } = await supabase
+      .from('analyzed_videos')
+      .select('video_id')
+      .is('title', null);
+
+    if (error) throw error;
+
+    if (!videos || videos.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No videos need title updates',
+        updated: 0,
+      });
+    }
+
+    console.log(`[video-analysis] Backfilling titles for ${videos.length} videos`);
+
+    let updated = 0;
+    for (const video of videos) {
+      const title = await fetchVideoTitle(video.video_id);
+      if (title) {
+        await supabase
+          .from('analyzed_videos')
+          .update({ title })
+          .eq('video_id', video.video_id);
+        updated++;
+        console.log(`[video-analysis] Updated title for ${video.video_id}: ${title}`);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Updated ${updated} of ${videos.length} videos`,
+      updated,
+      total: videos.length,
+    });
+
+  } catch (error: any) {
+    console.error('[video-analysis] Backfill titles error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /video-analysis/:videoId
+ * Delete a video analysis and its scenes
+ */
+router.delete('/:videoId', async (req: Request, res: Response) => {
+  try {
+    const { videoId } = req.params;
+
+    const supabase = getSupabase();
+
+    // Delete scenes first (foreign key constraint)
+    await supabase
+      .from('analyzed_scenes')
+      .delete()
+      .eq('video_id', videoId);
+
+    // Delete the video record
+    const { error } = await supabase
+      .from('analyzed_videos')
+      .delete()
+      .eq('video_id', videoId);
+
+    if (error) throw error;
+
+    // Remove from in-memory jobs if exists
+    analysisJobs.delete(videoId);
+
+    console.log(`[video-analysis] Deleted video: ${videoId}`);
+
+    return res.json({
+      success: true,
+      message: `Video ${videoId} deleted`,
+    });
+
+  } catch (error: any) {
+    console.error('[video-analysis] Delete error:', error);
     return res.status(500).json({
       success: false,
       error: error.message,
