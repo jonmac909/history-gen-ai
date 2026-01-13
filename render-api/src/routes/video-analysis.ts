@@ -396,59 +396,6 @@ router.get('/status/:videoId', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /video-analysis/:videoId
- * Get full analysis results for a video
- */
-router.get('/:videoId', async (req: Request, res: Response) => {
-  try {
-    const { videoId } = req.params;
-
-    const supabase = getSupabase();
-
-    // Get video analysis
-    const { data: video, error: videoError } = await supabase
-      .from('analyzed_videos')
-      .select('*')
-      .eq('video_id', videoId)
-      .single();
-
-    if (videoError || !video) {
-      return res.status(404).json({
-        success: false,
-        error: 'Video not found',
-      });
-    }
-
-    // Get scenes
-    const { data: scenes } = await supabase
-      .from('analyzed_scenes')
-      .select('*')
-      .eq('video_id', videoId)
-      .order('scene_index', { ascending: true });
-
-    // Get style profile if exists
-    const { data: styleProfile } = await supabase
-      .from('video_style_profiles')
-      .select('*')
-      .eq('video_id', videoId)
-      .single();
-
-    return res.json({
-      success: true,
-      video,
-      scenes: scenes || [],
-      styleProfile: styleProfile || null,
-    });
-
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
  * POST /video-analysis/query
  * Ask questions about analyzed videos using Claude
  */
@@ -638,6 +585,60 @@ router.get('/health', async (req: Request, res: Response) => {
         supabase: !!process.env.SUPABASE_URL,
       },
     });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /video-analysis/:videoId
+ * Get full analysis results for a video
+ * NOTE: This must be LAST as it's a catch-all route
+ */
+router.get('/:videoId', async (req: Request, res: Response) => {
+  try {
+    const { videoId } = req.params;
+
+    const supabase = getSupabase();
+
+    // Get video analysis
+    const { data: video, error: videoError } = await supabase
+      .from('analyzed_videos')
+      .select('*')
+      .eq('video_id', videoId)
+      .single();
+
+    if (videoError || !video) {
+      return res.status(404).json({
+        success: false,
+        error: 'Video not found',
+      });
+    }
+
+    // Get scenes
+    const { data: scenes } = await supabase
+      .from('analyzed_scenes')
+      .select('*')
+      .eq('video_id', videoId)
+      .order('scene_index', { ascending: true });
+
+    // Get style profile if exists
+    const { data: styleProfile } = await supabase
+      .from('video_style_profiles')
+      .select('*')
+      .eq('video_id', videoId)
+      .single();
+
+    return res.json({
+      success: true,
+      video,
+      scenes: scenes || [],
+      styleProfile: styleProfile || null,
+    });
+
   } catch (error: any) {
     return res.status(500).json({
       success: false,
