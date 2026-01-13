@@ -233,6 +233,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/auto-clone` | Auto Poster - automated video cloning system |
 | `/auto-clone/test-whatsapp` | Test WhatsApp notification |
 | `/costs/:projectId` | Cost tracking - per-step and total costs |
+| `/video-analysis/*` | VideoRAG - video analysis, querying, insights |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -628,6 +629,58 @@ if (useParallel) {
 - `render-api/src/lib/outlier-cache.ts`: Supabase caching layer
 - `src/pages/Outliers.tsx`: Frontend outliers page
 
+### Video Analysis / VideoRAG Architecture
+
+**Analyzes YouTube videos to extract visual patterns, pacing, and color information using ImageBind embeddings.**
+
+**Routes** (`render-api/src/routes/video-analysis.ts`):
+| Route | Purpose |
+|-------|---------|
+| `POST /video-analysis/analyze` | Trigger video analysis pipeline |
+| `GET /video-analysis/status/:videoId` | Check analysis progress (polling) |
+| `GET /video-analysis/:videoId` | Get full analysis results |
+| `GET /video-analysis/videos` | List all analyzed videos |
+| `DELETE /video-analysis/:videoId` | Delete video and scenes |
+| `POST /video-analysis/query` | Ask questions about videos (VideoRAG Q&A) |
+| `GET /video-analysis/insights` | Aggregated insights across all videos |
+| `GET /video-analysis/health` | Service health check (ImageBind + Supabase) |
+| `POST /video-analysis/backfill-titles` | Backfill missing YouTube titles |
+
+**Analysis Pipeline:**
+1. **Download** (0-40%): Download video via yt-dlp to temp file
+2. **Extract** (40-50%): FFmpeg scene detection extracts keyframes
+3. **Embed** (50-70%): Generate 768-dim visual embeddings via ImageBind RunPod
+4. **Analyze** (70-85%): Calculate pacing (cuts/min, avg scene duration), extract dominant colors
+5. **Save** (85-100%): Store in Supabase tables
+
+**ImageBind RunPod Endpoint**:
+- Input: Array of frame image URLs (batch processing)
+- Output: 768-dimensional visual embeddings per frame
+- Progress callback updates during batch processing
+- Used for VideoRAG similarity search and Q&A
+
+**VideoRAG Q&A:**
+- User asks natural language questions about video(s)
+- Embeddings used for semantic similarity search
+- Claude generates answers based on video metadata and visual analysis
+- Supports single-video or cross-video queries
+
+**Key files:**
+- `render-api/src/routes/video-analysis.ts`: API routes and pipeline orchestration
+- `render-api/src/lib/video-preprocessor.ts`: FFmpeg scene detection and frame extraction
+- `render-api/src/lib/imagebind-client.ts`: RunPod ImageBind client with batch processing
+- `src/pages/VideoAnalysis.tsx`: Frontend UI with video list, preview modal, chat
+
+**Supabase Tables:**
+- `analyzed_videos`: Video metadata, status, pacing metrics, dominant colors
+- `analyzed_scenes`: Per-scene timestamps, colors, and embedding vectors
+
+**Frontend Features:**
+- YouTube video player embed in preview modal
+- Scene color timeline visualization
+- Per-video chat interface for VideoRAG Q&A
+- Delete button for removing analyzed videos
+
 ### YouTube Upload Architecture
 
 **Direct upload to YouTube with OAuth 2.0 and resumable uploads.**
@@ -763,6 +816,7 @@ RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
+RUNPOD_IMAGEBIND_ENDPOINT_ID=<imagebind-endpoint>  # For VideoRAG embeddings
 KIE_API_KEY=<kie-api-key-for-seedance>
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
@@ -781,7 +835,8 @@ PORT=10000
 
 ### Storage Buckets
 - `voice-samples`: User uploaded voice samples (PUBLIC)
-- `generated-assets`: All generated content
+- `generated-assets`: All generated content (audio, images, video)
+- `analyzed-videos`: VideoRAG extracted frames and analysis data
 
 ## Deployment
 

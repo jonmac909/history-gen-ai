@@ -280,8 +280,12 @@ async function processAnalysis(
       },
     });
 
+    // Log download tier metrics
+    console.log(`[video-analysis] Download metrics: { videoId: ${videoId}, tier: ${preprocessResult.tier}, duration: ${preprocessResult.duration}s }`);
+
     await updateStatus('analyzing', 50, {
       duration_seconds: Math.round(preprocessResult.duration),
+      download_tier: preprocessResult.tier,
     });
 
     // Step 2: Generate ImageBind embeddings (if available)
@@ -356,6 +360,7 @@ async function processAnalysis(
         avg_scene_duration: avgSceneDuration,
         cuts_per_minute: cutsPerMinute,
         dominant_colors: dominantColors,
+        download_tier: preprocessResult.tier,
         visual_analysis: {
           frameCount: preprocessResult.framePaths.length,
           sceneCount: preprocessResult.scenes.length,

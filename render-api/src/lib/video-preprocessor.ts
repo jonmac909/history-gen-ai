@@ -19,6 +19,7 @@ import fs from 'fs';
 import os from 'os';
 import sharp from 'sharp';
 import { spawn } from 'child_process';
+import { downloadVideoDirectly } from './youtube-direct-download';
 
 // Set ffmpeg/ffprobe paths
 if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -52,6 +53,7 @@ export interface PreprocessResult {
   scenes: Scene[];
   colors: ColorAnalysis[];
   duration: number;
+  tier: 1 | 2 | 3;  // Which download tier was used
 }
 
 export interface Scene {
@@ -69,16 +71,61 @@ export interface ColorAnalysis {
 }
 
 /**
- * Download a YouTube video using yt-dlp
+ * Download a YouTube video with three-tier fallback strategy
+ * Tier 1: InnerTube direct (no proxy) - 70-80% expected success
+ * Tier 2: yt-dlp without proxy - 10-15% expected success
+ * Tier 3: yt-dlp with proxy - 5-10% expected usage (final fallback)
  */
 export async function downloadVideo(
   videoUrl: string,
   outputPath: string,
   quality: '720p' | '1080p' = '720p',
   onProgress?: (percent: number) => void
-): Promise<{ duration: number }> {
+): Promise<{ duration: number; tier: 1 | 2 | 3 }> {
   console.log(`[video-preprocessor] Downloading video: ${videoUrl}`);
 
+  // Tier 1: Try InnerTube direct download (no proxy)
+  try {
+    console.log('[video-preprocessor] Tier 1: Attempting InnerTube direct download (no proxy)');
+    const result = await downloadVideoDirectly(videoUrl, outputPath, onProgress);
+    console.log('[video-preprocessor] ✓ Tier 1: Success (no proxy used)');
+    return { ...result, tier: 1 };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.log(`[video-preprocessor] ✗ Tier 1: Failed - ${errorMsg}`);
+    console.log('[video-preprocessor] Falling back to Tier 2...');
+  }
+
+  // Tier 2: Try yt-dlp WITHOUT proxy
+  try {
+    console.log('[video-preprocessor] Tier 2: Attempting yt-dlp without proxy');
+    const result = await downloadVideoWithYtDlp(videoUrl, outputPath, quality, onProgress, false);
+    console.log('[video-preprocessor] ✓ Tier 2: Success (no proxy used)');
+    return { ...result, tier: 2 };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.log(`[video-preprocessor] ✗ Tier 2: Failed - ${errorMsg}`);
+    console.log('[video-preprocessor] Falling back to Tier 3...');
+  }
+
+  // Tier 3: Use yt-dlp WITH proxy (final fallback)
+  console.log('[video-preprocessor] Tier 3: Using yt-dlp with proxy (final fallback)');
+  const result = await downloadVideoWithYtDlp(videoUrl, outputPath, quality, onProgress, true);
+  console.log('[video-preprocessor] ✓ Tier 3: Success (proxy used)');
+  return { ...result, tier: 3 };
+}
+
+/**
+ * Download a YouTube video using yt-dlp
+ * @param useProxy - Whether to use proxy (true) or not (false)
+ */
+async function downloadVideoWithYtDlp(
+  videoUrl: string,
+  outputPath: string,
+  quality: '720p' | '1080p' = '720p',
+  onProgress?: (percent: number) => void,
+  useProxy: boolean = true
+): Promise<{ duration: number }> {
   // Optimize quality for analysis - we only need frames at 1 fps
   // 480p is sufficient for color/scene detection and downloads 2-3x faster
   const formatSelector = quality === '1080p'
@@ -98,10 +145,12 @@ export async function downloadVideo(
     '--throttled-rate', '100K',     // Minimum rate to trigger throttle retry
   ];
 
-  // Add proxy if configured
-  if (YTDLP_PROXY_URL) {
+  // Conditionally add proxy
+  if (useProxy && YTDLP_PROXY_URL) {
     args.push('--proxy', YTDLP_PROXY_URL);
     console.log(`[video-preprocessor] Using proxy: ${YTDLP_PROXY_URL.replace(/:[^:@]+@/, ':***@')}`);
+  } else {
+    console.log(`[video-preprocessor] NOT using proxy`);
   }
 
   return new Promise((resolve, reject) => {
@@ -558,7 +607,7 @@ export async function preprocessVideo(
 
   try {
     // 1. Download video
-    const { duration } = await downloadVideo(videoUrl, videoPath, quality, onDownloadProgress);
+    const { duration, tier } = await downloadVideo(videoUrl, videoPath, quality, onDownloadProgress);
 
     // 2. Extract frames
     const framePaths = await extractFrames(videoPath, framesDir, fps);
@@ -589,6 +638,7 @@ export async function preprocessVideo(
       scenes,
       colors,
       duration,
+      tier,
     };
   } catch (error) {
     // Clean up on failure
