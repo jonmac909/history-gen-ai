@@ -775,6 +775,7 @@ router.post('/', async (req: Request, res: Response) => {
         }
 
         // Add video to playlist if playlistId provided
+        console.log(`[youtube-upload] Playlist add check: playlistId=${playlistId ? 'provided' : 'not provided'}`);
         if (playlistId) {
           sendEvent({
             type: 'progress',
@@ -784,6 +785,7 @@ router.post('/', async (req: Request, res: Response) => {
           });
 
           try {
+            console.log(`[youtube-upload] Adding video ${videoId} to playlist ${playlistId}...`);
             const playlistResponse = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
               method: 'POST',
               headers: {
@@ -802,16 +804,19 @@ router.post('/', async (req: Request, res: Response) => {
             });
 
             if (playlistResponse.ok) {
-              console.log('Video added to playlist:', playlistId);
+              const playlistResult = await playlistResponse.json() as any;
+              console.log(`[youtube-upload] ✓ Video added to playlist: playlistItemId=${playlistResult.id}`);
             } else {
               const playlistError = await playlistResponse.text();
-              console.error('Failed to add video to playlist:', playlistResponse.status, playlistError);
+              console.error(`[youtube-upload] ✗ Failed to add video to playlist (${playlistResponse.status}):`, playlistError);
               // Don't fail the whole upload, just log the error
             }
           } catch (playlistError) {
-            console.error('Playlist add error:', playlistError);
+            console.error('[youtube-upload] ✗ Playlist add error:', playlistError);
             // Don't fail the whole upload, just log the error
           }
+        } else {
+          console.log('[youtube-upload] Skipping playlist add - no playlistId provided');
         }
 
         sendEvent({

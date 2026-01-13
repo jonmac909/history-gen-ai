@@ -192,22 +192,41 @@ async function gradeScript(
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const client = new Anthropic({ apiKey });
 
+  // Sample beginning, middle, and end of script for comprehensive review
+  const totalLen = script.length;
+  const sampleSize = 2000;
+  const beginning = script.substring(0, sampleSize);
+  const middle = script.substring(Math.floor(totalLen / 2) - sampleSize / 2, Math.floor(totalLen / 2) + sampleSize / 2);
+  const ending = script.substring(Math.max(0, totalLen - sampleSize));
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 500,
+    max_tokens: 800,
     messages: [{
       role: 'user',
-      content: `Grade this script for a history documentary video. The expected topic is: "${expectedTopic}"
+      content: `Grade this script for a history documentary video.
 
-Script (first 2000 chars):
-${script.substring(0, 2000)}
+CRITICAL: The title promises "${expectedTopic}". The script MUST deliver on this specific promise.
 
-Grade the script:
-- A = On topic, engaging narration, ready for TTS
-- B = Mostly on topic but needs minor improvements
-- C = Off topic, contains formatting issues, or major problems
+If the title mentions a specific concept (like "Planet-Sized Prison", "Lost Technology", "Hidden Truth"), that concept MUST be the central focus throughout the script, not just mentioned briefly.
 
-Respond in JSON format: {"grade": "A/B/C", "feedback": "brief explanation"}`,
+== BEGINNING OF SCRIPT ==
+${beginning}
+
+== MIDDLE OF SCRIPT ==
+${middle}
+
+== END OF SCRIPT ==
+${ending}
+
+GRADING CRITERIA:
+- A = Script FULLY delivers on the title's promise. The specific concept/angle promised is the central focus throughout.
+- B = Script is on the general topic but doesn't fully deliver on the title's SPECIFIC promise. The promised angle is weak or underdeveloped.
+- C = Script is off-topic, has formatting issues, or completely fails to address the title's promise.
+
+IMPORTANT: A script about "Sumerian tablets" is NOT Grade A if the title promises "Planet-Sized Prison" but the prison concept is barely mentioned. The SPECIFIC promise matters.
+
+Respond in JSON format: {"grade": "A/B/C", "feedback": "explanation of how well it delivers on the title's promise"}`,
     }],
   });
 
@@ -950,49 +969,66 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     // Step 10: Analyze thumbnail + generate using original as reference
     reportProgress('thumbnail', 68, 'Analyzing and generating thumbnail...');
     const thumbnailStart = Date.now();
-    let thumbnailUrl: string;
-    try {
-      // Download original thumbnail as base64 for image-to-image generation
-      console.log(`[Pipeline] Downloading original thumbnail: ${input.originalThumbnailUrl}`);
-      const originalThumbnailBase64 = await downloadImageAsBase64(input.originalThumbnailUrl);
+    let thumbnailUrl: string = '';
+    const MAX_THUMBNAIL_ATTEMPTS = 5;
+    let thumbnailAttempt = 0;
+    let lastThumbnailError: string = '';
 
-      // Analyze original thumbnail style
-      const analysisRes = await callInternalAPI('/analyze-thumbnail', {
-        thumbnailUrl: input.originalThumbnailUrl,
-        videoTitle: input.originalTitle,
-      });
+    while (!thumbnailUrl && thumbnailAttempt < MAX_THUMBNAIL_ATTEMPTS) {
+      thumbnailAttempt++;
+      try {
+        reportProgress('thumbnail', 68, `Generating thumbnail (attempt ${thumbnailAttempt})...`);
+        console.log(`[Pipeline] Thumbnail generation attempt ${thumbnailAttempt}/${MAX_THUMBNAIL_ATTEMPTS}`);
 
-      // Build a prompt for original recreation inspired by the source
-      const enhancedPrompt = `Create an original thumbnail inspired by this image. Use the same style, color palette, text placement, and mood - but make it a unique, original composition. Keep similar visual elements and aesthetic but don't copy directly.`;
+        // Download original thumbnail as base64 for image-to-image generation
+        console.log(`[Pipeline] Downloading original thumbnail: ${input.originalThumbnailUrl}`);
+        const originalThumbnailBase64 = await downloadImageAsBase64(input.originalThumbnailUrl);
 
-      // Generate new thumbnail using original as reference image (image-to-image)
-      const thumbnailRes = await callStreamingAPI('/generate-thumbnails', {
-        projectId,
-        exampleImageBase64: originalThumbnailBase64,
-        prompt: enhancedPrompt,
-        thumbnailCount: 1,
-        stream: true,
-      }, undefined, 120000);
+        // Analyze original thumbnail style
+        const analysisRes = await callInternalAPI('/analyze-thumbnail', {
+          thumbnailUrl: input.originalThumbnailUrl,
+          videoTitle: input.originalTitle,
+        });
 
-      thumbnailUrl = thumbnailRes.thumbnails?.[0] || imageUrls[0];
-      steps.push({
-        step: 'thumbnail',
-        success: true,
-        duration: Date.now() - thumbnailStart,
-        data: { thumbnailUrl },
-      });
-    } catch (error: any) {
-      // Non-fatal: use first image as fallback
-      console.warn(`[Pipeline] Thumbnail generation failed, using fallback: ${error.message}`);
-      thumbnailUrl = imageUrls[0];
-      steps.push({
-        step: 'thumbnail',
-        success: false,
-        duration: Date.now() - thumbnailStart,
-        error: error.message,
-        data: { thumbnailUrl, fallback: true },
-      });
+        // Build a prompt for original recreation inspired by the source
+        const enhancedPrompt = `Create an original thumbnail inspired by this image. Use the same style, color palette, text placement, and mood - but make it a unique, original composition. Keep similar visual elements and aesthetic but don't copy directly.`;
+
+        // Generate new thumbnail using original as reference image (image-to-image)
+        const thumbnailRes = await callStreamingAPI('/generate-thumbnails', {
+          projectId,
+          exampleImageBase64: originalThumbnailBase64,
+          prompt: enhancedPrompt,
+          thumbnailCount: 1,
+          stream: true,
+        }, undefined, 120000);
+
+        if (thumbnailRes.thumbnails?.[0]) {
+          thumbnailUrl = thumbnailRes.thumbnails[0];
+          console.log(`[Pipeline] Thumbnail generated successfully on attempt ${thumbnailAttempt}`);
+        } else {
+          throw new Error('No thumbnail URL in response');
+        }
+      } catch (error: any) {
+        lastThumbnailError = error.message;
+        console.warn(`[Pipeline] Thumbnail attempt ${thumbnailAttempt} failed: ${error.message}`);
+        if (thumbnailAttempt < MAX_THUMBNAIL_ATTEMPTS) {
+          console.log(`[Pipeline] Retrying thumbnail generation...`);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+        }
+      }
     }
+
+    if (!thumbnailUrl) {
+      // All attempts failed - this is now a fatal error
+      throw new Error(`Thumbnail generation failed after ${MAX_THUMBNAIL_ATTEMPTS} attempts: ${lastThumbnailError}`);
+    }
+
+    steps.push({
+      step: 'thumbnail',
+      success: true,
+      duration: Date.now() - thumbnailStart,
+      data: { thumbnailUrl, attempts: thumbnailAttempt },
+    });
 
     // Step 11: Render video (streaming) - with intro clips if available
     reportProgress('render', 72, 'Rendering video...');
@@ -1000,8 +1036,8 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     let videoUrl: string = '';
 
     // Skip images that were used for intro video clips (I2V mode)
-    // If we have 12 intro clips using images 0-11, only use images 12+ for slideshow
-    const imagesUsedForClips = introClips.length;
+    // Use clipPrompts.length (attempted), not introClips.length (successful) - a failed clip still used the image
+    const imagesUsedForClips = clipPrompts.length;  // All images used as I2V source, even if clip failed
     const slideshowImageUrls = imagesUsedForClips > 0
       ? imageUrls.slice(imagesUsedForClips)
       : imageUrls;
@@ -1009,7 +1045,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       ? imagePrompts.slice(imagesUsedForClips)
       : imagePrompts;
 
-    console.log(`[Pipeline] Render: ${introClips.length} intro clips used ${imagesUsedForClips} images, ${slideshowImageUrls.length} images remaining for slideshow`);
+    console.log(`[Pipeline] Render: ${introClips.length} intro clips (${imagesUsedForClips} images used), ${slideshowImageUrls.length} images remaining for slideshow`);
 
     // Build image timings from the prompts (each prompt has startSeconds/endSeconds)
     const imageTimings = slideshowImagePrompts.map((p: any) => ({
@@ -1124,8 +1160,9 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         const metadataData = await metadataRes.json() as { success?: boolean; description?: string; tags?: string[]; error?: string };
         if (metadataRes.ok && metadataData.success) {
           youtubeDescription = metadataData.description || youtubeDescription;
-          youtubeTags = metadataData.tags || youtubeTags;
-          console.log('[Pipeline] AI metadata generated successfully');
+          // Limit tags to 5 max (AI generates 15-20, but we want concise)
+          youtubeTags = (metadataData.tags || youtubeTags).slice(0, 5);
+          console.log(`[Pipeline] AI metadata generated: ${youtubeTags.length} tags`);
         } else {
           console.log('[Pipeline] AI metadata failed, using default:', metadataData.error);
         }
@@ -1143,19 +1180,31 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
           headers: { 'Authorization': `Bearer ${tokenData.accessToken}` },
         });
         const playlistData = await playlistRes.json() as { playlists?: { id: string; title: string }[] };
+        console.log(`[Pipeline] Playlist fetch response: status=${playlistRes.status}, ok=${playlistRes.ok}`);
+
         if (playlistRes.ok && playlistData.playlists) {
+          // Log all available playlists for debugging
+          console.log(`[Pipeline] Found ${playlistData.playlists.length} playlists:`);
+          playlistData.playlists.forEach((p, i) => {
+            console.log(`  [${i}] "${p.title}" (id: ${p.id})`);
+          });
+
+          // Search for "Complete Histories" playlist (flexible matching)
           const completeHistories = playlistData.playlists.find(
-            p => p.title.toLowerCase().includes('complete histories')
+            p => p.title.toLowerCase().includes('complete histories') ||
+                 p.title.toLowerCase().includes('complete history')
           );
           if (completeHistories) {
             playlistId = completeHistories.id;
-            console.log('[Pipeline] Found Complete Histories playlist:', playlistId);
+            console.log(`[Pipeline] ✓ Found playlist: "${completeHistories.title}" (id: ${playlistId})`);
           } else {
-            console.log('[Pipeline] Complete Histories playlist not found');
+            console.warn('[Pipeline] ✗ "Complete Histories" playlist not found among available playlists');
           }
+        } else {
+          console.error(`[Pipeline] Playlist fetch failed or empty:`, playlistData);
         }
       } catch (playlistError) {
-        console.log('[Pipeline] Playlist fetch error:', playlistError);
+        console.error('[Pipeline] Playlist fetch error:', playlistError);
       }
 
       reportProgress('upload', 90, 'Uploading to YouTube...');
@@ -1172,7 +1221,8 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         playlistId,
       }, (data) => {
         if (data.type === 'progress') {
-          reportProgress('upload', 90 + Math.round(data.progress * 0.1), `Uploading... ${data.progress}%`);
+          const pct = data.percent ?? data.progress ?? 0;  // youtube-upload uses 'percent'
+          reportProgress('upload', 90 + Math.round(pct * 0.1), `Uploading... ${pct}%`);
         }
       }, 1200000);  // 20 min timeout
       youtubeVideoId = uploadRes.videoId;
