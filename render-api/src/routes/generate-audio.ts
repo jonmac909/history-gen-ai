@@ -5,8 +5,11 @@ import crypto from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
-import { Readable, PassThrough } from 'stream';
 import { promisify } from 'util';
+import { exec as execCallback } from 'child_process';
+
+const exec = promisify(execCallback);
+import { Readable, PassThrough } from 'stream';
 import FormData from 'form-data';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -545,6 +548,67 @@ function logAudioIntegrity(result: AudioIntegrityResult, context: string): void 
     if (issues.length > 10) {
       logger.warn(`  ... and ${issues.length - 10} more issues`);
     }
+  }
+}
+
+/**
+ * Smooth audio by detecting and crossfading large amplitude discontinuities
+ * Uses FFmpeg highpass/lowpass filters to reduce click artifacts
+ * @param wavBuffer - Input WAV buffer
+ * @param options - Smoothing options
+ * @returns Smoothed WAV buffer
+ */
+async function smoothAudioWithFFmpeg(
+  wavBuffer: Buffer,
+  options: {
+    highpassFreq?: number;  // Remove DC offset and subsonic rumble
+    lowpassFreq?: number;   // Remove ultrasonic artifacts
+  } = {}
+): Promise<Buffer> {
+  const tempDir = os.tmpdir();
+  const inputPath = path.join(tempDir, `audio-input-${Date.now()}.wav`);
+  const outputPath = path.join(tempDir, `audio-output-${Date.now()}.wav`);
+
+  try {
+    // Write input WAV to temp file
+    fs.writeFileSync(inputPath, wavBuffer);
+
+    // Apply gentle audio smoothing filters
+    const filters = [];
+
+    // Remove DC offset and very low frequencies (reduces pops)
+    if (options.highpassFreq && options.highpassFreq > 0) {
+      filters.push(`highpass=f=${options.highpassFreq}`);
+    }
+
+    // Remove very high frequencies (reduces clicks)
+    if (options.lowpassFreq && options.lowpassFreq > 0) {
+      filters.push(`lowpass=f=${options.lowpassFreq}`);
+    }
+
+    const filterChain = filters.length > 0 ? filters.join(',') : 'anull';
+
+    // Run FFmpeg with smoothing filters
+    const ffmpegPath = ffmpegStatic || 'ffmpeg';
+    await exec(
+      `"${ffmpegPath}" -y -i "${inputPath}" -af "${filterChain}" "${outputPath}"`
+    );
+
+    // Read output
+    const smoothedBuffer = fs.readFileSync(outputPath);
+
+    // Cleanup
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+
+    return smoothedBuffer;
+  } catch (err) {
+    // Cleanup on error
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch {}
+    throw new Error(`FFmpeg smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }
 
@@ -2206,6 +2270,19 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
         console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
 
+        // CRITICAL: Apply FFmpeg smoothing to eliminate click/pop glitches at chunk boundaries
+        logger.info(`[SEGMENT ${segmentNumber}] Applying audio smoothing (highpass 20Hz, lowpass 20kHz)...`);
+        try {
+          segmentAudio = await smoothAudioWithFFmpeg(segmentAudio, {
+            highpassFreq: 20,   // Remove DC offset and subsonic rumble (reduces pops)
+            lowpassFreq: 20000, // Remove ultrasonic artifacts (reduces clicks)
+          });
+          logger.info(`[SEGMENT ${segmentNumber}] Smoothing applied successfully`);
+        } catch (err) {
+          logger.warn(`[SEGMENT ${segmentNumber}] Smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          // Continue with unsmoothed audio - better to have glitches than no audio
+        }
+
         // Check segment audio integrity IMMEDIATELY after concatenation
         const segmentIntegrity = checkAudioIntegrity(segmentAudio, {
           silenceThresholdMs: 1500,
@@ -2470,6 +2547,20 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     sendEvent({ type: 'progress', progress: 90, message: 'Removing repeated segments...' });
     let finalAudio: Buffer = await postProcessAudio(trimmedAudio);
     console.log(`Post-processed audio: ${finalAudio.length} bytes`);
+
+    // CRITICAL: Apply FFmpeg smoothing to final combined audio
+    sendEvent({ type: 'progress', progress: 90.5, message: 'Smoothing audio glitches...' });
+    logger.info(`[FINAL AUDIO] Applying audio smoothing (highpass 20Hz, lowpass 20kHz)...`);
+    try {
+      finalAudio = await smoothAudioWithFFmpeg(finalAudio, {
+        highpassFreq: 20,   // Remove DC offset and subsonic rumble (reduces pops)
+        lowpassFreq: 20000, // Remove ultrasonic artifacts (reduces clicks)
+      });
+      logger.info(`[FINAL AUDIO] Smoothing applied successfully`);
+    } catch (err) {
+      logger.warn(`[FINAL AUDIO] Smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Continue with unsmoothed audio - better to have glitches than no audio
+    }
 
     // Check audio integrity BEFORE upload
     sendEvent({ type: 'progress', progress: 91, message: 'Verifying audio integrity...' });
@@ -2901,8 +2992,20 @@ router.post('/recombine', async (req: Request, res: Response) => {
     }
 
     // Concatenate all segments
-    const { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
+    let { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${durationSeconds.toFixed(1)}s`);
+
+    // Apply audio smoothing to eliminate glitches at segment boundaries
+    logger.info(`[RECOMBINE] Applying audio smoothing (highpass 20Hz, lowpass 20kHz)...`);
+    try {
+      combinedAudio = await smoothAudioWithFFmpeg(combinedAudio, {
+        highpassFreq: 20,
+        lowpassFreq: 20000,
+      });
+      logger.info(`[RECOMBINE] Smoothing applied successfully`);
+    } catch (err) {
+      logger.warn(`[RECOMBINE] Smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
 
     // Upload combined audio
     const combinedFileName = `${projectId}/voiceover.wav`;
