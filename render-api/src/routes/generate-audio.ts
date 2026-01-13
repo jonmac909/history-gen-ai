@@ -2258,6 +2258,24 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
 
         console.log(`Segment ${segmentNumber} audio: ${segmentAudio.length} bytes, ${durationRounded}s`);
 
+        // Check segment audio integrity IMMEDIATELY after concatenation
+        const segmentIntegrity = checkAudioIntegrity(segmentAudio, {
+          silenceThresholdMs: 1500,
+          glitchThresholdDb: 25,
+          sampleWindowMs: 50,
+        });
+
+        const glitches = segmentIntegrity.issues.filter(i => i.type === 'glitch');
+        if (glitches.length > 0) {
+          logger.error(`[SEGMENT ${segmentNumber}] Detected ${glitches.length} click/pop glitches:`);
+          glitches.slice(0, 3).forEach(g => {
+            logger.error(`  - ${g.description}`);
+          });
+          // Log warning but continue - crossfading should prevent this in future generations
+        } else {
+          logger.info(`[SEGMENT ${segmentNumber}] Audio integrity: CLEAN (no glitches)`);
+        }
+
         // Upload this segment
         const fileName = `${actualProjectId}/voiceover-segment-${segmentNumber}.wav`;
 
