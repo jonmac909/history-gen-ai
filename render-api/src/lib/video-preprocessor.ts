@@ -238,6 +238,14 @@ export async function extractFrames(
         '-q:v 2',  // High quality JPEG
       ])
       .output(outputPattern)
+      .on('progress', (progress) => {
+        // Log extraction progress
+        if (progress.percent) {
+          console.log(`[video-preprocessor] Frame extraction: ${progress.percent.toFixed(1)}% (${progress.frames || 0} frames)`);
+        } else if (progress.timemark) {
+          console.log(`[video-preprocessor] Frame extraction progress: ${progress.timemark}`);
+        }
+      })
       .on('end', () => {
         // Read all generated frames
         const files = fs.readdirSync(outputDir)
@@ -335,6 +343,11 @@ export async function detectScenes(
               endSeconds: time,  // Will be updated
               frameIndex: Math.floor(time),  // Frame at 1fps
             });
+
+            // Log progress every 10 scenes
+            if (scenes.length % 10 === 0) {
+              console.log(`[video-preprocessor] Scene detection: ${scenes.length} scenes detected so far (at ${time.toFixed(1)}s)`);
+            }
 
             lastTime = time;
           }
