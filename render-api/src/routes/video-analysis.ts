@@ -27,6 +27,27 @@ import {
 
 const router = Router();
 
+// Fetch video title from Supadata API
+async function fetchVideoTitle(videoId: string): Promise<string | null> {
+  try {
+    const apiKey = process.env.SUPADATA_API_KEY;
+    if (!apiKey) return null;
+
+    const response = await fetch(
+      `https://api.supadata.ai/v1/youtube/transcript?video_id=${videoId}&text=false`,
+      { headers: { 'x-api-key': apiKey } }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.title || null;
+    }
+  } catch (err) {
+    console.warn(`[video-analysis] Failed to fetch title: ${err}`);
+  }
+  return null;
+}
+
 // Supabase client
 let supabase: SupabaseClient | null = null;
 
@@ -136,6 +157,10 @@ router.post('/analyze', async (req: Request, res: Response) => {
 
     console.log(`[video-analysis] Analysis requested: ${videoId}`);
 
+    // Fetch video title early
+    const videoTitle = await fetchVideoTitle(videoId);
+    console.log(`[video-analysis] Video title: ${videoTitle || 'Unknown'}`);
+
     // Check ImageBind availability
     const imagebindStatus = await checkImageBindAvailability();
     if (!imagebindStatus.available) {
@@ -143,20 +168,22 @@ router.post('/analyze', async (req: Request, res: Response) => {
       // Continue without embeddings if ImageBind unavailable
     }
 
-    // Initialize job
+    // Initialize job with title
     analysisJobs.set(videoId, {
       status: 'downloading',
       progress: 0,
+      title: videoTitle || undefined,
       startedAt: new Date(),
     });
 
-    // Update database status
+    // Update database status with title
     const supabase = getSupabase();
     await supabase
       .from('analyzed_videos')
       .upsert({
         video_id: videoId,
         video_url: videoUrl,
+        title: videoTitle,
         status: 'downloading',
         progress: 5,
         updated_at: new Date().toISOString(),
