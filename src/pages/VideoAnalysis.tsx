@@ -275,9 +275,6 @@ export default function VideoAnalysis() {
           </Button>
           <div className="flex-1">
             <h1 className="text-xl font-semibold">Video Analysis</h1>
-            <p className="text-sm text-muted-foreground">
-              VideoRAG Intelligence - Analyze video styles and patterns
-            </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => { fetchVideos(); checkHealth(); }}>
             <RefreshCw className="h-4 w-4 mr-2" />
