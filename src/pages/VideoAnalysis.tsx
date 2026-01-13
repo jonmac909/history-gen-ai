@@ -81,6 +81,7 @@ export default function VideoAnalysis() {
     status: string;
     progress: number;
     error?: string;
+    statusMessage?: string;
   } | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<AnalyzedVideo | null>(null);
   const [videoDetails, setVideoDetails] = useState<any>(null);
@@ -103,6 +104,7 @@ export default function VideoAnalysis() {
           status: data.status,
           progress: data.progress || 0,
           error: data.error,
+          statusMessage: data.status_message,
         });
 
         // Keep polling if still processing
@@ -412,6 +414,11 @@ export default function VideoAnalysis() {
                     {currentAnalysis.progress}%
                   </span>
                 </div>
+                {currentAnalysis.statusMessage && (
+                  <div className="text-sm text-muted-foreground mb-2">
+                    {currentAnalysis.statusMessage}
+                  </div>
+                )}
                 <div className="w-full bg-muted rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all duration-300 ${

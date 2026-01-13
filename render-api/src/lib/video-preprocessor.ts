@@ -221,7 +221,8 @@ function getVideoDuration(videoPath: string): Promise<number> {
 export async function extractFrames(
   videoPath: string,
   outputDir: string,
-  fps: number = 1
+  fps: number = 1,
+  onProgress?: (message: string, percent: number) => Promise<void>
 ): Promise<string[]> {
   console.log(`[video-preprocessor] Extracting frames at ${fps} fps`);
 
@@ -238,12 +239,19 @@ export async function extractFrames(
         '-q:v 2',  // High quality JPEG
       ])
       .output(outputPattern)
-      .on('progress', (progress) => {
+      .on('progress', async (progress) => {
         // Log extraction progress
         if (progress.percent) {
-          console.log(`[video-preprocessor] Frame extraction: ${progress.percent.toFixed(1)}% (${progress.frames || 0} frames)`);
+          const message = `Frame extraction: ${progress.percent.toFixed(1)}% (${progress.frames || 0} frames)`;
+          console.log(`[video-preprocessor] ${message}`);
+          if (onProgress) {
+            // Map frame extraction (0-100%) to overall progress (40-45%)
+            const overallPercent = Math.round(40 + (progress.percent * 0.05));
+            await onProgress(message, overallPercent);
+          }
         } else if (progress.timemark) {
-          console.log(`[video-preprocessor] Frame extraction progress: ${progress.timemark}`);
+          const message = `Frame extraction: ${progress.timemark}`;
+          console.log(`[video-preprocessor] ${message}`);
         }
       })
       .on('end', () => {
@@ -596,7 +604,7 @@ export async function preprocessVideo(
     sceneThreshold?: number;
     uploadFrames?: boolean;
     onDownloadProgress?: (percent: number) => void;
-    onProgress?: (status: string, percent: number) => Promise<void>;
+    onProgress?: (status: string, percent: number, message?: string) => Promise<void>;
   } = {}
 ): Promise<PreprocessResult> {
   const {
@@ -623,11 +631,13 @@ export async function preprocessVideo(
   try {
     // 1. Download video (5-40%)
     const { duration, tier } = await downloadVideo(videoUrl, videoPath, quality, onDownloadProgress);
-    if (onProgress) await onProgress('extracting', 40);
+    if (onProgress) await onProgress('extracting', 40, 'Starting frame extraction');
 
     // 2. Extract frames (40-45%)
-    const framePaths = await extractFrames(videoPath, framesDir, fps);
-    if (onProgress) await onProgress('extracting', 45);
+    const framePaths = await extractFrames(videoPath, framesDir, fps, async (message, percent) => {
+      if (onProgress) await onProgress('extracting', percent, message);
+    });
+    if (onProgress) await onProgress('extracting', 45, 'Frame extraction complete');
 
     // 3. Extract audio (45-46%)
     await extractAudio(videoPath, audioPath);

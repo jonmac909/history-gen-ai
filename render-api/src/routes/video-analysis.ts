@@ -278,10 +278,11 @@ async function processAnalysis(
         console.log(`[video-analysis] Download progress: ${percent.toFixed(1)}% (overall: ${overallProgress}%)`);
         await updateStatus('downloading', overallProgress);
       },
-      onProgress: async (status, percent) => {
+      onProgress: async (status, percent, message) => {
         // Update status for each preprocessing step
-        console.log(`[video-analysis] Preprocessing: ${status} ${percent}%`);
-        await updateStatus(status, percent);
+        const logMessage = message ? `${status} ${percent}% - ${message}` : `${status} ${percent}%`;
+        console.log(`[video-analysis] Preprocessing: ${logMessage}`);
+        await updateStatus(status, percent, message ? { status_message: message } : {});
       },
     });
 
