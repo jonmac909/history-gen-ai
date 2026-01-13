@@ -83,11 +83,13 @@ export async function generateEmbeddings(
   options: {
     batchSize?: number;
     maxWaitMs?: number;
+    onProgress?: (percent: number) => void;
   } = {}
 ): Promise<ImageBindResponse> {
   const {
     batchSize = 100,   // Process 100 frames per RunPod call
     maxWaitMs = 600000, // 10 minute timeout
+    onProgress,
   } = options;
 
   if (!IMAGEBIND_ENDPOINT_ID) {
@@ -152,6 +154,14 @@ export async function generateEmbeddings(
     if (result?.failed_indices) {
       // Adjust indices for batch offset
       allFailedIndices.push(...result.failed_indices.map((idx: number) => idx + i));
+    }
+
+    // Report progress after each batch
+    if (onProgress) {
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(frameUrls.length / batchSize);
+      const percent = Math.round((batchNumber / totalBatches) * 100);
+      onProgress(percent);
     }
   }
 

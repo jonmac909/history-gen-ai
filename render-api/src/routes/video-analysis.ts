@@ -269,7 +269,14 @@ async function processAnalysis(
     if (generateEmbeddingsFlag && preprocessResult.frameUrls.length > 0) {
       console.log(`[video-analysis] Generating embeddings for ${preprocessResult.frameUrls.length} frames`);
       try {
-        const embeddingResult = await generateEmbeddings(preprocessResult.frameUrls);
+        const embeddingResult = await generateEmbeddings(preprocessResult.frameUrls, {
+          onProgress: async (embeddingPercent) => {
+            // Map embedding progress (0-100%) to overall progress (50-70%)
+            const overallProgress = Math.round(50 + (embeddingPercent * 0.2));
+            console.log(`[video-analysis] Embedding progress: ${embeddingPercent}% (overall: ${overallProgress}%)`);
+            await updateStatus('analyzing', overallProgress);
+          },
+        });
         embeddings = embeddingResult.embeddings;
         console.log(`[video-analysis] Generated ${embeddings.length} embeddings`);
       } catch (err: any) {
@@ -595,6 +602,36 @@ router.get('/insights', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       insights,
+    });
+
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /video-analysis/videos
+ * List all analyzed videos with basic metadata
+ */
+router.get('/videos', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabase();
+
+    const { data: videos, error } = await supabase
+      .from('analyzed_videos')
+      .select('video_id, video_url, title, channel_name, duration_seconds, status, progress, avg_scene_duration, cuts_per_minute, dominant_colors, analyzed_at, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({
+      success: true,
+      videos: videos || [],
     });
 
   } catch (error: any) {

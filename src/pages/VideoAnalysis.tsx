@@ -28,8 +28,18 @@ import {
   Palette,
   Clock,
   Scissors,
+  ExternalLink,
+  Eye,
+  X,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
 
@@ -84,6 +94,9 @@ export default function VideoAnalysis() {
     progress: number;
     error?: string;
   } | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<AnalyzedVideo | null>(null);
+  const [videoDetails, setVideoDetails] = useState<any>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   // Poll analysis status
   const pollAnalysisStatus = async (videoId: string) => {
@@ -127,17 +140,50 @@ export default function VideoAnalysis() {
     }
   };
 
-  // Fetch analyzed videos
+  // Fetch analyzed videos and insights
   const fetchVideos = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/video-analysis/insights`);
-      if (response.ok) {
-        const data = await response.json();
+      // Fetch both insights and videos list in parallel
+      const [insightsRes, videosRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/video-analysis/insights`),
+        fetch(`${API_BASE_URL}/video-analysis/videos`),
+      ]);
+
+      if (insightsRes.ok) {
+        const data = await insightsRes.json();
         setInsights(data.insights);
       }
+
+      if (videosRes.ok) {
+        const data = await videosRes.json();
+        setVideos(data.videos || []);
+      }
     } catch (err) {
-      console.error('Failed to fetch insights:', err);
+      console.error('Failed to fetch videos:', err);
     }
+  };
+
+  // Fetch video details for preview
+  const fetchVideoDetails = async (videoId: string) => {
+    setLoadingDetails(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/video-analysis/${videoId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setVideoDetails(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch video details:', err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  // Open video preview
+  const openVideoPreview = (video: AnalyzedVideo) => {
+    setSelectedVideo(video);
+    setVideoDetails(null);
+    fetchVideoDetails(video.video_id);
   };
 
   // Check service health
@@ -508,6 +554,75 @@ export default function VideoAnalysis() {
           </CardContent>
         </Card>
 
+        {/* Analyzed Videos List */}
+        {videos.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Video className="h-5 w-5" />
+                Analyzed Videos
+              </CardTitle>
+              <CardDescription>
+                Click a video to view detailed analysis and ask questions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {videos.map((video) => (
+                  <div
+                    key={video.video_id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                    onClick={() => video.status === 'complete' && openVideoPreview(video)}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex-shrink-0">
+                        {video.status === 'complete' ? (
+                          <CheckCircle className="h-5 w-5 text-green-500" />
+                        ) : video.status === 'failed' ? (
+                          <XCircle className="h-5 w-5 text-red-500" />
+                        ) : (
+                          <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">
+                          {video.title || video.video_id}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {video.duration_seconds && (
+                            <span>{Math.floor(video.duration_seconds / 60)}:{(video.duration_seconds % 60).toFixed(0).padStart(2, '0')}</span>
+                          )}
+                          {video.avg_scene_duration && (
+                            <span>• {video.avg_scene_duration.toFixed(1)}s scenes</span>
+                          )}
+                          {video.cuts_per_minute && (
+                            <span>• {video.cuts_per_minute.toFixed(1)} cuts/min</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {video.dominant_colors?.slice(0, 3).map((color, i) => (
+                        <div
+                          key={i}
+                          className="w-4 h-4 rounded border"
+                          style={{ backgroundColor: color }}
+                          title={color}
+                        />
+                      ))}
+                      {video.status === 'complete' && (
+                        <Button variant="ghost" size="sm" className="ml-2">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Empty State */}
         {!loading && (!insights || insights.videoCount === 0) && (
           <Card className="border-dashed">
@@ -529,6 +644,112 @@ export default function VideoAnalysis() {
           </div>
         )}
       </div>
+
+      {/* Video Preview Modal */}
+      <Dialog open={!!selectedVideo} onOpenChange={(open) => !open && setSelectedVideo(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Video className="h-5 w-5" />
+              {selectedVideo?.title || selectedVideo?.video_id}
+            </DialogTitle>
+            <DialogDescription>
+              Video analysis details and scene breakdown
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingDetails ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : videoDetails?.video ? (
+            <div className="space-y-6">
+              {/* Video Info */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{Math.floor((videoDetails.video.duration_seconds || 0) / 60)}:{((videoDetails.video.duration_seconds || 0) % 60).toFixed(0).padStart(2, '0')}</p>
+                  <p className="text-xs text-muted-foreground">Duration</p>
+                </div>
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{videoDetails.video.pacing_analysis?.scenes?.length || 0}</p>
+                  <p className="text-xs text-muted-foreground">Scenes</p>
+                </div>
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{videoDetails.video.avg_scene_duration?.toFixed(1) || '-'}s</p>
+                  <p className="text-xs text-muted-foreground">Avg Scene</p>
+                </div>
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{videoDetails.video.cuts_per_minute?.toFixed(1) || '-'}</p>
+                  <p className="text-xs text-muted-foreground">Cuts/Min</p>
+                </div>
+              </div>
+
+              {/* Color Palette */}
+              {videoDetails.video.dominant_colors?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Dominant Colors</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {videoDetails.video.dominant_colors.map((color: string, i: number) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 border rounded-lg">
+                        <div
+                          className="w-5 h-5 rounded border"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-sm font-mono">{color}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Scene Timeline */}
+              {videoDetails.video.visual_analysis?.colors?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Scene Color Timeline</h4>
+                  <div className="flex h-8 rounded overflow-hidden border">
+                    {videoDetails.video.visual_analysis.colors.map((scene: any, i: number) => {
+                      const scenes = videoDetails.video.pacing_analysis?.scenes || [];
+                      const sceneData = scenes[i];
+                      const duration = sceneData ? sceneData.endSeconds - sceneData.startSeconds : 1;
+                      const totalDuration = videoDetails.video.duration_seconds || 1;
+                      const widthPercent = (duration / totalDuration) * 100;
+                      return (
+                        <div
+                          key={i}
+                          className="h-full hover:opacity-80 transition-opacity cursor-pointer"
+                          style={{
+                            backgroundColor: scene.dominantColor,
+                            width: `${Math.max(widthPercent, 0.5)}%`,
+                          }}
+                          title={`Scene ${i + 1}: ${sceneData?.startSeconds?.toFixed(1) || 0}s - ${sceneData?.endSeconds?.toFixed(1) || 0}s`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Each segment represents a scene - width proportional to duration
+                  </p>
+                </div>
+              )}
+
+              {/* YouTube Link */}
+              <div className="pt-4 border-t">
+                <a
+                  href={selectedVideo?.video_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-blue-500 hover:underline"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Watch on YouTube
+                </a>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-8">Failed to load video details</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
