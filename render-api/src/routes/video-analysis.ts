@@ -39,7 +39,7 @@ async function fetchVideoTitle(videoId: string): Promise<string | null> {
     );
 
     if (response.ok) {
-      const data = await response.json();
+      const data = await response.json() as { title?: string };
       return data.title || null;
     }
   } catch (err) {
