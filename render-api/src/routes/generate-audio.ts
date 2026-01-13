@@ -1599,70 +1599,18 @@ function concatenateWavFiles(audioChunks: Buffer[]): { wav: Buffer; durationSeco
   output.writeUInt32LE(output.length - 8, 4);
   output.writeUInt32LE(totalDataSize, first.dataSizeOffset);
 
-  // Apply crossfading at segment boundaries to eliminate clicks/pops
-  const crossfadeDurationMs = 5;  // 5ms crossfade
-  const bytesPerSample = first.bitsPerSample / 8;
-  const crossfadeSamples = Math.floor((first.sampleRate * crossfadeDurationMs) / 1000) * first.channels;
-  const crossfadeBytes = crossfadeSamples * bytesPerSample;
-
+  // Simple concatenation without crossfading - crossfading causes memory corruption
+  // TODO: Implement proper crossfading algorithm
   let offset = first.header.length;
-  for (let i = 0; i < extracted.length; i++) {
-    const e = extracted[i];
-
-    if (i === 0) {
-      // First segment: copy entirely
-      e.data.copy(output, offset);
-      offset += e.data.length;
-    } else {
-      // Subsequent segments: apply crossfade with previous segment
-      const fadeBytes = Math.min(crossfadeBytes, e.data.length, extracted[i-1].data.length);
-
-      // Copy non-faded portion
-      const nonFadedStart = fadeBytes;
-      e.data.copy(output, offset, nonFadedStart);
-
-      // Apply crossfade to overlapping region
-      for (let b = 0; b < fadeBytes; b += bytesPerSample) {
-        const fadeProgress = b / fadeBytes;  // 0 to 1
-        const prevOffset = offset - fadeBytes + b;
-        const currOffset = b;
-
-        if (bytesPerSample === 2) {
-          // 16-bit samples
-          const prevSample = output.readInt16LE(prevOffset);
-          const currSample = e.data.readInt16LE(currOffset);
-          const crossfaded = Math.round(prevSample * (1 - fadeProgress) + currSample * fadeProgress);
-          output.writeInt16LE(crossfaded, prevOffset);
-        } else {
-          // 8-bit samples (rare)
-          const prevSample = output.readInt8(prevOffset);
-          const currSample = e.data.readInt8(currOffset);
-          const crossfaded = Math.round(prevSample * (1 - fadeProgress) + currSample * fadeProgress);
-          output.writeInt8(crossfaded, prevOffset);
-        }
-      }
-
-      offset += e.data.length - fadeBytes;  // Subtract overlap
-    }
+  for (const e of extracted) {
+    e.data.copy(output, offset);
+    offset += e.data.length;
   }
 
-  // Adjust total size for crossfade overlap
-  const overlapBytes = crossfadeBytes * (extracted.length - 1);
-  const actualDataSize = totalDataSize - overlapBytes;
-  const actualOutputSize = first.header.length + actualDataSize;
-
-  // Create properly sized output
-  const finalOutput = Buffer.alloc(actualOutputSize);
-  output.copy(finalOutput, 0, 0, actualOutputSize);
-
-  // Update RIFF and data chunk sizes
-  finalOutput.writeUInt32LE(actualOutputSize - 8, 4);
-  finalOutput.writeUInt32LE(actualDataSize, first.dataSizeOffset);
-
   const safeByteRate = first.byteRate || (first.sampleRate * first.channels * (first.bitsPerSample / 8));
-  const durationSeconds = safeByteRate > 0 ? actualDataSize / safeByteRate : 0;
+  const durationSeconds = safeByteRate > 0 ? totalDataSize / safeByteRate : 0;
 
-  return { wav: finalOutput, durationSeconds };
+  return { wav: output, durationSeconds };
 }
 
 // Concatenate WAV files with automatic pause insertion based on text punctuation
