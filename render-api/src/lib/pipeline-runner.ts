@@ -999,8 +999,20 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     const renderStart = Date.now();
     let videoUrl: string = '';
 
+    // Skip images that were used for intro video clips (I2V mode)
+    // If we have 12 intro clips using images 0-11, only use images 12+ for slideshow
+    const imagesUsedForClips = introClips.length;
+    const slideshowImageUrls = imagesUsedForClips > 0
+      ? imageUrls.slice(imagesUsedForClips)
+      : imageUrls;
+    const slideshowImagePrompts = imagesUsedForClips > 0
+      ? imagePrompts.slice(imagesUsedForClips)
+      : imagePrompts;
+
+    console.log(`[Pipeline] Render: ${introClips.length} intro clips used ${imagesUsedForClips} images, ${slideshowImageUrls.length} images remaining for slideshow`);
+
     // Build image timings from the prompts (each prompt has startSeconds/endSeconds)
-    const imageTimings = imagePrompts.map((p: any) => ({
+    const imageTimings = slideshowImagePrompts.map((p: any) => ({
       startSeconds: p.startSeconds,
       endSeconds: p.endSeconds,
     }));
@@ -1014,7 +1026,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       const startRes = await callInternalAPI('/render-video', {
         projectId,
         audioUrl,
-        imageUrls,
+        imageUrls: slideshowImageUrls,  // Only images NOT used for video clips
         imageTimings,
         srtContent,
         effects: { smoke_embers: true },
