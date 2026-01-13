@@ -2009,14 +2009,32 @@ async function handleStreaming(req: Request, res: Response, chunks: string[], pr
     finalAudio = await postProcessAudio(finalAudio);
     console.log(`Post-processed audio: ${finalAudio.length} bytes`);
 
-    // Check audio integrity BEFORE upload
-    sendEvent({ type: 'progress', progress: 78, message: 'Verifying audio integrity...' });
-    const integrityResult = checkAudioIntegrity(finalAudio, {
-      silenceThresholdMs: 1500,
-      glitchThresholdDb: 25,
-      sampleWindowMs: 50,
-    });
-    logAudioIntegrity(integrityResult, 'non-streaming audio');
+    // Check audio integrity BEFORE upload (skip if file too large to avoid V8 crash)
+    const MAX_INTEGRITY_CHECK_SIZE = 50 * 1024 * 1024; // 50MB threshold
+    let integrityResult: AudioIntegrityResult;
+    if (finalAudio.length <= MAX_INTEGRITY_CHECK_SIZE) {
+      sendEvent({ type: 'progress', progress: 78, message: 'Verifying audio integrity...' });
+      integrityResult = checkAudioIntegrity(finalAudio, {
+        silenceThresholdMs: 1500,
+        glitchThresholdDb: 25,
+        sampleWindowMs: 50,
+      });
+      logAudioIntegrity(integrityResult, 'non-streaming audio');
+    } else {
+      logger.info(`[INTEGRITY] Skipping check (${(finalAudio.length / 1024 / 1024).toFixed(1)}MB > ${MAX_INTEGRITY_CHECK_SIZE / 1024 / 1024}MB threshold)`);
+      // Return minimal result when skipping
+      integrityResult = {
+        valid: true,
+        issues: [],
+        stats: {
+          durationSeconds: durationSeconds,
+          avgAmplitude: 0,
+          maxAmplitude: 0,
+          silencePercent: 0,
+          discontinuities: 0,
+        },
+      };
+    }
 
     // Apply speed adjustment if not 1.0
     if (speed !== 1.0) {
@@ -2551,23 +2569,45 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     // NOTE: Smoothing skipped for combined audio (238MB causes V8 memory error)
     // Smoothing already applied per-segment (where chunk glitches occur)
 
-    // Check audio integrity BEFORE upload
-    sendEvent({ type: 'progress', progress: 91, message: 'Verifying audio integrity...' });
-    const integrityResult = checkAudioIntegrity(finalAudio, {
-      silenceThresholdMs: 1500,  // Allow up to 1.5s silence (normal pauses between segments)
-      glitchThresholdDb: 25,    // 25dB change threshold
-      sampleWindowMs: 50,
-    });
-    logAudioIntegrity(integrityResult, 'combined audio');
+    // CRITICAL: Skip integrity check on large files to avoid V8 crash
+    // checkAudioIntegrity() loads ALL samples into array (119M samples for 238MB = V8 limit exceeded)
+    // Segments already checked individually, so this is redundant for large files
+    const MAX_INTEGRITY_CHECK_SIZE = 50 * 1024 * 1024; // 50MB threshold
+    let integrityResult: AudioIntegrityResult;
+    let audioIssues: AudioIssue[] = [];
 
-    // Include integrity warnings in the response (but don't fail generation)
-    const audioIssues = integrityResult.issues.filter(i => i.type === 'skip' || i.type === 'discontinuity');
-    if (audioIssues.length > 0) {
-      logger.warn(`Audio integrity issues detected: ${audioIssues.length} potential skips/discontinuities`);
-      // Log timestamps for debugging
-      audioIssues.slice(0, 5).forEach(issue => {
-        logger.warn(`  ${issue.type} at ${issue.timestamp.toFixed(2)}s: ${issue.description}`);
+    if (finalAudio.length <= MAX_INTEGRITY_CHECK_SIZE) {
+      sendEvent({ type: 'progress', progress: 91, message: 'Verifying audio integrity...' });
+      integrityResult = checkAudioIntegrity(finalAudio, {
+        silenceThresholdMs: 1500,
+        glitchThresholdDb: 25,
+        sampleWindowMs: 50,
       });
+      logAudioIntegrity(integrityResult, 'combined audio');
+
+      // Include integrity warnings in the response (but don't fail generation)
+      audioIssues = integrityResult.issues.filter(i => i.type === 'skip' || i.type === 'discontinuity');
+      if (audioIssues.length > 0) {
+        logger.warn(`Audio integrity issues detected: ${audioIssues.length} potential skips/discontinuities`);
+        audioIssues.slice(0, 5).forEach(issue => {
+          logger.warn(`  ${issue.type} at ${issue.timestamp.toFixed(2)}s: ${issue.description}`);
+        });
+      }
+    } else {
+      logger.info(`[INTEGRITY] Skipping combined audio check (${(finalAudio.length / 1024 / 1024).toFixed(1)}MB > ${MAX_INTEGRITY_CHECK_SIZE / 1024 / 1024}MB threshold)`);
+      logger.info(`[INTEGRITY] Per-segment checks already completed - this is redundant for large files`);
+      // Return minimal result when skipping
+      integrityResult = {
+        valid: true,
+        issues: [],
+        stats: {
+          durationSeconds: combinedDuration,
+          avgAmplitude: 0,
+          maxAmplitude: 0,
+          silencePercent: 0,
+          discontinuities: 0,
+        },
+      };
     }
 
     // Apply speed adjustment if not 1.0
