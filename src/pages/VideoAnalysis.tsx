@@ -287,15 +287,6 @@ export default function VideoAnalysis() {
       </div>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Service Status */}
-        <div className="flex gap-2">
-          <Badge variant={healthStatus?.supabase ? 'default' : 'destructive'}>
-            Supabase: {healthStatus?.supabase ? 'Connected' : 'Disconnected'}
-          </Badge>
-          <Badge variant={healthStatus?.imagebind ? 'default' : 'secondary'}>
-            ImageBind: {healthStatus?.imagebind ? 'Available' : 'Not configured'}
-          </Badge>
-        </div>
 
         {/* Analyze New Video */}
         <Card>
