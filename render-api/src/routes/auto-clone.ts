@@ -539,6 +539,7 @@ router.post('/', async (req: Request, res: Response) => {
     const force = req.body.force === true;
     const targetWordCount = req.body.targetWordCount ? parseInt(req.body.targetWordCount, 10) : undefined;
     const videoUrl = req.body.videoUrl as string | undefined;  // Optional: run specific video
+    const outlierMultiplier = req.body.outlierMultiplier ? parseFloat(req.body.outlierMultiplier) : 1;  // For direct URLs
     const today = getTodayDate();
 
     // Check if there's already a video processing (prevent parallel runs)
@@ -617,7 +618,7 @@ router.post('/', async (req: Request, res: Response) => {
         channelName: 'Direct URL',
         subscriberCountFormatted: 'N/A',
         viewCount: 0,
-        outlierMultiplier: 1,
+        outlierMultiplier,  // Use value from request (default 1)
         durationSeconds: videoDurationSeconds,
         publishedAt: new Date().toISOString(),
       };

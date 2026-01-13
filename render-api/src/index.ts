@@ -173,7 +173,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           force: true,
-          videoUrl: 'https://www.youtube.com/watch?v=GbHa-UiT7NM'
+          videoUrl: 'https://www.youtube.com/watch?v=GbHa-UiT7NM',
+          outlierMultiplier: 8
         }),
       });
       const result = await response.json() as { success?: boolean; error?: string };
