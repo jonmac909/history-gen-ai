@@ -429,7 +429,7 @@ async function handleStreamingClips(
 
   const POLL_INTERVAL = 3000; // 3 seconds
   const MAX_POLLING_TIME = 10 * 60 * 1000; // 10 minutes total
-  const MAX_RETRIES = 1;
+  const MAX_RETRIES = 5;  // Retry failed clips up to 5 times
 
   try {
     sendEvent({
