@@ -70,7 +70,7 @@ export interface CachedOutlier {
     isFaceless?: boolean;
     quality?: 'negative' | 'neutral' | 'positive';
   };
-  source: 'tubelab' | 'youtube' | 'apify';
+  source: 'tubelab' | 'youtube' | 'apify' | 'scraper';
   fetched_at: string;
   expires_at: string;
 }

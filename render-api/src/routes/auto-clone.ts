@@ -11,7 +11,7 @@ import { Router, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { runPipeline, getNext5pmPST } from '../lib/pipeline-runner';
 import { getChannelVideos, ScrapedVideo } from '../lib/youtube-scraper';
-import { getCachedOutliersForChannel, CachedOutlier } from '../lib/outlier-cache';
+import { getCachedOutliersForChannel, CachedOutlier, cacheOutliers } from '../lib/outlier-cache';
 import fetch from 'node-fetch';
 
 const router = Router();
@@ -1120,6 +1120,104 @@ router.post('/test-whatsapp', async (req: Request, res: Response) => {
       phoneNumber: phone,
     });
   } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Refresh outlier cache - scrapes fresh videos from all whitelisted channels
+// Called daily by cron job (1 hour before Auto Poster)
+router.post('/refresh-cache', async (req: Request, res: Response) => {
+  console.log('[AutoClone] Starting daily cache refresh...');
+  const startTime = Date.now();
+
+  try {
+    const supabase = getSupabaseClient();
+
+    // Fetch all saved channels
+    const channels = await fetchSavedChannels(supabase);
+    const whitelistedChannels = channels.filter(isWhitelistedChannel);
+
+    console.log(`[AutoClone] Refreshing cache for ${whitelistedChannels.length} whitelisted channels`);
+
+    let totalVideosScraped = 0;
+    let totalOutliersFound = 0;
+    const errors: string[] = [];
+
+    for (const channel of whitelistedChannels) {
+      try {
+        console.log(`[AutoClone] Scraping ${channel.title} (${channel.id})...`);
+
+        // Fresh scrape from YouTube
+        const videos = await getChannelVideos(channel.id);
+        totalVideosScraped += videos.length;
+
+        if (videos.length === 0) {
+          console.log(`[AutoClone] No videos found for ${channel.title}`);
+          continue;
+        }
+
+        // Calculate average views
+        const avgViews = calculateAverageViews(videos);
+        if (avgViews === 0) continue;
+
+        // Find outliers and prepare for caching
+        const outliersToCache: Array<Omit<CachedOutlier, 'fetched_at' | 'expires_at'>> = [];
+
+        for (const video of videos) {
+          const multiplier = (video.views || 0) / avgViews;
+
+          // Cache ALL videos with 2x+ views (not just 1hr+ duration)
+          // Duration filter happens at selection time, not cache time
+          if (multiplier >= 2.0) {
+            outliersToCache.push({
+              video_id: video.id,
+              channel_id: channel.id,
+              title: video.title,
+              thumbnail_url: video.thumbnail || `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`,
+              view_count: video.views || 0,
+              like_count: 0,  // Not available from scraper
+              comment_count: 0,  // Not available from scraper
+              duration_seconds: video.duration || 0,
+              published_at: video.publishedText || new Date().toISOString(),
+              outlier_multiplier: multiplier,
+              z_score: 0,  // Not calculated
+              views_per_subscriber: 0,  // Not available
+              is_positive_outlier: true,  // We only cache 2x+ outliers
+              is_negative_outlier: false,
+              source: 'scraper',
+            });
+          }
+        }
+
+        if (outliersToCache.length > 0) {
+          await cacheOutliers(outliersToCache);
+          totalOutliersFound += outliersToCache.length;
+          console.log(`[AutoClone] Cached ${outliersToCache.length} outliers for ${channel.title}`);
+        }
+
+        // Small delay to avoid rate limiting
+        await new Promise(r => setTimeout(r, 1000));
+
+      } catch (error: any) {
+        console.error(`[AutoClone] Error scraping ${channel.title}: ${error.message}`);
+        errors.push(`${channel.title}: ${error.message}`);
+      }
+    }
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[AutoClone] Cache refresh complete in ${duration}s: ${totalVideosScraped} videos, ${totalOutliersFound} outliers`);
+
+    return res.json({
+      success: true,
+      channelsScanned: whitelistedChannels.length,
+      videosScraped: totalVideosScraped,
+      outliersFound: totalOutliersFound,
+      durationSeconds: duration,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+
+  } catch (error: any) {
+    console.error('[AutoClone] Cache refresh failed:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
