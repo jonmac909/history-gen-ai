@@ -8,7 +8,7 @@
  * - Aggregated insights dashboard
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -85,6 +85,10 @@ export default function VideoAnalysis() {
   const [selectedVideo, setSelectedVideo] = useState<AnalyzedVideo | null>(null);
   const [videoDetails, setVideoDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Refs for auto-scrolling to response
+  const dialogContentRef = useRef<HTMLDivElement>(null);
+  const responseRef = useRef<HTMLDivElement>(null);
 
   // Poll analysis status
   const pollAnalysisStatus = async (videoId: string) => {
@@ -192,6 +196,14 @@ export default function VideoAnalysis() {
   const [videoQuery, setVideoQuery] = useState('');
   const [videoQueryResponse, setVideoQueryResponse] = useState<string | null>(null);
   const [videoQuerying, setVideoQuerying] = useState(false);
+
+  // Auto-scroll to response when it appears
+  useEffect(() => {
+    if (videoQueryResponse && responseRef.current) {
+      // Scroll the response into view smoothly
+      responseRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [videoQueryResponse]);
 
   // Ask question about specific video
   const askAboutVideo = async () => {
@@ -640,7 +652,7 @@ export default function VideoAnalysis() {
                   </Button>
                 </div>
                 {videoQueryResponse && (
-                  <div className="mt-3 p-3 bg-muted rounded-lg">
+                  <div ref={responseRef} className="mt-3 p-3 bg-muted rounded-lg">
                     <p className="text-sm whitespace-pre-wrap">{videoQueryResponse}</p>
                   </div>
                 )}
