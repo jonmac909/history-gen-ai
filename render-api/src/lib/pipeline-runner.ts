@@ -1073,7 +1073,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     }
 
     // Step 12: Upload to YouTube (streaming)
-    reportProgress('upload', 90, 'Uploading to YouTube...');
+    reportProgress('upload', 85, 'Generating YouTube metadata...');
     const uploadStart = Date.now();
     let youtubeVideoId: string;
     let youtubeUrl: string;
@@ -1092,16 +1092,65 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       }
       console.log('[Pipeline] Got YouTube access token');
 
+      // Generate AI metadata for YouTube
+      let youtubeDescription = `${clonedTitle}\n\nGenerated with AI`;
+      let youtubeTags = ['history', 'documentary', 'education', 'sleep', 'relaxing'];
+      try {
+        console.log('[Pipeline] Generating YouTube metadata with AI...');
+        const metadataRes = await fetch(`http://localhost:${process.env.PORT || 10000}/generate-youtube-metadata`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: clonedTitle, script }),
+        });
+        const metadataData = await metadataRes.json() as { success?: boolean; description?: string; tags?: string[]; error?: string };
+        if (metadataRes.ok && metadataData.success) {
+          youtubeDescription = metadataData.description || youtubeDescription;
+          youtubeTags = metadataData.tags || youtubeTags;
+          console.log('[Pipeline] AI metadata generated successfully');
+        } else {
+          console.log('[Pipeline] AI metadata failed, using default:', metadataData.error);
+        }
+      } catch (metaError) {
+        console.log('[Pipeline] AI metadata error, using default:', metaError);
+      }
+
+      // Fetch playlists and find "Complete Histories"
+      reportProgress('upload', 88, 'Finding playlist...');
+      let playlistId: string | undefined;
+      try {
+        console.log('[Pipeline] Fetching YouTube playlists...');
+        const playlistRes = await fetch(`http://localhost:${process.env.PORT || 10000}/youtube-upload/playlists`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${tokenData.accessToken}` },
+        });
+        const playlistData = await playlistRes.json() as { playlists?: { id: string; title: string }[] };
+        if (playlistRes.ok && playlistData.playlists) {
+          const completeHistories = playlistData.playlists.find(
+            p => p.title.toLowerCase().includes('complete histories')
+          );
+          if (completeHistories) {
+            playlistId = completeHistories.id;
+            console.log('[Pipeline] Found Complete Histories playlist:', playlistId);
+          } else {
+            console.log('[Pipeline] Complete Histories playlist not found');
+          }
+        }
+      } catch (playlistError) {
+        console.log('[Pipeline] Playlist fetch error:', playlistError);
+      }
+
+      reportProgress('upload', 90, 'Uploading to YouTube...');
       const uploadRes = await callStreamingAPI('/youtube-upload', {
         videoUrl,
         accessToken: tokenData.accessToken,
         title: clonedTitle,
-        description: `${clonedTitle}\n\nGenerated with AI`,
-        tags: ['history', 'documentary', 'education'],
+        description: youtubeDescription,
+        tags: youtubeTags,
         categoryId: '27',  // Education
         privacyStatus: input.publishAt ? 'private' : 'unlisted',
         publishAt: input.publishAt,
         thumbnailUrl,
+        playlistId,
       }, (data) => {
         if (data.type === 'progress') {
           reportProgress('upload', 90 + Math.round(data.progress * 0.1), `Uploading... ${data.progress}%`);
