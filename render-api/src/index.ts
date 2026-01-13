@@ -26,6 +26,7 @@ import analyzeThumbnailRouter from './routes/analyze-thumbnail';
 import rewriteTitleRouter from './routes/rewrite-title';
 import autoCloneRouter from './routes/auto-clone';
 import costsRouter from './routes/costs';
+import videoAnalysisRouter from './routes/video-analysis';
 
 dotenv.config();
 
@@ -111,6 +112,7 @@ app.use('/analyze-thumbnail', analyzeThumbnailRouter);
 app.use('/rewrite-title', rewriteTitleRouter);
 app.use('/auto-clone', autoCloneRouter);
 app.use('/costs', costsRouter);
+app.use('/video-analysis', videoAnalysisRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
