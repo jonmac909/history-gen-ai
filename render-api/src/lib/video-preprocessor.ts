@@ -79,9 +79,11 @@ export async function downloadVideo(
 ): Promise<{ duration: number }> {
   console.log(`[video-preprocessor] Downloading video: ${videoUrl}`);
 
+  // Optimize quality for analysis - we only need frames at 1 fps
+  // 480p is sufficient for color/scene detection and downloads 2-3x faster
   const formatSelector = quality === '1080p'
-    ? 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
-    : 'bestvideo[height<=720]+bestaudio/best[height<=720]';
+    ? 'bestvideo[height<=480]+bestaudio/best[height<=480]'  // Use 480p for faster downloads
+    : 'bestvideo[height<=480]+bestaudio/best[height<=480]';  // Use 480p for faster downloads
 
   const args = [
     videoUrl,
@@ -92,6 +94,8 @@ export async function downloadVideo(
     '--socket-timeout', '120',
     '--retries', '5',
     '--newline', // Output progress on new lines for easier parsing
+    '--concurrent-fragments', '4',  // Download 4 fragments in parallel
+    '--throttled-rate', '100K',     // Minimum rate to trigger throttle retry
   ];
 
   // Add proxy if configured
