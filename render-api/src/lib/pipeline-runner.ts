@@ -602,7 +602,7 @@ export async function runPipeline(
     const targetWordCount = input.targetWordCount || calculatedWordCount;
     console.log(`[Pipeline] Target word count: ${targetWordCount}${input.targetWordCount ? ' (manual override)' : ` (${durationMinutes} min @ ${WORDS_PER_MINUTE} wpm)`}`);
 
-    const MAX_SCRIPT_RETRIES = 2;
+    const MAX_SCRIPT_RETRIES = 3;  // Give 3 chances to generate on-topic script
     let scriptAttempt = 0;
     let scriptGrade: 'A' | 'B' | 'C' = 'C';
     let scriptFeedback = '';
@@ -629,6 +629,8 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         const scriptRes = await callStreamingAPI('/rewrite-script', {
           transcript,
           projectId,
+          title: input.originalTitle,  // CRITICAL: Pass title for topic enforcement
+          topic: input.originalTitle,  // CRITICAL: Pass topic for topic enforcement
           voiceStyle: '(sincere) (soft tone)',
           wordCount: targetWordCount,
           template: templateWithFeedback,
@@ -662,6 +664,11 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
           scriptGrade = 'A';
           console.log(`[Pipeline] Skipping script grading (no ANTHROPIC_API_KEY)`);
         }
+      }
+
+      // Fail if script is still off-topic after all retries
+      if (scriptGrade === 'C') {
+        throw new Error(`Script failed quality check after ${scriptAttempt} attempts. Feedback: ${scriptFeedback}`);
       }
 
       const actualWordCount = script.split(/\s+/).length;
