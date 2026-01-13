@@ -2548,19 +2548,8 @@ async function handleVoiceCloningStreaming(req: Request, res: Response, script: 
     let finalAudio: Buffer = await postProcessAudio(trimmedAudio);
     console.log(`Post-processed audio: ${finalAudio.length} bytes`);
 
-    // CRITICAL: Apply FFmpeg smoothing to final combined audio
-    sendEvent({ type: 'progress', progress: 90.5, message: 'Smoothing audio glitches...' });
-    logger.info(`[FINAL AUDIO] Applying audio smoothing (highpass 20Hz, lowpass 20kHz)...`);
-    try {
-      finalAudio = await smoothAudioWithFFmpeg(finalAudio, {
-        highpassFreq: 20,   // Remove DC offset and subsonic rumble (reduces pops)
-        lowpassFreq: 20000, // Remove ultrasonic artifacts (reduces clicks)
-      });
-      logger.info(`[FINAL AUDIO] Smoothing applied successfully`);
-    } catch (err) {
-      logger.warn(`[FINAL AUDIO] Smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      // Continue with unsmoothed audio - better to have glitches than no audio
-    }
+    // NOTE: Smoothing skipped for combined audio (238MB causes V8 memory error)
+    // Smoothing already applied per-segment (where chunk glitches occur)
 
     // Check audio integrity BEFORE upload
     sendEvent({ type: 'progress', progress: 91, message: 'Verifying audio integrity...' });
@@ -2992,20 +2981,11 @@ router.post('/recombine', async (req: Request, res: Response) => {
     }
 
     // Concatenate all segments
-    let { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
+    const { wav: combinedAudio, durationSeconds } = concatenateWavFiles(segmentBuffers);
     console.log(`Combined audio: ${combinedAudio.length} bytes, ${durationSeconds.toFixed(1)}s`);
 
-    // Apply audio smoothing to eliminate glitches at segment boundaries
-    logger.info(`[RECOMBINE] Applying audio smoothing (highpass 20Hz, lowpass 20kHz)...`);
-    try {
-      combinedAudio = await smoothAudioWithFFmpeg(combinedAudio, {
-        highpassFreq: 20,
-        lowpassFreq: 20000,
-      });
-      logger.info(`[RECOMBINE] Smoothing applied successfully`);
-    } catch (err) {
-      logger.warn(`[RECOMBINE] Smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+    // NOTE: Smoothing skipped - segments already smoothed before upload
+    // Segment-to-segment boundaries are natural (no chunk glitches)
 
     // Upload combined audio
     const combinedFileName = `${projectId}/voiceover.wav`;
