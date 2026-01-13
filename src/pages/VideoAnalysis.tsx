@@ -77,6 +77,53 @@ export default function VideoAnalysis() {
   const [query, setQuery] = useState('');
   const [queryResponse, setQueryResponse] = useState<QueryResponse | null>(null);
   const [healthStatus, setHealthStatus] = useState<{ imagebind: boolean; supabase: boolean } | null>(null);
+  const [currentAnalysis, setCurrentAnalysis] = useState<{
+    videoId: string;
+    status: string;
+    progress: number;
+    error?: string;
+  } | null>(null);
+
+  // Poll analysis status
+  const pollAnalysisStatus = async (videoId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/video-analysis/status/${videoId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setCurrentAnalysis({
+          videoId,
+          status: data.status,
+          progress: data.progress || 0,
+          error: data.error,
+        });
+
+        // Keep polling if still processing
+        if (data.status !== 'complete' && data.status !== 'failed') {
+          setTimeout(() => pollAnalysisStatus(videoId), 2000);
+        } else {
+          // Analysis done - refresh videos list
+          if (data.status === 'complete') {
+            fetchVideos();
+            toast({
+              title: 'Analysis complete',
+              description: `Video ${videoId} has been analyzed`,
+            });
+          } else if (data.status === 'failed') {
+            toast({
+              title: 'Analysis failed',
+              description: data.error || 'Unknown error',
+              variant: 'destructive',
+            });
+          }
+          // Clear after a delay so user can see final status
+          setTimeout(() => setCurrentAnalysis(null), 5000);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to poll status:', err);
+    }
+  };
 
   // Fetch analyzed videos
   const fetchVideos = async () => {
@@ -155,7 +202,13 @@ export default function VideoAnalysis() {
           description: `Processing video ${videoId}`,
         });
         setNewVideoUrl('');
-        fetchVideos();
+        setCurrentAnalysis({
+          videoId,
+          status: data.status || 'pending',
+          progress: 0,
+        });
+        // Start polling for progress
+        setTimeout(() => pollAnalysisStatus(videoId), 1000);
       } else {
         throw new Error(data.error || 'Failed to start analysis');
       }
@@ -273,6 +326,49 @@ export default function VideoAnalysis() {
                 Analyze
               </Button>
             </div>
+
+            {/* Analysis Progress */}
+            {currentAnalysis && (
+              <div className="mt-4 p-4 border rounded-lg bg-muted/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {currentAnalysis.status === 'failed' ? (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    ) : currentAnalysis.status === 'complete' ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    )}
+                    <span className="font-medium">
+                      {currentAnalysis.videoId}
+                    </span>
+                    <Badge variant={
+                      currentAnalysis.status === 'failed' ? 'destructive' :
+                      currentAnalysis.status === 'complete' ? 'default' : 'secondary'
+                    }>
+                      {currentAnalysis.status}
+                    </Badge>
+                  </div>
+                  <span className="text-sm font-mono">
+                    {currentAnalysis.progress}%
+                  </span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      currentAnalysis.status === 'failed' ? 'bg-red-500' :
+                      currentAnalysis.status === 'complete' ? 'bg-green-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${currentAnalysis.progress}%` }}
+                  />
+                </div>
+                {currentAnalysis.error && (
+                  <p className="mt-2 text-sm text-red-500">
+                    Error: {currentAnalysis.error}
+                  </p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
