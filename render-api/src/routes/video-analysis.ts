@@ -278,6 +278,11 @@ async function processAnalysis(
         console.log(`[video-analysis] Download progress: ${percent.toFixed(1)}% (overall: ${overallProgress}%)`);
         await updateStatus('downloading', overallProgress);
       },
+      onProgress: async (status, percent) => {
+        // Update status for each preprocessing step
+        console.log(`[video-analysis] Preprocessing: ${status} ${percent}%`);
+        await updateStatus(status, percent);
+      },
     });
 
     // Log download tier metrics

@@ -596,6 +596,7 @@ export async function preprocessVideo(
     sceneThreshold?: number;
     uploadFrames?: boolean;
     onDownloadProgress?: (percent: number) => void;
+    onProgress?: (status: string, percent: number) => Promise<void>;
   } = {}
 ): Promise<PreprocessResult> {
   const {
@@ -604,6 +605,7 @@ export async function preprocessVideo(
     sceneThreshold = 0.3,
     uploadFrames = true,
     onDownloadProgress,
+    onProgress,
   } = options;
 
   console.log(`[video-preprocessor] Starting preprocessing for video: ${videoId}`);
@@ -619,26 +621,32 @@ export async function preprocessVideo(
   const framesDir = path.join(tempDir, 'frames');
 
   try {
-    // 1. Download video
+    // 1. Download video (5-40%)
     const { duration, tier } = await downloadVideo(videoUrl, videoPath, quality, onDownloadProgress);
+    if (onProgress) await onProgress('extracting', 40);
 
-    // 2. Extract frames
+    // 2. Extract frames (40-45%)
     const framePaths = await extractFrames(videoPath, framesDir, fps);
+    if (onProgress) await onProgress('extracting', 45);
 
-    // 3. Extract audio
+    // 3. Extract audio (45-46%)
     await extractAudio(videoPath, audioPath);
+    if (onProgress) await onProgress('analyzing', 46);
 
-    // 4. Detect scenes
+    // 4. Detect scenes (46-48%)
     const scenes = await detectScenes(videoPath, sceneThreshold);
+    if (onProgress) await onProgress('analyzing', 48);
 
-    // 5. Analyze colors
+    // 5. Analyze colors (48-49%)
     const colors = await analyzeSceneColors(framePaths, scenes);
+    if (onProgress) await onProgress('analyzing', 49);
 
-    // 6. Upload frames to Supabase (optional)
+    // 6. Upload frames to Supabase (49-50%)
     let frameUrls: string[] = [];
     if (uploadFrames) {
       frameUrls = await uploadFramesToSupabase(videoId, framePaths);
     }
+    if (onProgress) await onProgress('analyzing', 50);
 
     console.log(`[video-preprocessor] Preprocessing complete for: ${videoId}`);
 
