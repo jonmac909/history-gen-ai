@@ -2,11 +2,11 @@
 # Install fontconfig and fonts for FFmpeg subtitle rendering
 
 [phases.setup]
-# fontconfig/fonts for FFmpeg, plus libvips for sharp image processing
-aptPkgs = ["fontconfig", "fonts-dejavu-core", "fonts-liberation", "libvips-dev"]
+# fontconfig/fonts for FFmpeg, libvips for sharp, python3-pip for yt-dlp, ffmpeg for video processing
+aptPkgs = ["fontconfig", "fonts-dejavu-core", "fonts-liberation", "libvips-dev", "python3-pip", "ffmpeg"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["pip install --break-system-packages yt-dlp", "npm ci"]
 
 [phases.build]
 cmds = ["npm run build"]
