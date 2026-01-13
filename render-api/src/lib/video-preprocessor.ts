@@ -74,7 +74,8 @@ export interface ColorAnalysis {
 export async function downloadVideo(
   videoUrl: string,
   outputPath: string,
-  quality: '720p' | '1080p' = '720p'
+  quality: '720p' | '1080p' = '720p',
+  onProgress?: (percent: number) => void
 ): Promise<{ duration: number }> {
   console.log(`[video-preprocessor] Downloading video: ${videoUrl}`);
 
@@ -90,6 +91,7 @@ export async function downloadVideo(
     '--no-warnings',
     '--socket-timeout', '120',
     '--retries', '5',
+    '--newline', // Output progress on new lines for easier parsing
   ];
 
   // Add proxy if configured
@@ -107,7 +109,15 @@ export async function downloadVideo(
     let stderr = '';
 
     proc.stdout?.on('data', (data) => {
-      stdout += data.toString();
+      const chunk = data.toString();
+      stdout += chunk;
+
+      // Parse download progress: [download] 45.2% of 123.45MiB
+      const progressMatch = chunk.match(/\[download\]\s+(\d+\.?\d*)%/);
+      if (progressMatch && onProgress) {
+        const percent = parseFloat(progressMatch[1]);
+        onProgress(percent);
+      }
     });
 
     proc.stderr?.on('data', (data) => {
@@ -519,6 +529,7 @@ export async function preprocessVideo(
     fps?: number;
     sceneThreshold?: number;
     uploadFrames?: boolean;
+    onDownloadProgress?: (percent: number) => void;
   } = {}
 ): Promise<PreprocessResult> {
   const {
@@ -526,6 +537,7 @@ export async function preprocessVideo(
     fps = 1,
     sceneThreshold = 0.3,
     uploadFrames = true,
+    onDownloadProgress,
   } = options;
 
   console.log(`[video-preprocessor] Starting preprocessing for video: ${videoId}`);
@@ -542,7 +554,7 @@ export async function preprocessVideo(
 
   try {
     // 1. Download video
-    const { duration } = await downloadVideo(videoUrl, videoPath, quality);
+    const { duration } = await downloadVideo(videoUrl, videoPath, quality, onDownloadProgress);
 
     // 2. Extract frames
     const framePaths = await extractFrames(videoPath, framesDir, fps);

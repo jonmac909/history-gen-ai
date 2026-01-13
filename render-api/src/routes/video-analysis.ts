@@ -45,6 +45,7 @@ const analysisJobs = new Map<string, {
   status: 'pending' | 'downloading' | 'extracting' | 'analyzing' | 'complete' | 'failed';
   progress: number;
   error?: string;
+  title?: string;
   startedAt: Date;
 }>();
 
@@ -218,13 +219,18 @@ async function processAnalysis(
     };
 
     // Step 1: Preprocess video (download, extract frames, detect scenes)
-    await updateStatus('extracting', 10);
+    await updateStatus('downloading', 5);
 
     console.log(`[video-analysis] Preprocessing video: ${videoId}`);
     const preprocessResult = await preprocessVideo(videoId, videoUrl, {
       quality: options.quality || '720p',
       fps: options.fps || 1,
       uploadFrames: true,
+      onDownloadProgress: async (percent) => {
+        // Map download 0-100% to overall progress 5-40%
+        const overallProgress = Math.round(5 + (percent * 0.35));
+        await updateStatus('downloading', overallProgress);
+      },
     });
 
     await updateStatus('analyzing', 50, {
@@ -358,6 +364,7 @@ router.get('/status/:videoId', async (req: Request, res: Response) => {
       return res.json({
         success: true,
         videoId,
+        title: job.title,
         status: job.status,
         progress: job.progress,
         error: job.error,
@@ -368,7 +375,7 @@ router.get('/status/:videoId', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('analyzed_videos')
-      .select('status, progress, error_message')
+      .select('status, progress, error_message, title')
       .eq('video_id', videoId)
       .single();
 
@@ -382,6 +389,7 @@ router.get('/status/:videoId', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       videoId,
+      title: data.title,
       status: data.status,
       progress: data.progress,
       error: data.error_message,

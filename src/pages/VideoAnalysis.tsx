@@ -79,6 +79,7 @@ export default function VideoAnalysis() {
   const [healthStatus, setHealthStatus] = useState<{ imagebind: boolean; supabase: boolean } | null>(null);
   const [currentAnalysis, setCurrentAnalysis] = useState<{
     videoId: string;
+    title?: string;
     status: string;
     progress: number;
     error?: string;
@@ -93,6 +94,7 @@ export default function VideoAnalysis() {
       if (data.success) {
         setCurrentAnalysis({
           videoId,
+          title: data.title,
           status: data.status,
           progress: data.progress || 0,
           error: data.error,
@@ -327,8 +329,8 @@ export default function VideoAnalysis() {
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                     )}
-                    <span className="font-medium">
-                      {currentAnalysis.videoId}
+                    <span className="font-medium truncate max-w-[300px]" title={currentAnalysis.title || currentAnalysis.videoId}>
+                      {currentAnalysis.title || currentAnalysis.videoId}
                     </span>
                     <Badge variant={
                       currentAnalysis.status === 'failed' ? 'destructive' :
