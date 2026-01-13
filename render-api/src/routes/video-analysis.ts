@@ -275,6 +275,7 @@ async function processAnalysis(
       onDownloadProgress: async (percent) => {
         // Map download 0-100% to overall progress 5-40%
         const overallProgress = Math.round(5 + (percent * 0.35));
+        console.log(`[video-analysis] Download progress: ${percent.toFixed(1)}% (overall: ${overallProgress}%)`);
         await updateStatus('downloading', overallProgress);
       },
     });
