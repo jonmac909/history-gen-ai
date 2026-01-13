@@ -349,7 +349,7 @@ export default function AutoPoster() {
                         {getStatusBadge(video.status)}
                         {video.outlier_multiplier && (
                           <Badge variant="outline" className="text-xs">
-                            {video.outlier_multiplier.toFixed(1)}x views
+                            {video.outlier_multiplier.toFixed(1)}x outlier
                           </Badge>
                         )}
                       </div>
