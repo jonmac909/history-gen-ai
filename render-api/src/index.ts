@@ -164,7 +164,25 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   });
   console.log('⏰ Auto Poster scheduled: Daily at 14:00 UTC (6am PST)');
 
-  // ONE-TIME scheduler removed - run completed successfully
+  // ONE-TIME scheduler: Run Auto Poster for Sumerian Prison video at 00:15 UTC (Jan 13, 2026)
+  cron.schedule('15 0 13 1 *', async () => {
+    console.log('[Cron] 🎯 ONE-TIME: Running Auto Poster for Sumerian Prison video...');
+    try {
+      const response = await fetch(`http://localhost:${PORT}/auto-clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          force: true,
+          videoUrl: 'https://www.youtube.com/watch?v=GbHa-UiT7NM'
+        }),
+      });
+      const result = await response.json() as { success?: boolean; error?: string };
+      console.log('[Cron] ONE-TIME Auto Poster triggered:', result.success ? 'Started' : result.error || 'Failed');
+    } catch (error) {
+      console.error('[Cron] ONE-TIME Failed to trigger Auto Poster:', error);
+    }
+  });
+  console.log('🎯 ONE-TIME Auto Poster scheduled: 00:15 UTC Jan 13 (Sumerian Prison video)');
 
 });
 
