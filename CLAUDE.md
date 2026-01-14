@@ -385,13 +385,13 @@ Multi-step generation with user review at each stage:
 - Uses `guidance_scale=0.0` (no negative prompts)
 
 **RunPod Worker Allocation**:
-- **10 workers for audio (Fish Speech)**, **4 workers for images (Z-Image)**, **10 workers for VideoRAG (ImageBind)**
+- **10 workers for audio (Fish Speech)**, **4 workers for images (Z-Image)**
 - Set in RunPod dashboard endpoint settings
 - **Memory optimization**: Audio processing uses **incremental concatenation** to prevent Railway OOM kills
   - Incrementally concatenates chunks (only 1 combined buffer per segment)
   - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
-- **VideoRAG**: All 10 ImageBind workers utilized via rolling concurrency (`maxConcurrent=10`)
+- **VideoRAG**: Uses Claude Vision API (no RunPod endpoint needed)
 
 **Triggering RunPod Worker Rebuilds:**
 - RunPod endpoints are linked to GitHub repos - **push to GitHub triggers rebuild**
@@ -632,7 +632,9 @@ if (useParallel) {
 
 ### Video Analysis / VideoRAG Architecture
 
-**Analyzes YouTube videos to extract visual patterns, pacing, and color information using ImageBind embeddings.**
+**Analyzes YouTube videos using Claude Vision to extract actionable production details for Auto Poster recreation.**
+
+**Purpose:** Enable Auto Poster to recreate successful video styles by analyzing visual production techniques from competitor videos.
 
 **Routes** (`render-api/src/routes/video-analysis.ts`):
 | Route | Purpose |
@@ -644,50 +646,51 @@ if (useParallel) {
 | `DELETE /video-analysis/:videoId` | Delete video and scenes |
 | `POST /video-analysis/query` | Ask questions about videos (VideoRAG Q&A) |
 | `GET /video-analysis/insights` | Aggregated insights across all videos |
-| `GET /video-analysis/health` | Service health check (ImageBind + Supabase) |
+| `GET /video-analysis/health` | Service health check (Claude Vision + Supabase) |
 | `POST /video-analysis/backfill-titles` | Backfill missing YouTube titles |
 
 **Analysis Pipeline:**
 1. **Download** (0-40%): Download video via yt-dlp to temp file
 2. **Extract** (40-50%): FFmpeg scene detection extracts keyframes
-3. **Embed** (50-70%): Generate 768-dim visual embeddings via ImageBind RunPod
-4. **Analyze** (70-85%): Calculate pacing (cuts/min, avg scene duration), extract dominant colors
-5. **Save** (85-100%): Store in Supabase tables
+3. **Describe** (50-70%): Claude Vision generates production descriptions for each frame
+4. **Analyze** (70-75%): Calculate pacing (cuts/min, avg scene duration), extract dominant colors
+5. **Save** (75-100%): Store in Supabase tables
 
-**ImageBind RunPod Endpoint**:
-- Input: Array of frame image URLs (batch processing)
-- Output: 768-dimensional visual embeddings per frame
-- **Parallel processing**: 10 concurrent workers (rolling concurrency)
-- Batch size: 100 frames per worker
-- Progress callback updates after each batch completion
-- Used for VideoRAG similarity search and Q&A
+**Claude Vision Descriptions:**
+- Analyzes frames for **production recreation details**
+- Focus: camera angles, visual effects, color grading, composition, text overlays
+- Batch processing: 10 frames per API call, 3 concurrent calls
+- Cost: ~$0.05 per video (assuming 100 frames × $0.0005/image)
+- Output: Human-readable descriptions Claude can use for Q&A
 
-**Key constants** in `render-api/src/lib/imagebind-client.ts`:
-- `batchSize = 100` (frames per RunPod job)
-- `maxConcurrent = 10` (match RunPod worker allocation)
-- `maxWaitMs = 600000` (10-minute timeout per batch)
+**Example Description:**
+```
+"Wide shot with dark gradient background (#1a1a2e to #16213e).
+White sans-serif text centered, large bold title. Subtle particle
+effects floating. High contrast, cinematic color grading with
+cooler tones."
+```
 
-**Benefits of rolling concurrency:**
-- All 10 RunPod workers utilized simultaneously
-- 10x faster than sequential processing
-- Early failure detection (stop if first batch fails)
-- Predictable progress reporting
+**Key constants** in `render-api/src/lib/vision-describer.ts`:
+- `batchSize = 10` (frames per Claude API call)
+- `maxConcurrent = 3` (concurrent API calls to avoid rate limits)
+- `max_tokens = 1024` (per API call)
 
 **VideoRAG Q&A:**
 - User asks natural language questions about video(s)
-- Embeddings used for semantic similarity search
-- Claude generates answers based on video metadata and visual analysis
-- Supports single-video or cross-video queries
+- Claude receives scene descriptions + metadata (colors, pacing, timing)
+- System prompt optimized for **production recreation guidance**
+- Returns actionable details for Auto Poster to replicate style
 
 **Key files:**
 - `render-api/src/routes/video-analysis.ts`: API routes and pipeline orchestration
 - `render-api/src/lib/video-preprocessor.ts`: FFmpeg scene detection and frame extraction
-- `render-api/src/lib/imagebind-client.ts`: RunPod ImageBind client with batch processing
+- `render-api/src/lib/vision-describer.ts`: Claude Vision description generation
 - `src/pages/VideoAnalysis.tsx`: Frontend UI with video list, preview modal, chat
 
 **Supabase Tables:**
 - `analyzed_videos`: Video metadata, status, pacing metrics, dominant colors
-- `analyzed_scenes`: Per-scene timestamps, colors, and embedding vectors
+- `analyzed_scenes`: Per-scene timestamps, colors, and **scene_description** (text)
 
 **Frontend Features:**
 - YouTube video player embed in preview modal
