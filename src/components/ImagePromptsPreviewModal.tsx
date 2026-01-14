@@ -41,8 +41,9 @@ interface ImagePromptsPreviewModalProps {
   isRegenerating?: boolean;
 }
 
-function formatTimecode(time: string): string {
+function formatTimecode(time: string | undefined): string {
   // Convert HH-MM-SS to HH:MM:SS for display
+  if (!time) return '00:00:00';
   return time.replace(/-/g, ':');
 }
 
@@ -66,7 +67,7 @@ function PromptCard({ prompt, onUpdate }: PromptCardProps) {
     onUpdate({
       ...prompt,
       sceneDescription: editedScene,
-      prompt: prompt.prompt.replace(prompt.sceneDescription, editedScene)
+      prompt: prompt.prompt ? prompt.prompt.replace(prompt.sceneDescription, editedScene) : editedScene
     });
   };
 
