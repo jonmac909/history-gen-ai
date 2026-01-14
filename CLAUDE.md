@@ -667,7 +667,9 @@ if (useParallel) {
 
 **Visual Description Options:**
 
-1. **Claude Vision API** (Current - Expensive):
+**Feature Flag**: Set `USE_OPENSOURCE_VISION=true` in Railway to use LLaVA-NeXT v1.6 (99.7% cheaper) instead of Claude Vision.
+
+1. **Claude Vision API** (Default when `USE_OPENSOURCE_VISION=false`):
    - Analyzes frames for **production recreation details**
    - Focus: camera angles, visual effects, color grading, composition, text overlays
    - Batch processing: 10 frames per API call, 3 concurrent calls
@@ -677,7 +679,7 @@ if (useParallel) {
    - Output: High-quality production descriptions
    - File: `render-api/src/lib/vision-describer.ts`
 
-2. **LLaVA-NeXT v1.6 on RunPod** (Alternative - 98.9% Cheaper):
+2. **LLaVA-NeXT v1.6 on RunPod** (**ENABLED** - 99.7% Cheaper):
    - Open-source vision-language model (llava-v1.6-mistral-7b-hf, 7B params)
    - Same production-focused prompts as Claude Vision
    - Batch processing: 10 frames per API call, 4 concurrent workers
@@ -685,13 +687,13 @@ if (useParallel) {
      - RTX 4090 @ $0.00049/s × ~1.5s per frame
      - Scene keyframes only: ~$0.12 per video (~400 frames)
    - **Savings**: 99.7% reduction ($1,410/month → $3.60/month)
-   - Quality: TBD - Phase 1 testing required
+   - **Quality**: ✅ Tested - produces MORE detailed descriptions than Claude
    - **RunPod Endpoint**: `r6y79ypucrrizw`
    - **Model Requirements**:
      - `transformers==4.45.0` (required for image_token parameter support)
      - 24GB VRAM (RTX 4090 or RTX 3090)
      - 14GB model weights download on first worker startup
-   - Files: `render-api/src/lib/opensource-vision-client.ts`, RunPod worker at `jonmac909/video-vision`
+   - Files: `render-api/src/lib/opensource-vision-client.ts`, `render-api/src/routes/video-analysis.ts`, RunPod worker at `jonmac909/video-vision`
 
 **Example Description:**
 ```
@@ -935,6 +937,8 @@ RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
 RUNPOD_IMAGEBIND_ENDPOINT_ID=<imagebind-endpoint>  # For VideoRAG embeddings
+RUNPOD_VISION_ENDPOINT_ID=r6y79ypucrrizw  # LLaVA-NeXT v1.6 for VideoRAG
+USE_OPENSOURCE_VISION=true  # Use LLaVA-NeXT v1.6 instead of Claude Vision (99.7% cheaper)
 KIE_API_KEY=<kie-api-key-for-seedance>
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
