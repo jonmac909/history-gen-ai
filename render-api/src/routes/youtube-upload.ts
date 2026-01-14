@@ -449,6 +449,16 @@ router.post('/', async (req: Request, res: Response) => {
     playlistId
   }: UploadRequest = req.body;
 
+  // Log received metadata for debugging
+  console.log('[youtube-upload] Received upload request:', {
+    categoryId,
+    playlistId,
+    title: title?.substring(0, 50),
+    privacyStatus,
+    hasThumbnail: !!thumbnailUrl,
+    isAlteredContent
+  });
+
   // Validate required fields
   if (!videoUrl) {
     return res.status(400).json({ error: 'Video URL is required' });
@@ -608,7 +618,8 @@ router.post('/', async (req: Request, res: Response) => {
       videoMetadata.status.publishAt = publishAt;
     }
 
-    console.log('Initializing resumable upload with metadata:', JSON.stringify(videoMetadata, null, 2));
+    console.log('[youtube-upload] Initializing resumable upload with metadata:', JSON.stringify(videoMetadata, null, 2));
+    console.log('[youtube-upload] ⚠️ CATEGORY DEBUG - Sending categoryId:', categoryId, '→', videoMetadata.snippet.categoryId);
 
     const initResponse = await fetch(
       `${YOUTUBE_UPLOAD_URL}?uploadType=resumable&part=snippet,status`,
