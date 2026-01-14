@@ -394,20 +394,25 @@ Multi-step generation with user review at each stage:
 - **VideoRAG**: Uses Claude Vision API (no RunPod endpoint needed)
 
 **Triggering RunPod Worker Rebuilds:**
-- RunPod endpoints are linked to GitHub repos - **webhook is flaky/inconsistent**
-- **Process:**
+- RunPod endpoints are linked to GitHub repos - **webhook auto-triggers most of the time**
+- **Process (ALWAYS use this):**
   1. Push code to GitHub (updates the source)
-  2. **Check Builds tab** in RunPod dashboard (wait 1-2 minutes)
-  3. **If no build appears**, manually trigger build:
-     - Go to RunPod dashboard → Your endpoint → Click "Build" button
-     - Or in Settings/Builds tab, click "Rebuild" or "New Build"
-- **Note**: Webhook behavior is inconsistent - some pushes auto-trigger (e.g., `handler.py` changes), others don't
+     ```bash
+     cd /Users/jonmac/Documents/video-vision-runpod
+     git add handler.py
+     git commit -m "Your message here"
+     git push origin master
+     ```
+  2. **Wait 1-2 minutes** - Webhook usually auto-triggers build
+  3. **Check Builds tab** in RunPod dashboard to confirm build started
+  4. **If no build appears after 2 minutes**, manually trigger:
+     - Go to RunPod dashboard → Endpoint `r6y79ypucrrizw` → Click "Build" button
+- **Example that worked**: https://github.com/jonmac909/video-vision/commit/337be4c93cbe24be20a9e4017f51578cd1f745a2
 - **Worker repos:**
   - Video render CPU: `cd /Users/jonmac/Documents/video-render-cpu-runpod && git add . && git commit -m "message" && git push origin main`
   - Fish Speech TTS: `cd /Users/jonmac/Documents/fish-speech-runpod && git add . && git commit -m "message" && git push origin main`
-  - LLaVA-NeXT Vision: `cd /Users/jonmac/Documents/video-vision-runpod && git add . && git commit -m "message" && git push origin master`
-- After manual build trigger, RunPod rebuilds the Docker image (2-5 minutes)
-- New workers use the updated image on next cold start
+  - LLaVA-NeXT Vision: `cd /Users/jonmac/Documents/video-vision-runpod && git add handler.py && git commit -m "message" && git push origin master` (pushes to https://github.com/jonmac909/video-vision)
+- After build completes (2-5 minutes), new workers use updated code on next cold start
 - **DO NOT** use Docker Hub push or RunPod API
 
 ### Image Generation Architecture
