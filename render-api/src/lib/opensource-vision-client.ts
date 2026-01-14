@@ -88,13 +88,15 @@ export async function generateDescriptions(
     maxWaitMs?: number;
     maxConcurrent?: number;
     onProgress?: (percent: number) => void;
+    useBase64?: boolean;        // Encode frames as base64 (eliminates network I/O in worker)
   } = {}
 ): Promise<VisionDescriptionResponse> {
   const {
     batchSize = 10,             // Process 10 frames per RunPod call (match Claude Vision)
     maxWaitMs = 600000,         // 10 minute timeout
-    maxConcurrent = 4,          // Match worker allocation
+    maxConcurrent = 10,         // Match worker allocation (updated to 10)
     onProgress,
+    useBase64 = true,           // Default to base64 mode (faster)
   } = options;
 
   if (!VISION_ENDPOINT_ID) {
@@ -123,6 +125,34 @@ export async function generateDescriptions(
   const processBatch = async (batch: string[], batchIndex: number): Promise<void> => {
     const batchOffset = batchIndex * batchSize;
 
+    let payload: any;
+
+    if (useBase64) {
+      // Download frames from Supabase and convert to base64 (eliminates worker network I/O)
+      console.log(`[opensource-vision-client] Downloading and encoding batch ${batchIndex + 1}/${batches.length}`);
+      const frameDataArray: string[] = [];
+
+      for (const frameUrl of batch) {
+        const response = await fetch(frameUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download frame: ${response.status}`);
+        }
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        frameDataArray.push(base64);
+      }
+
+      payload = {
+        frame_data: frameDataArray,
+        format: 'base64'
+      };
+    } else {
+      // Pass URLs directly (existing behavior)
+      payload = {
+        frame_urls: batch
+      };
+    }
+
     // Submit job to RunPod
     const runUrl = `${RUNPOD_BASE_URL}/${VISION_ENDPOINT_ID}/run`;
 
@@ -133,9 +163,7 @@ export async function generateDescriptions(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        input: {
-          frame_urls: batch,
-        },
+        input: payload,
       }),
     });
 
