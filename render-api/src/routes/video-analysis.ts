@@ -295,7 +295,7 @@ async function processAnalysis(
         const descriptionResult = await generateDescriptions(preprocessResult.frameUrls, {
           batchSize: 10,        // 10 frames per API call
           maxConcurrent: 10,    // 10 concurrent workers (RunPod allocation)
-          useBase64: true,      // Encode frames as base64 (eliminates worker network I/O)
+          useBase64: false,     // DISABLED: Base64 mode causes CUDA OOM errors (10 images × ~100MB each)
           onProgress: async (descriptionPercent) => {
             const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
             console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
