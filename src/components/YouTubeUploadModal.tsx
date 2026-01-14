@@ -99,6 +99,20 @@ export function YouTubeUploadModal({
   autoUpload = false,
   initialPublishAt,
 }: YouTubeUploadModalProps) {
+  // Debug: Log props on open
+  useEffect(() => {
+    if (isOpen) {
+      console.log('[YouTubeUploadModal] Modal opened with props:', {
+        videoUrl: videoUrl?.substring(0, 100),
+        thumbnails: thumbnails,
+        thumbnailsLength: thumbnails?.length,
+        selectedThumbnailIndex,
+        hasThumbnails: !!thumbnails,
+        hasSelectedIndex: selectedThumbnailIndex !== undefined,
+        shouldShowThumbnail: !!(thumbnails && thumbnails.length > 0 && selectedThumbnailIndex !== undefined)
+      });
+    }
+  }, [isOpen, thumbnails, selectedThumbnailIndex, videoUrl]);
   // Connection state
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
@@ -957,18 +971,28 @@ export function YouTubeUploadModal({
           </div>
 
           {/* Thumbnail Preview */}
-          {thumbnails && thumbnails.length > 0 && selectedThumbnailIndex !== undefined && (
-            <div className="space-y-2">
-              <Label>Selected Thumbnail</Label>
-              <div className="border rounded-lg overflow-hidden">
-                <img
-                  src={thumbnails[selectedThumbnailIndex]}
-                  alt="Selected thumbnail"
-                  className="w-full h-auto"
-                />
+          {(() => {
+            const shouldShow = !!(thumbnails && thumbnails.length > 0 && selectedThumbnailIndex !== undefined);
+            console.log('[YouTubeUploadModal] Thumbnail preview check:', {
+              thumbnails,
+              thumbnailsLength: thumbnails?.length,
+              selectedThumbnailIndex,
+              shouldShow,
+              thumbnailUrl: shouldShow ? thumbnails![selectedThumbnailIndex!] : null
+            });
+            return shouldShow ? (
+              <div className="space-y-2">
+                <Label>Selected Thumbnail</Label>
+                <div className="border rounded-lg overflow-hidden">
+                  <img
+                    src={thumbnails![selectedThumbnailIndex!]}
+                    alt="Selected thumbnail"
+                    className="w-full h-auto"
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            ) : null;
+          })()}
 
           {/* Upload Progress */}
           {isUploading && (

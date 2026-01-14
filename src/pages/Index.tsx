@@ -3664,7 +3664,16 @@ const Index = () => {
       />
 
       {/* YouTube Upload Modal */}
-      {viewState === "review-youtube" && console.log('[Index] YouTube Modal props:', { smokeEmbersVideoUrl, videoUrl, viewState })}
+      {viewState === "review-youtube" && console.log('[Index] YouTube Modal opening with:', {
+        smokeEmbersVideoUrl,
+        videoUrl,
+        viewState,
+        generatedThumbnails,
+        thumbnailsLength: generatedThumbnails?.length,
+        selectedThumbnailIndex,
+        hasThumbnails: generatedThumbnails && generatedThumbnails.length > 0,
+        hasSelectedIndex: selectedThumbnailIndex !== undefined
+      })}
       <YouTubeUploadModal
         isOpen={viewState === "review-youtube"}
         videoUrl={smokeEmbersVideoUrl || videoUrl || ""}
