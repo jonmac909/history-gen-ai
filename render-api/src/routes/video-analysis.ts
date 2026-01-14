@@ -24,6 +24,7 @@ import {
   generateEmbeddings,
   checkImageBindAvailability,
 } from '../lib/imagebind-client';
+import { describeFrames, SceneDescription } from '../lib/vision-describer';
 
 const router = Router();
 
@@ -317,13 +318,44 @@ async function processAnalysis(
 
     await updateStatus('analyzing', 70);
 
-    // Step 3: Save scene data with embeddings
+    // Step 2.5: Generate visual descriptions using Claude Vision
+    let descriptions: Map<number, string> = new Map();
+    if (preprocessResult.frameUrls.length > 0) {
+      console.log(`[video-analysis] Generating visual descriptions for ${preprocessResult.frameUrls.length} frames`);
+      try {
+        const descriptionResult = await describeFrames(preprocessResult.frameUrls, {
+          batchSize: 10,        // 10 frames per API call
+          maxConcurrent: 3,     // 3 concurrent calls to avoid rate limits
+          onProgress: async (descriptionPercent) => {
+            // Map description progress (0-100%) to overall progress (70-85%)
+            const overallProgress = Math.round(70 + (descriptionPercent * 0.15));
+            console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
+            await updateStatus('analyzing', overallProgress);
+          },
+        });
+
+        // Build map of frameIndex -> description
+        for (const desc of descriptionResult) {
+          descriptions.set(desc.frameIndex, desc.description);
+        }
+
+        console.log(`[video-analysis] Generated ${descriptions.size} descriptions`);
+      } catch (err: any) {
+        console.warn(`[video-analysis] Description generation failed:`, err.message);
+        // Continue without descriptions
+      }
+    }
+
+    await updateStatus('analyzing', 85);
+
+    // Step 3: Save scene data with embeddings and descriptions
     console.log(`[video-analysis] Saving ${preprocessResult.scenes.length} scenes`);
     for (let i = 0; i < preprocessResult.scenes.length; i++) {
       const scene = preprocessResult.scenes[i];
       const colors = preprocessResult.colors[i];
       const embedding = embeddings[scene.frameIndex] || null;
       const frameUrl = preprocessResult.frameUrls[scene.frameIndex] || null;
+      const description = descriptions.get(scene.frameIndex) || null;
 
       await supabase
         .from('analyzed_scenes')
@@ -336,6 +368,7 @@ async function processAnalysis(
           brightness: colors?.brightness || null,
           frame_url: frameUrl,
           visual_embedding: embedding,
+          scene_description: description,
         }, {
           onConflict: 'video_id,scene_index',
         });
@@ -507,31 +540,58 @@ router.post('/query', async (req: Request, res: Response) => {
       });
     }
 
-    // Build context for Claude
-    const videoContext = videos.map(v => ({
-      id: v.video_id,
-      title: v.title || 'Unknown',
-      channel: v.channel_name || 'Unknown',
-      duration: v.duration_seconds,
-      avgSceneDuration: v.avg_scene_duration,
-      cutsPerMinute: v.cuts_per_minute,
-      dominantColors: v.dominant_colors,
-      viewCount: v.view_count,
-    }));
+    // Fetch scene descriptions for each video
+    const videoContext: any[] = [];
+    for (const video of videos) {
+      // Get scenes with descriptions
+      const { data: scenes } = await supabase
+        .from('analyzed_scenes')
+        .select('scene_index, start_seconds, end_seconds, dominant_color, scene_description')
+        .eq('video_id', video.video_id)
+        .order('scene_index', { ascending: true });
+
+      videoContext.push({
+        id: video.video_id,
+        title: video.title || 'Unknown',
+        channel: video.channel_name || 'Unknown',
+        duration: video.duration_seconds,
+        avgSceneDuration: video.avg_scene_duration,
+        cutsPerMinute: video.cuts_per_minute,
+        dominantColors: video.dominant_colors,
+        viewCount: video.view_count,
+        scenes: (scenes || []).map(s => ({
+          sceneIndex: s.scene_index,
+          timestamp: `${Math.floor(s.start_seconds / 60)}:${String(Math.floor(s.start_seconds % 60)).padStart(2, '0')}`,
+          color: s.dominant_color,
+          description: s.scene_description,
+        })),
+      });
+    }
 
     // Query Claude
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    const systemPrompt = `You are a video analysis assistant. You have access to analysis data from ${videos.length} YouTube videos.
+    const systemPrompt = `You are a video production analysis assistant helping recreate successful video styles.
+
+You have detailed scene-by-scene analysis of ${videos.length} YouTube videos, including:
+- Visual production details (camera angles, effects, color grading, composition)
+- Pacing metrics (cuts per minute, scene duration)
+- Color palettes and dominant colors
+- Frame-by-frame descriptions with production notes
 
 Video analysis data:
 ${JSON.stringify(videoContext, null, 2)}
 
-Answer questions about visual styles, pacing, colors, and patterns in these videos.
-Be specific and cite which videos your insights come from.
-Keep responses concise and actionable.`;
+When answering questions:
+1. Focus on ACTIONABLE production details that can be replicated
+2. Cite specific scenes with timestamps as examples
+3. Describe visual elements (effects, camera work, colors, composition)
+4. Be specific about what makes the style effective
+5. Suggest how to recreate similar visuals
+
+Your goal is to help the Auto Poster system recreate videos in the same style as successful originals.`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
