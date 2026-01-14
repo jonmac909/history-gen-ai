@@ -293,9 +293,9 @@ async function processAnalysis(
       console.log(`[video-analysis] Generating visual descriptions for ${preprocessResult.frameUrls.length} frames`);
       try {
         const descriptionResult = await generateDescriptions(preprocessResult.frameUrls, {
-          batchSize: 10,        // 10 frames per API call
+          batchSize: 5,         // 5 frames per batch (reduced from 10 to avoid CUDA OOM)
           maxConcurrent: 10,    // 10 concurrent workers (RunPod allocation)
-          useBase64: false,     // DISABLED: Base64 mode causes CUDA OOM errors (10 images × ~100MB each)
+          useBase64: true,      // Base64 mode enabled with smaller batch size (5 images × 100MB = 500MB VRAM)
           onProgress: async (descriptionPercent) => {
             const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
             console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
