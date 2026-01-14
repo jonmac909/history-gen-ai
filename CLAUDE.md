@@ -233,7 +233,7 @@ Long-running operations run on **Railway** (usage-based pricing, no timeout limi
 | `/auto-clone` | Auto Poster - automated video cloning system |
 | `/auto-clone/test-whatsapp` | Test WhatsApp notification |
 | `/costs/:projectId` | Cost tracking - per-step and total costs |
-| `/video-analysis/*` | VideoRAG - video analysis, querying, insights |
+| `/video-analysis/*` | Video Analysis Pipeline - video analysis, querying, insights |
 
 **Supabase Edge Functions** (`supabase/functions/`):
 | Function | Purpose |
@@ -391,7 +391,7 @@ Multi-step generation with user review at each stage:
   - Incrementally concatenates chunks (only 1 combined buffer per segment)
   - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
-- **VideoRAG**: Uses Claude Vision API (no RunPod endpoint needed)
+- **Video Analysis Pipeline**: Uses LLaVA-NeXT v1.6 on RunPod (endpoint: `r6y79ypucrrizw`)
 
 **Triggering RunPod Worker Rebuilds:**
 - RunPod endpoints are linked to GitHub repos - **webhook auto-triggers most of the time**
@@ -644,9 +644,9 @@ if (useParallel) {
 - `render-api/src/lib/outlier-cache.ts`: Supabase caching layer
 - `src/pages/Outliers.tsx`: Frontend outliers page
 
-### Video Analysis / VideoRAG Architecture
+### Video Analysis Pipeline Architecture
 
-**Analyzes YouTube videos using Claude Vision to extract actionable production details for Auto Poster recreation.**
+**Analyzes YouTube videos using LLaVA-NeXT v1.6 to extract actionable production details for Auto Poster recreation.**
 
 **Purpose:** Enable Auto Poster to recreate successful video styles by analyzing visual production techniques from competitor videos.
 
@@ -660,13 +660,13 @@ if (useParallel) {
 | `DELETE /video-analysis/:videoId` | Delete video and scenes |
 | `POST /video-analysis/query` | Ask questions about videos (VideoRAG Q&A) |
 | `GET /video-analysis/insights` | Aggregated insights across all videos |
-| `GET /video-analysis/health` | Service health check (Claude Vision + Supabase) |
+| `GET /video-analysis/health` | Service health check (LLaVA + Supabase) |
 | `POST /video-analysis/backfill-titles` | Backfill missing YouTube titles |
 
 **Analysis Pipeline:**
 1. **Download** (0-40%): Download video via yt-dlp to temp file
 2. **Extract** (40-50%): FFmpeg scene detection extracts keyframes
-3. **Describe** (50-70%): Claude Vision generates production descriptions for each frame
+3. **Describe** (50-70%): LLaVA-NeXT v1.6 generates production descriptions for each frame
 4. **Analyze** (70-75%): Calculate pacing (cuts/min, avg scene duration), extract dominant colors
 5. **Save** (75-100%): Store in Supabase tables
 
@@ -676,7 +676,10 @@ if (useParallel) {
 - Open-source vision-language model (llava-v1.6-mistral-7b-hf, 7B params)
 - Analyzes frames for **production recreation details**
 - Focus: camera angles, visual effects, color grading, composition, text overlays
-- Batch processing: 10 frames per API call, 10 concurrent workers
+- **Batch processing**: 5 frames per API call (reduced from 10 to avoid CUDA OOM)
+- **Concurrent workers**: 10 RunPod workers in parallel
+- **Base64 optimization**: Railway downloads frames once, encodes as base64, eliminates worker network I/O
+  - Disabled if batch size >5 (GPU memory constraint: 24GB VRAM)
 - **Cost**: ~$0.53 per 2-hour video (10 workers parallel)
   - RTX 4090 @ $0.00049/s × ~1.5s per frame
   - Scene keyframes only: ~$0.12 per video (~400 frames)
@@ -697,10 +700,10 @@ effects floating. High contrast, cinematic color grading with
 cooler tones."
 ```
 
-**Key constants** in `render-api/src/lib/vision-describer.ts`:
-- `batchSize = 10` (frames per Claude API call)
-- `maxConcurrent = 3` (concurrent API calls to avoid rate limits)
-- `max_tokens = 1024` (per API call)
+**Key constants** in `render-api/src/lib/opensource-vision-client.ts`:
+- `batchSize = 5` (frames per API call - GPU memory optimized)
+- `maxConcurrent = 10` (concurrent RunPod workers)
+- `useBase64 = true` (eliminates network I/O in workers)
 
 **VideoRAG Q&A:**
 - User asks natural language questions about video(s)
@@ -711,7 +714,8 @@ cooler tones."
 **Key files:**
 - `render-api/src/routes/video-analysis.ts`: API routes and pipeline orchestration
 - `render-api/src/lib/video-preprocessor.ts`: FFmpeg scene detection and frame extraction
-- `render-api/src/lib/vision-describer.ts`: Claude Vision description generation
+- `render-api/src/lib/opensource-vision-client.ts`: LLaVA-NeXT v1.6 description generation (primary)
+- `render-api/src/lib/vision-describer.ts`: Claude Vision description generation (legacy/fallback)
 - `src/pages/VideoAnalysis.tsx`: Frontend UI with video list, preview modal, chat
 
 **Supabase Tables:**
@@ -930,8 +934,8 @@ RUNPOD_API_KEY=<runpod-key>
 RUNPOD_ZIMAGE_ENDPOINT_ID=<z-image-endpoint>
 RUNPOD_ENDPOINT_ID=32lqrjn54t9rcw
 RUNPOD_CPU_ENDPOINT_ID=bw3dx1k956cee9
-RUNPOD_IMAGEBIND_ENDPOINT_ID=<imagebind-endpoint>  # For VideoRAG embeddings
-RUNPOD_VISION_ENDPOINT_ID=r6y79ypucrrizw  # LLaVA-NeXT v1.6 for VideoRAG (always used)
+RUNPOD_IMAGEBIND_ENDPOINT_ID=<imagebind-endpoint>  # For Video Analysis embeddings (unused)
+RUNPOD_VISION_ENDPOINT_ID=r6y79ypucrrizw  # LLaVA-NeXT v1.6 for Video Analysis Pipeline
 KIE_API_KEY=<kie-api-key-for-seedance>
 OPENAI_API_KEY=<openai-key-for-whisper>
 SUPADATA_API_KEY=<supadata-key-for-youtube>
@@ -951,7 +955,7 @@ PORT=10000
 ### Storage Buckets
 - `voice-samples`: User uploaded voice samples (PUBLIC)
 - `generated-assets`: All generated content (audio, images, video)
-- `analyzed-videos`: VideoRAG extracted frames and analysis data
+- `analyzed-videos`: Video Analysis Pipeline extracted frames and analysis data
 
 ## Deployment
 
