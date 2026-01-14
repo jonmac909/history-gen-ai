@@ -1334,6 +1334,8 @@ const Index = () => {
 
   // Step 5: After prompts reviewed/edited, generate images
   const handlePromptsConfirm = async (editedPrompts: ImagePromptWithTiming[], editedStylePrompt: string) => {
+    console.log(`[handlePromptsConfirm] Generating ${editedPrompts.length} images based on prompts (NOT using settings.imageCount: ${settings.imageCount})`);
+
     setImagePrompts(editedPrompts);
     // Save the edited style prompt to settings so it persists across refreshes
     setSettings(prev => ({ ...prev, customStylePrompt: editedStylePrompt }));
@@ -1366,6 +1368,8 @@ const Index = () => {
           variant: "destructive",
         });
       }
+
+      console.log(`[handlePromptsConfirm] Image generation complete. Requested: ${editedPrompts.length}, Received: ${imageResult.images?.length || 0}`);
 
       updateStep("images", "completed", "Done");
       setPendingImages(imageResult.images || []);
@@ -1775,8 +1779,11 @@ const Index = () => {
         scriptForPrompts = textLines.join(' ');
       }
 
-      // Use existing prompt count if available (for loaded projects), otherwise use settings
+      // ALWAYS use existing prompt count if available (for loaded projects with custom prompt counts)
+      // This ensures regeneration maintains the same number of prompts, not the default setting
       const promptCount = imagePrompts.length > 0 ? imagePrompts.length : settings.imageCount;
+
+      console.log(`[RegenerateImagePrompts] Using prompt count: ${promptCount} (imagePrompts.length: ${imagePrompts.length}, settings.imageCount: ${settings.imageCount})`);
 
       const promptResult = await generateImagePrompts(
         scriptForPrompts,
