@@ -33,7 +33,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm p-6">
-        <h1 className="text-2xl font-semibold text-center mb-6">HistoryGen AI</h1>
+        <h1 className="text-2xl font-semibold text-center mb-6">AUTO AI GEN</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <input

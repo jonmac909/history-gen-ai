@@ -2886,10 +2886,10 @@ const Index = () => {
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
             <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center">
-              <Scroll className="w-5 h-5 text-primary-foreground" />
+              <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold text-foreground">
-              HistoryVidGen
+              AUTO AI GEN
             </span>
           </button>
           
@@ -3135,7 +3135,7 @@ const Index = () => {
           <div className="w-full max-w-3xl mx-auto text-center space-y-8">
             <div className="space-y-3">
               <h1 className="text-4xl md:text-5xl font-bold text-foreground tracking-tight">
-                Create Your History AI Video
+                Create Your AI Video
               </h1>
               <p className="text-lg text-muted-foreground">
                 {settings.customScript && settings.customScript.trim().length > 0
