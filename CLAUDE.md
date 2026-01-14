@@ -394,12 +394,19 @@ Multi-step generation with user review at each stage:
 - **VideoRAG**: Uses Claude Vision API (no RunPod endpoint needed)
 
 **Triggering RunPod Worker Rebuilds:**
-- RunPod endpoints are linked to GitHub repos - **push to GitHub triggers rebuild**
-- Video render CPU worker: `cd /Users/jonmac/Documents/video-render-cpu-runpod && git add . && git commit -m "message" && git push origin main`
-- Fish Speech worker: `cd /Users/jonmac/Documents/fish-speech-runpod && git add . && git commit -m "message" && git push origin main`
-- After push, RunPod automatically rebuilds the Docker image (takes 2-5 minutes)
-- New workers will use the updated image on next cold start
-- **DO NOT** use Docker Hub push or RunPod API - only GitHub push triggers rebuilds
+- RunPod endpoints are linked to GitHub repos - **GitHub push + manual dashboard trigger required**
+- **Process:**
+  1. Push code to GitHub (updates the source)
+  2. **Manually trigger build** in RunPod dashboard (webhook not configured)
+     - Go to RunPod dashboard → Your endpoint → Click "Build" button
+     - Or in Settings/Builds tab, click "Rebuild" or "New Build"
+- **Worker repos:**
+  - Video render CPU: `cd /Users/jonmac/Documents/video-render-cpu-runpod && git add . && git commit -m "message" && git push origin main`
+  - Fish Speech TTS: `cd /Users/jonmac/Documents/fish-speech-runpod && git add . && git commit -m "message" && git push origin main`
+  - LLaVA-NeXT Vision: `cd /Users/jonmac/Documents/video-vision-runpod && git add . && git commit -m "message" && git push origin master`
+- After manual build trigger, RunPod rebuilds the Docker image (2-5 minutes)
+- New workers use the updated image on next cold start
+- **DO NOT** use Docker Hub push or RunPod API
 
 ### Image Generation Architecture
 
@@ -668,8 +675,8 @@ if (useParallel) {
    - Output: High-quality production descriptions
    - File: `render-api/src/lib/vision-describer.ts`
 
-2. **LLaVA-NeXT-Video on RunPod** (Alternative - 98.9% Cheaper):
-   - Open-source vision-language model for cost savings
+2. **LLaVA-NeXT v1.6 on RunPod** (Alternative - 98.9% Cheaper):
+   - Open-source vision-language model (llava-v1.6-mistral-7b-hf, 7B params)
    - Same production-focused prompts as Claude Vision
    - Batch processing: 10 frames per API call, 4 concurrent workers
    - **Cost**: ~$0.53 per 2-hour video (10 workers parallel)
@@ -677,6 +684,11 @@ if (useParallel) {
      - Scene keyframes only: ~$0.12 per video (~400 frames)
    - **Savings**: 99.7% reduction ($1,410/month → $3.60/month)
    - Quality: TBD - Phase 1 testing required
+   - **RunPod Endpoint**: `r6y79ypucrrizw`
+   - **Model Requirements**:
+     - `transformers==4.45.0` (required for image_token parameter support)
+     - 24GB VRAM (RTX 4090 or RTX 3090)
+     - 14GB model weights download on first worker startup
    - Files: `render-api/src/lib/opensource-vision-client.ts`, RunPod worker at `jonmac909/video-vision`
 
 **Example Description:**
