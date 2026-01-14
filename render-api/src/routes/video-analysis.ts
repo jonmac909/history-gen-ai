@@ -21,6 +21,7 @@ import {
   PreprocessResult,
 } from '../lib/video-preprocessor';
 import { describeFrames, SceneDescription } from '../lib/vision-describer';
+import { generateDescriptions as opensourceDescribeFrames } from '../lib/opensource-vision-client';
 
 const router = Router();
 
@@ -282,28 +283,50 @@ async function processAnalysis(
       download_tier: preprocessResult.tier,
     });
 
-    // Step 2: Generate visual descriptions using Claude Vision
+    // Step 2: Generate visual descriptions using vision model
+    const useOpensource = process.env.USE_OPENSOURCE_VISION === 'true';
+    const visionModel = useOpensource ? 'LLaVA-NeXT v1.6' : 'Claude Vision';
+    console.log(`[video-analysis] Using ${visionModel} for frame descriptions`);
+
     let descriptions: Map<number, string> = new Map();
     if (preprocessResult.frameUrls.length > 0) {
       console.log(`[video-analysis] Generating visual descriptions for ${preprocessResult.frameUrls.length} frames`);
       try {
-        const descriptionResult = await describeFrames(preprocessResult.frameUrls, {
-          batchSize: 10,        // 10 frames per API call
-          maxConcurrent: 3,     // 3 concurrent calls to avoid rate limits
-          onProgress: async (descriptionPercent) => {
-            // Map description progress (0-100%) to overall progress (50-70%)
-            const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
-            console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
-            await updateStatus('analyzing', overallProgress);
-          },
-        });
+        if (useOpensource) {
+          // Use open-source LLaVA-NeXT v1.6 model (99.7% cheaper)
+          const descriptionResult = await opensourceDescribeFrames(preprocessResult.frameUrls, {
+            batchSize: 10,        // 10 frames per API call
+            maxConcurrent: 4,     // 4 concurrent workers (RunPod allocation)
+            onProgress: async (descriptionPercent) => {
+              const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
+              console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
+              await updateStatus('analyzing', overallProgress);
+            },
+          });
 
-        // Build map of frameIndex -> description
-        for (const desc of descriptionResult) {
-          descriptions.set(desc.frameIndex, desc.description);
+          // Build map of frameIndex -> description (opensource returns array)
+          for (let i = 0; i < descriptionResult.descriptions.length; i++) {
+            descriptions.set(i, descriptionResult.descriptions[i]);
+          }
+        } else {
+          // Use Claude Vision API (expensive but high quality)
+          const descriptionResult = await describeFrames(preprocessResult.frameUrls, {
+            batchSize: 10,        // 10 frames per API call
+            maxConcurrent: 3,     // 3 concurrent calls to avoid rate limits
+            onProgress: async (descriptionPercent) => {
+              const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
+              console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
+              await updateStatus('analyzing', overallProgress);
+            },
+          });
+
+          // Build map of frameIndex -> description (Claude returns array with frameIndex)
+          for (const desc of descriptionResult) {
+            descriptions.set(desc.frameIndex, desc.description);
+          }
         }
 
-        console.log(`[video-analysis] Generated ${descriptions.size} descriptions`);
+        console.log(`[video-analysis] Generated ${descriptions.size} descriptions using ${visionModel}`);
       } catch (err: any) {
         console.warn(`[video-analysis] Description generation failed:`, err.message);
         // Continue without descriptions
