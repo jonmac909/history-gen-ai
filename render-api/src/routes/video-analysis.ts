@@ -162,7 +162,7 @@ router.post('/download', async (req: Request, res: Response) => {
  */
 router.post('/analyze', async (req: Request, res: Response) => {
   try {
-    const { videoId, videoUrl, options = {} } = req.body;
+    const { videoId, videoUrl: providedUrl, options = {} } = req.body;
 
     if (!videoId) {
       return res.status(400).json({
@@ -171,7 +171,10 @@ router.post('/analyze', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`[video-analysis] Analysis requested: ${videoId}`);
+    // Construct YouTube URL from videoId if not provided
+    const videoUrl = providedUrl || `https://www.youtube.com/watch?v=${videoId}`;
+
+    console.log(`[video-analysis] Analysis requested: ${videoId} (${videoUrl})`);
 
     // Fetch video title early
     const videoTitle = await fetchVideoTitle(videoId);
