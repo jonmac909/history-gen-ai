@@ -20,10 +20,6 @@ import {
   cleanupTempFiles,
   PreprocessResult,
 } from '../lib/video-preprocessor';
-import {
-  generateEmbeddings,
-  checkImageBindAvailability,
-} from '../lib/imagebind-client';
 import { describeFrames, SceneDescription } from '../lib/vision-describer';
 
 const router = Router();
@@ -181,13 +177,6 @@ router.post('/analyze', async (req: Request, res: Response) => {
     const videoTitle = await fetchVideoTitle(videoId);
     console.log(`[video-analysis] Video title: ${videoTitle || 'Unknown'}`);
 
-    // Check ImageBind availability
-    const imagebindStatus = await checkImageBindAvailability();
-    if (!imagebindStatus.available) {
-      console.warn(`[video-analysis] ImageBind not available: ${imagebindStatus.error}`);
-      // Continue without embeddings if ImageBind unavailable
-    }
-
     // Initialize job with title
     analysisJobs.set(videoId, {
       status: 'downloading',
@@ -212,7 +201,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
       });
 
     // Start analysis in background
-    processAnalysis(videoId, videoUrl, options, imagebindStatus.available)
+    processAnalysis(videoId, videoUrl, options)
       .catch(err => {
         console.error(`[video-analysis] Background analysis failed:`, err);
       });
@@ -222,7 +211,6 @@ router.post('/analyze', async (req: Request, res: Response) => {
       message: 'Analysis started',
       videoId,
       status: 'downloading',
-      imagebindAvailable: imagebindStatus.available,
     });
 
   } catch (error: any) {
@@ -240,8 +228,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
 async function processAnalysis(
   videoId: string,
   videoUrl: string,
-  options: any,
-  generateEmbeddingsFlag: boolean
+  options: any
 ): Promise<void> {
   const supabase = getSupabase();
 
@@ -295,30 +282,7 @@ async function processAnalysis(
       download_tier: preprocessResult.tier,
     });
 
-    // Step 2: Generate ImageBind embeddings (if available)
-    let embeddings: number[][] = [];
-    if (generateEmbeddingsFlag && preprocessResult.frameUrls.length > 0) {
-      console.log(`[video-analysis] Generating embeddings for ${preprocessResult.frameUrls.length} frames`);
-      try {
-        const embeddingResult = await generateEmbeddings(preprocessResult.frameUrls, {
-          onProgress: async (embeddingPercent) => {
-            // Map embedding progress (0-100%) to overall progress (50-70%)
-            const overallProgress = Math.round(50 + (embeddingPercent * 0.2));
-            console.log(`[video-analysis] Embedding progress: ${embeddingPercent}% (overall: ${overallProgress}%)`);
-            await updateStatus('analyzing', overallProgress);
-          },
-        });
-        embeddings = embeddingResult.embeddings;
-        console.log(`[video-analysis] Generated ${embeddings.length} embeddings`);
-      } catch (err: any) {
-        console.warn(`[video-analysis] Embedding generation failed:`, err.message);
-        // Continue without embeddings
-      }
-    }
-
-    await updateStatus('analyzing', 70);
-
-    // Step 2.5: Generate visual descriptions using Claude Vision
+    // Step 2: Generate visual descriptions using Claude Vision
     let descriptions: Map<number, string> = new Map();
     if (preprocessResult.frameUrls.length > 0) {
       console.log(`[video-analysis] Generating visual descriptions for ${preprocessResult.frameUrls.length} frames`);
@@ -327,8 +291,8 @@ async function processAnalysis(
           batchSize: 10,        // 10 frames per API call
           maxConcurrent: 3,     // 3 concurrent calls to avoid rate limits
           onProgress: async (descriptionPercent) => {
-            // Map description progress (0-100%) to overall progress (70-85%)
-            const overallProgress = Math.round(70 + (descriptionPercent * 0.15));
+            // Map description progress (0-100%) to overall progress (50-70%)
+            const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
             console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
             await updateStatus('analyzing', overallProgress);
           },
@@ -346,14 +310,13 @@ async function processAnalysis(
       }
     }
 
-    await updateStatus('analyzing', 85);
+    await updateStatus('analyzing', 70);
 
-    // Step 3: Save scene data with embeddings and descriptions
+    // Step 3: Save scene data with descriptions
     console.log(`[video-analysis] Saving ${preprocessResult.scenes.length} scenes`);
     for (let i = 0; i < preprocessResult.scenes.length; i++) {
       const scene = preprocessResult.scenes[i];
       const colors = preprocessResult.colors[i];
-      const embedding = embeddings[scene.frameIndex] || null;
       const frameUrl = preprocessResult.frameUrls[scene.frameIndex] || null;
       const description = descriptions.get(scene.frameIndex) || null;
 
@@ -367,14 +330,13 @@ async function processAnalysis(
           dominant_color: colors?.dominantColor || null,
           brightness: colors?.brightness || null,
           frame_url: frameUrl,
-          visual_embedding: embedding,
           scene_description: description,
         }, {
           onConflict: 'video_id,scene_index',
         });
     }
 
-    await updateStatus('analyzing', 85);
+    await updateStatus('analyzing', 75);
 
     // Step 4: Compute aggregate metrics
     const avgSceneDuration = preprocessResult.scenes.reduce(
@@ -739,12 +701,10 @@ router.get('/videos', async (req: Request, res: Response) => {
  */
 router.get('/health', async (req: Request, res: Response) => {
   try {
-    const imagebindStatus = await checkImageBindAvailability();
-
     return res.json({
       success: true,
       services: {
-        imagebind: imagebindStatus,
+        claudeVision: !!process.env.ANTHROPIC_API_KEY,
         supabase: !!process.env.SUPABASE_URL,
       },
     });
