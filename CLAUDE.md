@@ -394,12 +394,14 @@ Multi-step generation with user review at each stage:
 - **VideoRAG**: Uses Claude Vision API (no RunPod endpoint needed)
 
 **Triggering RunPod Worker Rebuilds:**
-- RunPod endpoints are linked to GitHub repos - **GitHub push + manual dashboard trigger required**
+- RunPod endpoints are linked to GitHub repos - **webhook is flaky/inconsistent**
 - **Process:**
   1. Push code to GitHub (updates the source)
-  2. **Manually trigger build** in RunPod dashboard (webhook not configured)
+  2. **Check Builds tab** in RunPod dashboard (wait 1-2 minutes)
+  3. **If no build appears**, manually trigger build:
      - Go to RunPod dashboard → Your endpoint → Click "Build" button
      - Or in Settings/Builds tab, click "Rebuild" or "New Build"
+- **Note**: Webhook behavior is inconsistent - some pushes auto-trigger (e.g., `handler.py` changes), others don't
 - **Worker repos:**
   - Video render CPU: `cd /Users/jonmac/Documents/video-render-cpu-runpod && git add . && git commit -m "message" && git push origin main`
   - Fish Speech TTS: `cd /Users/jonmac/Documents/fish-speech-runpod && git add . && git commit -m "message" && git push origin main`
