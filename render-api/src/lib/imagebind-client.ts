@@ -83,12 +83,14 @@ export async function generateEmbeddings(
   options: {
     batchSize?: number;
     maxWaitMs?: number;
+    maxConcurrent?: number;
     onProgress?: (percent: number) => void;
   } = {}
 ): Promise<ImageBindResponse> {
   const {
-    batchSize = 100,   // Process 100 frames per RunPod call
-    maxWaitMs = 600000, // 10 minute timeout
+    batchSize = 100,         // Process 100 frames per RunPod call
+    maxWaitMs = 600000,      // 10 minute timeout
+    maxConcurrent = 10,      // Match RunPod worker allocation
     onProgress,
   } = options;
 
@@ -100,15 +102,23 @@ export async function generateEmbeddings(
     throw new Error('RUNPOD_API_KEY not configured');
   }
 
-  console.log(`[imagebind-client] Generating embeddings for ${frameUrls.length} frames`);
+  console.log(`[imagebind-client] Generating embeddings for ${frameUrls.length} frames (${maxConcurrent} workers)`);
 
-  // Process in batches if needed
+  // Split into batches
+  const batches: string[][] = [];
+  for (let i = 0; i < frameUrls.length; i += batchSize) {
+    batches.push(frameUrls.slice(i, i + batchSize));
+  }
+
+  console.log(`[imagebind-client] Processing ${batches.length} batches with rolling concurrency (max ${maxConcurrent})`);
+
+  // Process batches with rolling concurrency
   const allEmbeddings: number[][] = [];
   const allFailedIndices: number[] = [];
+  let completedBatches = 0;
 
-  for (let i = 0; i < frameUrls.length; i += batchSize) {
-    const batch = frameUrls.slice(i, i + batchSize);
-    console.log(`[imagebind-client] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(frameUrls.length / batchSize)}`);
+  const processBatch = async (batch: string[], batchIndex: number): Promise<void> => {
+    const batchOffset = batchIndex * batchSize;
 
     // Submit job to RunPod
     const runUrl = `${RUNPOD_BASE_URL}/${IMAGEBIND_ENDPOINT_ID}/run`;
@@ -128,22 +138,22 @@ export async function generateEmbeddings(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`RunPod submission failed: ${response.status} - ${errorText}`);
+      throw new Error(`RunPod submission failed (batch ${batchIndex + 1}): ${response.status} - ${errorText}`);
     }
 
     const jobData = await response.json() as RunPodJobSubmission;
 
     if (!jobData.id) {
-      throw new Error('RunPod did not return a job ID');
+      throw new Error(`RunPod did not return a job ID (batch ${batchIndex + 1})`);
     }
 
-    console.log(`[imagebind-client] RunPod job submitted: ${jobData.id}`);
+    console.log(`[imagebind-client] Batch ${batchIndex + 1}/${batches.length} submitted: ${jobData.id}`);
 
     // Poll for completion
     const result = await pollRunPodJob(jobData.id, maxWaitMs);
 
     if (result?.error) {
-      throw new Error(`ImageBind worker error: ${result.error}`);
+      throw new Error(`ImageBind worker error (batch ${batchIndex + 1}): ${result.error}`);
     }
 
     // Collect results
@@ -153,16 +163,25 @@ export async function generateEmbeddings(
 
     if (result?.failed_indices) {
       // Adjust indices for batch offset
-      allFailedIndices.push(...result.failed_indices.map((idx: number) => idx + i));
+      allFailedIndices.push(...result.failed_indices.map((idx: number) => idx + batchOffset));
     }
 
-    // Report progress after each batch
+    // Report progress
+    completedBatches++;
     if (onProgress) {
-      const batchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(frameUrls.length / batchSize);
-      const percent = Math.round((batchNumber / totalBatches) * 100);
+      const percent = Math.round((completedBatches / batches.length) * 100);
       onProgress(percent);
     }
+
+    console.log(`[imagebind-client] Batch ${batchIndex + 1}/${batches.length} completed (${completedBatches}/${batches.length} total)`);
+  };
+
+  // Rolling concurrency: process maxConcurrent batches at a time
+  for (let i = 0; i < batches.length; i += maxConcurrent) {
+    const batchChunk = batches.slice(i, i + maxConcurrent);
+    const batchPromises = batchChunk.map((batch, idx) => processBatch(batch, i + idx));
+
+    await Promise.all(batchPromises);
   }
 
   console.log(`[imagebind-client] Generated ${allEmbeddings.length} embeddings`);

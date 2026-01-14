@@ -385,12 +385,13 @@ Multi-step generation with user review at each stage:
 - Uses `guidance_scale=0.0` (no negative prompts)
 
 **RunPod Worker Allocation**:
-- **10 workers for audio (Fish Speech)**, **4 workers for images (Z-Image)**
+- **10 workers for audio (Fish Speech)**, **4 workers for images (Z-Image)**, **10 workers for VideoRAG (ImageBind)**
 - Set in RunPod dashboard endpoint settings
 - **Memory optimization**: Audio processing uses **incremental concatenation** to prevent Railway OOM kills
   - Incrementally concatenates chunks (only 1 combined buffer per segment)
   - All 10 workers utilized concurrently via `MAX_CONCURRENT_SEGMENTS=10`
   - Node.js memory flags: `--max-old-space-size=4096 --optimize-for-size --gc-interval=100`
+- **VideoRAG**: All 10 ImageBind workers utilized via rolling concurrency (`maxConcurrent=10`)
 
 **Triggering RunPod Worker Rebuilds:**
 - RunPod endpoints are linked to GitHub repos - **push to GitHub triggers rebuild**
@@ -656,8 +657,21 @@ if (useParallel) {
 **ImageBind RunPod Endpoint**:
 - Input: Array of frame image URLs (batch processing)
 - Output: 768-dimensional visual embeddings per frame
-- Progress callback updates during batch processing
+- **Parallel processing**: 10 concurrent workers (rolling concurrency)
+- Batch size: 100 frames per worker
+- Progress callback updates after each batch completion
 - Used for VideoRAG similarity search and Q&A
+
+**Key constants** in `render-api/src/lib/imagebind-client.ts`:
+- `batchSize = 100` (frames per RunPod job)
+- `maxConcurrent = 10` (match RunPod worker allocation)
+- `maxWaitMs = 600000` (10-minute timeout per batch)
+
+**Benefits of rolling concurrency:**
+- All 10 RunPod workers utilized simultaneously
+- 10x faster than sequential processing
+- Early failure detection (stop if first batch fails)
+- Predictable progress reporting
 
 **VideoRAG Q&A:**
 - User asks natural language questions about video(s)
