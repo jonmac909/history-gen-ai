@@ -656,12 +656,28 @@ if (useParallel) {
 4. **Analyze** (70-75%): Calculate pacing (cuts/min, avg scene duration), extract dominant colors
 5. **Save** (75-100%): Store in Supabase tables
 
-**Claude Vision Descriptions:**
-- Analyzes frames for **production recreation details**
-- Focus: camera angles, visual effects, color grading, composition, text overlays
-- Batch processing: 10 frames per API call, 3 concurrent calls
-- Cost: ~$0.05 per video (assuming 100 frames × $0.0005/image)
-- Output: Human-readable descriptions Claude can use for Q&A
+**Visual Description Options:**
+
+1. **Claude Vision API** (Current - Expensive):
+   - Analyzes frames for **production recreation details**
+   - Focus: camera angles, visual effects, color grading, composition, text overlays
+   - Batch processing: 10 frames per API call, 3 concurrent calls
+   - **Cost**: ~$47 per 2-hour video (7,200 frames @ 1 FPS)
+     - Input: 11.52M tokens × $3/1M = $34.56
+     - Output: 737K tokens × $15/1M = $11.05
+   - Output: High-quality production descriptions
+   - File: `render-api/src/lib/vision-describer.ts`
+
+2. **LLaVA-NeXT-Video on RunPod** (Alternative - 98.9% Cheaper):
+   - Open-source vision-language model for cost savings
+   - Same production-focused prompts as Claude Vision
+   - Batch processing: 10 frames per API call, 4 concurrent workers
+   - **Cost**: ~$0.53 per 2-hour video (10 workers parallel)
+     - RTX 4090 @ $0.00049/s × ~1.5s per frame
+     - Scene keyframes only: ~$0.12 per video (~400 frames)
+   - **Savings**: 99.7% reduction ($1,410/month → $3.60/month)
+   - Quality: TBD - Phase 1 testing required
+   - Files: `render-api/src/lib/opensource-vision-client.ts`, RunPod worker at `jonmac909/video-vision`
 
 **Example Description:**
 ```
@@ -697,6 +713,77 @@ cooler tones."
 - Scene color timeline visualization
 - Per-video chat interface for VideoRAG Q&A
 - Delete button for removing analyzed videos
+
+### Vision Model Testing / Comparison
+
+**Phase 1 Proof-of-Concept for evaluating open-source vision models before production deployment.**
+
+**Routes** (`render-api/src/routes/vision-test.ts`):
+| Route | Purpose |
+|-------|---------|
+| `POST /vision-test/compare` | Side-by-side comparison of Claude Vision vs LLaVA-NeXT-Video |
+| `GET /vision-test/health` | Check availability of both vision services |
+
+**Comparison Process:**
+1. Download test video and extract frames (1 FPS)
+2. Upload frames to Supabase for URL access
+3. Generate descriptions with BOTH models in parallel:
+   - Claude Vision (`vision-describer.ts`)
+   - LLaVA-NeXT-Video (`opensource-vision-client.ts`)
+4. Return side-by-side comparison with cost analysis
+
+**Request Format:**
+```json
+{
+  "videoUrl": "https://youtube.com/watch?v=...",
+  "frameCount": 10,
+  "useKeyframes": true
+}
+```
+
+**Response Format:**
+```json
+{
+  "videoUrl": "...",
+  "frameCount": 10,
+  "frames": [
+    {
+      "frameIndex": 0,
+      "frameUrl": "https://...",
+      "claudeDescription": "Wide shot with dark gradient...",
+      "opensourceDescription": "Wide angle view with gradient background...",
+      "claudeError": null,
+      "opensourceError": null
+    }
+  ],
+  "claudeCost": 0.0065,
+  "opensourceCost": 0.00007,
+  "costSavingsPercent": 98.9
+}
+```
+
+**Quality Evaluation Criteria:**
+- **Camera angles**: Does it identify wide/close-up/overhead?
+- **Effects**: Does it describe smoke, particles, glow, blur?
+- **Color grading**: Does it mention warm/cool tones, contrast?
+- **Composition**: Does it note rule of thirds, symmetry, depth?
+- **Text overlays**: Does it describe font style, position?
+
+**Decision Threshold:**
+- Score ≥8/10 on production details → Deploy to production with feature flag
+- Score <8/10 → Try Molmo 2 alternative or stick with Claude Vision
+
+**Key files:**
+- `render-api/src/routes/vision-test.ts`: Comparison endpoint
+- `render-api/src/lib/opensource-vision-client.ts`: LLaVA-NeXT-Video client
+- `render-api/src/lib/vision-describer.ts`: Claude Vision client (baseline)
+- RunPod worker: `jonmac909/video-vision` (GitHub repo)
+
+**RunPod Endpoint Setup:**
+1. Create endpoint at RunPod dashboard linked to `jonmac909/video-vision` repo
+2. Configure: RTX 4090, 4 workers initially (scale to 10 for production)
+3. Set `RUNPOD_VISION_ENDPOINT_ID` in Railway environment variables
+4. Test with `/vision-test/health` endpoint
 
 ### YouTube Upload Architecture
 
