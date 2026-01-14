@@ -519,16 +519,50 @@ export function YouTubeUploadModal({
 
   // Handle confirm - save metadata and close
   const handleConfirm = () => {
-    // Ensure title has the suffix before saving
-    const finalTitle = ensureTitleSuffix(title);
-    // Notify parent with final metadata
-    if (onMetadataChange) {
-      onMetadataChange(finalTitle, description, tags, categoryId, selectedPlaylist);
+    try {
+      console.log('[YouTubeUploadModal] handleConfirm called', {
+        title,
+        description: description?.substring(0, 50),
+        tags,
+        categoryId,
+        selectedPlaylist,
+        hasOnMetadataChange: !!onMetadataChange,
+        hasOnConfirm: !!onConfirm,
+        hasOnSuccess: !!onSuccess,
+        hasOnClose: !!onClose
+      });
+
+      // Ensure title has the suffix before saving
+      const finalTitle = ensureTitleSuffix(title);
+      console.log('[YouTubeUploadModal] Final title:', finalTitle);
+
+      // Notify parent with final metadata
+      if (onMetadataChange) {
+        console.log('[YouTubeUploadModal] Calling onMetadataChange');
+        onMetadataChange(finalTitle, description, tags, categoryId, selectedPlaylist);
+      }
+
+      // Support both onConfirm and onSuccess for compatibility
+      if (onConfirm) {
+        console.log('[YouTubeUploadModal] Calling onConfirm');
+        onConfirm();
+      }
+      if (onSuccess) {
+        console.log('[YouTubeUploadModal] Calling onSuccess');
+        onSuccess();
+      }
+
+      console.log('[YouTubeUploadModal] Calling onClose');
+      onClose();
+      console.log('[YouTubeUploadModal] handleConfirm complete');
+    } catch (error) {
+      console.error('[YouTubeUploadModal] Error in handleConfirm:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to confirm metadata.",
+        variant: "destructive",
+      });
     }
-    // Support both onConfirm and onSuccess for compatibility
-    onConfirm?.();
-    onSuccess?.();
-    onClose();
   };
 
   // Handle upload to YouTube
@@ -660,6 +694,15 @@ export function YouTubeUploadModal({
   // Check if we can upload
   const canUpload = isConnected && hasVideo && title.trim().length > 0;
 
+  console.log('[YouTubeUploadModal] Render state:', {
+    isOpen,
+    hasVideo,
+    videoUrl: videoUrl?.substring(0, 50),
+    canUpload,
+    isConnected,
+    uploadedVideoId,
+    isUploading
+  });
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
