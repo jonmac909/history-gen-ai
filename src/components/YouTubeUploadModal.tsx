@@ -297,6 +297,13 @@ export function YouTubeUploadModal({
           ? thumbnails[selectedThumbnailIndex]
           : undefined;
 
+        console.log('[Full Auto Upload] Thumbnail info:', {
+          hasThumbnails: !!thumbnails,
+          thumbnailsLength: thumbnails?.length,
+          selectedThumbnailIndex,
+          thumbnailUrl
+        });
+
         // Determine publish time
         let publishAt: string | undefined;
         if (initialPublishAt) {
@@ -316,7 +323,7 @@ export function YouTubeUploadModal({
             title: currentTitle || projectTitle || "Untitled Video",
             description: currentDescription,
             tags: tagsArray,
-            categoryId: "22", // People & Blogs
+            categoryId, // Use selected category
             privacyStatus: publishAt ? 'private' : 'private', // Always private until scheduled
             publishAt,
             thumbnailUrl,
@@ -554,6 +561,16 @@ export function YouTubeUploadModal({
       ? thumbnails[selectedThumbnailIndex]
       : undefined;
 
+    console.log('[Manual Upload] Upload params:', {
+      hasThumbnails: !!thumbnails,
+      thumbnailsLength: thumbnails?.length,
+      selectedThumbnailIndex,
+      thumbnailUrl,
+      categoryId,
+      selectedPlaylist,
+      playlistId: selectedPlaylist && selectedPlaylist !== "none" ? selectedPlaylist : undefined
+    });
+
     setIsUploading(true);
     setUploadProgress(0);
     setUploadMessage("Starting upload...");
@@ -577,7 +594,7 @@ export function YouTubeUploadModal({
           title: finalTitle,
           description,
           tags: tagsArray.slice(0, 5), // Limit to 5 tags max
-          categoryId: "22", // People & Blogs
+          categoryId, // Use selected category
           privacyStatus: actualPrivacyStatus,
           publishAt,
           thumbnailUrl,

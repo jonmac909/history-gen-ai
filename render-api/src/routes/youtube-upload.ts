@@ -656,11 +656,17 @@ router.post('/', async (req: Request, res: Response) => {
     // Phase 3: Upload video in chunks with progress
     const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     let uploadedBytes = 0;
+    let chunkNumber = 0;
+
+    console.log(`Starting chunked upload: ${videoSize} bytes in ${Math.ceil(videoSize / CHUNK_SIZE)} chunks`);
 
     while (uploadedBytes < videoSize) {
+      chunkNumber++;
       const chunkStart = uploadedBytes;
       const chunkEnd = Math.min(uploadedBytes + CHUNK_SIZE, videoSize);
       const chunk = videoBuffer.slice(chunkStart, chunkEnd);
+
+      console.log(`[Chunk ${chunkNumber}] Uploading bytes ${chunkStart}-${chunkEnd - 1}/${videoSize} (${chunk.length} bytes)`);
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
@@ -670,6 +676,8 @@ router.post('/', async (req: Request, res: Response) => {
         },
         body: chunk,
       });
+
+      console.log(`[Chunk ${chunkNumber}] Response status: ${uploadResponse.status}`);
 
       if (uploadResponse.status === 308) {
         // Resume incomplete - continue uploading
@@ -684,6 +692,7 @@ router.post('/', async (req: Request, res: Response) => {
         } else {
           uploadedBytes = chunkEnd;
         }
+        console.log(`[Chunk ${chunkNumber}] Resume incomplete, next upload from byte ${uploadedBytes}`);
       } else if (uploadResponse.ok) {
         // Upload complete
         uploadedBytes = videoSize;

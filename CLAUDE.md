@@ -923,6 +923,32 @@ In Railway dashboard → Variables, add all variables from the "Railway API Envi
 - **Pronunciation fixes**: Add difficult words to `PRONUNCIATION_FIXES` dictionary in `generate-audio.ts`
 - Fish Speech has built-in `repetition_penalty: 1.2` to prevent repetition issues
 
+### V8 crash: "Fatal JavaScript invalid size error 169220804"
+- **Symptom**: Railway crashes with "Fatal error in , line 0" / "Fatal JavaScript invalid size error 169220804" after "Post-processed audio" log
+- **Root cause**: `checkAudioIntegrity()` (lines 371-378) loads ALL audio samples into a JavaScript array
+  - 238MB audio = 119,499,378 samples (238,998,756 bytes ÷ 2 bytes/sample)
+  - V8 array size limit << 119 million → crash
+- **Solution**: Skip integrity check for files >50MB (lines 2013-2037 + 2575-2611)
+  - Files ≤ 50MB: Run full integrity check (normal)
+  - Files > 50MB: Skip check, return minimal `AudioIntegrityResult` (avoids crash)
+  - Per-segment checks still run (23MB each, catches chunk glitches)
+- **Pattern**: Always check file size before calling `checkAudioIntegrity()`
+- **Testing**: Test with 238MB files confirmed no crash with 50MB threshold
+- **Related commits**: `09c20ce` (skip integrity check), `1c07e33` (remove large file smoothing), `901f0e4` (FFmpeg smoothing)
+
+### Audio glitches / clicks / pops at chunk boundaries
+- **Symptom**: Audible click/pop artifacts at specific timestamps (e.g., 3:53)
+- **Root cause**: TTS generates chunks with mismatched boundary amplitudes (8000+ sample jumps)
+- **Detection**: `checkAudioIntegrity()` detects sample-level discontinuities (5000 amplitude jump threshold)
+- **Solution**: FFmpeg audio smoothing applied per-segment (lines 2273-2284)
+  - `smoothAudioWithFFmpeg()` uses `highpass=f=20` + `lowpass=f=20000` filters
+  - Highpass removes DC offset and subsonic rumble (reduces pops)
+  - Lowpass removes ultrasonic artifacts (reduces clicks)
+  - Applied ONLY to segments (23MB each), NOT combined audio (238MB would crash)
+- **Why per-segment only**: Glitches occur at chunk-to-chunk boundaries within segments, not between segments
+- **Testing**: Create test files with intentional large boundary jumps to verify detection works
+- **Related commits**: `901f0e4` (add smoothing), `dc20360` (revert broken crossfading)
+
 ### Dead air or unwanted narration of headers/formatting
 - Usually caused by markdown headers, hashtags, or section markers not being fully removed
 - Symptoms:
