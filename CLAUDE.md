@@ -671,7 +671,7 @@ if (useParallel) {
 - Open-source vision-language model (llava-v1.6-mistral-7b-hf, 7B params)
 - Analyzes frames for **production recreation details**
 - Focus: camera angles, visual effects, color grading, composition, text overlays
-- Batch processing: 10 frames per API call, 4 concurrent workers
+- Batch processing: 10 frames per API call, 10 concurrent workers
 - **Cost**: ~$0.53 per 2-hour video (10 workers parallel)
   - RTX 4090 @ $0.00049/s × ~1.5s per frame
   - Scene keyframes only: ~$0.12 per video (~400 frames)

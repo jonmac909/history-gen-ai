@@ -294,7 +294,7 @@ async function processAnalysis(
       try {
         const descriptionResult = await generateDescriptions(preprocessResult.frameUrls, {
           batchSize: 10,        // 10 frames per API call
-          maxConcurrent: 4,     // 4 concurrent workers (RunPod allocation)
+          maxConcurrent: 10,    // 10 concurrent workers (RunPod allocation)
           onProgress: async (descriptionPercent) => {
             const overallProgress = Math.round(50 + (descriptionPercent * 0.2));
             console.log(`[video-analysis] Description progress: ${descriptionPercent}% (overall: ${overallProgress}%)`);
