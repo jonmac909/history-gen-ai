@@ -2426,6 +2426,8 @@ export function ProjectResults({
         initialTags={youtubeTags}
         initialCategoryId={youtubeCategoryId}
         initialPlaylistId={youtubePlaylistId}
+        thumbnails={thumbnails}
+        selectedThumbnailIndex={selectedThumbnailIndex}
         onMetadataChange={(title, description, tags, categoryId, playlistId) => {
           // Update parent with all metadata for persistence and preview
           if (onYouTubeMetadataChange) {
