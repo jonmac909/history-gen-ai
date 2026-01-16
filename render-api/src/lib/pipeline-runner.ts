@@ -1267,7 +1267,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       let youtubeDescription = `${clonedTitle}\n\nGenerated with AI`;
       // Fixed default tags - always use these
       const DEFAULT_YOUTUBE_TAGS = ['history for sleep', 'ancient history', 'ancient civilizations'];
-      let youtubeTags = [...DEFAULT_YOUTUBE_TAGS];
+      const youtubeTags = [...DEFAULT_YOUTUBE_TAGS];
       try {
         console.log('[Pipeline] Generating YouTube metadata with AI...');
         const metadataRes = await fetch(`http://localhost:${process.env.PORT || 10000}/generate-youtube-metadata`, {

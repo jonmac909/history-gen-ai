@@ -68,14 +68,16 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         translateX = interpolate(relativeFrame, [0, inDuration], [-100, 0]);
         break;
       case 'bounce':
-        opacity = interpolate(relativeFrame, [0, inDuration], [0, 1]);
-        const bounceProgress = spring({
-          frame: relativeFrame,
-          fps,
-          config: { damping: 8, stiffness: 200 },
-        });
-        scale = 0.8 + bounceProgress * 0.2;
-        break;
+        {
+          opacity = interpolate(relativeFrame, [0, inDuration], [0, 1]);
+          const bounceProgress = spring({
+            frame: relativeFrame,
+            fps,
+            config: { damping: 8, stiffness: 200 },
+          });
+          scale = 0.8 + bounceProgress * 0.2;
+          break;
+        }
       case 'scale':
         opacity = interpolate(relativeFrame, [0, inDuration], [0, 1]);
         scale = interpolate(relativeFrame, [0, inDuration], [0.5, 1]);

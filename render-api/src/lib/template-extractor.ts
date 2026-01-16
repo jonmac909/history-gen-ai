@@ -78,13 +78,16 @@ export async function extractTemplate(
     onProgress?.(0, 'Processing video...');
     
     const videoId = extractVideoId(videoUrl);
-    const preprocessResult = await preprocessVideo(
-      videoId,
-      videoUrl,
-      (percent) => {
-        onProgress?.(percent * 0.6, 'Processing video...');
-      }
-    );
+    const preprocessResult = await preprocessVideo(videoId, videoUrl, {
+      onDownloadProgress: (percent) => {
+        onProgress?.(Math.round(percent * 0.4), 'Downloading video...');
+      },
+      onProgress: async (_status, percent, message) => {
+        const normalizedPercent = Math.min(50, Math.max(40, percent));
+        const overall = Math.round(40 + (normalizedPercent - 40) * 2);
+        onProgress?.(overall, message || 'Processing video...');
+      },
+    });
     
     const { duration, scenes, framePaths } = preprocessResult;
     onProgress?.(60, `Processed ${framePaths.length} frames, ${scenes.length} scenes`);

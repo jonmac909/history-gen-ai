@@ -307,14 +307,45 @@ export async function extractAudio(
  */
 export async function detectScenes(
   videoPath: string,
-  threshold: number = 0.3
+  threshold: number = 0.3,
+  options: {
+    durationSeconds?: number;
+    onProgress?: (percent: number, message: string) => void | Promise<void>;
+  } = {}
 ): Promise<Scene[]> {
   console.log(`[video-preprocessor] Detecting scenes (threshold: ${threshold})`);
 
   return new Promise((resolve, reject) => {
+    const { durationSeconds, onProgress } = options;
     const scenes: Scene[] = [];
     let lastTime = 0;
     let sceneIndex = 0;
+    let lastProgressPercent = -1;
+    let lastProgressAt = 0;
+    let stderrTail = '';
+    let stderrBuffer = '';
+
+    const parseTimestampToSeconds = (timestamp: string): number | null => {
+      const parts = timestamp.trim().split(':');
+      if (parts.length !== 3) return null;
+      const [hours, minutes, seconds] = parts.map(Number);
+      if ([hours, minutes, seconds].some((value) => Number.isNaN(value))) return null;
+      return hours * 3600 + minutes * 60 + seconds;
+    };
+
+    const reportProgress = (currentSeconds: number, timeLabel: string) => {
+      if (!onProgress || !durationSeconds || durationSeconds <= 0) return;
+      const percent = Math.min(100, Math.max(0, Math.round((currentSeconds / durationSeconds) * 100)));
+      const now = Date.now();
+      const progressDelta = percent - lastProgressPercent;
+      if (percent !== 100 && progressDelta < 5 && now - lastProgressAt < 10000) return;
+      lastProgressPercent = percent;
+      lastProgressAt = now;
+      const message = `Scene detection: ${percent}% (${timeLabel})`;
+      void Promise.resolve(onProgress(percent, message)).catch((err) => {
+        console.warn('[video-preprocessor] Scene progress callback failed:', err);
+      });
+    };
 
     // Use ffmpeg's scene detection filter
     const proc = spawn(ffmpegStatic || 'ffmpeg', [
@@ -326,14 +357,15 @@ export async function detectScenes(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    let stderr = '';
-
     proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderrTail = (stderrTail + chunk).slice(-4000);
+      stderrBuffer += chunk;
+      const lines = stderrBuffer.split('\n');
+      stderrBuffer = lines.pop() || '';
 
       // Parse scene change timestamps from showinfo output
       // Format: [Parsed_showinfo_1 @ ...] n:123 pts:12345 pts_time:12.345 ...
-      const lines = data.toString().split('\n');
       for (const line of lines) {
         const match = line.match(/pts_time:(\d+\.?\d*)/);
         if (match) {
@@ -360,10 +392,23 @@ export async function detectScenes(
             lastTime = time;
           }
         }
+
+        const timeMatch = line.match(/time=(\d+:\d+:\d+\.?\d*)/);
+        if (timeMatch) {
+          const parsedSeconds = parseTimestampToSeconds(timeMatch[1]);
+          if (parsedSeconds !== null) {
+            reportProgress(parsedSeconds, timeMatch[1]);
+          }
+        }
       }
     });
 
-    proc.on('close', async () => {
+    proc.on('close', async (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg scene detection failed with code ${code}: ${stderrTail}`));
+        return;
+      }
+
       // Get video duration for final scene
       try {
         const duration = await getVideoDuration(videoPath);
@@ -644,7 +689,14 @@ export async function preprocessVideo(
     if (onProgress) await onProgress('analyzing', 46);
 
     // 4. Detect scenes (46-48%)
-    const scenes = await detectScenes(videoPath, sceneThreshold);
+    const scenes = await detectScenes(videoPath, sceneThreshold, {
+      durationSeconds: duration,
+      onProgress: async (percent, message) => {
+        if (!onProgress) return;
+        const overallPercent = Math.min(48, Math.max(46, Math.round(46 + (percent * 0.02))));
+        await onProgress('analyzing', overallPercent, message);
+      },
+    });
     if (onProgress) await onProgress('analyzing', 48);
 
     // 5. Analyze colors (48-49%)
