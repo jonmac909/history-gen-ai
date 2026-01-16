@@ -16,19 +16,22 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { fetch, ProxyAgent } from 'undici';
 import { randomUUID } from 'crypto';
+import { internalApiKey } from './runtime-config';
 
 // Proxy for YouTube requests (same as youtube-scraper)
 const PROXY_URL = process.env.YTDLP_PROXY_URL || '';
 function getProxyAgent() {
   if (!PROXY_URL) return undefined;
-  return new HttpsProxyAgent(PROXY_URL);
+  return new ProxyAgent(PROXY_URL);
 }
 
 // Base URL for internal API calls - always use localhost to avoid SSL issues
 const API_BASE_URL = `http://localhost:${process.env.PORT || 10000}`;
+const internalAuthHeader: Record<string, string> = internalApiKey
+  ? { 'X-Internal-Api-Key': internalApiKey }
+  : {};
 
 export interface PipelineInput {
   sourceVideoId: string;
@@ -154,7 +157,7 @@ async function saveProjectToDatabase(
 
 // Clean script of markdown headers, section markers, and formatting that breaks TTS
 function cleanScript(script: string): string {
-  let cleaned = script
+  const cleaned = script
     // Remove entire lines starting with # (markdown headers)
     .replace(/^#.*$/gm, '')
     // Remove standalone ALL CAPS lines (section headers like OPENING, CONCLUSION)
@@ -254,11 +257,11 @@ async function downloadImageAsBase64(imageUrl: string): Promise<string> {
     console.log(`[Pipeline] Downloading YouTube image via proxy: ${imageUrl.substring(0, 60)}...`);
   }
 
-  const response = await fetch(imageUrl, { agent });
+  const response = await fetch(imageUrl, agent ? { dispatcher: agent } : undefined);
   if (!response.ok) {
     throw new Error(`Failed to download image: ${response.status}`);
   }
-  const buffer = await response.buffer();
+  const buffer = Buffer.from(await response.arrayBuffer());
   return buffer.toString('base64');
 }
 
@@ -277,7 +280,7 @@ async function callInternalAPI(
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalAuthHeader },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -315,7 +318,7 @@ async function callStreamingAPI(
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalAuthHeader },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -330,54 +333,48 @@ async function callStreamingAPI(
     let result: any = null;
     let buffer = '';
 
-    // Use Node.js stream API for node-fetch
-    const nodeStream = response.body as unknown as NodeJS.ReadableStream;
-    if (nodeStream && typeof nodeStream.on === 'function') {
-      await new Promise<void>((resolve, reject) => {
-        nodeStream.on('data', (chunk: Buffer) => {
-          buffer += chunk.toString();
+    const responseBody = response.body;
+    if (responseBody && 'getReader' in responseBody) {
+      const reader = responseBody.getReader();
+      const decoder = new TextDecoder();
 
-          // Process complete lines
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (onProgress) onProgress(data);
-                if (data.type === 'complete') {
-                  result = data;
-                } else if (data.type === 'error') {
-                  reject(new Error(data.error || 'Stream error'));
-                }
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }
-          }
-        });
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-        nodeStream.on('end', () => {
-          // Process remaining buffer
-          if (buffer.startsWith('data: ')) {
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(buffer.slice(6));
+              const data = JSON.parse(line.slice(6));
               if (onProgress) onProgress(data);
               if (data.type === 'complete') {
                 result = data;
+              } else if (data.type === 'error') {
+                throw new Error(data.error || 'Stream error');
               }
             } catch (e) {
-              // Ignore
+              // Ignore parse errors
             }
           }
-          resolve();
-        });
+        }
+      }
 
-        nodeStream.on('error', reject);
-      });
+      if (buffer.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(buffer.slice(6));
+          if (onProgress) onProgress(data);
+          if (data.type === 'complete') {
+            result = data;
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
     } else {
-      // Fallback for environments without streaming
       const text = await response.text();
       const lines = text.split('\n');
 
@@ -841,30 +838,55 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
     }
 
     // Step 7: Generate images (streaming) - MOVED BEFORE clip prompts/video clips
+    // Retry logic for long videos with many images (can timeout on first attempt)
     reportProgress('images', 48, 'Generating images...');
     const imagesStart = Date.now();
     let imageUrls: string[];
-    try {
-      const imagesRes = await callStreamingAPI('/generate-images', {
-        prompts: imagePrompts,
-        projectId,
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('images', 48 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}...`);
+    const MAX_IMAGE_RETRIES = 3;
+    let imageAttempt = 0;
+    let lastImageError: string = '';
+
+    // Calculate timeout based on image count (2 min per image + 5 min buffer)
+    const imageTimeout = Math.max(600000, (calculatedImageCount * 120000) + 300000);
+    console.log(`[Pipeline] Image generation: ${calculatedImageCount} images, timeout ${Math.round(imageTimeout / 60000)} min`);
+
+    while (imageAttempt < MAX_IMAGE_RETRIES) {
+      imageAttempt++;
+      try {
+        const attemptLabel = imageAttempt > 1 ? ` (attempt ${imageAttempt})` : '';
+        reportProgress('images', 48, `Generating images${attemptLabel}...`);
+
+        const imagesRes = await callStreamingAPI('/generate-images', {
+          prompts: imagePrompts,
+          projectId,
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('images', 48 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}${attemptLabel}...`);
+          }
+        }, imageTimeout);
+        // imagesRes.images is already an array of URL strings, not objects
+        imageUrls = imagesRes.images as string[];
+        steps.push({
+          step: 'images',
+          success: true,
+          duration: Date.now() - imagesStart,
+          data: { count: imageUrls.length, attempts: imageAttempt },
+        });
+        break;  // Success - exit retry loop
+      } catch (error: any) {
+        lastImageError = error.message;
+        console.warn(`[Pipeline] Image generation attempt ${imageAttempt} failed: ${error.message}`);
+        if (imageAttempt < MAX_IMAGE_RETRIES) {
+          console.log(`[Pipeline] Retrying image generation in 5 seconds...`);
+          await new Promise(r => setTimeout(r, 5000));
         }
-      }, 600000);
-      // imagesRes.images is already an array of URL strings, not objects
-      imageUrls = imagesRes.images as string[];
-      steps.push({
-        step: 'images',
-        success: true,
-        duration: Date.now() - imagesStart,
-        data: { count: imageUrls.length },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: error.message });
-      throw new Error(`Failed to generate images: ${error.message}`);
+      }
+    }
+
+    if (!imageUrls!) {
+      steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: lastImageError });
+      throw new Error(`Failed to generate images after ${MAX_IMAGE_RETRIES} attempts: ${lastImageError}`);
     }
 
     // Step 8: Generate clip prompts (12 × 5s intro videos)
@@ -1154,7 +1176,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         console.log('[Pipeline] Generating YouTube metadata with AI...');
         const metadataRes = await fetch(`http://localhost:${process.env.PORT || 10000}/generate-youtube-metadata`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...internalAuthHeader },
           body: JSON.stringify({ title: clonedTitle, script }),
         });
         const metadataData = await metadataRes.json() as { success?: boolean; description?: string; tags?: string[]; error?: string };
