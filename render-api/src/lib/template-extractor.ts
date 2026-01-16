@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { downloadVideo, extractFrames, detectScenes } from './video-preprocessor';
+import { preprocessVideo } from './video-preprocessor';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -94,35 +94,33 @@ export async function extractTemplate(
     const scenes = await detectScenes(videoPath);
     onProgress?.(50, `Detected ${scenes.length} scenes`);
 
-    // Step 4: Analyze frames with LLaVA for text overlays (50-70%)
-    onProgress?.(50, 'Analyzing text overlays and visual styles...');
-    const frameAnalysis = await analyzeFramesForText(framePaths, (percent: number) => {
-      onProgress?.(50 + percent * 0.2, 'Analyzing visual styles...');
-    });
+    // Step 2: Analyze frames for text (60-70%)
+    onProgress?.(60, 'Analyzing text overlays...');
+    const frameAnalysis = await analyzeFramesForText(framePaths);
     onProgress?.(70, 'Text analysis complete');
 
-    // Step 5: Color analysis (70-75%)
+    // Step 3: Color analysis (70-75%)
     onProgress?.(70, 'Analyzing color palette...');
     const colorPalette = await extractColorPalette(framePaths);
     onProgress?.(75, 'Color analysis complete');
 
-    // Step 6: Calculate pacing metrics (75-85%)
+    // Step 4: Calculate pacing metrics (75-85%)
     onProgress?.(75, 'Calculating pacing...');
     const pacing = calculatePacing(scenes, duration);
     const transitions = analyzeTransitions(scenes, duration);
     onProgress?.(85, 'Pacing analysis complete');
 
-    // Step 7: Extract text styles from frame analysis (85-90%)
+    // Step 5: Extract text styles (85-90%)
     onProgress?.(85, 'Extracting text styles...');
     const textStyles = extractTextStyles(frameAnalysis);
     onProgress?.(90, 'Text styles extracted');
 
-    // Step 8: Estimate B-roll patterns (90-95%)
+    // Step 6: Estimate B-roll patterns (90-95%)
     onProgress?.(90, 'Analyzing B-roll patterns...');
     const brollPatterns = estimateBRollPatterns(scenes, duration);
     onProgress?.(95, 'B-roll analysis complete');
 
-    // Step 9: Save to database (95-100%)
+    // Step 7: Save to database (95-100%)
     onProgress?.(95, 'Saving template...');
     const templateId = await saveTemplate({
       name: templateName,
@@ -143,28 +141,36 @@ export async function extractTemplate(
       brollPatterns,
       colorPalette,
     };
-  } finally {
-    // Cleanup temp directory
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (error) {
-      console.error('Failed to cleanup temp directory:', error);
-    }
+  } catch (error: any) {
+    console.error('Template extraction failed:', error);
+    throw new Error(`Template extraction failed: ${error.message}`);
   }
+}
+
+/**
+ * Extract YouTube video ID from URL
+ */
+function extractVideoId(url: string): string {
+  // Support various YouTube URL formats
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/v\/([^&\n?#]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  // If not a YouTube URL, use a hash of the URL as ID
+  return Buffer.from(url).toString('base64').slice(0, 11);
 }
 
 /**
  * Analyze frames for text overlays (simplified - no LLaVA for now)
  */
-async function analyzeFramesForText(
-  framePaths: string[],
-  onProgress?: (percent: number) => void
-): Promise<any[]> {
-  // Sample frames (analyze every 10th frame to reduce cost)
-  const sampledFrames = framePaths.filter((_, i) => i % 10 === 0);
-  
-  onProgress?.(100);
-  
+async function analyzeFramesForText(framePaths: string[]): Promise<any[]> {
   // For now, return empty analysis
   // TODO: Integrate with LLaVA or other vision model
   return [];
