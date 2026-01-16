@@ -73,26 +73,21 @@ export async function extractTemplate(
   templateName: string,
   onProgress?: (progress: number, message: string) => void
 ): Promise<TemplateExtractionResult> {
-  const tempDir = path.join(os.tmpdir(), `template-extract-${randomUUID()}`);
-  fs.mkdirSync(tempDir, { recursive: true });
-
   try {
-    // Step 1: Download video (0-30%)
-    onProgress?.(0, 'Downloading video...');
-    const videoPath = path.join(tempDir, 'video.mp4');
-    const { duration } = await downloadVideo(videoUrl, videoPath, '720p', (percent) => {
-      onProgress?.(percent * 0.3, `Downloading video... ${percent.toFixed(0)}%`);
-    });
-
-    // Step 2: Extract frames for analysis (30-40%)
-    onProgress?.(30, 'Extracting frames...');
-    const framePaths = await extractFrames(videoPath, tempDir, 1); // 1 FPS
-    onProgress?.(40, `Extracted ${framePaths.length} frames`);
-
-    // Step 3: Scene detection (40-50%)
-    onProgress?.(40, 'Detecting scenes and transitions...');
-    const scenes = await detectScenes(videoPath);
-    onProgress?.(50, `Detected ${scenes.length} scenes`);
+    // Step 1: Preprocess video (download + frames + scenes) (0-60%)
+    onProgress?.(0, 'Processing video...');
+    
+    const videoId = extractVideoId(videoUrl);
+    const preprocessResult = await preprocessVideo(
+      videoId,
+      videoUrl,
+      (percent) => {
+        onProgress?.(percent * 0.6, 'Processing video...');
+      }
+    );
+    
+    const { duration, scenes, framePaths } = preprocessResult;
+    onProgress?.(60, `Processed ${framePaths.length} frames, ${scenes.length} scenes`);
 
     // Step 2: Analyze frames for text (60-70%)
     onProgress?.(60, 'Analyzing text overlays...');
