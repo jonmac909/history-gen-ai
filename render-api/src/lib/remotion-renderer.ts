@@ -38,6 +38,10 @@ export interface RenderProgress {
   totalFrames?: number;
 }
 
+interface RenderProgressInternal extends RenderProgress {
+  totalFrames: number;
+}
+
 /**
  * Render a video project using Remotion
  */
@@ -97,16 +101,18 @@ export async function renderProject(
     codec,
     outputLocation: outputPath,
     inputProps,
-    onProgress: ({ renderedFrames, encodedFrames, totalFrames }) => {
-      const percent = Math.floor((renderedFrames / totalFrames) * 55) + 35; // 35-90%
+    onProgress: ({ renderedFrames, encodedFrames }) => {
+      // Calculate total frames from composition
+      const total = durationInFrames;
+      const percent = Math.floor((renderedFrames / total) * 55) + 35; // 35-90%
       onProgress?.({
         progress: percent,
-        message: `Rendering... ${renderedFrames}/${totalFrames} frames`,
+        message: `Rendering... ${renderedFrames}/${total} frames`,
         renderedFrames,
-        totalFrames,
-      });
+        totalFrames: total,
+      } as RenderProgress);
     },
-    quality,
+    // quality is not a valid renderMedia parameter - use crf instead if needed
   });
   onProgress?.({ progress: 90, message: 'Render complete' });
 

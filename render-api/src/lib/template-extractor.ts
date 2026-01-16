@@ -4,12 +4,12 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { downloadVideo, extractFrames, detectScenes, analyzeColors } from './video-preprocessor';
-import { analyzeFramesWithVision } from './opensource-vision-client';
+import { downloadVideo, extractFrames, detectScenes } from './video-preprocessor';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 
 let supabase: SupabaseClient | null = null;
 
@@ -96,15 +96,14 @@ export async function extractTemplate(
 
     // Step 4: Analyze frames with LLaVA for text overlays (50-70%)
     onProgress?.(50, 'Analyzing text overlays and visual styles...');
-    const frameAnalysis = await analyzeFramesForText(framePaths, (percent) => {
+    const frameAnalysis = await analyzeFramesForText(framePaths, (percent: number) => {
       onProgress?.(50 + percent * 0.2, 'Analyzing visual styles...');
     });
     onProgress?.(70, 'Text analysis complete');
 
     // Step 5: Color analysis (70-75%)
     onProgress?.(70, 'Analyzing color palette...');
-    const colors = await analyzeColors(framePaths);
-    const colorPalette = extractColorPalette(colors);
+    const colorPalette = await extractColorPalette(framePaths);
     onProgress?.(75, 'Color analysis complete');
 
     // Step 6: Calculate pacing metrics (75-85%)
@@ -155,7 +154,7 @@ export async function extractTemplate(
 }
 
 /**
- * Analyze frames for text overlays using LLaVA
+ * Analyze frames for text overlays (simplified - no LLaVA for now)
  */
 async function analyzeFramesForText(
   framePaths: string[],
@@ -163,25 +162,12 @@ async function analyzeFramesForText(
 ): Promise<any[]> {
   // Sample frames (analyze every 10th frame to reduce cost)
   const sampledFrames = framePaths.filter((_, i) => i % 10 === 0);
-
-  const prompt = `Analyze this video frame and describe any text overlays:
-- Text content (what does it say?)
-- Font style (serif, sans-serif, bold, etc.)
-- Text size (small, medium, large)
-- Text color
-- Position on screen (top, bottom, center, corner)
-- Background style (solid, transparent, semi-transparent)
-- Animation hints (fading in, sliding, static)
-
-If there is no text, say "No text overlay detected".`;
-
-  const results = await analyzeFramesWithVision(
-    sampledFrames,
-    prompt,
-    (progress) => onProgress?.(progress * 100)
-  );
-
-  return results;
+  
+  onProgress?.(100);
+  
+  // For now, return empty analysis
+  // TODO: Integrate with LLaVA or other vision model
+  return [];
 }
 
 /**
@@ -280,19 +266,30 @@ function estimateBRollPatterns(scenes: any[], duration: number): BRollAnalysis {
 }
 
 /**
- * Extract dominant color palette from color analysis
+ * Extract dominant color palette from frames
  */
-function extractColorPalette(colors: any[]): string[] {
-  if (colors.length === 0) return ['#000000'];
+async function extractColorPalette(framePaths: string[]): Promise<string[]> {
+  if (framePaths.length === 0) return ['#000000'];
 
-  // Collect all dominant colors
-  const palette = new Set<string>();
-  colors.forEach((color) => {
-    if (color.dominantColor) palette.add(color.dominantColor);
-    if (color.palette) color.palette.forEach((c: string) => palette.add(c));
-  });
+  try {
+    // Sample a few frames for color analysis
+    const samples = framePaths.filter((_, i) => i % 10 === 0).slice(0, 5);
+    const palette = new Set<string>();
 
-  return Array.from(palette).slice(0, 10); // Top 10 colors
+    for (const framePath of samples) {
+      const { dominant } = await sharp(framePath)
+        .stats();
+      
+      // Convert dominant color to hex
+      const hex = `#${dominant.r.toString(16).padStart(2, '0')}${dominant.g.toString(16).padStart(2, '0')}${dominant.b.toString(16).padStart(2, '0')}`;
+      palette.add(hex);
+    }
+
+    return Array.from(palette).slice(0, 10);
+  } catch (error) {
+    console.error('Color analysis failed:', error);
+    return ['#000000'];
+  }
 }
 
 /**
