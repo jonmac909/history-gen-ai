@@ -27,6 +27,84 @@ interface ImagePrompt {
   sceneDescription: string;
 }
 
+// Time period context extracted from script
+interface TimePeriodContext {
+  era: string;              // e.g., "10,000 BCE - Mesolithic Period"
+  region: string;           // e.g., "Ancient Near East"
+  visualConstraints: string; // e.g., "Stone tools only, animal hide clothing"
+  anachronisms: string[];   // Things to avoid for this era
+}
+
+// Extract time period and visual constraints from script
+async function extractTimePeriod(
+  anthropic: Anthropic,
+  script: string
+): Promise<{ context: TimePeriodContext; inputTokens: number; outputTokens: number }> {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `Analyze this historical documentary script and extract the PRIMARY time period being depicted.
+
+SCRIPT (first 4000 chars):
+${script.substring(0, 4000)}
+
+Return ONLY valid JSON with these fields:
+{
+  "era": "The specific time period, e.g., '10,000 BCE - Mesolithic Period' or '1347 CE - Medieval Europe'",
+  "region": "Geographic region, e.g., 'Ancient Near East' or 'Western Europe'",
+  "visualConstraints": "Brief description of period-accurate visual elements (clothing, tools, architecture)",
+  "anachronisms": ["list", "of", "things", "that", "would", "be", "anachronistic", "for", "this", "era"]
+}
+
+IMPORTANT: 
+- For prehistoric periods (before 3000 BCE), anachronisms should include: metal tools, woven textiles, brick buildings, written documents, formal clothing, agriculture (if pre-agricultural)
+- For ancient periods (3000 BCE - 500 CE), anachronisms might include: gunpowder, printing, certain fabrics, architectural styles from later eras
+- For medieval periods, anachronisms might include: modern uniforms, electricity, photography
+
+Return ONLY the JSON object, no explanations.`
+    }],
+  });
+
+  const inputTokens = response.usage?.input_tokens || 0;
+  const outputTokens = response.usage?.output_tokens || 0;
+
+  try {
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log(`[Time Period] Extracted: ${parsed.era} in ${parsed.region}`);
+      console.log(`[Time Period] Anachronisms to avoid: ${parsed.anachronisms?.join(', ')}`);
+      return {
+        context: {
+          era: parsed.era || 'Historical Period',
+          region: parsed.region || 'Unknown Region',
+          visualConstraints: parsed.visualConstraints || '',
+          anachronisms: parsed.anachronisms || [],
+        },
+        inputTokens,
+        outputTokens,
+      };
+    }
+  } catch (e) {
+    console.error('[Time Period] Failed to parse response:', e);
+  }
+
+  // Default fallback
+  return {
+    context: {
+      era: 'Historical Period',
+      region: 'Unknown Region',
+      visualConstraints: '',
+      anachronisms: [],
+    },
+    inputTokens,
+    outputTokens,
+  };
+}
+
 // Modern/anachronistic keywords to filter from scene descriptions
 const MODERN_KEYWORDS_TO_REMOVE = [
   // Museum/exhibition context
@@ -347,6 +425,22 @@ router.post('/', async (req: Request, res: Response) => {
     // Initialize Anthropic client
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
+    // Track token usage for cost tracking
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    // PHASE 0: Extract time period from script to ensure accurate imagery
+    sendEvent({ type: 'progress', progress: 3, message: 'Analyzing time period...' });
+    const timePeriodResult = await extractTimePeriod(anthropic, script);
+    const timePeriod = timePeriodResult.context;
+    totalInputTokens += timePeriodResult.inputTokens;
+    totalOutputTokens += timePeriodResult.outputTokens;
+
+    // Build anachronism list for this specific era
+    const eraAnachronisms = timePeriod.anachronisms.length > 0
+      ? `\n\nANACHRONISMS TO AVOID FOR ${timePeriod.era.toUpperCase()}:\n- ${timePeriod.anachronisms.join('\n- ')}`
+      : '';
+
     // OPTIMIZATION: Use smaller batches (10) for parallel processing
     // This allows multiple API calls to run simultaneously for faster completion
     const numBatches = Math.ceil(imageCount / BATCH_SIZE_PARALLEL);
@@ -363,10 +457,18 @@ router.post('/', async (req: Request, res: Response) => {
     };
 
     // OPTIMIZATION: Define system prompt once for prompt caching
+    // Include extracted time period for accurate historical imagery
     const systemPrompt = `You are an expert at creating visual scene descriptions for documentary video image generation. You MUST always output valid JSON - never ask questions or request clarification.
 
+=== MANDATORY TIME PERIOD CONTEXT ===
+ERA: ${timePeriod.era}
+REGION: ${timePeriod.region}
+VISUAL CONSTRAINTS: ${timePeriod.visualConstraints || 'Period-accurate clothing, tools, and architecture'}
+
+ALL images MUST depict scenes from ${timePeriod.era} in ${timePeriod.region}. Any scene showing people, clothing, tools, or architecture from a DIFFERENT time period will be REJECTED.${eraAnachronisms}
+
 CRITICAL RULE - IMMERSIVE HISTORICAL SCENES ONLY:
-You are generating prompts for an AI image generator. The resulting images must look like PAINTINGS from the historical period itself, as if an artist was present at the time witnessing events firsthand.
+You are generating prompts for an AI image generator. The resulting images must look like PAINTINGS from ${timePeriod.era}, as if an artist was present at the time witnessing events firsthand.
 
 ABSOLUTELY FORBIDDEN (these will cause the prompt to be rejected and regenerated):
 - Museums, exhibits, galleries, display cases, artifacts on display
@@ -376,8 +478,9 @@ ABSOLUTELY FORBIDDEN (these will cause the prompt to be rejected and regenerated
 - Modern photography, documentary framing, "looking back at history" perspective
 - Any contemporary/academic environments or research settings
 - Anyone examining, studying, analyzing, or inspecting historical items
+- People dressed in clothing from WRONG TIME PERIODS (e.g., 1700s clothing when depicting 10,000 BCE)
 
-REQUIRED: Every scene must show events AS THEY HAPPENED in the historical moment - people LIVING history, not studying it.
+REQUIRED: Every scene must show events AS THEY HAPPENED in ${timePeriod.era} - people LIVING history, not studying it.
 
 YOUR TASK: Create visual scene descriptions based on the script and narration segments provided.
 
@@ -388,15 +491,16 @@ CONTENT SAFETY:
 - You may depict dramatic historical scenes including warfare and conflict - avoid explicit gore
 
 RULES:
-1. READ the script context to identify the EXACT historical time period and location
+1. ALL scenes MUST be set in ${timePeriod.era}, ${timePeriod.region}
 2. For each image segment, create a scene that illustrates the narration content
-3. ALL scenes MUST be set IN the historical period - show events as they happened
+3. Include PERIOD-ACCURATE details: ${timePeriod.visualConstraints || 'appropriate clothing, tools, architecture for the era'}
 4. For war/conflict topics: show battlefields, armies, fortifications, commanders leading troops, military camps - NOT maps, museums, or artifacts
 5. For medical topics: show period-appropriate healers, apothecaries, patients - NOT modern research
 6. For abstract concepts: show period-appropriate scenes with settings and people from that era
 7. Include specific details: setting, lighting, objects, people, actions, atmosphere
 8. 50-100 words per description
 9. Do NOT include any text, titles, or words in the image
+10. Start each description with the era context, e.g., "In ${timePeriod.era.split(' - ')[0]}, ..."
 
 CRITICAL: You MUST return ONLY a valid JSON array. No explanations, no questions, no commentary.
 
@@ -414,10 +518,6 @@ Output format:
         cache_control: { type: 'ephemeral' as const }
       }
     ];
-
-    // Track token usage for cost tracking
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
 
     // Create all batch promises to run in parallel
     const batchPromises = Array.from({ length: numBatches }, async (_, batchIndex) => {
@@ -546,7 +646,7 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
             console.log(`Image ${task.index + 1}: Found modern keywords [${task.foundKeywords.join(', ')}], regenerating...`);
 
             // First attempt
-            let regenResult = await regeneratePrompt(
+            const regenResult = await regeneratePrompt(
               anthropic,
               task.sceneDesc,
               task.foundKeywords,
@@ -601,7 +701,7 @@ Remember: Output ONLY a JSON array with ${batchSize} items, starting with index 
       const scene = sceneDescriptions.find(s => s.index === i + 1);
 
       // Use regenerated description if available, otherwise use original
-      let sceneDesc = regeneratedDescriptions.get(i)
+      const sceneDesc = regeneratedDescriptions.get(i)
         || scene?.sceneDescription
         || `Historical scene depicting: ${window.text.substring(0, 200)}`;
 
