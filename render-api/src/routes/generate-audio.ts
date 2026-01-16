@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import crypto from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
@@ -10,7 +9,6 @@ import { exec as execCallback } from 'child_process';
 
 const exec = promisify(execCallback);
 import { Readable, PassThrough } from 'stream';
-import FormData from 'form-data';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -213,7 +211,6 @@ function normalizeText(text: string): string {
 // POST-PROCESSING: Detect and remove repeated audio segments
 // ============================================================
 
-// Note: FormData, fs, path, os are imported at top of file
 
 interface WhisperSegment {
   text: string;
@@ -607,7 +604,9 @@ async function smoothAudioWithFFmpeg(
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    } catch {}
+    } catch (cleanupError) {
+      logger.warn('FFmpeg smoothing cleanup failed:', cleanupError);
+    }
     throw new Error(`FFmpeg smoothing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }
@@ -661,7 +660,8 @@ function getPauseDuration(text: string, isLastChunk: boolean = false): number {
 // Transcribe a single audio chunk
 async function transcribeChunk(audioBuffer: Buffer, apiKey: string): Promise<WhisperSegment[]> {
   const formData = new FormData();
-  formData.append('file', audioBuffer, { filename: 'audio.wav', contentType: 'audio/wav' });
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/wav' });
+  formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-large-v3-turbo');
   formData.append('response_format', 'verbose_json');
   formData.append('language', 'en');
@@ -670,9 +670,8 @@ async function transcribeChunk(audioBuffer: Buffer, apiKey: string): Promise<Whi
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
-      ...formData.getHeaders(),
     },
-    body: formData as any,
+    body: formData,
   });
 
   if (!response.ok) {
@@ -2747,7 +2746,11 @@ async function handleNonStreaming(req: Request, res: Response, chunks: string[],
   console.log(`Successfully generated ${audioChunks.length}/${chunks.length} audio chunks`);
 
   // Use pause-aware concatenation for consistent breaks
-  let { wav: combinedAudio, durationSeconds } = concatenateWavFilesWithPauses(audioChunks, successfulTextChunks);
+  const { wav: combinedAudio, durationSeconds: combinedDurationSeconds } = concatenateWavFilesWithPauses(
+    audioChunks,
+    successfulTextChunks
+  );
+  let durationSeconds = combinedDurationSeconds;
 
   console.log(`Concatenated audio: ${combinedAudio.length} bytes from ${audioChunks.length} chunks`);
 
@@ -2849,7 +2852,7 @@ router.post('/segment', async (req: Request, res: Response) => {
     console.log(`Voice sample ready: ${referenceAudioBase64.length} chars base64`);
 
     // Clean segment text - remove markdown and metadata (same as main endpoint)
-    let cleanSegmentText = segmentText
+    const cleanSegmentText = segmentText
       // Remove hashtags (with or without spaces) - entire lines
       .replace(/^#.*$/gm, '')
       // Remove standalone ALL CAPS lines (section headers like OPENING, CONCLUSION, etc.)

@@ -4,9 +4,10 @@
  * Designed to minimize proxy bandwidth usage
  */
 
-import fetch from 'node-fetch';
 import fs from 'fs';
 import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
+import { ReadableStream as WebReadableStream } from 'stream/web';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
@@ -87,6 +88,9 @@ async function getVideoStreamUrls(videoId: string): Promise<{ videoUrl: string; 
     videoId,
   };
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -94,8 +98,10 @@ async function getVideoStreamUrls(videoId: string): Promise<{ videoUrl: string; 
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
-    timeout: 30000,
+    signal: controller.signal,
   });
+
+  clearTimeout(timeout);
 
   if (!response.ok) {
     throw new Error(`Player endpoint failed: ${response.status}`);
@@ -159,10 +165,15 @@ async function downloadStream(
   outputPath: string,
   onProgress?: (percent: number) => void
 ): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+
   const response = await fetch(streamUrl, {
     headers: HEADERS,
-    timeout: 120000,
+    signal: controller.signal,
   });
+
+  clearTimeout(timeout);
 
   if (!response.ok) {
     throw new Error(`Stream download failed: ${response.status}`);
@@ -171,18 +182,23 @@ async function downloadStream(
   const totalBytes = parseInt(response.headers.get('content-length') || '0', 10);
   let downloadedBytes = 0;
 
+  if (!response.body) {
+    throw new Error('No response body to download');
+  }
+
   const fileStream = fs.createWriteStream(outputPath);
+  const nodeStream = Readable.fromWeb(response.body as unknown as WebReadableStream);
 
   // Track progress
   if (onProgress && totalBytes > 0) {
-    response.body?.on('data', (chunk: Buffer) => {
+    nodeStream.on('data', (chunk: Buffer) => {
       downloadedBytes += chunk.length;
       const percent = (downloadedBytes / totalBytes) * 100;
       onProgress(percent);
     });
   }
 
-  await pipeline(response.body!, fileStream);
+  await pipeline(nodeStream, fileStream);
   console.log(`[youtube-direct-download] Downloaded: ${outputPath} (${(downloadedBytes / 1024 / 1024).toFixed(1)} MB)`);
 }
 

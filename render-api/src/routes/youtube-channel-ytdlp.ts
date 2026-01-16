@@ -276,7 +276,7 @@ router.post('/', async (req: Request, res: Response) => {
     const standardDeviation = Math.sqrt(variance);
 
     // Convert to OutlierVideo format
-    let videos: OutlierVideo[] = scrapedVideos.map(v =>
+    const videos: OutlierVideo[] = scrapedVideos.map(v =>
       scrapedVideoToOutlier(v, averageViews, standardDeviation, subscriberCount)
     );
 

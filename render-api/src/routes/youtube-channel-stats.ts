@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import fetch from 'node-fetch';
 import {
   getCachedChannel,
   cacheChannel,

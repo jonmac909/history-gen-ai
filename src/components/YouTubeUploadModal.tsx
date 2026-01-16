@@ -319,10 +319,7 @@ export function YouTubeUploadModal({
         });
 
         // Determine publish time
-        let publishAt: string | undefined;
-        if (initialPublishAt) {
-          publishAt = initialPublishAt;
-        }
+        const publishAt = initialPublishAt || undefined;
 
         // Ensure tags is an array (handle both string and array inputs) - limit to 5 max
         const tagsArray = (Array.isArray(currentTags)
@@ -625,15 +622,13 @@ export function YouTubeUploadModal({
 
     try {
       // Determine actual privacy status and publishAt date
-      let actualPrivacyStatus: 'private' | 'unlisted' | 'public' =
+      const actualPrivacyStatus: 'private' | 'unlisted' | 'public' =
         privacyStatus === 'scheduled' ? 'private' : privacyStatus;
 
       // For scheduled uploads, create ISO 8601 date
-      let publishAt: string | undefined;
-      if (privacyStatus === 'scheduled' && scheduleDate) {
-        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime || '12:00'}:00`);
-        publishAt = scheduledDateTime.toISOString();
-      }
+      const publishAt = privacyStatus === 'scheduled' && scheduleDate
+        ? new Date(`${scheduleDate}T${scheduleTime || '12:00'}:00`).toISOString()
+        : undefined;
 
       const result = await uploadToYouTube(
         {

@@ -288,7 +288,7 @@ async function processAnalysis(
     // Step 2: Generate visual descriptions using LLaVA-NeXT v1.6
     console.log(`[video-analysis] Using LLaVA-NeXT v1.6 for frame descriptions`);
 
-    let descriptions: Map<number, string> = new Map();
+    const descriptions: Map<number, string> = new Map();
     if (preprocessResult.frameUrls.length > 0) {
       console.log(`[video-analysis] Generating visual descriptions for ${preprocessResult.frameUrls.length} frames`);
       try {
@@ -507,17 +507,28 @@ router.post('/query', async (req: Request, res: Response) => {
       });
     }
 
-    // Fetch scene descriptions for each video
-    const videoContext: any[] = [];
-    for (const video of videos) {
-      // Get scenes with descriptions
-      const { data: scenes } = await supabase
-        .from('analyzed_scenes')
-        .select('scene_index, start_seconds, end_seconds, dominant_color, scene_description')
-        .eq('video_id', video.video_id)
-        .order('scene_index', { ascending: true });
+    const videoIdsForScenes = videos.map(video => video.video_id);
+    const { data: scenes, error: scenesError } = await supabase
+      .from('analyzed_scenes')
+      .select('video_id, scene_index, start_seconds, end_seconds, dominant_color, scene_description')
+      .in('video_id', videoIdsForScenes)
+      .order('scene_index', { ascending: true });
 
-      videoContext.push({
+    if (scenesError) {
+      console.warn('[video-analysis] Failed to fetch scenes:', scenesError);
+    }
+
+    const scenesByVideo = new Map<string, typeof scenes>();
+    for (const scene of scenes || []) {
+      const list = scenesByVideo.get(scene.video_id) || [];
+      list.push(scene);
+      scenesByVideo.set(scene.video_id, list);
+    }
+
+    const videoContext: any[] = videos.map(video => {
+      const videoScenes = scenesByVideo.get(video.video_id) || [];
+
+      return {
         id: video.video_id,
         title: video.title || 'Unknown',
         channel: video.channel_name || 'Unknown',
@@ -526,14 +537,14 @@ router.post('/query', async (req: Request, res: Response) => {
         cutsPerMinute: video.cuts_per_minute,
         dominantColors: video.dominant_colors,
         viewCount: video.view_count,
-        scenes: (scenes || []).map(s => ({
+        scenes: videoScenes.map(s => ({
           sceneIndex: s.scene_index,
           timestamp: `${Math.floor(s.start_seconds / 60)}:${String(Math.floor(s.start_seconds % 60)).padStart(2, '0')}`,
           color: s.dominant_color,
           description: s.scene_description,
         })),
-      });
-    }
+      };
+    });
 
     // Query Claude
     const anthropic = new Anthropic({
@@ -677,11 +688,16 @@ router.get('/insights', async (req: Request, res: Response) => {
 router.get('/videos', async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
+    const parsedLimit = parseInt(String(req.query.limit || '50'), 10);
+    const parsedOffset = parseInt(String(req.query.offset || '0'), 10);
+    const limit = Number.isNaN(parsedLimit) ? 50 : Math.min(parsedLimit, 200);
+    const offset = Number.isNaN(parsedOffset) ? 0 : Math.max(parsedOffset, 0);
 
     const { data: videos, error } = await supabase
       .from('analyzed_videos')
       .select('video_id, video_url, title, channel_name, duration_seconds, status, progress, avg_scene_duration, cuts_per_minute, dominant_colors, analyzed_at, created_at')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       throw error;

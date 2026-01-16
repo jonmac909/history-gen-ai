@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Outliers from "./pages/Outliers";
 import AutoPoster from "./pages/AutoPoster";
 import VideoAnalysis from "./pages/VideoAnalysis";
+import VideoEditor from "./pages/VideoEditor";
 import NotFound from "./pages/NotFound";
 import YouTubeOAuthCallback from "./pages/YouTubeOAuthCallback";
 
@@ -93,6 +94,7 @@ const App = () => {
             <Route path="/outliers" element={<Outliers />} />
             <Route path="/auto-poster" element={<AutoPoster />} />
             <Route path="/video-analysis" element={<VideoAnalysis />} />
+            <Route path="/video-editor" element={<VideoEditor />} />
             <Route path="/oauth/youtube/callback" element={<YouTubeOAuthCallback />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

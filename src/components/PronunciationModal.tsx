@@ -30,6 +30,8 @@ export function PronunciationModal({ isOpen, onClose }: PronunciationModalProps)
   const [newPhonetic, setNewPhonetic] = useState("");
 
   const renderUrl = import.meta.env.VITE_RENDER_API_URL;
+  const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+  const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
 
   // Load pronunciation fixes when modal opens
   useEffect(() => {
@@ -41,7 +43,9 @@ export function PronunciationModal({ isOpen, onClose }: PronunciationModalProps)
   const loadFixes = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${renderUrl}/pronunciation`);
+      const response = await fetch(`${renderUrl}/pronunciation`, {
+        headers: renderAuthHeader,
+      });
       if (response.ok) {
         const data = await response.json();
         setFixes(data.fixes || []);
@@ -98,7 +102,7 @@ export function PronunciationModal({ isOpen, onClose }: PronunciationModalProps)
     try {
       const response = await fetch(`${renderUrl}/pronunciation`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...renderAuthHeader },
         body: JSON.stringify({ fixes }),
       });
 

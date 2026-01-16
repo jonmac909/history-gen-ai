@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import fetch from 'node-fetch';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { fetch, ProxyAgent } from 'undici';
 
 const router = Router();
 
@@ -9,7 +8,7 @@ const router = Router();
 const PROXY_URL = process.env.YTDLP_PROXY_URL || '';
 function getProxyAgent() {
   if (!PROXY_URL) return undefined;
-  return new HttpsProxyAgent(PROXY_URL);
+  return new ProxyAgent(PROXY_URL);
 }
 
 interface AnalyzeThumbnailRequest {
@@ -49,12 +48,12 @@ router.post('/', async (req: Request, res: Response) => {
       console.log(`[AnalyzeThumbnail] Using proxy for YouTube thumbnail`);
     }
 
-    const imageResponse = await fetch(thumbnailUrl, { agent });
+    const imageResponse = await fetch(thumbnailUrl, agent ? { dispatcher: agent } : undefined);
     if (!imageResponse.ok) {
       return res.status(400).json({ error: `Failed to fetch thumbnail: ${imageResponse.status}` });
     }
 
-    const imageBuffer = await imageResponse.buffer();
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     const base64Image = imageBuffer.toString('base64');
     const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
 

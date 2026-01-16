@@ -171,7 +171,7 @@ router.post('/', async (req: Request, res: Response) => {
       if (cachedOutliers.length > 0) {
         console.log(`[youtube-invidious] Cache HIT for: ${channelId} (${cachedOutliers.length} videos)`);
 
-        let videos = cachedOutliers.map(cachedOutlierToVideo);
+        const videos = cachedOutliers.map(cachedOutlierToVideo);
 
         // Sort according to sortBy
         if (sortBy === 'outlier') {
@@ -273,7 +273,7 @@ router.post('/', async (req: Request, res: Response) => {
     const subscriberCount = channelInfo.subCount || 0;
 
     // Convert to OutlierVideo format with calculated metrics
-    let videos = regularVideos.map(v =>
+    const videos = regularVideos.map(v =>
       invidiousVideoToOutlier(v, averageViews, standardDeviation, subscriberCount)
     );
 

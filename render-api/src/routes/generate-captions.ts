@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import FormData from 'form-data';
-import fetch from 'node-fetch';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import crypto from 'crypto';
 import { saveCost } from '../lib/cost-tracker';
+import { Readable } from 'stream';
+import { ReadableStream as WebReadableStream } from 'stream/web';
 
 const router = Router();
 
@@ -228,7 +228,9 @@ async function downloadToTempFile(url: string, onProgress?: (percent: number) =>
       return;
     }
 
-    response.body.on('data', (chunk: Buffer) => {
+    const nodeStream = Readable.fromWeb(response.body as unknown as WebReadableStream);
+
+    nodeStream.on('data', (chunk: Buffer) => {
       downloadedBytes += chunk.length;
       writeStream.write(chunk);
 
@@ -241,11 +243,11 @@ async function downloadToTempFile(url: string, onProgress?: (percent: number) =>
       }
     });
 
-    response.body.on('end', () => {
+    nodeStream.on('end', () => {
       writeStream.end();
     });
 
-    response.body.on('error', (err: Error) => {
+    nodeStream.on('error', (err: Error) => {
       writeStream.end();
       fs.unlinkSync(tempFile);
       reject(err);
@@ -356,7 +358,8 @@ async function transcribeChunk(audioData: Uint8Array | Buffer, groqApiKey: strin
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const formData = new FormData();
-      formData.append('file', Buffer.from(audioData), { filename: 'audio.wav', contentType: 'audio/wav' });
+      const audioBlob = new Blob([new Uint8Array(audioData)], { type: 'audio/wav' });
+      formData.append('file', audioBlob, 'audio.wav');
       formData.append('model', 'whisper-large-v3-turbo'); // Groq's fastest Whisper model
       formData.append('response_format', 'verbose_json');
       formData.append('language', 'en'); // Speed optimization: skip language detection
@@ -368,9 +371,8 @@ async function transcribeChunk(audioData: Uint8Array | Buffer, groqApiKey: strin
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${groqApiKey}`,
-          ...formData.getHeaders(),
         },
-        body: formData as any,
+        body: formData,
       });
 
       if (!whisperResponse.ok) {

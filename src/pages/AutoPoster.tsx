@@ -17,6 +17,8 @@ import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, 
 import { useToast } from '@/hooks/use-toast';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
+const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
 
 interface AutoCloneRun {
   id: string;
@@ -67,8 +69,8 @@ export default function AutoPoster() {
     if (showLoading) setLoading(true);
     try {
       const [runsRes, videosRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/auto-clone/status`),
-        fetch(`${API_BASE_URL}/auto-clone/processed`),
+        fetch(`${API_BASE_URL}/auto-clone/status`, { headers: renderAuthHeader }),
+        fetch(`${API_BASE_URL}/auto-clone/processed`, { headers: renderAuthHeader }),
       ]);
 
       if (runsRes.ok) {
@@ -120,7 +122,7 @@ export default function AutoPoster() {
     try {
       const response = await fetch(`${API_BASE_URL}/auto-clone`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...renderAuthHeader },
         body: JSON.stringify({ force }),
       });
 
@@ -189,6 +191,7 @@ export default function AutoPoster() {
     try {
       const response = await fetch(`${API_BASE_URL}/auto-clone/retry/${videoId}`, {
         method: 'POST',
+        headers: renderAuthHeader,
       });
       if (!response.ok) {
         const data = await response.json();
@@ -216,6 +219,7 @@ export default function AutoPoster() {
     try {
       const response = await fetch(`${API_BASE_URL}/auto-clone/processed/${videoId}`, {
         method: 'DELETE',
+        headers: renderAuthHeader,
       });
       if (!response.ok) {
         const data = await response.json();

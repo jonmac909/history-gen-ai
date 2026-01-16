@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 
 const RUNPOD_REST_API = 'https://rest.runpod.io/v1';
 

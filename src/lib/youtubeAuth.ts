@@ -20,6 +20,8 @@ export interface YouTubePlaylist {
 // Storage keys
 const ACCESS_TOKEN_KEY = 'youtube_access_token';
 const TOKEN_EXPIRY_KEY = 'youtube_token_expiry';
+const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
 
 interface TokenResponse {
   success: boolean;
@@ -169,7 +171,7 @@ export async function exchangeCodeForToken(code: string): Promise<TokenResponse>
   try {
     const response = await fetch(`${renderUrl}/youtube-upload/auth`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...renderAuthHeader },
       body: JSON.stringify({
         code,
         redirectUri: getRedirectUri()
@@ -212,7 +214,7 @@ export async function refreshAccessToken(): Promise<TokenResponse> {
   try {
     const response = await fetch(`${renderUrl}/youtube-upload/token`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', ...renderAuthHeader }
     });
 
     const data = await response.json();
@@ -273,7 +275,9 @@ export async function checkYouTubeConnection(): Promise<{ connected: boolean; la
   }
 
   try {
-    const response = await fetch(`${renderUrl}/youtube-upload/status`);
+    const response = await fetch(`${renderUrl}/youtube-upload/status`, {
+      headers: renderAuthHeader,
+    });
     const data = await response.json();
 
     return {
@@ -297,7 +301,7 @@ export async function disconnectYouTube(): Promise<boolean> {
   try {
     const response = await fetch(`${renderUrl}/youtube-upload/disconnect`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', ...renderAuthHeader }
     });
 
     if (response.ok) {
@@ -343,7 +347,8 @@ export async function fetchYouTubeChannels(): Promise<{ channels: YouTubeChannel
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...renderAuthHeader,
       }
     });
 
@@ -379,7 +384,8 @@ export async function fetchYouTubePlaylists(): Promise<{ playlists: YouTubePlayl
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...renderAuthHeader,
       }
     });
 
@@ -415,7 +421,8 @@ export async function addVideoToPlaylist(playlistId: string, videoId: string): P
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...renderAuthHeader,
       },
       body: JSON.stringify({ playlistId, videoId })
     });

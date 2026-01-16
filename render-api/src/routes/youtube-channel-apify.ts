@@ -257,7 +257,7 @@ router.post('/', async (req: Request, res: Response) => {
       if (cachedOutliers.length > 0) {
         console.log(`[youtube-channel-apify] Cache HIT for: ${channelId} (${cachedOutliers.length} videos)`);
 
-        let videos = cachedOutliers.map(cachedOutlierToVideo);
+        const videos = cachedOutliers.map(cachedOutlierToVideo);
 
         // Sort according to sortBy
         if (sortBy === 'outlier') {
@@ -321,7 +321,7 @@ router.post('/', async (req: Request, res: Response) => {
     const subscriberCount = apifyChannel?.subscriberCount || 0;
 
     // Convert to OutlierVideo format with calculated metrics
-    let videos = apifyVideos.map(v =>
+    const videos = apifyVideos.map(v =>
       apifyVideoToOutlier(v, averageViews, standardDeviation, subscriberCount)
     );
 

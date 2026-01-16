@@ -4,14 +4,29 @@
  * No yt-dlp binary required - works reliably on Railway
  */
 
-import fetch from 'node-fetch';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { fetch, ProxyAgent, type RequestInit } from 'undici';
 
 const PROXY_URL = process.env.YTDLP_PROXY_URL || '';
 
 function getAgent() {
   if (!PROXY_URL) return undefined;
-  return new HttpsProxyAgent(PROXY_URL);
+  return new ProxyAgent(PROXY_URL);
+}
+
+async function fetchWithProxy(url: string, init: RequestInit = {}, timeoutMs: number = 30000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const agent = getAgent();
+
+  try {
+    return await fetch(url, {
+      ...init,
+      ...(agent ? { dispatcher: agent } : {}),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const HEADERS = {
@@ -62,8 +77,7 @@ export async function resolveChannelId(input: string): Promise<string> {
 
   console.log(`[youtube-scraper] Resolving channel ID from: ${url}`);
 
-  const agent = getAgent();
-  const res = await fetch(url, { agent, headers: HEADERS, timeout: 30000 });
+  const res = await fetchWithProxy(url, { headers: HEADERS }, 30000);
 
   if (!res.ok) {
     throw new Error(`Failed to fetch channel page: ${res.status}`);
@@ -93,11 +107,9 @@ export async function resolveChannelId(input: string): Promise<string> {
  */
 export async function getChannelInfo(channelId: string): Promise<ScrapedChannel> {
   const url = `https://www.youtube.com/channel/${channelId}`;
-  const agent = getAgent();
-
   console.log(`[youtube-scraper] Fetching channel info: ${channelId}`);
 
-  const res = await fetch(url, { agent, headers: HEADERS, timeout: 30000 });
+  const res = await fetchWithProxy(url, { headers: HEADERS }, 30000);
   const html = await res.text();
 
   // Extract ytInitialData
@@ -160,11 +172,9 @@ export async function getChannelVideos(
   maxVideos: number = 50
 ): Promise<ScrapedVideo[]> {
   const url = `https://www.youtube.com/channel/${channelId}/videos`;
-  const agent = getAgent();
-
   console.log(`[youtube-scraper] Fetching videos from: ${url} (max: ${maxVideos})`);
 
-  const res = await fetch(url, { agent, headers: HEADERS, timeout: 30000 });
+  const res = await fetchWithProxy(url, { headers: HEADERS }, 30000);
   const html = await res.text();
 
   // Extract ytInitialData
@@ -205,10 +215,9 @@ export async function getChannelVideos(
     await sleep(500); // Rate limiting
 
     try {
-      const apiRes = await fetch(
+      const apiRes = await fetchWithProxy(
         'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
         {
-          agent,
           method: 'POST',
           headers: {
             ...HEADERS,
@@ -223,8 +232,8 @@ export async function getChannelVideos(
             },
             continuation,
           }),
-          timeout: 30000,
-        }
+        },
+        30000
       );
 
       if (!apiRes.ok) {

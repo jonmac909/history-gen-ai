@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -203,7 +202,7 @@ async function copyToSupabase(
       throw new Error(`Failed to download video: ${response.status}`);
     }
 
-    const videoBuffer = await response.buffer();
+    const videoBuffer = Buffer.from(await response.arrayBuffer());
     fs.writeFileSync(inputPath, videoBuffer);
 
     // Get video duration for fade out timing
@@ -284,7 +283,7 @@ async function extractLastFrame(
     if (!response.ok) {
       throw new Error(`Failed to download video: ${response.status}`);
     }
-    const videoBuffer = await response.buffer();
+    const videoBuffer = Buffer.from(await response.arrayBuffer());
     fs.writeFileSync(videoPath, videoBuffer);
 
     // Get video duration using ffprobe (static binary)

@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || "";
+const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
 
 interface OutlierVideo {
   videoId: string;
@@ -108,7 +110,9 @@ export function AutoPosterModal({ open, onClose, onSelectVideo }: AutoPosterModa
     setScanningMessage("Loading channels...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auto-clone/best-outlier`);
+      const response = await fetch(`${API_BASE_URL}/auto-clone/best-outlier`, {
+        headers: renderAuthHeader,
+      });
       const reader = response.body?.getReader();
 
       if (!reader) {

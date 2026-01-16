@@ -3,6 +3,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import { initPotProvider } from './lib/pot-provider';
+import {
+  corsAllowedOrigins,
+  apiKeyRequired,
+  internalApiKey,
+  rateLimitMax,
+  rateLimitWindowMs,
+} from './lib/runtime-config';
 import rewriteScriptRouter from './routes/rewrite-script';
 import generateAudioRouter from './routes/generate-audio';
 import generateImagesRouter from './routes/generate-images';
@@ -28,6 +35,7 @@ import autoCloneRouter from './routes/auto-clone';
 import costsRouter from './routes/costs';
 import videoAnalysisRouter from './routes/video-analysis';
 import visionTestRouter from './routes/vision-test';
+import videoEditorRouter from './routes/video-editor';
 
 dotenv.config();
 
@@ -35,12 +43,65 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Middleware
+const allowedOrigins = new Set(corsAllowedOrigins);
+
 app.use(cors({
-  origin: '*', // Configure this to your frontend domain in production
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Internal-Api-Key']
 }));
 app.use(express.json({ limit: '50mb' }));
+
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const rateLimitMiddleware: express.RequestHandler = (req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
+
+  const now = Date.now();
+  const key = req.ip || 'unknown';
+  const bucket = rateBuckets.get(key) ?? { count: 0, resetAt: now + rateLimitWindowMs };
+
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + rateLimitWindowMs;
+  }
+
+  bucket.count += 1;
+  rateBuckets.set(key, bucket);
+
+  if (bucket.count > rateLimitMax) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  next();
+};
+
+const authMiddleware: express.RequestHandler = (req, res, next) => {
+  if (!apiKeyRequired) return next();
+  if (req.method === 'OPTIONS') return next();
+
+  const openPaths = new Set(['/health', '/']);
+  if (openPaths.has(req.path)) return next();
+
+  if (!internalApiKey) {
+    return res.status(500).json({ error: 'INTERNAL_API_KEY not configured' });
+  }
+
+  const headerToken = req.header('x-internal-api-key') || req.header('X-Internal-Api-Key');
+  const bearerToken = req.header('Authorization')?.replace('Bearer ', '');
+  const token = headerToken || bearerToken;
+  if (!token || token !== internalApiKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  next();
+};
+
+app.use(rateLimitMiddleware);
+app.use(authMiddleware);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -49,35 +110,36 @@ app.get('/health', (req, res) => {
 });
 
 // Debug endpoint to check env vars (remove after debugging)
-app.get('/debug-env', (req, res) => {
-  res.json({
-    proxyConfigured: !!process.env.YTDLP_PROXY_URL,
-    proxyUrlLength: process.env.YTDLP_PROXY_URL?.length || 0,
-    proxyUrlStart: process.env.YTDLP_PROXY_URL?.substring(0, 10) || 'not set',
-    supabaseConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    timestamp: new Date().toISOString()
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/debug-env', (req, res) => {
+    res.json({
+      proxyConfigured: !!process.env.YTDLP_PROXY_URL,
+      proxyUrlLength: process.env.YTDLP_PROXY_URL?.length || 0,
+      proxyUrlStart: process.env.YTDLP_PROXY_URL?.substring(0, 10) || 'not set',
+      supabaseConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      timestamp: new Date().toISOString()
+    });
   });
-});
 
-// Debug endpoint - simple check
-app.get('/debug-ytdlp', async (req, res) => {
-  const path = await import('path');
-  const fs = await import('fs');
-  const os = await import('os');
+  app.get('/debug-ytdlp', async (req, res) => {
+    const path = await import('path');
+    const fs = await import('fs');
+    const os = await import('os');
 
-  const YTDLP_DIR = path.default.join(os.default.tmpdir(), 'ytdlp');
-  const YTDLP_PATH = path.default.join(YTDLP_DIR, 'yt-dlp');
+    const YTDLP_DIR = path.default.join(os.default.tmpdir(), 'ytdlp');
+    const YTDLP_PATH = path.default.join(YTDLP_DIR, 'yt-dlp');
 
-  res.json({
-    tmpdir: os.default.tmpdir(),
-    ytdlpDir: YTDLP_DIR,
-    ytdlpPath: YTDLP_PATH,
-    dirExists: fs.default.existsSync(YTDLP_DIR),
-    binaryExists: fs.default.existsSync(YTDLP_PATH),
-    proxyConfigured: !!process.env.YTDLP_PROXY_URL,
-    proxyStart: process.env.YTDLP_PROXY_URL?.substring(0, 15) || 'not set'
+    res.json({
+      tmpdir: os.default.tmpdir(),
+      ytdlpDir: YTDLP_DIR,
+      ytdlpPath: YTDLP_PATH,
+      dirExists: fs.default.existsSync(YTDLP_DIR),
+      binaryExists: fs.default.existsSync(YTDLP_PATH),
+      proxyConfigured: !!process.env.YTDLP_PROXY_URL,
+      proxyStart: process.env.YTDLP_PROXY_URL?.substring(0, 15) || 'not set'
+    });
   });
-});
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -115,6 +177,7 @@ app.use('/auto-clone', autoCloneRouter);
 app.use('/costs', costsRouter);
 app.use('/video-analysis', videoAnalysisRouter);
 app.use('/vision-test', visionTestRouter);
+app.use('/video-editor', videoEditorRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

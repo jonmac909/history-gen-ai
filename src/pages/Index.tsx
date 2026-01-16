@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap, Bot, Video } from "lucide-react";
+import { Youtube, FileText, Sparkles, Scroll, Mic, Image, RotateCcw, TrendingUp, Zap, Bot, Video, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -2912,6 +2912,15 @@ const Index = () => {
             >
               <Video className="w-4 h-4" />
               <span className="hidden sm:inline">Analysis</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => navigate('/video-editor')}
+            >
+              <Wand2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Editor</span>
             </Button>
             <Button
               variant="ghost"

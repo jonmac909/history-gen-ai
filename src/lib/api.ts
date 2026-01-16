@@ -1,5 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 
+const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
+const withRenderAuth = (headers: Record<string, string> = {}) => ({
+  ...headers,
+  ...renderAuthHeader,
+});
+
 /**
  * Calculate dynamic timeout based on target word count
  * Formula: min(1800000, (targetWords / 150) * 60000)
@@ -151,9 +158,9 @@ export async function getYouTubeTranscript(url: string): Promise<TranscriptResul
   try {
     const response = await fetch(`${renderUrl}/get-youtube-transcript`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ url })
     });
 
@@ -317,9 +324,9 @@ async function generateSingleChunk(
   try {
     const response = await fetch(`${renderUrl}/rewrite-script`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ transcript, template, title, topic, model: aiModel, wordCount, stream: true }),
       signal: controller.signal,
     });
@@ -519,9 +526,9 @@ export async function rateScript(
   try {
     const response = await fetch(`${renderUrl}/rewrite-script/rate`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ script, template, title, topic })
     });
 
@@ -570,9 +577,9 @@ export async function quickEditScript(
   try {
     const response = await fetch(`${renderUrl}/rewrite-script/quick-edit`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ script, fixPrompt })
     });
 
@@ -619,9 +626,9 @@ export async function generateAudio(script: string, voiceSampleUrl: string, proj
   try {
     const response = await fetch(`${renderUrl}/generate-audio`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ script, voiceSampleUrl, projectId })
     });
 
@@ -689,9 +696,9 @@ export async function generateAudioStreaming(
   try {
     const response = await fetch(`${renderUrl}/generate-audio`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         script,
         voiceSampleUrl,
@@ -832,9 +839,9 @@ export async function regenerateAudioSegment(
   try {
     const response = await fetch(`${renderApiUrl}/generate-audio/segment`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         segmentText,
         segmentIndex,
@@ -877,9 +884,9 @@ export async function recombineAudioSegments(
   try {
     const response = await fetch(`${renderApiUrl}/generate-audio/recombine`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         projectId,
         segmentCount
@@ -934,7 +941,7 @@ export async function generateImagePrompts(
     try {
       const response = await fetch(`${renderUrl}/generate-image-prompts`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withRenderAuth({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ script, srtContent, imageCount, stylePrompt, audioDuration, stream: true })
       });
 
@@ -1031,7 +1038,7 @@ export async function generateClipPrompts(
   try {
     const response = await fetch(`${renderUrl}/generate-clip-prompts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withRenderAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ script, srtContent, stylePrompt, stream: !!onProgress })
     });
 
@@ -1120,7 +1127,7 @@ export async function generateVideoClipsStreaming(
   try {
     const response = await fetch(`${renderUrl}/generate-video-clips`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withRenderAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ projectId, clips, stream: true })
     });
 
@@ -1216,9 +1223,9 @@ export async function generateImages(
   try {
     const response = await fetch(`${renderUrl}/generate-images`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ prompts, quality, aspectRatio, projectId })
     });
 
@@ -1254,9 +1261,9 @@ export async function generateImagesStreaming(
 
   const response = await fetch(`${renderUrl}/generate-images`, {
     method: 'POST',
-    headers: {
+    headers: withRenderAuth({
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify({ prompts, quality, aspectRatio, stream: true, projectId })
   });
 
@@ -1346,9 +1353,9 @@ export async function generateCaptions(
   try {
     const response = await fetch(`${renderUrl}/generate-captions`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ audioUrl, projectId })
     });
 
@@ -1376,9 +1383,9 @@ async function generateCaptionsStreaming(
   try {
     const response = await fetch(`${renderUrl}/generate-captions`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         audioUrl,
         projectId,
@@ -1606,9 +1613,9 @@ export async function renderVideoStreaming(
 
     const startResponse = await fetch(`${renderUrl}/render-video`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         projectId,
         audioUrl,
@@ -1652,7 +1659,9 @@ export async function renderVideoStreaming(
       }
 
       // Poll for status
-      const statusResponse = await fetch(`${renderUrl}/render-video/status/${jobId}`);
+      const statusResponse = await fetch(`${renderUrl}/render-video/status/${jobId}`, {
+        headers: withRenderAuth(),
+      });
 
       if (!statusResponse.ok) {
         console.error('Failed to poll job status:', statusResponse.status);
@@ -1745,9 +1754,9 @@ export async function suggestThumbnailContent(
   try {
     const response = await fetch(`${renderUrl}/generate-thumbnails/suggest-content`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ script, title })
     });
 
@@ -1791,9 +1800,9 @@ export async function generateThumbnailsStreaming(
   try {
     const response = await fetch(`${renderUrl}/generate-thumbnails`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         exampleImageBase64,
         prompt,
@@ -1923,9 +1932,9 @@ export async function uploadToYouTube(
   try {
     const response = await fetch(`${renderUrl}/youtube-upload`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify(params)
     });
 
@@ -2033,9 +2042,9 @@ export async function generateYouTubeMetadata(
   try {
     const response = await fetch(`${renderUrl}/generate-youtube-metadata`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ title, script })
     });
 
@@ -2129,9 +2138,9 @@ export async function getChannelOutliers(
   try {
     const response = await fetch(`${renderUrl}/youtube-channel-stats`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
     });
 
@@ -2215,9 +2224,9 @@ export async function analyzeNiche(
   try {
     const response = await fetch(`${renderUrl}/niche-analyze`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ topic, subscriberMin, subscriberMax })
     });
 
@@ -2267,9 +2276,9 @@ export async function getChannelOutliersApify(
   try {
     const response = await fetch(`${renderUrl}/youtube-channel-apify`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
     });
 
@@ -2318,9 +2327,9 @@ export async function getChannelOutliersInvidious(
   try {
     const response = await fetch(`${renderUrl}/youtube-channel-invidious`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
     });
 
@@ -2367,9 +2376,9 @@ export async function getChannelOutliersYtdlp(
   try {
     const response = await fetch(`${renderUrl}/youtube-channel-ytdlp`, {
       method: 'POST',
-      headers: {
+      headers: withRenderAuth({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ channelInput, maxResults, sortBy, forceRefresh })
     });
 
@@ -2432,7 +2441,9 @@ export async function fetchProjectCosts(projectId: string): Promise<ProjectCosts
   }
 
   try {
-    const response = await fetch(`${renderUrl}/costs/${projectId}?byStep=true`);
+    const response = await fetch(`${renderUrl}/costs/${projectId}?byStep=true`, {
+      headers: withRenderAuth(),
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));

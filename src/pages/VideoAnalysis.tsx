@@ -39,6 +39,8 @@ import {
 } from '@/components/ui/dialog';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
+const renderApiKey = import.meta.env.VITE_INTERNAL_API_KEY;
+const renderAuthHeader = renderApiKey ? { 'X-Internal-Api-Key': renderApiKey } : {};
 
 interface AnalyzedVideo {
   id: string;
@@ -94,7 +96,9 @@ export default function VideoAnalysis() {
   // Poll analysis status
   const pollAnalysisStatus = async (videoId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/video-analysis/status/${videoId}`);
+      const response = await fetch(`${API_BASE_URL}/video-analysis/status/${videoId}`, {
+        headers: renderAuthHeader,
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -139,8 +143,8 @@ export default function VideoAnalysis() {
     try {
       // Fetch both insights and videos list in parallel
       const [insightsRes, videosRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/video-analysis/insights`),
-        fetch(`${API_BASE_URL}/video-analysis/videos`),
+        fetch(`${API_BASE_URL}/video-analysis/insights`, { headers: renderAuthHeader }),
+        fetch(`${API_BASE_URL}/video-analysis/videos`, { headers: renderAuthHeader }),
       ]);
 
       if (insightsRes.ok) {
@@ -161,7 +165,9 @@ export default function VideoAnalysis() {
   const fetchVideoDetails = async (videoId: string) => {
     setLoadingDetails(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/video-analysis/${videoId}`);
+      const response = await fetch(`${API_BASE_URL}/video-analysis/${videoId}`, {
+        headers: renderAuthHeader,
+      });
       if (response.ok) {
         const data = await response.json();
         setVideoDetails(data);
@@ -181,6 +187,7 @@ export default function VideoAnalysis() {
     try {
       const response = await fetch(`${API_BASE_URL}/video-analysis/${videoId}`, {
         method: 'DELETE',
+        headers: renderAuthHeader,
       });
       const data = await response.json();
       if (data.success) {
@@ -216,9 +223,9 @@ export default function VideoAnalysis() {
     try {
       const response = await fetch(`${API_BASE_URL}/video-analysis/query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...renderAuthHeader },
         body: JSON.stringify({
-          query: videoQuery.trim(),
+          question: videoQuery,
           videoIds: [selectedVideo.video_id],
         }),
       });
@@ -248,7 +255,9 @@ export default function VideoAnalysis() {
   // Check service health
   const checkHealth = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/video-analysis/health`);
+      const response = await fetch(`${API_BASE_URL}/video-analysis/health`, {
+        headers: renderAuthHeader,
+      });
       if (response.ok) {
         const data = await response.json();
         setHealthStatus({
@@ -295,11 +304,8 @@ export default function VideoAnalysis() {
     try {
       const response = await fetch(`${API_BASE_URL}/video-analysis/analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId,
-          videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-        }),
+        headers: { 'Content-Type': 'application/json', ...renderAuthHeader },
+        body: JSON.stringify({ videoUrl: `https://www.youtube.com/watch?v=${videoId}` }),
       });
 
       const data = await response.json();

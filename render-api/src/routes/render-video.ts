@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
@@ -8,8 +7,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
+import { ReadableStream as WebReadableStream } from 'stream/web';
+import { pipeline } from 'stream/promises';
 import { checkAudioIntegrity, logAudioIntegrity } from '../utils/audio-integrity';
 import { saveCost } from '../lib/cost-tracker';
+import { allowedAssetHosts } from '../lib/runtime-config';
 
 const router = Router();
 
@@ -58,6 +61,30 @@ interface RenderProgress {
 const EMBERS_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/embers.mp4';
 const SMOKE_GRAY_OVERLAY_URL = 'https://historygenai.netlify.app/overlays/smoke_gray.mp4';
 const OVERLAY_SOURCE_DURATION = 10;  // Both overlays are 10 seconds
+
+const allowedAssetHostSet = new Set(allowedAssetHosts);
+
+function assertAllowedAssetUrl(rawUrl: string, context: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`Invalid URL for ${context}`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Disallowed protocol for ${context}`);
+  }
+
+  const hostname = parsed.hostname;
+  const isAllowed = Array.from(allowedAssetHostSet).some(host =>
+    hostname === host || hostname.endsWith(`.${host}`)
+  );
+
+  if (!isAllowed) {
+    throw new Error(`Disallowed host for ${context}`);
+  }
+}
 
 // RunPod rendering configuration
 const RUNPOD_VIDEO_ENDPOINT_ID = process.env.RUNPOD_VIDEO_ENDPOINT_ID || '';  // GPU endpoint
@@ -157,12 +184,14 @@ async function updateJobStatus(
 
 // Download file from URL to temp directory
 async function downloadFile(url: string, destPath: string): Promise<void> {
+  assertAllowedAssetUrl(url, 'download');
   const response = await fetch(url);
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw new Error(`Failed to download ${url}: ${response.status}`);
   }
-  const buffer = await response.arrayBuffer();
-  fs.writeFileSync(destPath, Buffer.from(buffer));
+
+  const nodeStream = Readable.fromWeb(response.body as unknown as WebReadableStream);
+  await pipeline(nodeStream, fs.createWriteStream(destPath));
 }
 
 // RunPod GPU rendering function
@@ -313,7 +342,6 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
   const supabase = getSupabase();
   const supabaseUrl = process.env.SUPABASE_URL!;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  let tempDir: string | null = null;
 
   try {
     const { projectId, audioUrl, imageUrls, imageTimings, effects, introClips } = params;
@@ -600,16 +628,6 @@ async function processRenderJobParallel(jobId: string, params: RenderVideoReques
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
     await updateJobStatus(supabase, jobId, 'failed', 0, 'Render failed', { error: error.message });
-  } finally {
-    // Clean up temp directory
-    if (tempDir && fs.existsSync(tempDir)) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-        console.log('Temp directory cleaned up');
-      } catch (e) {
-        console.error('Failed to clean up temp:', e);
-      }
-    }
   }
 }
 
@@ -1094,9 +1112,9 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
               })
               .on('error', reject)
               .on('end', () => {
-                try { fs.unlinkSync(rawChunkPath); } catch (e) { }
-                try { fs.unlinkSync(smokeLoopPath); } catch (e) { }
-                try { fs.unlinkSync(embersLoopPath); } catch (e) { }
+                try { fs.unlinkSync(rawChunkPath); } catch (e) { console.warn(`[Chunk ${chunk.index}] Failed to remove raw chunk`, e); }
+                try { fs.unlinkSync(smokeLoopPath); } catch (e) { console.warn(`[Chunk ${chunk.index}] Failed to remove smoke loop`, e); }
+                try { fs.unlinkSync(embersLoopPath); } catch (e) { console.warn(`[Chunk ${chunk.index}] Failed to remove embers loop`, e); }
                 progress.chunkProgress.set(chunk.index, 100);
                 resolve();
               })
@@ -1267,7 +1285,7 @@ async function processRenderJob(jobId: string, params: RenderVideoRequest): Prom
         'x-upsert': 'true',
       },
       body: fileStream as any,
-      // @ts-ignore - duplex is needed for streaming
+      // @ts-expect-error duplex is needed for streaming
       duplex: 'half',
     });
 
@@ -1316,6 +1334,14 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (!params.imageTimings || params.imageTimings.length !== params.imageUrls.length) {
       return res.status(400).json({ error: 'Image timings must match image count' });
+    }
+
+    try {
+      assertAllowedAssetUrl(params.audioUrl, 'audioUrl');
+      params.imageUrls.forEach((url, index) => assertAllowedAssetUrl(url, `imageUrls[${index}]`));
+      params.introClips?.forEach((clip, index) => assertAllowedAssetUrl(clip.url, `introClips[${index}]`));
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid asset URL' });
     }
 
     const supabase = getSupabase();

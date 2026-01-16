@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import crypto from 'crypto';
 import { saveCost } from '../lib/cost-tracker';
+import { imageGenerationConfig } from '../lib/runtime-config';
 
 const router = Router();
 
@@ -34,6 +34,21 @@ interface JobStatus {
   filename?: string;
 }
 
+type RunpodRunResponse = { id: string };
+type RunpodStatusResponse = {
+  status: 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'TIMED_OUT' | 'IN_PROGRESS' | string;
+  output?: { image_base64?: string; error?: string };
+  error?: string;
+};
+
+const isRunpodRunResponse = (data: unknown): data is RunpodRunResponse => {
+  return typeof data === 'object' && data !== null && 'id' in data && typeof (data as { id?: unknown }).id === 'string';
+};
+
+const isRunpodStatusResponse = (data: unknown): data is RunpodStatusResponse => {
+  return typeof data === 'object' && data !== null && 'status' in data;
+};
+
 // Start a RunPod job for Z-Image generation
 async function startImageJob(apiKey: string, prompt: string, quality: string, aspectRatio: string): Promise<string> {
   console.log(`Starting RunPod job for: ${prompt.substring(0, 50)}...`);
@@ -59,9 +74,9 @@ async function startImageJob(apiKey: string, prompt: string, quality: string, as
     throw new Error(`Failed to start image job: ${response.status}`);
   }
 
-  const data = await response.json() as any;
+  const data = await response.json();
 
-  if (!data.id) {
+  if (!isRunpodRunResponse(data)) {
     throw new Error('RunPod job creation failed: no job ID returned');
   }
 
@@ -91,7 +106,11 @@ async function checkJobStatus(
       return { state: 'pending' };
     }
 
-    const data = await response.json() as any;
+    const data = await response.json();
+
+    if (!isRunpodStatusResponse(data)) {
+      return { state: 'fail', error: 'Invalid RunPod status response' };
+    }
 
     if (data.status === 'COMPLETED' && data.output) {
       if (data.output.error) {
@@ -261,10 +280,10 @@ async function handleStreamingImages(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const MAX_CONCURRENT_JOBS = 10; // Match RunPod max workers for image endpoint
-  const POLL_INTERVAL = 2000; // 2 seconds
-  const MAX_POLLING_TIME = 15 * 60 * 1000; // 15 minutes total (increased for large batches)
-  const MAX_RETRIES = 2; // Retry failed jobs up to 2 times
+  const MAX_CONCURRENT_JOBS = imageGenerationConfig.maxConcurrentJobs;
+  const POLL_INTERVAL = imageGenerationConfig.pollIntervalMs;
+  const MAX_POLLING_TIME = imageGenerationConfig.maxPollingTimeMs;
+  const MAX_RETRIES = imageGenerationConfig.maxRetries;
 
   try {
     console.log(`\n=== Generating ${total} images with rolling concurrency (max ${MAX_CONCURRENT_JOBS} concurrent) ===`);
@@ -497,12 +516,17 @@ async function handleNonStreamingImages(
   supabaseKey: string,
   projectId?: string
 ) {
-  const jobData = await Promise.all(
-    normalizedPrompts.map(async (item, index) => {
+  const jobData: Array<{ jobId: string; filename: string; index: number }> = new Array(normalizedPrompts.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(imageGenerationConfig.maxConcurrentJobs, normalizedPrompts.length) }, async () => {
+    while (nextIndex < normalizedPrompts.length) {
+      const current = nextIndex++;
+      const item = normalizedPrompts[current];
       const jobId = await startImageJob(runpodApiKey, item.prompt, quality, aspectRatio);
-      return { jobId, filename: item.filename, index };
-    })
-  );
+      jobData[current] = { jobId, filename: item.filename, index: current };
+    }
+  });
+  await Promise.all(workers);
 
   // Poll all in parallel
   const maxPollingTime = 5 * 60 * 1000;
