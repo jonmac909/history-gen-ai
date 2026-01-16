@@ -101,9 +101,10 @@ router.post('/analyze-example', async (req: Request, res: Response) => {
     const { extractTemplate } = await import('../lib/template-extractor');
 
     // Extract template with progress updates
-    const templateId = await extractTemplate(videoUrl, templateName, (progress, message) => {
+    const extractionResult = await extractTemplate(videoUrl, templateName, (progress, message) => {
       res.write(`event: progress\ndata: ${JSON.stringify({ progress, message })}\n\n`);
     });
+    const { templateId } = extractionResult;
 
     // Fetch the created template
     const supabase = getSupabase();
