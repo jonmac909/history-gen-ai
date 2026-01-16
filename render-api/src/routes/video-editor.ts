@@ -7,6 +7,23 @@ import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
 
+function setupSse(res: Response): NodeJS.Timeout {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const heartbeat = setInterval(() => {
+    res.write(':\n\n');
+  }, 15000);
+
+  res.on('close', () => {
+    clearInterval(heartbeat);
+  });
+
+  return heartbeat;
+}
+
 // Get Supabase client
 function getSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -70,6 +87,7 @@ router.post('/templates', async (req: Request, res: Response) => {
 
 // POST /video-editor/analyze-example - Analyze example video to extract template
 router.post('/analyze-example', async (req: Request, res: Response) => {
+  let heartbeat: NodeJS.Timeout | null = null;
   try {
     const { videoUrl, templateName } = req.body;
 
@@ -77,16 +95,13 @@ router.post('/analyze-example', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Video URL and template name are required' });
     }
 
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    heartbeat = setupSse(res);
 
     // Import template extractor
     const { extractTemplate } = await import('../lib/template-extractor');
 
     // Extract template with progress updates
-    await extractTemplate(videoUrl, templateName, (progress, message) => {
+    const templateId = await extractTemplate(videoUrl, templateName, (progress, message) => {
       res.write(`event: progress\ndata: ${JSON.stringify({ progress, message })}\n\n`);
     });
 
@@ -95,9 +110,7 @@ router.post('/analyze-example', async (req: Request, res: Response) => {
     const { data: template, error } = await supabase
       .from('editing_templates')
       .select('*')
-      .eq('name', templateName)
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .eq('id', templateId)
       .single();
 
     if (error) throw error;
@@ -108,11 +121,16 @@ router.post('/analyze-example', async (req: Request, res: Response) => {
     console.error('Failed to analyze example:', error);
     res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
+  } finally {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+    }
   }
 });
 
 // POST /video-editor/analyze-raw - Analyze raw video for editing
 router.post('/analyze-raw', async (req: Request, res: Response) => {
+  let heartbeat: NodeJS.Timeout | null = null;
   try {
     const { videoUrl, projectName, templateId } = req.body;
 
@@ -120,10 +138,7 @@ router.post('/analyze-raw', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Video URL and project name are required' });
     }
 
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    heartbeat = setupSse(res);
 
     const supabase = getSupabase();
 
@@ -173,6 +188,10 @@ router.post('/analyze-raw', async (req: Request, res: Response) => {
     console.error('Failed to analyze raw video:', error);
     res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
+  } finally {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+    }
   }
 });
 
@@ -196,6 +215,7 @@ router.get('/projects', async (req: Request, res: Response) => {
 
 // POST /video-editor/render - Render video with Remotion
 router.post('/render', async (req: Request, res: Response) => {
+  let heartbeat: NodeJS.Timeout | null = null;
   try {
     const { projectId } = req.body;
 
@@ -203,10 +223,7 @@ router.post('/render', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Project ID is required' });
     }
 
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    heartbeat = setupSse(res);
 
     // Import renderer
     const { renderProject } = await import('../lib/remotion-renderer');
@@ -225,6 +242,10 @@ router.post('/render', async (req: Request, res: Response) => {
     console.error('Failed to render video:', error);
     res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
+  } finally {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+    }
   }
 });
 

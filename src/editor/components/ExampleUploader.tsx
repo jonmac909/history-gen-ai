@@ -9,13 +9,20 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Upload, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { readSseStream } from '@/lib/sse';
+import type { EditingTemplate } from '../types';
 
-export function ExampleUploader() {
+interface ExampleUploaderProps {
+  onTemplateCreated?: (template: EditingTemplate) => void;
+}
+
+export function ExampleUploader({ onTemplateCreated }: ExampleUploaderProps) {
   const [uploadMode, setUploadMode] = useState<'file' | 'url'>('url');
   const [videoUrl, setVideoUrl] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
 
   const analyzeExample = async () => {
     if (!videoUrl.trim() || !templateName.trim()) {
@@ -27,9 +34,19 @@ export function ExampleUploader() {
       return;
     }
 
+    if (uploadMode === 'file') {
+      toast({
+        title: 'File upload not supported yet',
+        description: 'Please use a URL for now',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       setAnalyzing(true);
       setProgress(0);
+      setProgressMessage('Starting analysis...');
 
       // Call backend API with SSE streaming
       const apiUrl = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:10000';
@@ -43,41 +60,42 @@ export function ExampleUploader() {
         throw new Error(`API error: ${response.status}`);
       }
 
-      // Read SSE stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) throw new Error('No response body');
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.progress !== undefined) {
-              setProgress(data.progress);
-            }
-          } else if (line.startsWith('event: complete')) {
-            toast({
-              title: 'Success',
-              description: 'Template learned from example video!',
-            });
-          } else if (line.startsWith('event: error')) {
-            throw new Error('Analysis failed');
+      await readSseStream(response, ({ event, data }) => {
+        if (event === 'progress') {
+          const parsed = JSON.parse(data) as { progress?: number; message?: string };
+          if (parsed.progress !== undefined) {
+            setProgress(parsed.progress);
           }
+          if (parsed.message) {
+            setProgressMessage(parsed.message);
+          }
+          return;
         }
-      }
 
-      // Reset form
+        if (event === 'complete') {
+          const parsed = JSON.parse(data) as { template?: EditingTemplate };
+          if (parsed.template) {
+            onTemplateCreated?.(parsed.template);
+          }
+          setProgress(100);
+          setProgressMessage('Template learned!');
+          toast({
+            title: 'Success',
+            description: 'Template learned from example video!',
+          });
+          return;
+        }
+
+        if (event === 'error') {
+          const parsed = JSON.parse(data) as { error?: string };
+          throw new Error(parsed.error || 'Analysis failed');
+        }
+      });
+
       setVideoUrl('');
       setTemplateName('');
       setProgress(0);
+      setProgressMessage('');
     } catch (error: any) {
       console.error('Failed to analyze example:', error);
       toast({
@@ -171,10 +189,14 @@ export function ExampleUploader() {
               </div>
               <Progress value={progress} />
               <p className="text-xs text-muted-foreground">
-                {progress < 30 && 'Detecting scenes and transitions...'}
-                {progress >= 30 && progress < 60 && 'Extracting text styles...'}
-                {progress >= 60 && progress < 90 && 'Analyzing pacing and timing...'}
-                {progress >= 90 && 'Saving template...'}
+                {progressMessage || (
+                  <>
+                    {progress < 30 && 'Detecting scenes and transitions...'}
+                    {progress >= 30 && progress < 60 && 'Extracting text styles...'}
+                    {progress >= 60 && progress < 90 && 'Analyzing pacing and timing...'}
+                    {progress >= 90 && 'Saving template...'}
+                  </>
+                )}
               </p>
             </div>
           )}

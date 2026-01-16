@@ -11,20 +11,25 @@ import { createClient } from '@supabase/supabase-js';
 import { Player } from '@remotion/player';
 import { DynamicVideo } from '../remotion/DynamicVideo';
 import type { EditorProject, RemotionVideoProps } from '../types';
+import { readSseStream } from '@/lib/sse';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 );
 
-export function EditPreview() {
+interface EditPreviewProps {
+  refreshKey?: number;
+}
+
+export function EditPreview({ refreshKey }: EditPreviewProps) {
   const [projects, setProjects] = useState<EditorProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<EditorProject | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadProjects();
-  }, []);
+  }, [refreshKey]);
 
   const loadProjects = async () => {
     try {
@@ -45,11 +50,13 @@ export function EditPreview() {
 
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [renderMessage, setRenderMessage] = useState('');
 
   const renderVideo = async (projectId: string) => {
     try {
       setRendering(true);
       setRenderProgress(0);
+      setRenderMessage('Starting render...');
 
       const apiUrl = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:10000';
       const response = await fetch(`${apiUrl}/video-editor/render`, {
@@ -62,40 +69,37 @@ export function EditPreview() {
         throw new Error(`API error: ${response.status}`);
       }
 
-      // Read SSE stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) throw new Error('No response body');
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.progress !== undefined) {
-              setRenderProgress(data.progress);
-            }
-          } else if (line.startsWith('event: complete')) {
-            await loadProjects(); // Reload to show rendered video
-            setRenderProgress(100);
-          } else if (line.startsWith('event: error')) {
-            throw new Error('Rendering failed');
+      await readSseStream(response, ({ event, data }) => {
+        if (event === 'progress') {
+          const parsed = JSON.parse(data) as { progress?: number; message?: string };
+          if (parsed.progress !== undefined) {
+            setRenderProgress(parsed.progress);
           }
+          if (parsed.message) {
+            setRenderMessage(parsed.message);
+          }
+          return;
         }
-      }
+
+        if (event === 'complete') {
+          setRenderProgress(100);
+          setRenderMessage('Render complete');
+          void loadProjects();
+          return;
+        }
+
+        if (event === 'error') {
+          const parsed = JSON.parse(data) as { error?: string };
+          throw new Error(parsed.error || 'Rendering failed');
+        }
+      });
     } catch (error: any) {
       console.error('Rendering failed:', error);
       alert('Rendering failed: ' + error.message);
     } finally {
       setRendering(false);
       setRenderProgress(0);
+      setRenderMessage('');
     }
   };
 
@@ -237,7 +241,7 @@ export function EditPreview() {
             {rendering && (
               <div className="mb-4">
                 <div className="flex items-center justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">Rendering...</span>
+                  <span className="text-muted-foreground">{renderMessage || 'Rendering...'}</span>
                   <span className="font-medium">{renderProgress}%</span>
                 </div>
                 <Progress value={renderProgress} />

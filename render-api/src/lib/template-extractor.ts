@@ -79,6 +79,7 @@ export async function extractTemplate(
     
     const videoId = extractVideoId(videoUrl);
     const preprocessResult = await preprocessVideo(videoId, videoUrl, {
+      uploadFrames: false,
       onDownloadProgress: (percent) => {
         onProgress?.(Math.round(percent * 0.4), 'Downloading video...');
       },
@@ -148,6 +149,10 @@ export async function extractTemplate(
 /**
  * Extract YouTube video ID from URL
  */
+function sanitizeVideoId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 function extractVideoId(url: string): string {
   // Support various YouTube URL formats
   const patterns = [
@@ -158,11 +163,11 @@ function extractVideoId(url: string): string {
 
   for (const pattern of patterns) {
     const match = url.match(pattern);
-    if (match) return match[1];
+    if (match) return sanitizeVideoId(match[1]);
   }
 
   // If not a YouTube URL, use a hash of the URL as ID
-  return Buffer.from(url).toString('base64').slice(0, 11);
+  return sanitizeVideoId(Buffer.from(url).toString('base64').slice(0, 16));
 }
 
 /**

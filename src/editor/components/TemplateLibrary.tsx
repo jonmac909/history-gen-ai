@@ -19,15 +19,16 @@ const supabase = createClient(
 interface TemplateLibraryProps {
   onTemplateSelect: (templateId: string | null) => void;
   selectedTemplateId: string | null;
+  refreshKey?: number;
 }
 
-export function TemplateLibrary({ onTemplateSelect, selectedTemplateId }: TemplateLibraryProps) {
+export function TemplateLibrary({ onTemplateSelect, selectedTemplateId, refreshKey }: TemplateLibraryProps) {
   const [templates, setTemplates] = useState<EditingTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadTemplates();
-  }, []);
+  }, [refreshKey]);
 
   const loadTemplates = async () => {
     try {
@@ -38,7 +39,20 @@ export function TemplateLibrary({ onTemplateSelect, selectedTemplateId }: Templa
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTemplates(data || []);
+      const normalized = (data || []).map((template: any) => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        source: template.source,
+        created_at: template.created_at,
+        updated_at: template.updated_at,
+        textStyles: template.text_styles || template.textStyles || [],
+        transitions: template.transitions || {},
+        brollPatterns: template.broll_patterns || template.brollPatterns || {},
+        pacing: template.pacing || {},
+      } as EditingTemplate));
+
+      setTemplates(normalized);
     } catch (error: any) {
       console.error('Failed to load templates:', error);
       toast({

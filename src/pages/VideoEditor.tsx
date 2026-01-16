@@ -9,10 +9,24 @@ import { RawVideoInput } from '@/editor/components/RawVideoInput';
 import { EditPreview } from '@/editor/components/EditPreview';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Wand2, Upload, Film, Library } from 'lucide-react';
+import type { EditingTemplate, EditorProject } from '@/editor/types';
 
 export default function VideoEditor() {
   const [activeTab, setActiveTab] = useState('templates');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0);
+  const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
+
+  const handleTemplateCreated = (template: EditingTemplate) => {
+    setTemplatesRefreshKey((prev) => prev + 1);
+    setSelectedTemplateId(template.id);
+    setActiveTab('templates');
+  };
+
+  const handleProjectCreated = (_project: EditorProject) => {
+    setProjectsRefreshKey((prev) => prev + 1);
+    setActiveTab('preview');
+  };
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-7xl">
@@ -84,19 +98,23 @@ export default function VideoEditor() {
           <TemplateLibrary
             onTemplateSelect={setSelectedTemplateId}
             selectedTemplateId={selectedTemplateId}
+            refreshKey={templatesRefreshKey}
           />
         </TabsContent>
 
         <TabsContent value="learn" className="space-y-4">
-          <ExampleUploader />
+          <ExampleUploader onTemplateCreated={handleTemplateCreated} />
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-4">
-          <RawVideoInput selectedTemplateId={selectedTemplateId} />
+          <RawVideoInput
+            selectedTemplateId={selectedTemplateId}
+            onProjectCreated={handleProjectCreated}
+          />
         </TabsContent>
 
         <TabsContent value="preview" className="space-y-4">
-          <EditPreview />
+          <EditPreview refreshKey={projectsRefreshKey} />
         </TabsContent>
       </Tabs>
     </div>

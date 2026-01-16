@@ -10,17 +10,21 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, Link as LinkIcon, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { readSseStream } from '@/lib/sse';
+import type { EditorProject } from '../types';
 
 interface RawVideoInputProps {
   selectedTemplateId: string | null;
+  onProjectCreated?: (project: EditorProject) => void;
 }
 
-export function RawVideoInput({ selectedTemplateId }: RawVideoInputProps) {
+export function RawVideoInput({ selectedTemplateId, onProjectCreated }: RawVideoInputProps) {
   const [uploadMode, setUploadMode] = useState<'file' | 'url'>('url');
   const [videoUrl, setVideoUrl] = useState('');
   const [projectName, setProjectName] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
 
   const analyzeRawVideo = async () => {
     if (!videoUrl.trim() || !projectName.trim()) {
@@ -41,36 +45,71 @@ export function RawVideoInput({ selectedTemplateId }: RawVideoInputProps) {
       return;
     }
 
+    if (uploadMode === 'file') {
+      toast({
+        title: 'File upload not supported yet',
+        description: 'Please use a URL for now',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       setAnalyzing(true);
       setProgress(0);
+      setProgressMessage('Starting analysis...');
 
-      // TODO: Implement backend API call to analyze raw video
-      // For now, just simulate progress
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 500);
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      clearInterval(progressInterval);
-      setProgress(100);
-
-      toast({
-        title: 'Success',
-        description: 'Video analyzed! Go to Preview & Render to see edits.',
+      const apiUrl = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:10000';
+      const response = await fetch(`${apiUrl}/video-editor/analyze-raw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl,
+          projectName,
+          templateId: selectedTemplateId,
+        }),
       });
 
-      // Reset form
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      await readSseStream(response, ({ event, data }) => {
+        if (event === 'progress') {
+          const parsed = JSON.parse(data) as { progress?: number; message?: string };
+          if (parsed.progress !== undefined) {
+            setProgress(parsed.progress);
+          }
+          if (parsed.message) {
+            setProgressMessage(parsed.message);
+          }
+          return;
+        }
+
+        if (event === 'complete') {
+          const parsed = JSON.parse(data) as { project?: EditorProject };
+          if (parsed.project) {
+            onProjectCreated?.(parsed.project);
+          }
+          setProgress(100);
+          setProgressMessage('Project created!');
+          toast({
+            title: 'Success',
+            description: 'Video analyzed! Go to Preview & Render to see edits.',
+          });
+          return;
+        }
+
+        if (event === 'error') {
+          const parsed = JSON.parse(data) as { error?: string };
+          throw new Error(parsed.error || 'Analysis failed');
+        }
+      });
+
       setVideoUrl('');
       setProjectName('');
       setProgress(0);
+      setProgressMessage('');
     } catch (error: any) {
       console.error('Failed to analyze raw video:', error);
       toast({
@@ -182,10 +221,14 @@ export function RawVideoInput({ selectedTemplateId }: RawVideoInputProps) {
               </div>
               <Progress value={progress} />
               <p className="text-xs text-muted-foreground">
-                {progress < 30 && 'Detecting scenes...'}
-                {progress >= 30 && progress < 60 && 'Transcribing audio...'}
-                {progress >= 60 && progress < 90 && 'Identifying key moments...'}
-                {progress >= 90 && 'Generating edit decisions...'}
+                {progressMessage || (
+                  <>
+                    {progress < 30 && 'Detecting scenes...'}
+                    {progress >= 30 && progress < 60 && 'Transcribing audio...'}
+                    {progress >= 60 && progress < 90 && 'Identifying key moments...'}
+                    {progress >= 90 && 'Generating edit decisions...'}
+                  </>
+                )}
               </p>
             </div>
           )}
