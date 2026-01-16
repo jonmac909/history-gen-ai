@@ -1,14 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 
 // Lazy load sharp - it has native dependencies that may fail on some platforms
 let sharp: typeof import('sharp') | null = null;
-try {
-  sharp = require('sharp');
-} catch (e) {
-  console.warn('[generate-thumbnails] sharp not available, thumbnail compression disabled:', e);
-}
+const loadSharp = async () => {
+  if (sharp) return sharp;
+  try {
+    const mod = await import('sharp');
+    sharp = (mod.default ?? mod) as typeof import('sharp');
+    return sharp;
+  } catch (e) {
+    console.warn('[generate-thumbnails] sharp not available, thumbnail compression disabled:', e);
+    return null;
+  }
+};
 
 // YouTube thumbnail dimensions (16:9 aspect ratio)
 const THUMBNAIL_WIDTH = 1280;
@@ -17,13 +22,14 @@ const TARGET_ASPECT_RATIO = 16 / 9;
 
 // Crop image to 16:9 aspect ratio (center crop) and resize to target dimensions
 async function cropTo16x9(imageBuffer: Buffer, targetWidth = THUMBNAIL_WIDTH, targetHeight = THUMBNAIL_HEIGHT): Promise<Buffer> {
-  if (!sharp) {
+  const sharpInstance = await loadSharp();
+  if (!sharpInstance) {
     console.warn('[Thumbnail] sharp not available, skipping 16:9 crop');
     return imageBuffer;
   }
 
   try {
-    const image = sharp(imageBuffer);
+    const image = sharpInstance(imageBuffer);
     const metadata = await image.metadata();
     const { width, height } = metadata;
 
@@ -52,7 +58,7 @@ async function cropTo16x9(imageBuffer: Buffer, targetWidth = THUMBNAIL_WIDTH, ta
       console.log(`[Thumbnail] Image already 16:9: ${width}x${height}`);
     }
 
-    const result = await sharp(imageBuffer)
+    const result = await sharpInstance(imageBuffer)
       .extract({ left, top, width: cropWidth, height: cropHeight })
       .resize(targetWidth, targetHeight, { fit: 'fill' })
       .png()
@@ -68,13 +74,14 @@ async function cropTo16x9(imageBuffer: Buffer, targetWidth = THUMBNAIL_WIDTH, ta
 
 // Remove letterboxing (black bars) from image edges
 async function removeLetterboxing(imageBuffer: Buffer): Promise<Buffer> {
-  if (!sharp) {
+  const sharpInstance = await loadSharp();
+  if (!sharpInstance) {
     console.warn('[Thumbnail] sharp not available, skipping letterbox removal');
     return imageBuffer;
   }
 
   try {
-    const image = sharp(imageBuffer);
+    const image = sharpInstance(imageBuffer);
     const metadata = await image.metadata();
     const { width, height } = metadata;
 
@@ -83,12 +90,12 @@ async function removeLetterboxing(imageBuffer: Buffer): Promise<Buffer> {
     }
 
     // Use trim to remove black borders (with small tolerance for near-black pixels)
-    const trimmed = await sharp(imageBuffer)
+    const trimmed = await sharpInstance(imageBuffer)
       .trim({ threshold: 10 })  // Remove pixels within 10 of black
       .toBuffer();
 
     // Check new dimensions
-    const trimmedMeta = await sharp(trimmed).metadata();
+    const trimmedMeta = await sharpInstance(trimmed).metadata();
     if (trimmedMeta.width && trimmedMeta.height) {
       console.log(`[Thumbnail] Letterbox removal: ${width}x${height} -> ${trimmedMeta.width}x${trimmedMeta.height}`);
     }
@@ -277,7 +284,8 @@ async function checkJobStatus(
 
 // Compress image to JPEG under 2MB for YouTube compatibility
 async function compressImageForYouTube(imageBuffer: Buffer): Promise<{ buffer: Buffer; contentType: string }> {
-  if (!sharp) {
+  const sharpInstance = await loadSharp();
+  if (!sharpInstance) {
     console.warn('[Thumbnail] sharp not available, skipping compression');
     return { buffer: imageBuffer, contentType: 'image/png' };
   }
@@ -285,7 +293,7 @@ async function compressImageForYouTube(imageBuffer: Buffer): Promise<{ buffer: B
   // If already under 2MB, just convert to JPEG for consistency
   if (imageBuffer.length <= MAX_THUMBNAIL_SIZE) {
     try {
-      const compressed = await sharp(imageBuffer)
+      const compressed = await sharpInstance(imageBuffer)
         .resize(1280, 720, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 90 })
         .toBuffer();
@@ -308,7 +316,7 @@ async function compressImageForYouTube(imageBuffer: Buffer): Promise<{ buffer: B
   // Try progressively lower quality until under 2MB
   while (compressedBuffer.length > MAX_THUMBNAIL_SIZE && quality > 10) {
     try {
-      const compressed = await sharp(originalBuffer)
+      const compressed = await sharpInstance(originalBuffer)
         .resize(width, null, { withoutEnlargement: true })
         .jpeg({ quality })
         .toBuffer();
@@ -535,7 +543,8 @@ async function handleStreamingThumbnails(
     });
 
     // Use the prompt directly (user provides the full description)
-    const combinedPrompt = `${prompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional.`;
+    // Add constraints to prevent logos, watermarks, and ensure clean output
+    const combinedPrompt = `${prompt}\n\nYouTube thumbnail, 16:9 aspect ratio, high quality, professional. No logos, no watermarks, no text overlays, no branding.`;
 
     // Generate thumbnails with rolling concurrency
     const MAX_CONCURRENT = 10;

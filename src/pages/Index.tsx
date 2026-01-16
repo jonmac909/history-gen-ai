@@ -324,6 +324,7 @@ const Index = () => {
       }
 
       console.log('[Index] Loaded project from URL:', project.id, project.videoTitle);
+      console.log('[Index] Project thumbnails:', project.thumbnails?.length, project.thumbnails);
 
       // Disable fullAutomation when viewing a project
       setSettings(prev => ({ ...prev, fullAutomation: false }));
