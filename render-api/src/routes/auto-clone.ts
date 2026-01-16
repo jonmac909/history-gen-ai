@@ -59,6 +59,7 @@ async function getVideoInfo(videoId: string): Promise<{ title: string; durationS
 }
 
 // WhatsApp notification via TextMeBot (https://www.textmebot.com)
+// Retries up to 5 times with 3-second delays to handle TextMeBot timeouts
 async function sendWhatsAppNotification(message: string): Promise<void> {
   const phone = process.env.WHATSAPP_PHONE;
   const apiKey = process.env.WHATSAPP_API_KEY;
@@ -68,20 +69,35 @@ async function sendWhatsAppNotification(message: string): Promise<void> {
     return;
   }
 
-  try {
-    const encodedMessage = encodeURIComponent(message);
-    const url = `https://api.textmebot.com/send.php?recipient=${phone}&apikey=${apiKey}&text=${encodedMessage}`;
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 3000; // 3 seconds between retries
 
-    const response = await fetch(url);
-    const responseText = await response.text();
-    if (response.ok) {
-      console.log('[AutoClone] WhatsApp notification sent:', responseText);
-    } else {
-      console.error(`[AutoClone] WhatsApp notification failed: ${response.status} - ${responseText}`);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const encodedMessage = encodeURIComponent(message);
+      const url = `https://api.textmebot.com/send.php?recipient=${phone}&apikey=${apiKey}&text=${encodedMessage}`;
+
+      const response = await fetch(url);
+      const responseText = await response.text();
+
+      // TextMeBot can return 200 but with "Failed" in the response body
+      if (response.ok && !responseText.includes('Failed')) {
+        console.log(`[AutoClone] WhatsApp notification sent (attempt ${attempt}):`, responseText);
+        return; // Success - exit
+      }
+
+      console.warn(`[AutoClone] WhatsApp attempt ${attempt}/${MAX_RETRIES} failed: ${response.status} - ${responseText}`);
+    } catch (error) {
+      console.warn(`[AutoClone] WhatsApp attempt ${attempt}/${MAX_RETRIES} error:`, error);
     }
-  } catch (error) {
-    console.error('[AutoClone] WhatsApp notification error:', error);
+
+    // Wait before retry (except on last attempt)
+    if (attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+    }
   }
+
+  console.error('[AutoClone] WhatsApp notification failed after 5 attempts');
 }
 
 // Minimum video duration for outlier selection (1 hour)
