@@ -755,6 +755,7 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       steps.push({ step: 'script', success: false, duration: Date.now() - scriptStart, error: error.message });
       throw new Error(`Failed to generate script: ${error.message}`);
     }
+    }  // End of else block for script generation
 
     // Step 4: Generate audio (skip if resuming past this step or existing audio provided)
     let audioUrl: string = existing.audioUrl || '';
