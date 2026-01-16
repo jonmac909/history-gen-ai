@@ -1013,29 +1013,88 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
       });
     }
 
-    // Reset status to pending
+    // Check if we have existing project data to resume from
+    let project: Record<string, any> | null = null;
+    let resumeFrom: string | undefined;
+    
+    if (video.project_id) {
+      const { data: projectData } = await supabase
+        .from('generation_projects')
+        .select('*')
+        .eq('id', video.project_id)
+        .single();
+      
+      if (projectData) {
+        project = projectData;
+        // Determine resume point based on existing data
+        // Actual pipeline order: transcript → script → audio → captions → imagePrompts → images → clipPrompts → videoClips → thumbnail → render → upload
+        if (projectData.smoke_embers_video_url) {
+          resumeFrom = 'upload';
+        } else if (projectData.thumbnails?.length > 0) {
+          resumeFrom = 'render';
+        } else if (projectData.clips?.length > 0) {
+          resumeFrom = 'thumbnail';
+        } else if (projectData.clip_prompts?.length > 0) {
+          resumeFrom = 'videoClips';
+        } else if (projectData.image_urls?.length > 0) {
+          resumeFrom = 'clipPrompts';
+        } else if (projectData.image_prompts?.length > 0) {
+          resumeFrom = 'images';
+        } else if (projectData.srt_url) {
+          resumeFrom = 'imagePrompts';
+        } else if (projectData.audio_url) {
+          resumeFrom = 'captions';
+        } else if (projectData.script_content) {
+          resumeFrom = 'audio';
+        }
+        
+        if (resumeFrom) {
+          console.log(`[AutoClone Retry] Found existing project ${video.project_id} - resuming from ${resumeFrom}`);
+          console.log(`  - Script: ${projectData.script_content?.length || 0} chars`);
+          console.log(`  - Audio: ${projectData.audio_url || 'N/A'}`);
+          console.log(`  - SRT: ${projectData.srt_url || 'N/A'}`);
+          console.log(`  - Clip prompts: ${projectData.clip_prompts?.length || 0}`);
+          console.log(`  - Clips: ${projectData.clips?.length || 0}`);
+          console.log(`  - Image prompts: ${projectData.image_prompts?.length || 0}`);
+          console.log(`  - Images: ${projectData.image_urls?.length || 0}`);
+        }
+      }
+    }
+
+    // Reset status to processing
     await supabase
       .from('processed_videos')
       .update({
         status: 'processing',
         error_message: null,
         completed_at: null,
+        current_step: resumeFrom ? `Resuming from ${resumeFrom}...` : 'Starting fresh...',
       })
       .eq('video_id', videoId);
 
     // Calculate publish time
     const publishAt = getNext5pmPST();
 
-    // Start pipeline
+    // Start pipeline response
     res.json({
       success: true,
-      message: 'Retry started',
+      message: resumeFrom ? `Retry started (resuming from ${resumeFrom})` : 'Retry started (fresh)',
       videoId,
       publishAt,
+      resumeFrom: resumeFrom || null,
+      existingData: project ? {
+        hasScript: !!project.script_content,
+        hasAudio: !!project.audio_url,
+        hasCaptions: !!project.srt_url,
+        clipPromptsCount: project.clip_prompts?.length || 0,
+        clipsCount: project.clips?.length || 0,
+        imagePromptsCount: project.image_prompts?.length || 0,
+        imagesCount: project.image_urls?.length || 0,
+      } : null,
     });
 
     // Run in background
-    console.log(`[AutoClone] Starting retry pipeline for ${video.video_id}...`);
+    console.log(`[AutoClone Retry] Starting pipeline for ${video.video_id}...`);
     runPipeline({
       sourceVideoId: video.video_id,
       sourceVideoUrl: `https://www.youtube.com/watch?v=${video.video_id}`,
@@ -1043,6 +1102,24 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
       originalThumbnailUrl: video.original_thumbnail_url,
       publishAt,
       sourceDurationSeconds: video.duration_seconds,
+      // Resume options (if we have existing data)
+      ...(resumeFrom && project ? {
+        resumeFrom: resumeFrom as any,
+        existingProjectId: video.project_id,
+        existingData: {
+          script: project.script_content,
+          audioUrl: project.audio_url,
+          audioDuration: project.audio_duration,
+          audioSegments: project.audio_segments,
+          srtUrl: project.srt_url,
+          srtContent: project.srt_content,
+          clipPrompts: project.clip_prompts,
+          clips: project.clips,
+          imagePrompts: project.image_prompts,
+          imageUrls: project.image_urls,
+          thumbnailUrl: project.thumbnails?.[0],
+        },
+      } : {}),
     }, async (step, progress, message) => {
       console.log(`[AutoClone Retry] ${step}: ${message} (${progress}%)`);
       // Don't duplicate % if message already contains it

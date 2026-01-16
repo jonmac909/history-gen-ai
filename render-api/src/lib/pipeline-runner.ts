@@ -881,123 +881,145 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
 
     // Step 6: Generate image prompts (streaming) - MOVED BEFORE clip prompts/video clips
     // because video clips use I2V mode which requires source images
-    reportProgress('imagePrompts', 45, 'Generating image prompts...');
     const imagePromptsStart = Date.now();
-    let imagePrompts: any[];
-    try {
-      const promptsRes = await callStreamingAPI('/generate-image-prompts', {
-        script,
-        srtContent,  // Reuse SRT downloaded earlier
-        projectId,
-        imageCount: calculatedImageCount,
-        masterStylePrompt: DUTCH_GOLDEN_AGE_STYLE,  // Use Dutch Golden Age style for Auto Poster
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('imagePrompts', 45 + Math.round(data.progress * 0.03), `Generating image prompts...`);
-        }
-      });
-      imagePrompts = promptsRes.prompts;
-      steps.push({
-        step: 'imagePrompts',
-        success: true,
-        duration: Date.now() - imagePromptsStart,
-        data: { count: imagePrompts.length },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'imagePrompts', success: false, duration: Date.now() - imagePromptsStart, error: error.message });
-      throw new Error(`Failed to generate image prompts: ${error.message}`);
+    let imagePrompts: any[] = existing.imagePrompts || [];
+    
+    if (shouldSkipStep('imagePrompts', resumeFrom) && (existing.imagePrompts?.length ?? 0) > 0) {
+      console.log(`[Pipeline] Using existing image prompts (${existing.imagePrompts!.length} prompts)`);
+      steps.push({ step: 'imagePrompts', success: true, duration: 0, data: { skipped: true, count: existing.imagePrompts!.length } });
+    } else {
+      reportProgress('imagePrompts', 45, 'Generating image prompts...');
+      try {
+        const promptsRes = await callStreamingAPI('/generate-image-prompts', {
+          script,
+          srtContent,  // Reuse SRT downloaded earlier
+          projectId,
+          imageCount: calculatedImageCount,
+          masterStylePrompt: DUTCH_GOLDEN_AGE_STYLE,  // Use Dutch Golden Age style for Auto Poster
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('imagePrompts', 45 + Math.round(data.progress * 0.03), `Generating image prompts...`);
+          }
+        });
+        imagePrompts = promptsRes.prompts;
+        steps.push({
+          step: 'imagePrompts',
+          success: true,
+          duration: Date.now() - imagePromptsStart,
+          data: { count: imagePrompts.length },
+        });
+      } catch (error: any) {
+        steps.push({ step: 'imagePrompts', success: false, duration: Date.now() - imagePromptsStart, error: error.message });
+        throw new Error(`Failed to generate image prompts: ${error.message}`);
+      }
     }
 
     // Step 7: Generate images (streaming) - MOVED BEFORE clip prompts/video clips
     // Retry logic for long videos with many images (can timeout on first attempt)
-    reportProgress('images', 48, 'Generating images...');
     const imagesStart = Date.now();
-    let imageUrls: string[];
-    const MAX_IMAGE_RETRIES = 3;
-    let imageAttempt = 0;
-    let lastImageError: string = '';
+    let imageUrls: string[] = existing.imageUrls || [];
+    
+    if (shouldSkipStep('images', resumeFrom) && (existing.imageUrls?.length ?? 0) > 0) {
+      console.log(`[Pipeline] Using existing images (${existing.imageUrls!.length} images)`);
+      steps.push({ step: 'images', success: true, duration: 0, data: { skipped: true, count: existing.imageUrls!.length } });
+    } else {
+      reportProgress('images', 48, 'Generating images...');
+      const MAX_IMAGE_RETRIES = 3;
+      let imageAttempt = 0;
+      let lastImageError: string = '';
 
-    // Calculate timeout based on image count (2 min per image + 5 min buffer)
-    const imageTimeout = Math.max(600000, (calculatedImageCount * 120000) + 300000);
-    console.log(`[Pipeline] Image generation: ${calculatedImageCount} images, timeout ${Math.round(imageTimeout / 60000)} min`);
+      // Calculate timeout based on image count (2 min per image + 5 min buffer)
+      const imageTimeout = Math.max(600000, (calculatedImageCount * 120000) + 300000);
+      console.log(`[Pipeline] Image generation: ${calculatedImageCount} images, timeout ${Math.round(imageTimeout / 60000)} min`);
 
-    while (imageAttempt < MAX_IMAGE_RETRIES) {
-      imageAttempt++;
-      try {
-        const attemptLabel = imageAttempt > 1 ? ` (attempt ${imageAttempt})` : '';
-        reportProgress('images', 48, `Generating images${attemptLabel}...`);
+      while (imageAttempt < MAX_IMAGE_RETRIES) {
+        imageAttempt++;
+        try {
+          const attemptLabel = imageAttempt > 1 ? ` (attempt ${imageAttempt})` : '';
+          reportProgress('images', 48, `Generating images${attemptLabel}...`);
 
-        const imagesRes = await callStreamingAPI('/generate-images', {
-          prompts: imagePrompts,
-          projectId,
-          stream: true,
-        }, (data) => {
-          if (data.type === 'progress') {
-            reportProgress('images', 48 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}${attemptLabel}...`);
+          const imagesRes = await callStreamingAPI('/generate-images', {
+            prompts: imagePrompts,
+            projectId,
+            stream: true,
+          }, (data) => {
+            if (data.type === 'progress') {
+              reportProgress('images', 48 + Math.round((data.completed / data.total) * 10), `Generating images ${data.completed}/${data.total}${attemptLabel}...`);
+            }
+          }, imageTimeout);
+          // imagesRes.images is already an array of URL strings, not objects
+          imageUrls = imagesRes.images as string[];
+          steps.push({
+            step: 'images',
+            success: true,
+            duration: Date.now() - imagesStart,
+            data: { count: imageUrls.length, attempts: imageAttempt },
+          });
+          break;  // Success - exit retry loop
+        } catch (error: any) {
+          lastImageError = error.message;
+          console.warn(`[Pipeline] Image generation attempt ${imageAttempt} failed: ${error.message}`);
+          if (imageAttempt < MAX_IMAGE_RETRIES) {
+            console.log(`[Pipeline] Retrying image generation in 5 seconds...`);
+            await new Promise(r => setTimeout(r, 5000));
           }
-        }, imageTimeout);
-        // imagesRes.images is already an array of URL strings, not objects
-        imageUrls = imagesRes.images as string[];
-        steps.push({
-          step: 'images',
-          success: true,
-          duration: Date.now() - imagesStart,
-          data: { count: imageUrls.length, attempts: imageAttempt },
-        });
-        break;  // Success - exit retry loop
-      } catch (error: any) {
-        lastImageError = error.message;
-        console.warn(`[Pipeline] Image generation attempt ${imageAttempt} failed: ${error.message}`);
-        if (imageAttempt < MAX_IMAGE_RETRIES) {
-          console.log(`[Pipeline] Retrying image generation in 5 seconds...`);
-          await new Promise(r => setTimeout(r, 5000));
         }
+      }
+
+      if (imageUrls.length === 0) {
+        steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: lastImageError });
+        throw new Error(`Failed to generate images after ${MAX_IMAGE_RETRIES} attempts: ${lastImageError}`);
       }
     }
 
-    if (!imageUrls!) {
-      steps.push({ step: 'images', success: false, duration: Date.now() - imagesStart, error: lastImageError });
-      throw new Error(`Failed to generate images after ${MAX_IMAGE_RETRIES} attempts: ${lastImageError}`);
-    }
-
     // Step 8: Generate clip prompts (12 × 5s intro videos)
-    reportProgress('clipPrompts', 58, 'Generating video clip prompts...');
     const clipPromptsStart = Date.now();
-    let clipPrompts: any[];
-    try {
-      const clipPromptsRes = await callStreamingAPI('/generate-clip-prompts', {
-        script,
-        srtContent,
-        projectId,
-        clipCount: INTRO_CLIP_COUNT,
-        clipDuration: INTRO_CLIP_DURATION,
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('clipPrompts', 58 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
-        }
-      });
-      clipPrompts = clipPromptsRes.prompts;
-      steps.push({
-        step: 'clipPrompts',
-        success: true,
-        duration: Date.now() - clipPromptsStart,
-        data: { count: clipPrompts.length },
-      });
-    } catch (error: any) {
-      // Clip prompts failure is non-fatal - continue without intro clips
-      console.warn(`[Pipeline] Clip prompts failed, continuing without intro clips: ${error.message}`);
-      clipPrompts = [];
-      steps.push({ step: 'clipPrompts', success: false, duration: Date.now() - clipPromptsStart, error: error.message });
+    let clipPrompts: any[] = existing.clipPrompts || [];
+    
+    if (shouldSkipStep('clipPrompts', resumeFrom) && (existing.clipPrompts?.length ?? 0) > 0) {
+      console.log(`[Pipeline] Using existing clip prompts (${existing.clipPrompts!.length} prompts)`);
+      steps.push({ step: 'clipPrompts', success: true, duration: 0, data: { skipped: true, count: existing.clipPrompts!.length } });
+    } else {
+      reportProgress('clipPrompts', 58, 'Generating video clip prompts...');
+      try {
+        const clipPromptsRes = await callStreamingAPI('/generate-clip-prompts', {
+          script,
+          srtContent,
+          projectId,
+          clipCount: INTRO_CLIP_COUNT,
+          clipDuration: INTRO_CLIP_DURATION,
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('clipPrompts', 58 + Math.round(data.progress * 0.02), `Generating clip prompts...`);
+          }
+        });
+        clipPrompts = clipPromptsRes.prompts;
+        steps.push({
+          step: 'clipPrompts',
+          success: true,
+          duration: Date.now() - clipPromptsStart,
+          data: { count: clipPrompts.length },
+        });
+      } catch (error: any) {
+        // Clip prompts failure is non-fatal - continue without intro clips
+        console.warn(`[Pipeline] Clip prompts failed, continuing without intro clips: ${error.message}`);
+        clipPrompts = [];
+        steps.push({ step: 'clipPrompts', success: false, duration: Date.now() - clipPromptsStart, error: error.message });
+      }
     }
 
     // Step 9: Generate video clips (Kie.ai I2V - Image-to-Video)
     // Uses the first N generated images as source frames for I2V animation
-    reportProgress('videoClips', 60, 'Generating intro video clips...');
     const videoClipsStart = Date.now();
-    let introClips: { index: number; videoUrl: string; startSeconds: number; endSeconds: number }[] = [];
-    if (clipPrompts.length > 0 && imageUrls.length > 0) {
+    let introClips: { index: number; videoUrl: string; startSeconds: number; endSeconds: number }[] = existing.clips || [];
+    
+    if (shouldSkipStep('videoClips', resumeFrom) && (existing.clips?.length ?? 0) > 0) {
+      console.log(`[Pipeline] Using existing video clips (${existing.clips!.length} clips)`);
+      steps.push({ step: 'videoClips', success: true, duration: 0, data: { skipped: true, count: existing.clips!.length } });
+    } else if (clipPrompts.length > 0 && imageUrls.length > 0) {
+      reportProgress('videoClips', 60, 'Generating intro video clips...');
       try {
         // Map clip prompts to clips with imageUrl from generated images
         // Use first N images for N clips (cycle if needed)
