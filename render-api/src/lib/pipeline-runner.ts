@@ -1265,7 +1265,9 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
 
       // Generate AI metadata for YouTube
       let youtubeDescription = `${clonedTitle}\n\nGenerated with AI`;
-      let youtubeTags = ['history', 'documentary', 'education', 'sleep', 'relaxing'];
+      // Fixed default tags - always use these
+      const DEFAULT_YOUTUBE_TAGS = ['history for sleep', 'ancient history', 'ancient civilizations'];
+      let youtubeTags = [...DEFAULT_YOUTUBE_TAGS];
       try {
         console.log('[Pipeline] Generating YouTube metadata with AI...');
         const metadataRes = await fetch(`http://localhost:${process.env.PORT || 10000}/generate-youtube-metadata`, {
@@ -1276,9 +1278,8 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
         const metadataData = await metadataRes.json() as { success?: boolean; description?: string; tags?: string[]; error?: string };
         if (metadataRes.ok && metadataData.success) {
           youtubeDescription = metadataData.description || youtubeDescription;
-          // Limit tags to 5 max (AI generates 15-20, but we want concise)
-          youtubeTags = (metadataData.tags || youtubeTags).slice(0, 5);
-          console.log(`[Pipeline] AI metadata generated: ${youtubeTags.length} tags`);
+          // Always use fixed tags - ignore AI-generated tags
+          console.log(`[Pipeline] AI description generated, using fixed tags: ${youtubeTags.join(', ')}`);
         } else {
           console.log('[Pipeline] AI metadata failed, using default:', metadataData.error);
         }
@@ -1289,16 +1290,22 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       // Fetch playlists and find "Complete Histories"
       reportProgress('upload', 88, 'Finding playlist...');
       let playlistId: string | undefined;
+      
+      // Hardcoded fallback playlist ID for "Complete Histories"
+      // TODO: Get the actual playlist ID from YouTube and update here
+      // This ensures playlist is always set even if fetch fails
+      const COMPLETE_HISTORIES_PLAYLIST_ID = process.env.YOUTUBE_COMPLETE_HISTORIES_PLAYLIST_ID || '';
+      
       try {
         console.log('[Pipeline] Fetching YouTube playlists...');
         const playlistRes = await fetch(`http://localhost:${process.env.PORT || 10000}/youtube-upload/playlists`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${tokenData.accessToken}` },
         });
-        const playlistData = await playlistRes.json() as { playlists?: { id: string; title: string }[] };
+        const playlistData = await playlistRes.json() as { playlists?: { id: string; title: string }[]; error?: string };
         console.log(`[Pipeline] Playlist fetch response: status=${playlistRes.status}, ok=${playlistRes.ok}`);
 
-        if (playlistRes.ok && playlistData.playlists) {
+        if (playlistRes.ok && playlistData.playlists && playlistData.playlists.length > 0) {
           // Log all available playlists for debugging
           console.log(`[Pipeline] Found ${playlistData.playlists.length} playlists:`);
           playlistData.playlists.forEach((p, i) => {
@@ -1314,14 +1321,33 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
             playlistId = completeHistories.id;
             console.log(`[Pipeline] ✓ Found playlist: "${completeHistories.title}" (id: ${playlistId})`);
           } else {
-            console.warn('[Pipeline] ✗ "Complete Histories" playlist not found among available playlists');
+            console.warn('[Pipeline] ✗ "Complete Histories" not found in playlist names');
+            if (COMPLETE_HISTORIES_PLAYLIST_ID) {
+              console.log('[Pipeline] Using hardcoded playlist ID as fallback');
+              playlistId = COMPLETE_HISTORIES_PLAYLIST_ID;
+            }
           }
         } else {
           console.error(`[Pipeline] Playlist fetch failed or empty:`, playlistData);
+          if (COMPLETE_HISTORIES_PLAYLIST_ID) {
+            console.log('[Pipeline] Using hardcoded playlist ID as fallback');
+            playlistId = COMPLETE_HISTORIES_PLAYLIST_ID;
+          }
         }
       } catch (playlistError) {
         console.error('[Pipeline] Playlist fetch error:', playlistError);
+        if (COMPLETE_HISTORIES_PLAYLIST_ID) {
+          console.log('[Pipeline] Using hardcoded playlist ID as fallback');
+          playlistId = COMPLETE_HISTORIES_PLAYLIST_ID;
+        }
       }
+      
+      // Double-check playlistId is set
+      if (!playlistId && COMPLETE_HISTORIES_PLAYLIST_ID) {
+        console.warn('[Pipeline] playlistId still undefined, forcing hardcoded ID');
+        playlistId = COMPLETE_HISTORIES_PLAYLIST_ID;
+      }
+      console.log(`[Pipeline] Final playlistId for upload: ${playlistId || 'NOT SET - VIDEO WILL NOT BE ADDED TO PLAYLIST'}`);
 
       reportProgress('upload', 90, 'Uploading to YouTube...');
       const uploadRes = await callStreamingAPI('/youtube-upload', {
