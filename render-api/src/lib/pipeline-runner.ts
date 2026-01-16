@@ -42,6 +42,22 @@ export interface PipelineInput {
   publishAt?: string;  // ISO timestamp for scheduled publish (5 PM PST)
   sourceDurationSeconds?: number;  // Original video duration for matching script length
   targetWordCount?: number;  // Override calculated word count (default: duration * 150 wpm)
+  // Resume from a specific step (skips earlier steps if data provided)
+  resumeFrom?: 'transcript' | 'script' | 'audio' | 'captions' | 'imagePrompts' | 'images' | 'clipPrompts' | 'videoClips' | 'thumbnail' | 'render' | 'upload';
+  existingProjectId?: string;  // Use existing project instead of creating new one
+  existingData?: {  // Pre-existing data to skip regeneration
+    script?: string;
+    audioUrl?: string;
+    audioDuration?: number;
+    audioSegments?: any[];
+    srtContent?: string;
+    srtUrl?: string;
+    imagePrompts?: any[];
+    imageUrls?: string[];
+    clipPrompts?: any[];
+    clips?: any[];
+    thumbnailUrl?: string;
+  };
 }
 
 export interface PipelineResult {
@@ -554,6 +570,16 @@ const INTRO_CLIP_COUNT = 12;  // 12 video clips at start
 const INTRO_CLIP_DURATION = 5;  // 5 seconds each
 const INTRO_TOTAL_DURATION = INTRO_CLIP_COUNT * INTRO_CLIP_DURATION;  // 60 seconds total
 
+// Step ordering for resume logic
+const STEP_ORDER = ['transcript', 'script', 'audio', 'captions', 'imagePrompts', 'images', 'clipPrompts', 'videoClips', 'thumbnail', 'render', 'upload'];
+
+function shouldSkipStep(currentStep: string, resumeFrom?: string): boolean {
+  if (!resumeFrom) return false;
+  const currentIndex = STEP_ORDER.indexOf(currentStep);
+  const resumeIndex = STEP_ORDER.indexOf(resumeFrom);
+  return currentIndex < resumeIndex;
+}
+
 /**
  * Run the full video generation pipeline
  */
@@ -561,9 +587,12 @@ export async function runPipeline(
   input: PipelineInput,
   onProgress?: ProgressCallback
 ): Promise<PipelineResult> {
-  const projectId = randomUUID();
+  // Use existing project ID or create new one
+  const projectId = input.existingProjectId || randomUUID();
   const steps: PipelineStepResult[] = [];
   const supabase = getSupabaseClient();
+  const resumeFrom = input.resumeFrom;
+  const existing = input.existingData || {};
 
   const reportProgress = (step: string, progress: number, message: string) => {
     console.log(`[Pipeline] ${step}: ${message} (${progress}%)`);
@@ -571,133 +600,151 @@ export async function runPipeline(
   };
 
   try {
-    reportProgress('init', 0, 'Starting pipeline...');
+    if (resumeFrom) {
+      reportProgress('init', 0, `Resuming pipeline from ${resumeFrom}...`);
+      console.log(`[Pipeline] Resume mode: skipping steps before ${resumeFrom}`);
+    } else {
+      reportProgress('init', 0, 'Starting pipeline...');
+    }
 
-    // Create project in database at start
+    // Create/update project in database at start
     await saveProjectToDatabase(supabase, projectId, {
       videoTitle: input.originalTitle,
       sourceUrl: input.sourceVideoUrl,
       status: 'in_progress',
-      currentStep: 'script',
+      currentStep: resumeFrom || 'script',
     });
 
-    // Step 1: Fetch transcript
-    reportProgress('transcript', 5, 'Fetching source transcript...');
-    const transcriptStart = Date.now();
-    let transcript: string;
-    try {
-      const transcriptRes = await callInternalAPI('/get-youtube-transcript', {
-        url: input.sourceVideoUrl,  // Route expects 'url', not 'videoId'
-      });
-      transcript = transcriptRes.transcript;
-      steps.push({
-        step: 'transcript',
-        success: true,
-        duration: Date.now() - transcriptStart,
-        data: { length: transcript.length },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'transcript', success: false, duration: Date.now() - transcriptStart, error: error.message });
-      throw new Error(`Failed to fetch transcript: ${error.message}`);
+    // Step 1: Fetch transcript (skip if resuming past this step)
+    let transcript: string = '';
+    if (shouldSkipStep('transcript', resumeFrom)) {
+      console.log(`[Pipeline] Skipping transcript fetch (resuming from ${resumeFrom})`);
+      steps.push({ step: 'transcript', success: true, duration: 0, data: { skipped: true } });
+    } else {
+      reportProgress('transcript', 5, 'Fetching source transcript...');
+      const transcriptStart = Date.now();
+      try {
+        const transcriptRes = await callInternalAPI('/get-youtube-transcript', {
+          url: input.sourceVideoUrl,  // Route expects 'url', not 'videoId'
+        });
+        transcript = transcriptRes.transcript;
+        steps.push({
+          step: 'transcript',
+          success: true,
+          duration: Date.now() - transcriptStart,
+          data: { length: transcript.length },
+        });
+      } catch (error: any) {
+        steps.push({ step: 'transcript', success: false, duration: Date.now() - transcriptStart, error: error.message });
+        throw new Error(`Failed to fetch transcript: ${error.message}`);
+      }
     }
 
     // Use original title (title rewriting happens in YouTube upload modal)
     const clonedTitle = input.originalTitle;
 
-    // Step 2: Generate script (streaming)
-    reportProgress('script', 15, 'Generating script...');
-    const scriptStart = Date.now();
-    let script: string = '';
+    // Step 2: Generate script (skip if resuming past this step or existing script provided)
+    let script: string = existing.script || '';
     let calculatedImageCount: number = 10;  // Will be recalculated based on actual word count
 
-    // Calculate target word count based on source video duration (or use manual override)
-    // 150 words/minute is typical documentary narration pace
-    const WORDS_PER_MINUTE = 150;
-    const durationMinutes = input.sourceDurationSeconds ? Math.round(input.sourceDurationSeconds / 60) : 20;
-    const calculatedWordCount = durationMinutes * WORDS_PER_MINUTE;
-    const targetWordCount = input.targetWordCount || calculatedWordCount;
-    console.log(`[Pipeline] Target word count: ${targetWordCount}${input.targetWordCount ? ' (manual override)' : ` (${durationMinutes} min @ ${WORDS_PER_MINUTE} wpm)`}`);
+    if (shouldSkipStep('script', resumeFrom) && existing.script) {
+      console.log(`[Pipeline] Using existing script (${existing.script.length} chars)`);
+      const actualWordCount = existing.script.split(/\s+/).length;
+      calculatedImageCount = Math.min(300, Math.max(10, Math.round(actualWordCount / 100)));
+      console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
+      steps.push({ step: 'script', success: true, duration: 0, data: { skipped: true, wordCount: actualWordCount } });
+    } else {
+      reportProgress('script', 15, 'Generating script...');
+      const scriptStart = Date.now();
 
-    const MAX_SCRIPT_RETRIES = 3;  // Give 3 chances to generate on-topic script
-    let scriptAttempt = 0;
-    let scriptGrade: 'A' | 'B' | 'C' = 'C';
-    let scriptFeedback = '';
+      // Calculate target word count based on source video duration (or use manual override)
+      // 150 words/minute is typical documentary narration pace
+      const WORDS_PER_MINUTE = 150;
+      const durationMinutes = input.sourceDurationSeconds ? Math.round(input.sourceDurationSeconds / 60) : 20;
+      const calculatedWordCount = durationMinutes * WORDS_PER_MINUTE;
+      const targetWordCount = input.targetWordCount || calculatedWordCount;
+      console.log(`[Pipeline] Target word count: ${targetWordCount}${input.targetWordCount ? ' (manual override)' : ` (${durationMinutes} min @ ${WORDS_PER_MINUTE} wpm)`}`);
 
-    try {
-      while (scriptAttempt < MAX_SCRIPT_RETRIES && scriptGrade !== 'A') {
-        scriptAttempt++;
-        const attemptLabel = scriptAttempt > 1 ? ` (attempt ${scriptAttempt})` : '';
-        reportProgress('script', 15, `Generating script${attemptLabel}...`);
+      const MAX_SCRIPT_RETRIES = 3;  // Give 3 chances to generate on-topic script
+      let scriptAttempt = 0;
+      let scriptGrade: 'A' | 'B' | 'C' = 'C';
+      let scriptFeedback = '';
 
-        // Add feedback to template if regenerating
-        let templateWithFeedback = COMPLETE_HISTORIES_TEMPLATE;
-        if (scriptAttempt > 1 && scriptFeedback) {
-          templateWithFeedback = `CRITICAL: Previous script was rejected. Fix these issues:
+      try {
+        while (scriptAttempt < MAX_SCRIPT_RETRIES && scriptGrade !== 'A') {
+          scriptAttempt++;
+          const attemptLabel = scriptAttempt > 1 ? ` (attempt ${scriptAttempt})` : '';
+          reportProgress('script', 15, `Generating script${attemptLabel}...`);
+
+          // Add feedback to template if regenerating
+          let templateWithFeedback = COMPLETE_HISTORIES_TEMPLATE;
+          if (scriptAttempt > 1 && scriptFeedback) {
+            templateWithFeedback = `CRITICAL: Previous script was rejected. Fix these issues:
 ${scriptFeedback}
 
 The topic is: "${input.originalTitle}"
 Stay focused on this specific topic. Do not go off on tangents about documentary filmmaking or unrelated subjects.
 
 ${COMPLETE_HISTORIES_TEMPLATE}`;
-          console.log(`[Pipeline] Regenerating script with feedback: ${scriptFeedback}`);
+            console.log(`[Pipeline] Regenerating script with feedback: ${scriptFeedback}`);
+          }
+
+          const scriptRes = await callStreamingAPI('/rewrite-script', {
+            transcript,
+            projectId,
+            title: input.originalTitle,  // CRITICAL: Pass title for topic enforcement
+            topic: input.originalTitle,  // CRITICAL: Pass topic for topic enforcement
+            voiceStyle: '(sincere) (soft tone)',
+            wordCount: targetWordCount,
+            template: templateWithFeedback,
+            stream: true,
+          }, (data) => {
+            if (data.type === 'progress') {
+              reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script${attemptLabel}... ${data.progress}%`);
+            }
+          }, 1800000);
+
+          script = scriptRes.script;
+
+          // Clean the script of markdown headers and formatting
+          script = cleanScript(script);
+          console.log(`[Pipeline] Script cleaned, length: ${script.length} chars`);
+
+          // Grade the script for topic adherence
+          const anthropicKey = process.env.ANTHROPIC_API_KEY;
+          if (anthropicKey) {
+            reportProgress('script', 24, 'Grading script...');
+            const gradeResult = await gradeScript(script, input.originalTitle, anthropicKey);
+            scriptGrade = gradeResult.grade;
+            scriptFeedback = gradeResult.feedback;
+            console.log(`[Pipeline] Script grade: ${scriptGrade} - ${scriptFeedback}`);
+
+            if (scriptGrade !== 'A' && scriptAttempt < MAX_SCRIPT_RETRIES) {
+              console.log(`[Pipeline] Script grade ${scriptGrade}, will regenerate...`);
+            }
+          } else {
+            // No API key for grading, assume OK
+            scriptGrade = 'A';
+            console.log(`[Pipeline] Skipping script grading (no ANTHROPIC_API_KEY)`);
+          }
         }
 
-        const scriptRes = await callStreamingAPI('/rewrite-script', {
-          transcript,
-          projectId,
-          title: input.originalTitle,  // CRITICAL: Pass title for topic enforcement
-          topic: input.originalTitle,  // CRITICAL: Pass topic for topic enforcement
-          voiceStyle: '(sincere) (soft tone)',
-          wordCount: targetWordCount,
-          template: templateWithFeedback,
-          stream: true,
-        }, (data) => {
-          if (data.type === 'progress') {
-            reportProgress('script', 15 + Math.round(data.progress * 0.1), `Generating script${attemptLabel}... ${data.progress}%`);
-          }
-        }, 1800000);
-
-        script = scriptRes.script;
-
-        // Clean the script of markdown headers and formatting
-        script = cleanScript(script);
-        console.log(`[Pipeline] Script cleaned, length: ${script.length} chars`);
-
-        // Grade the script for topic adherence
-        const anthropicKey = process.env.ANTHROPIC_API_KEY;
-        if (anthropicKey) {
-          reportProgress('script', 24, 'Grading script...');
-          const gradeResult = await gradeScript(script, input.originalTitle, anthropicKey);
-          scriptGrade = gradeResult.grade;
-          scriptFeedback = gradeResult.feedback;
-          console.log(`[Pipeline] Script grade: ${scriptGrade} - ${scriptFeedback}`);
-
-          if (scriptGrade !== 'A' && scriptAttempt < MAX_SCRIPT_RETRIES) {
-            console.log(`[Pipeline] Script grade ${scriptGrade}, will regenerate...`);
-          }
-        } else {
-          // No API key for grading, assume OK
-          scriptGrade = 'A';
-          console.log(`[Pipeline] Skipping script grading (no ANTHROPIC_API_KEY)`);
+        // Fail if script is still off-topic after all retries
+        if (scriptGrade === 'C') {
+          throw new Error(`Script failed quality check after ${scriptAttempt} attempts. Feedback: ${scriptFeedback}`);
         }
-      }
 
-      // Fail if script is still off-topic after all retries
-      if (scriptGrade === 'C') {
-        throw new Error(`Script failed quality check after ${scriptAttempt} attempts. Feedback: ${scriptFeedback}`);
-      }
+        const actualWordCount = script.split(/\s+/).length;
+        steps.push({
+          step: 'script',
+          success: true,
+          duration: Date.now() - scriptStart,
+          data: { wordCount: actualWordCount, grade: scriptGrade, attempts: scriptAttempt },
+        });
 
-      const actualWordCount = script.split(/\s+/).length;
-      steps.push({
-        step: 'script',
-        success: true,
-        duration: Date.now() - scriptStart,
-        data: { wordCount: actualWordCount, grade: scriptGrade, attempts: scriptAttempt },
-      });
-
-      // Calculate image count: 1 image per 100 words (min 10, max 300)
-      calculatedImageCount = Math.min(300, Math.max(10, Math.round(actualWordCount / 100)));
-      console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
+        // Calculate image count: 1 image per 100 words (min 10, max 300)
+        calculatedImageCount = Math.min(300, Math.max(10, Math.round(actualWordCount / 100)));
+        console.log(`[Pipeline] Image count: ${calculatedImageCount} (${actualWordCount} words / 100)`);
 
       // Save script to project
       await saveProjectToDatabase(supabase, projectId, {
@@ -709,103 +756,127 @@ ${COMPLETE_HISTORIES_TEMPLATE}`;
       throw new Error(`Failed to generate script: ${error.message}`);
     }
 
-    // Step 4: Generate audio (streaming)
-    reportProgress('audio', 25, 'Generating audio...');
-    const audioStart = Date.now();
-    let audioUrl: string;
-    let audioDuration: number;
+    // Step 4: Generate audio (skip if resuming past this step or existing audio provided)
+    let audioUrl: string = existing.audioUrl || '';
+    let audioDuration: number = existing.audioDuration || 0;
 
-    // Debug: Log script info before audio generation
-    console.log(`[Pipeline] Script length: ${script?.length || 0} chars, type: ${typeof script}`);
-    console.log(`[Pipeline] Script first 500 chars: "${script?.substring(0, 500)}..."`);
-    console.log(`[Pipeline] Script last 200 chars: "...${script?.slice(-200)}"`);
-    if (!script || script.trim().length < 100) {
-      console.error(`[Pipeline] ERROR: Script is empty or too short! Length: ${script?.length || 0}`);
-    }
+    if (shouldSkipStep('audio', resumeFrom) && existing.audioUrl) {
+      console.log(`[Pipeline] Using existing audio: ${existing.audioUrl}`);
+      steps.push({ step: 'audio', success: true, duration: 0, data: { skipped: true, audioUrl: existing.audioUrl } });
+    } else {
+      reportProgress('audio', 25, 'Generating audio...');
+      const audioStart = Date.now();
 
-    try {
-      const audioRes = await callStreamingAPI('/generate-audio', {
-        script,
-        projectId,
-        voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
-        voiceStyle: '(sincere) (soft tone)',
-        ttsSettings: {
-          // Match UI defaults - these worked before
-          temperature: 0.9,
-          topP: 0.85,
-          repetitionPenalty: 1.1,
-        },
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('audio', 25 + Math.round(data.progress * 0.15), `Generating audio... ${data.progress}%`);
-        }
-      }, 1200000);  // 20 min timeout
-      audioUrl = audioRes.audioUrl;
-      audioDuration = audioRes.totalDuration;
-      steps.push({
-        step: 'audio',
-        success: true,
-        duration: Date.now() - audioStart,
-        data: { audioUrl, audioDuration },
-      });
-
-      // Save audio to project
-      await saveProjectToDatabase(supabase, projectId, {
-        audioUrl,
-        audioDuration,
-        audioSegments: audioRes.segments,
-        currentStep: 'captions',
-      });
-    } catch (error: any) {
-      steps.push({ step: 'audio', success: false, duration: Date.now() - audioStart, error: error.message });
-      throw new Error(`Failed to generate audio: ${error.message}`);
-    }
-
-    // Step 5: Generate captions (streaming)
-    reportProgress('captions', 40, 'Generating captions...');
-    const captionsStart = Date.now();
-    let captionsUrl: string;
-    try {
-      const captionsRes = await callStreamingAPI('/generate-captions', {
-        audioUrl,
-        projectId,
-        stream: true,
-      }, (data) => {
-        if (data.type === 'progress') {
-          reportProgress('captions', 40 + Math.round(data.progress * 0.05), `Generating captions... ${data.progress}%`);
-        }
-      });
-      captionsUrl = captionsRes.captionsUrl;
-      steps.push({
-        step: 'captions',
-        success: true,
-        duration: Date.now() - captionsStart,
-        data: { captionsUrl },
-      });
-    } catch (error: any) {
-      steps.push({ step: 'captions', success: false, duration: Date.now() - captionsStart, error: error.message });
-      throw new Error(`Failed to generate captions: ${error.message}`);
-    }
-
-    // Download SRT content once to reuse for clip prompts and image prompts
-    let srtContent: string = '';
-    try {
-      const srtResponse = await fetch(captionsUrl);
-      if (srtResponse.ok) {
-        srtContent = await srtResponse.text();
-        console.log(`[Pipeline] Downloaded SRT: ${srtContent.length} chars`);
+      // Debug: Log script info before audio generation
+      console.log(`[Pipeline] Script length: ${script?.length || 0} chars, type: ${typeof script}`);
+      console.log(`[Pipeline] Script first 500 chars: "${script?.substring(0, 500)}..."`);
+      console.log(`[Pipeline] Script last 200 chars: "...${script?.slice(-200)}"`);
+      if (!script || script.trim().length < 100) {
+        console.error(`[Pipeline] ERROR: Script is empty or too short! Length: ${script?.length || 0}`);
       }
-    } catch (e) {
-      console.warn('[Pipeline] Could not download SRT, continuing...');
+
+      try {
+        const audioRes = await callStreamingAPI('/generate-audio', {
+          script,
+          projectId,
+          voiceSampleUrl: DEFAULT_VOICE_SAMPLE,
+          voiceStyle: '(sincere) (soft tone)',
+          ttsSettings: {
+            // Match UI defaults - these worked before
+            temperature: 0.9,
+            topP: 0.85,
+            repetitionPenalty: 1.1,
+          },
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('audio', 25 + Math.round(data.progress * 0.15), `Generating audio... ${data.progress}%`);
+          }
+        }, 1200000);  // 20 min timeout
+        audioUrl = audioRes.audioUrl;
+        audioDuration = audioRes.totalDuration;
+        steps.push({
+          step: 'audio',
+          success: true,
+          duration: Date.now() - audioStart,
+          data: { audioUrl, audioDuration },
+        });
+
+        // Save audio to project
+        await saveProjectToDatabase(supabase, projectId, {
+          audioUrl,
+          audioDuration,
+          audioSegments: audioRes.segments,
+          currentStep: 'captions',
+        });
+      } catch (error: any) {
+        steps.push({ step: 'audio', success: false, duration: Date.now() - audioStart, error: error.message });
+        throw new Error(`Failed to generate audio: ${error.message}`);
+      }
     }
 
-    // Save captions to project
-    await saveProjectToDatabase(supabase, projectId, {
-      srtUrl: captionsUrl,
-      srtContent,
-      currentStep: 'prompts',
-    });
+    // Step 5: Generate captions (skip if resuming past this step or existing SRT provided)
+    let captionsUrl: string = existing.srtUrl || '';
+    let srtContent: string = existing.srtContent || '';
+
+    if (shouldSkipStep('captions', resumeFrom) && existing.srtUrl) {
+      console.log(`[Pipeline] Using existing captions: ${existing.srtUrl}`);
+      // Download existing SRT content if not provided
+      if (!srtContent && existing.srtUrl) {
+        try {
+          const srtResponse = await fetch(existing.srtUrl);
+          if (srtResponse.ok) {
+            srtContent = await srtResponse.text();
+            console.log(`[Pipeline] Downloaded existing SRT: ${srtContent.length} chars`);
+          }
+        } catch (e) {
+          console.warn('[Pipeline] Could not download existing SRT');
+        }
+      }
+      steps.push({ step: 'captions', success: true, duration: 0, data: { skipped: true, captionsUrl: existing.srtUrl } });
+    } else {
+      reportProgress('captions', 40, 'Generating captions...');
+      const captionsStart = Date.now();
+      try {
+        const captionsRes = await callStreamingAPI('/generate-captions', {
+          audioUrl,
+          projectId,
+          stream: true,
+        }, (data) => {
+          if (data.type === 'progress') {
+            reportProgress('captions', 40 + Math.round(data.progress * 0.05), `Generating captions... ${data.progress}%`);
+          }
+        });
+        captionsUrl = captionsRes.captionsUrl;
+        steps.push({
+          step: 'captions',
+          success: true,
+          duration: Date.now() - captionsStart,
+          data: { captionsUrl },
+        });
+
+        // Download SRT content for later steps
+        try {
+          const srtResponse = await fetch(captionsUrl);
+          if (srtResponse.ok) {
+            srtContent = await srtResponse.text();
+            console.log(`[Pipeline] Downloaded SRT: ${srtContent.length} chars`);
+          }
+        } catch (e) {
+          console.warn('[Pipeline] Could not download SRT, continuing...');
+        }
+
+        // Save captions to project
+        await saveProjectToDatabase(supabase, projectId, {
+          srtUrl: captionsUrl,
+          srtContent,
+          currentStep: 'prompts',
+        });
+      } catch (error: any) {
+        steps.push({ step: 'captions', success: false, duration: Date.now() - captionsStart, error: error.message });
+        throw new Error(`Failed to generate captions: ${error.message}`);
+      }
+    }
 
     // Step 6: Generate image prompts (streaming) - MOVED BEFORE clip prompts/video clips
     // because video clips use I2V mode which requires source images

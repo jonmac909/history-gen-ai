@@ -12,7 +12,6 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { runPipeline, getNext5pmPST } from '../lib/pipeline-runner';
 import { getChannelVideos, ScrapedVideo } from '../lib/youtube-scraper';
 import { getCachedOutliersForChannel, CachedOutlier, cacheOutliers } from '../lib/outlier-cache';
-import fetch from 'node-fetch';
 
 const router = Router();
 
@@ -1090,6 +1089,167 @@ router.post('/retry/:videoId', async (req: Request, res: Response) => {
           current_step: null,
         })
         .eq('video_id', videoId);
+    });
+
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Resume a failed video from a specific step (skips already-completed steps)
+router.post('/resume/:videoId', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { videoId } = req.params;
+    const resumeFrom = req.body.resumeFrom as string;  // e.g., 'imagePrompts', 'images', 'render'
+
+    if (!resumeFrom) {
+      return res.status(400).json({ success: false, error: 'resumeFrom is required (e.g., "imagePrompts", "images", "render")' });
+    }
+
+    // Get the processed video record
+    const { data: video, error } = await supabase
+      .from('processed_videos')
+      .select('*')
+      .eq('video_id', videoId)
+      .single();
+
+    if (error || !video) {
+      return res.status(404).json({ success: false, error: 'Video not found in processed_videos' });
+    }
+
+    // Get the existing project data to reuse
+    const projectId = video.project_id;
+    if (!projectId) {
+      return res.status(400).json({ success: false, error: 'No project_id found - cannot resume without existing project' });
+    }
+
+    // Fetch existing project data
+    const { data: project, error: projectError } = await supabase
+      .from('generation_projects')
+      .select('*')
+      .eq('id', projectId)
+      .single();
+
+    if (projectError || !project) {
+      return res.status(404).json({ success: false, error: 'Project not found in generation_projects' });
+    }
+
+    console.log(`[AutoClone Resume] Found project ${projectId} with:`);
+    console.log(`  - Script: ${project.script_content?.length || 0} chars`);
+    console.log(`  - Audio: ${project.audio_url || 'N/A'}`);
+    console.log(`  - SRT: ${project.srt_url || 'N/A'}`);
+    console.log(`  - Image prompts: ${project.image_prompts?.length || 0}`);
+    console.log(`  - Images: ${project.image_urls?.length || 0}`);
+
+    // Update status to processing
+    await supabase
+      .from('processed_videos')
+      .update({
+        status: 'processing',
+        error_message: null,
+        completed_at: null,
+        current_step: `Resuming from ${resumeFrom}...`,
+      })
+      .eq('video_id', videoId);
+
+    // Calculate publish time
+    const publishAt = getNext5pmPST();
+
+    res.json({
+      success: true,
+      message: `Resume started from ${resumeFrom}`,
+      videoId,
+      projectId,
+      publishAt,
+      existingData: {
+        hasScript: !!project.script_content,
+        hasAudio: !!project.audio_url,
+        hasCaptions: !!project.srt_url,
+        imagePromptsCount: project.image_prompts?.length || 0,
+        imagesCount: project.image_urls?.length || 0,
+      },
+    });
+
+    // Run pipeline in background with resume
+    console.log(`[AutoClone Resume] Starting pipeline from ${resumeFrom} for ${video.video_id}...`);
+    runPipeline({
+      sourceVideoId: video.video_id,
+      sourceVideoUrl: `https://www.youtube.com/watch?v=${video.video_id}`,
+      originalTitle: video.original_title,
+      originalThumbnailUrl: video.original_thumbnail_url || `https://i.ytimg.com/vi/${video.video_id}/maxresdefault.jpg`,
+      publishAt,
+      sourceDurationSeconds: video.duration_seconds,
+      // Resume options
+      resumeFrom: resumeFrom as any,
+      existingProjectId: projectId,
+      existingData: {
+        script: project.script_content,
+        audioUrl: project.audio_url,
+        audioDuration: project.audio_duration,
+        audioSegments: project.audio_segments,
+        srtUrl: project.srt_url,
+        srtContent: project.srt_content,
+        imagePrompts: project.image_prompts,
+        imageUrls: project.image_urls,
+        clipPrompts: project.clip_prompts,
+        clips: project.clips,
+        thumbnailUrl: project.thumbnails?.[0],
+      },
+    }, async (step, progress, message) => {
+      console.log(`[AutoClone Resume] ${step}: ${message} (${progress}%)`);
+      const stepStr = message.includes('%') ? message : `${message} (${progress}%)`;
+      await supabase
+        .from('processed_videos')
+        .update({ current_step: stepStr })
+        .eq('video_id', videoId);
+    }).then(async (result) => {
+      console.log(`[AutoClone Resume] Pipeline completed. Success: ${result.success}`);
+      if (result.success) {
+        await supabase
+          .from('processed_videos')
+          .update({
+            status: 'completed',
+            project_id: result.projectId,
+            cloned_title: result.clonedTitle,
+            youtube_video_id: result.youtubeVideoId,
+            youtube_url: result.youtubeUrl,
+            error_message: null,
+            current_step: null,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('video_id', videoId);
+
+        await sendWhatsAppNotification(
+          `✅ Auto-Clone Resume Complete!\n\n` +
+          `📺 "${result.clonedTitle}"\n` +
+          `🔗 ${result.youtubeUrl}`
+        );
+      } else {
+        await supabase
+          .from('processed_videos')
+          .update({
+            status: 'failed',
+            project_id: result.projectId,
+            error_message: result.error,
+            current_step: null,
+          })
+          .eq('video_id', videoId);
+
+        await sendWhatsAppNotification(`❌ Auto-Clone Resume Failed: ${result.error}`);
+      }
+    }).catch(async (error) => {
+      console.error(`[AutoClone Resume] Pipeline crashed:`, error);
+      await supabase
+        .from('processed_videos')
+        .update({
+          status: 'failed',
+          error_message: error.message || 'Pipeline crashed',
+          current_step: null,
+        })
+        .eq('video_id', videoId);
+
+      await sendWhatsAppNotification(`💥 Auto-Clone Resume CRASHED: ${error.message}`);
     });
 
   } catch (error: any) {
