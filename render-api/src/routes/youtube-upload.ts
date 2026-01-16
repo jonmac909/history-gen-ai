@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import * as fs from 'fs';
@@ -9,11 +8,17 @@ import * as os from 'os';
 
 // Lazy load sharp - it has native dependencies that may fail on some platforms
 let sharp: typeof import('sharp') | null = null;
-try {
-  sharp = require('sharp');
-} catch (e) {
-  console.warn('[youtube-upload] sharp not available, thumbnail compression disabled:', e);
-}
+const loadSharp = async () => {
+  if (sharp) return sharp;
+  try {
+    const mod = await import('sharp');
+    sharp = (mod.default ?? mod) as typeof import('sharp');
+    return sharp;
+  } catch (e) {
+    console.warn('[youtube-upload] sharp not available, thumbnail compression disabled:', e);
+    return null;
+  }
+};
 
 // Set ffmpeg path for metadata scrubbing
 if (ffmpegStatic) {
@@ -711,7 +716,11 @@ router.post('/', async (req: Request, res: Response) => {
         const result = await uploadResponse.json() as any;
         const videoId = result.id;
 
+        // Log full YouTube response for debugging stuck uploads
         console.log('YouTube upload complete:', videoId);
+        console.log('[youtube-upload] Full YouTube response:', JSON.stringify(result, null, 2));
+        console.log('[youtube-upload] Upload status from YouTube:', result.status);
+        console.log('[youtube-upload] Processing status:', result.processingDetails || 'not available');
 
         // If thumbnail URL provided, upload it
         if (thumbnailUrl) {
@@ -732,8 +741,10 @@ router.post('/', async (req: Request, res: Response) => {
               const MAX_THUMB_SIZE = 2 * 1024 * 1024; // 2MB YouTube limit
               const originalBuffer = thumbBuffer; // Keep original for recompression
 
+              const sharpInstance = await loadSharp();
+
               // If thumbnail is larger than 2MB, compress it (requires sharp)
-              if (thumbBuffer.length > MAX_THUMB_SIZE && sharp) {
+              if (thumbBuffer.length > MAX_THUMB_SIZE && sharpInstance) {
                 console.log(`[Thumbnail] Original size: ${(thumbBuffer.length / 1024 / 1024).toFixed(2)}MB, compressing...`);
 
                 let quality = 90;
@@ -741,7 +752,7 @@ router.post('/', async (req: Request, res: Response) => {
 
                 // Try progressively lower quality until under 2MB
                 while (thumbBuffer.length > MAX_THUMB_SIZE && quality > 10) {
-                  const compressed = await sharp(originalBuffer)
+                  const compressed = await sharpInstance(originalBuffer)
                     .resize(width, null, { withoutEnlargement: true })
                     .jpeg({ quality })
                     .toBuffer();
