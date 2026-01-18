@@ -1401,6 +1401,53 @@ router.post('/cron-status', async (req: Request, res: Response) => {
   }
 });
 
+// Cleanup stale running records
+router.post('/cleanup-stale', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+
+    // Find and update stale "running" runs (older than 3 hours)
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    
+    const { data: staleRuns, error: runsError } = await supabase
+      .from('auto_clone_runs')
+      .update({ 
+        status: 'failed', 
+        error_message: 'Cleaned up stale running record',
+        completed_at: new Date().toISOString()
+      })
+      .eq('status', 'running')
+      .lt('started_at', threeHoursAgo)
+      .select('id, run_date, video_selected_id');
+
+    if (runsError) throw runsError;
+
+    // Find and update stale "processing" videos (older than 3 hours)
+    const { data: staleVideos, error: videosError } = await supabase
+      .from('processed_videos')
+      .update({ 
+        status: 'failed', 
+        error_message: 'Cleaned up stale processing record',
+        completed_at: new Date().toISOString()
+      })
+      .eq('status', 'processing')
+      .lt('processed_at', threeHoursAgo)
+      .select('video_id, original_title');
+
+    if (videosError) throw videosError;
+
+    console.log(`[AutoClone] Cleaned up ${staleRuns?.length || 0} stale runs and ${staleVideos?.length || 0} stale videos`);
+    
+    return res.json({
+      success: true,
+      cleanedRuns: staleRuns || [],
+      cleanedVideos: staleVideos || [],
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test WhatsApp notification
 router.post('/test-whatsapp', async (req: Request, res: Response) => {
   const phone = process.env.WHATSAPP_PHONE;
