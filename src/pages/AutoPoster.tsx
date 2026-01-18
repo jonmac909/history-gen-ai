@@ -13,7 +13,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Zap, RotateCcw, Trash2, Power } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 
 const API_BASE_URL = import.meta.env.VITE_RENDER_API_URL || '';
@@ -62,6 +63,8 @@ export default function AutoPoster() {
   const [retrying, setRetrying] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [liveProgress, setLiveProgress] = useState<string | null>(null);
+  const [cronEnabled, setCronEnabled] = useState<boolean | null>(null);
+  const [togglingCron, setTogglingCron] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
 
   // Fetch status data (showLoading=false for background polling)
@@ -89,9 +92,52 @@ export default function AutoPoster() {
     }
   };
 
+  // Fetch cron enabled status
+  const fetchCronStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auto-clone/cron-status`, { headers: renderAuthHeader });
+      if (res.ok) {
+        const data = await res.json();
+        setCronEnabled(data.enabled);
+      }
+    } catch (err) {
+      console.error('Failed to fetch cron status:', err);
+    }
+  };
+
+  // Toggle cron enabled status
+  const toggleCron = async (enabled: boolean) => {
+    setTogglingCron(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auto-clone/cron-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...renderAuthHeader },
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) {
+        setCronEnabled(enabled);
+        toast({
+          title: enabled ? 'Auto Poster enabled' : 'Auto Poster disabled',
+          description: enabled
+            ? 'Daily 6am PST cron job is now active'
+            : 'Daily cron job is now paused',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Failed to toggle cron',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    } finally {
+      setTogglingCron(false);
+    }
+  };
+
   // Initial fetch on mount only
   useEffect(() => {
     fetchStatus(true);
+    fetchCronStatus();
   }, []);
 
   // Polling when something is in progress
@@ -290,7 +336,17 @@ export default function AutoPoster() {
               <p className="text-muted-foreground">Daily automated video cloning workflow</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
+            {/* Cron Toggle */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
+              <Power className={`w-4 h-4 ${cronEnabled ? 'text-green-400' : 'text-muted-foreground'}`} />
+              <span className="text-sm text-muted-foreground">Daily 6am PST</span>
+              <Switch
+                checked={cronEnabled ?? false}
+                onCheckedChange={toggleCron}
+                disabled={togglingCron || cronEnabled === null}
+              />
+            </div>
             <Button variant="outline" onClick={() => fetchStatus(true)} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh

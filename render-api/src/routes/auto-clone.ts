@@ -1350,6 +1350,57 @@ router.post('/resume/:videoId', async (req: Request, res: Response) => {
   }
 });
 
+// Get cron enabled status
+router.get('/cron-status', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'auto_poster_cron_enabled')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 = no rows returned, which is fine (defaults to enabled)
+      throw error;
+    }
+
+    // Default to enabled if no setting exists
+    const enabled = data?.value !== 'false';
+    
+    return res.json({ success: true, enabled });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Set cron enabled status
+router.post('/cron-status', async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+    }
+
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({
+        key: 'auto_poster_cron_enabled',
+        value: enabled ? 'true' : 'false',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+
+    if (error) throw error;
+
+    console.log(`[AutoClone] Cron job ${enabled ? 'enabled' : 'disabled'}`);
+    return res.json({ success: true, enabled });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test WhatsApp notification
 router.post('/test-whatsapp', async (req: Request, res: Response) => {
   const phone = process.env.WHATSAPP_PHONE;

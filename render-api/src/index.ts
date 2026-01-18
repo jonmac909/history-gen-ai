@@ -233,8 +233,18 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Schedule Auto Poster to run daily at 6am PST = 14:00 UTC (no DST adjustment - PST is fixed)
   // Note: During PDT (Mar-Nov), this will be 7am local time. Use 13:00 UTC for 6am PDT.
   cron.schedule('0 14 * * *', async () => {
-    console.log('[Cron] 🕕 Running daily Auto Poster at 14:00 UTC (6am PST)...');
+    console.log('[Cron] 🕕 Checking Auto Poster status at 14:00 UTC (6am PST)...');
     try {
+      // Check if cron is enabled
+      const statusRes = await fetch(`http://localhost:${PORT}/auto-clone/cron-status`);
+      const statusData = await statusRes.json() as { enabled?: boolean };
+      
+      if (!statusData.enabled) {
+        console.log('[Cron] Auto Poster is DISABLED - skipping');
+        return;
+      }
+
+      console.log('[Cron] Auto Poster is enabled - triggering...');
       const response = await fetch(`http://localhost:${PORT}/auto-clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
