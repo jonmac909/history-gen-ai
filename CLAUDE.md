@@ -877,6 +877,9 @@ GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 | `GET /auto-clone/best-outlier` | SSE stream for modal auto-selection |
 | `POST /auto-clone/test-whatsapp` | Test WhatsApp notification |
 | `DELETE /auto-clone/processed/:videoId` | Delete a processed video record |
+| `GET /auto-clone/cron-status` | Get cron job enabled state |
+| `POST /auto-clone/cron-status` | Enable/disable daily cron job |
+| `POST /auto-clone/cleanup-stale` | Clean up stale running/processing records |
 
 **Pipeline Runner** (`render-api/src/lib/pipeline-runner.ts`):
 - Server-side orchestrator for full video generation
@@ -892,7 +895,18 @@ GOOGLE_REDIRECT_URI=https://autoaigen.com/oauth/youtube/callback
 
 **Channel Whitelist**: Only scans channels in `CHANNEL_WHITELIST` array (hardcoded handles)
 **Outlier Criteria**: 2x+ average views, 1+ hour duration, last 30 days
-**Supabase Tables**: `auto_clone_runs`, `processed_videos`
+**Supabase Tables**: `auto_clone_runs`, `processed_videos`, `app_settings`
+
+**Cron Job Toggle** (UI: Auto Poster page header):
+- Toggle switch to enable/disable daily 6am PST cron job
+- State stored in `app_settings` table (`auto_poster_cron_enabled` key)
+- Cron checks enabled state before triggering pipeline
+- Defaults to enabled if no setting exists
+
+**Stale Record Cleanup**:
+- `POST /auto-clone/cleanup-stale` cleans up records stuck in `running`/`processing` state
+- Only cleans records older than 3 hours (avoids interrupting active runs)
+- Useful when Railway container crashes mid-pipeline
 
 ### Cost Tracking
 
