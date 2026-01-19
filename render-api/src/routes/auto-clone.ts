@@ -557,6 +557,26 @@ router.post('/', async (req: Request, res: Response) => {
     const outlierMultiplier = req.body.outlierMultiplier ? parseFloat(req.body.outlierMultiplier) : 1;  // For direct URLs
     const today = getTodayDate();
 
+    // Check if cron is enabled (unless force=true which bypasses this check)
+    if (!force) {
+      const { data: setting } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'auto_poster_cron_enabled')
+        .single();
+
+      const isEnabled = setting?.value === 'true';
+
+      // Default to enabled if setting doesn't exist (backward compatibility)
+      if (setting && !isEnabled) {
+        console.log('[AutoClone] Cron is disabled - skipping run');
+        return res.status(200).json({
+          success: false,
+          message: 'Auto Poster cron is disabled. Enable it in the UI to resume daily runs.',
+        });
+      }
+    }
+
     // Check if there's already a video processing (prevent parallel runs)
     const { data: processingVideos } = await supabase
       .from('processed_videos')
